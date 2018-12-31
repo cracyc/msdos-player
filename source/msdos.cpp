@@ -7195,6 +7195,7 @@ void pcbios_update_cursor_position()
 static HANDLE running = 0;
 static int width;
 static int height;
+static int colors;
 static BOOL vsync;
 static HDC vgadc = 0;
 
@@ -7208,15 +7209,21 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 	}
 	if(dac_dirty)
 	{
-		SetDIBColorTable(vgadc, 0, 256, dac_col);
+		SetDIBColorTable(vgadc, 0, colors, dac_col);
 		dac_dirty = 0;
 	}
-//	RECT conrect;
-//	GetClientRect((get_console_window_handle(), &conrect);
+	RECT conrect;
+	GetClientRect(get_console_window_handle(), &conrect);
+	int bottom = conrect.bottom;
+	int right = conrect.right;
 	HDC dc = get_console_window_device_context();
 	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), width * height, &mem[VGA_VRAM_TOP]);
-//	StretchBlt(dc, 0, 0, conrect.right, conrect.bottom, vgadc, 0, 0, width, height, SRCCOPY);
-	BitBlt(dc, 0, 0, width, height, vgadc, 0, 0, SRCCOPY);
+	if(((float)right / (float)width) > ((float)bottom / (float)height))
+		right = (bottom * width) / height;
+	else
+		bottom = (right * height) / width;
+
+	StretchBlt(dc, 0, 0, right, bottom, vgadc, 0, 0, width, height, SRCCOPY);
 	ReleaseDC(get_console_window_handle(), dc);
 }
 
@@ -7238,6 +7245,25 @@ static void start_retrace_timer()
 	running = CreateEventA(NULL, TRUE, TRUE, NULL);
 	CloseHandle(CreateThread(NULL, 0, retrace_th, NULL, 0, NULL));
 }
+
+static void init_graphics(int width, int height, int bitdepth)
+{
+	HGDIOBJ oldbmap = 0;
+	if(!vgadc)
+		vgadc = CreateCompatibleDC(0);
+
+	BITMAPINFO *bmap = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 256*4 + sizeof(BITMAPINFOHEADER));
+	VOID *section;
+	bmap->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bmap->bmiHeader.biWidth = width;
+	bmap->bmiHeader.biHeight = height;
+	bmap->bmiHeader.biPlanes = 1;
+	bmap->bmiHeader.biBitCount = bitdepth;
+	HBITMAP newbmap = CreateDIBSection(vgadc, bmap, DIB_RGB_COLORS, &section, NULL, 0);
+	HeapFree(GetProcessHeap(), 0, bmap);
+	if(oldbmap = SelectObject(vgadc, newbmap))
+		DeleteObject(oldbmap);
+}
 #endif
 inline void pcbios_int_10h_00h()
 {
@@ -7256,20 +7282,8 @@ inline void pcbios_int_10h_00h()
 	case 0x13:
 		width = 320;
 		height = 200;
-		if(!vgadc)
-		{
-			vgadc = CreateCompatibleDC(0);
-			BITMAPINFO *bmap = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 256*4 + sizeof(BITMAPINFOHEADER));
-			VOID *section;
-			bmap->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-			bmap->bmiHeader.biWidth = width;
-			bmap->bmiHeader.biHeight = height;
-			bmap->bmiHeader.biPlanes = 1;
-			bmap->bmiHeader.biBitCount = 8;
-			HBITMAP vgabmap = CreateDIBSection(vgadc, bmap, DIB_RGB_COLORS, &section, NULL, 0);
-			HeapFree(GetProcessHeap(), 0, bmap);
-			SelectObject(vgadc, vgabmap);
-		}
+		colors = 256;
+		init_graphics(320, 200, 8);
 		start_retrace_timer();
 		break;
 #endif
