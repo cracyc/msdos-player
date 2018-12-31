@@ -2353,7 +2353,7 @@ bool is_started_from_command_prompt()
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
 	if(hLibrary) {
-		typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
+		typedef DWORD (WINAPI *GetConsoleProcessListFunction)(LPDWORD lpdwProcessList, DWORD dwProcessCount);
 		GetConsoleProcessListFunction lpfnGetConsoleProcessList;
 		lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
 		if(lpfnGetConsoleProcessList) { // Windows XP or later
@@ -3904,7 +3904,7 @@ static const struct {
 	{0xB2,	"Volume is not removable", "ボリュームは取り外しできません."},
 	{0xB4,	"Lock count has been exceeded", "ボリュームをこれ以上ロックできません."},
 	{0xB5,	"A valid eject request failed", "取り出しに失敗しました."},
-	{-1  ,	"Unknown error", "不明なエラーです."},
+	{0xFFFF,"Unknown error", "不明なエラーです."},
 };
 
 static const struct {
@@ -3922,7 +3922,7 @@ static const struct {
 	{0x09,	"Parameter format not correct", "パラメータの書式が違います."},
 	{0x0A,	"Invalid parameter", "無効なパラメータです."},
 	{0x0B,	"Invalid parameter combination", "無効なパラメータの組み合わせです."},
-	{-1  ,	"Unknown error", "不明なエラーです."},
+	{0xFFFF,"Unknown error", "不明なエラーです."},
 };
 
 static const struct {
@@ -3951,7 +3951,7 @@ static const struct {
 	{0x12,	"Code page mismatch", "コード ページが一致しません."},
 	{0x13,	"Out of input", "入力が終わりました."},
 	{0x14,	"Insufficient disk space", "ディスクの空き領域が足りません."},
-	{-1  ,	"Critical error", "致命的なエラーです."},
+	{0xFFFF,"Critical error", "致命的なエラーです."},
 };
 
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
@@ -7191,6 +7191,54 @@ void pcbios_update_cursor_position()
 	mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
 }
 
+#ifdef SUPPORT_GRAPHIC_SCREEN
+static HANDLE running = 0;
+static int width;
+static int height;
+static BOOL vsync;
+static HDC vgadc = 0;
+
+static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
+{
+	vsync = TRUE;
+	if (WaitForSingleObject(running, 0))
+	{
+		SetEvent(running);
+		ExitThread(0);
+	}
+	if(dac_dirty)
+	{
+		SetDIBColorTable(vgadc, 0, 256, dac_col);
+		dac_dirty = 0;
+	}
+//	RECT conrect;
+//	GetClientRect((get_console_window_handle(), &conrect);
+	HDC dc = get_console_window_device_context();
+	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), width * height, &mem[VGA_VRAM_TOP]);
+//	StretchBlt(dc, 0, 0, conrect.right, conrect.bottom, vgadc, 0, 0, width, height, SRCCOPY);
+	BitBlt(dc, 0, 0, width, height, vgadc, 0, 0, SRCCOPY);
+	ReleaseDC(get_console_window_handle(), dc);
+}
+
+static DWORD CALLBACK retrace_th(LPVOID arg)
+{
+	LARGE_INTEGER when;
+	HANDLE timer;
+
+	if (!(timer = CreateWaitableTimerA( NULL, FALSE, NULL ))) return 0;
+
+	when.u.LowPart = when.u.HighPart = 0;
+	SetWaitableTimer(timer, &when, 17, retrace_cb, arg, FALSE);
+	for (;;) SleepEx(INFINITE, TRUE);
+}
+
+static void start_retrace_timer()
+{
+	if (running) return;
+	running = CreateEventA(NULL, TRUE, TRUE, NULL);
+	CloseHandle(CreateThread(NULL, 0, retrace_th, NULL, 0, NULL));
+}
+#endif
 inline void pcbios_int_10h_00h()
 {
 	switch(REG8(AL) & 0x7f) {
@@ -7204,6 +7252,27 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
 		break;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x13:
+		width = 320;
+		height = 200;
+		if(!vgadc)
+		{
+			vgadc = CreateCompatibleDC(0);
+			BITMAPINFO *bmap = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 256*4 + sizeof(BITMAPINFOHEADER));
+			VOID *section;
+			bmap->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bmap->bmiHeader.biWidth = width;
+			bmap->bmiHeader.biHeight = height;
+			bmap->bmiHeader.biPlanes = 1;
+			bmap->bmiHeader.biBitCount = 8;
+			HBITMAP vgabmap = CreateDIBSection(vgadc, bmap, DIB_RGB_COLORS, &section, NULL, 0);
+			HeapFree(GetProcessHeap(), 0, bmap);
+			SelectObject(vgadc, vgabmap);
+		}
+		start_retrace_timer();
+		break;
+#endif
 	}
 	if(REG8(AL) & 0x80) {
 		mem[0x487] |= 0x80;
@@ -11031,8 +11100,8 @@ static const struct {
 	{0x173, LANG_LATVIAN, SUBLANG_LATVIAN_LATVIA},				// Latvia
 	{0x174, LANG_ESTONIAN, SUBLANG_ESTONIAN_ESTONIA},			// Estonia
 	{0x17D, LANG_SERBIAN, SUBLANG_SERBIAN_LATIN},				// Serbia / Montenegro
-	{0x180, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia???
-	{0x181, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia
+//	{0x180, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia???
+//	{0x181, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia
 	{0x182, LANG_SLOVENIAN, SUBLANG_SLOVENIAN_SLOVENIA},			// Slovenia
 	{0x183, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_LATIN},	// Bosnia-Herzegovina (Latin)
 	{0x184, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_CYRILLIC},	// Bosnia-Herzegovina (Cyrillic)
@@ -20876,6 +20945,27 @@ UINT8 debugger_read_io_byte(offs_t addr)
 	case 0x3bc: case 0x3bd: case 0x3be:
 		val = pio_read(2, addr);
 		break;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c8:
+		val = dac_widx;
+		break;
+	case 0x3c9:
+		switch(dac_rcol++)
+		{
+			case 0:
+				val = dac_col[dac_ridx].rgbRed >> 2;
+				break;
+			case 1:
+				val = dac_col[dac_ridx].rgbGreen >> 2;
+				break;
+			case 2:
+				val = dac_col[dac_ridx].rgbBlue >> 2;
+				dac_rcol = 0;
+				dac_ridx++;
+				break;
+		}
+		break;
+#endif
 	case 0x3d5:
 		if(crtc_addr < 16) {
 			val = crtc_regs[crtc_addr];
@@ -21041,6 +21131,33 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 	case 0x3bc: case 0x3bd: case 0x3be:
 		pio_write(2, addr, val);
 		break;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c7:
+		dac_ridx = val;
+		dac_rcol = 0;
+		break;
+	case 0x3c8:
+		dac_widx = val;
+		dac_wcol = 0;
+		break;
+	case 0x3c9:
+		switch(dac_wcol++)
+		{
+			case 0:
+				dac_col[dac_widx].rgbRed = val << 2;
+				break;
+			case 1:
+				dac_col[dac_widx].rgbGreen = val << 2;
+				break;
+			case 2:
+				dac_col[dac_widx].rgbBlue = val << 2;
+				dac_wcol = 0;
+				dac_widx++;
+				break;
+		}
+		dac_dirty = 1;
+		break;
+#endif
 	case 0x3d4:
 		crtc_addr = val;
 		break;

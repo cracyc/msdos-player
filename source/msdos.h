@@ -14,6 +14,9 @@
 //#define _WIN32_WINNT 0x501	// Windows XP
 #endif
 #include <windows.h>
+#ifdef __MINGW32__
+#include <initguid.h>
+#endif
 #include <winioctl.h>
 #ifdef _MBCS
 #include <mbstring.h>
@@ -330,7 +333,7 @@ bool in_service_29h = false;
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
-//#define SUPPORT_GRAPHIC_SCREEN
+#define SUPPORT_GRAPHIC_SCREEN
 
 void hardware_init();
 void hardware_finish();
@@ -666,6 +669,16 @@ void kbd_write_command(UINT8 val);
 UINT8 crtc_addr = 0;
 UINT8 crtc_regs[16] = {0};
 UINT8 crtc_changed[16] = {0};
+
+#ifdef SUPPORT_GRAPHIC_SCREEN
+// dac
+UINT8 dac_ridx = 0;
+UINT8 dac_widx = 0;
+RGBQUAD dac_col[256] = {0};
+int dac_rcol = 0;
+int dac_wcol = 0;
+int dac_dirty = 0;
+#endif
 
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
