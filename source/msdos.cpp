@@ -1093,12 +1093,26 @@ void telnet_set_color(int color)
 	telnet_command("\033[%dm\033[3%dm", (color >> 3) & 1, (color & 7));
 }
 
+UINT32 debugger_trans_seg(UINT16 seg)
+{
+#if defined(HAS_I386)
+	if(PROTECTED_MODE)
+	{
+		I386_SREG pseg;
+		pseg.selector = seg;
+		i386_load_protected_mode_segment(&pseg, NULL);
+		return pseg.base;
+	}
+#endif
+	return seg << 4;
+}
+
 int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 {
 //	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
 	UINT8 ops[16];
 	for(int i = 0; i < 16; i++) {
-		ops[i] = debugger_read_byte(((cs << 4) + (eip + i)) & ADDR_MASK);
+		ops[i] = debugger_read_byte((debugger_trans_seg(cs) + (eip + i)) & ADDR_MASK);
 	}
 	UINT8 *oprom = ops;
 	
@@ -1116,8 +1130,8 @@ void debugger_regs_info(char *buffer)
 	
 #if defined(HAS_I386)
 	if(m_operand_size) {
-		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
-		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
+		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		REG32(EAX), REG32(EBX), REG32(ECX), REG32(EDX), REG32(ESP), REG32(EBP), REG32(ESI), REG32(EDI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
 		PROTECTED_MODE ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
 		(flags & 0x20000) ? 'V' : '-',
@@ -1136,7 +1150,7 @@ void debugger_regs_info(char *buffer)
 		(flags & 0x00001) ? 'C' : '-');
 	} else {
 #endif
-		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
 #if defined(HAS_I386)
 		PROTECTED_MODE ? "PE" : "--",
@@ -1337,13 +1351,17 @@ void debugger_main()
 						end_seg = debugger_get_seg(params[2], data_seg);
 						end_ofs = debugger_get_ofs(params[2]);
 					}
-					UINT64 start_addr = (data_seg << 4) + data_ofs;
-					UINT64 end_addr = (end_seg << 4) + end_ofs;
+					UINT64 start_addr = debugger_trans_seg(data_seg) + data_ofs;
+					UINT64 end_addr = debugger_trans_seg(end_seg) + end_ofs;
 //					bool is_sjis = false;
 					
 					for(UINT64 addr = (start_addr & ~0x0f); addr <= (end_addr | 0x0f); addr++) {
 						if((addr & 0x0f) == 0) {
-							if((data_ofs = addr - (data_seg << 4)) > 0xffff) {
+							data_ofs = addr - debugger_trans_seg(data_seg);
+#if defined(HAS_I386)
+							if(!PROTECTED_MODE || V8086_MODE)
+#endif
+							if(data_ofs > 0xffff) {
 								data_seg += 0x1000;
 								data_ofs -= 0x10000;
 							}
@@ -1373,7 +1391,11 @@ void debugger_main()
 							telnet_printf("  %s\n", buffer);
 						}
 					}
-					if((data_ofs = (end_addr + 1) - (data_seg << 4)) > 0xffff) {
+					data_ofs = (end_addr + 1) - debugger_trans_seg(data_seg);
+#if defined(HAS_I386)
+					if(!PROTECTED_MODE || V8086_MODE)
+#endif
+					if(data_ofs > 0xffff) {
 						data_seg += 0x1000;
 						data_ofs -= 0x10000;
 					}
@@ -1386,7 +1408,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j++) {
-						debugger_write_byte(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xff);
+						debugger_write_byte((debugger_trans_seg(seg) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xff);
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1396,7 +1418,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j += 2) {
-						debugger_write_word(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xffff);
+						debugger_write_word((debugger_trans_seg(seg) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xffff);
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1406,7 +1428,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j += 4) {
-						debugger_write_dword(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]));
+						debugger_write_dword((debugger_trans_seg(seg) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]));
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1419,7 +1441,7 @@ void debugger_main()
 					if((token = strtok(buffer, "\"")) != NULL && (token = strtok(NULL, "\"")) != NULL) {
 						int len = strlen(token);
 						for(int i = 0; i < len; i++) {
-							debugger_write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
+							debugger_write_byte((debugger_trans_seg(seg) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
 						}
 					} else {
 						telnet_printf("invalid parameter\n");
@@ -1537,6 +1559,15 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
+#if defined(HAS_I386)
+			} else if(stricmp(params[0], "SELINFO") == 0) {
+				I386_SREG pseg;
+				pseg.selector = debugger_get_val(params[1]);
+				if(PROTECTED_MODE && !V8086_MODE && i386_load_protected_mode_segment(&pseg, NULL))
+					telnet_printf("b:%08x l:%08x f:%04x\n", pseg.base, pseg.limit, pseg.flags);
+				else
+					telnet_printf("invalid selector\n");
+#endif
 			} else if(stricmp(params[0], "S") == 0) {
 				if(num >= 4) {
 					UINT32 cur_seg = debugger_get_seg(params[1], data_seg);
@@ -1548,10 +1579,10 @@ void debugger_main()
 					for(int i = 3, j = 0; i < num && j < 32; i++, j++) {
 						list[j] = debugger_get_val(params[i]);
 					}
-					while((cur_seg << 4) + cur_ofs <= (end_seg << 4) + end_ofs) {
+					while(debugger_trans_seg(cur_seg) + cur_ofs <= debugger_trans_seg(end_seg) + end_ofs) {
 						bool found = true;
 						for(int i = 3, j = 0; i < num && j < 32; i++, j++) {
-							if(debugger_read_byte(((cur_seg << 4) + (cur_ofs + j)) & ADDR_MASK) != list[j]) {
+							if(debugger_read_byte((debugger_trans_seg(cur_seg) + (cur_ofs + j)) & ADDR_MASK) != list[j]) {
 								found = false;
 								break;
 							}
@@ -1559,7 +1590,11 @@ void debugger_main()
 						if(found) {
 							telnet_printf("%04X:%04X\n", cur_seg, cur_ofs);
 						}
-						if((cur_ofs += 1) > 0xffff) {
+						cur_ofs++;
+#if defined(HAS_I386)
+						if(!PROTECTED_MODE || V8086_MODE)
+#endif
+						if(cur_ofs > 0xffff) {
 							cur_seg += 0x1000;
 							cur_ofs -= 0x10000;
 						}
@@ -1577,17 +1612,21 @@ void debugger_main()
 						UINT32 end_seg = debugger_get_seg(params[2], dasm_seg);
 						UINT32 end_ofs = debugger_get_ofs(params[2]);
 						
-						while((dasm_seg << 4) + dasm_ofs <= (end_seg << 4) + end_ofs) {
+						while(debugger_trans_seg(dasm_seg) + dasm_ofs <= debugger_trans_seg(end_seg) + end_ofs) {
 							int len = debugger_dasm(buffer, dasm_seg, dasm_ofs);
 							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+								telnet_printf("%02X", debugger_read_byte((debugger_trans_seg(dasm_seg) + (dasm_ofs + i)) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
-							if((dasm_ofs += len) > 0xffff) {
+							dasm_ofs += len;
+#if defined(HAS_I386)
+							if(!PROTECTED_MODE || V8086_MODE)
+#endif
+							if(dasm_ofs > 0xffff) {
 								dasm_seg += 0x1000;
 								dasm_ofs -= 0x10000;
 							}
@@ -1597,13 +1636,17 @@ void debugger_main()
 							int len = debugger_dasm(buffer, dasm_seg, dasm_ofs);
 							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+								telnet_printf("%02X", debugger_read_byte((debugger_trans_seg(dasm_seg) + (dasm_ofs + i)) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
-							if((dasm_ofs += len) > 0xffff) {
+							dasm_ofs += len;
+#if defined(HAS_I386)
+							if(!PROTECTED_MODE || V8086_MODE)
+#endif
+							if(dasm_ofs > 0xffff) {
 								dasm_seg += 0x1000;
 								dasm_ofs -= 0x10000;
 							}
@@ -1647,8 +1690,8 @@ void debugger_main()
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					bool found = false;
 					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
-						if(break_point_ptr->table[i].status == 0 || break_point_ptr->table[i].addr == ((seg << 4) + ofs)) {
-							break_point_ptr->table[i].addr = (seg << 4) + ofs;
+						if(break_point_ptr->table[i].status == 0 || break_point_ptr->table[i].addr == (debugger_trans_seg(seg) + ofs)) {
+							break_point_ptr->table[i].addr = debugger_trans_seg(seg) + ofs;
 							break_point_ptr->table[i].seg = seg;
 							break_point_ptr->table[i].ofs = ofs;
 							break_point_ptr->table[i].status = 1;
@@ -1852,7 +1895,7 @@ void debugger_main()
 						memset(&break_point, 0, sizeof(break_point_t));
 						break_points_stored = true;
 						
-						break_point.table[0].addr = (SREG(CS) << 4) + m_eip + debugger_dasm(buffer, SREG(CS), m_eip);
+						break_point.table[0].addr = debugger_trans_seg(SREG(CS)) + m_eip + debugger_dasm(buffer, SREG(CS), m_eip);
 						break_point.table[0].status = 1;
 					} else if(num >= 2) {
 						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
@@ -1861,7 +1904,7 @@ void debugger_main()
 						
 						UINT32 seg = debugger_get_seg(params[1], SREG(CS));
 						UINT32 ofs = debugger_get_ofs(params[1]);
-						break_point.table[0].addr = (seg << 4) + ofs;
+						break_point.table[0].addr = debugger_trans_seg(seg) + ofs;
 						break_point.table[0].seg = seg;
 						break_point.table[0].ofs = ofs;
 						break_point.table[0].status = 1;
