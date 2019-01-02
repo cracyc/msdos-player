@@ -2141,9 +2141,9 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 			}
 		}
 		if(STACK_32BIT)
-			REG16(SP) += (4+count);
+			REG32(ESP) += (operand32 ? 8 : 4) + count;
 		else
-			REG32(ESP) += (8+count);
+			REG16(SP) += (operand32 ? 8 : 4) + count;
 	}
 	else if(RPL > CPL)
 	{
