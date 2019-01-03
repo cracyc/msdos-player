@@ -17,13 +17,14 @@ void exit_handler();
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
 
-//#define ENABLE_DEBUG_LOG
+#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
 	#define ENABLE_DEBUG_SYSCALL
-	#define ENABLE_DEBUG_UNIMPLEMENTED
+	//#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
-	
+	//#define ENABLE_DEBUG_TRACE
+
 	#ifdef EXPORT_DEBUG_TO_FILE
 		FILE* fp_debug_log = NULL;
 	#else
@@ -11696,6 +11697,10 @@ inline void msdos_int_21h_44h()
 			m_CF = 1;
 			return;
 		}
+		if(strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) { // tie fighter expects this
+			REG16(AX) = 0xff;
+			return;
+		}
 		break;
 	case 0x08:
 	case 0x09:
@@ -16568,6 +16573,7 @@ inline void msdos_int_67h_deh()
 		pic[1].icw2 = REG8(CL);
 	} else if(REG8(AL) == 0x0c) {
 		// from DOSBox
+		I386_SREG seg;
 		m_IF = 0;
 		m_CPL = 0;
 		
@@ -16591,6 +16597,7 @@ inline void msdos_int_67h_deh()
 			m_cr[0] |= 0x80000000;
 		}
 		m_cr[3] = new_cr3;
+		m_cr[0] |= 1;
 		
 		*(UINT8 *)(mem + new_gdt_base + (new_tr & 0xfff8) + 5) &= 0xfd;
 		
@@ -16599,7 +16606,21 @@ inline void msdos_int_67h_deh()
 		m_gdtr.base = new_gdt_base;
 		m_idtr.limit = new_idt_limit;
 		m_idtr.base = new_idt_base;
-		
+
+		m_ldtr.segment = new_ldt;
+		seg.selector = new_ldt;
+		i386_load_protected_mode_segment(&seg,NULL);
+		m_ldtr.limit = seg.limit;
+		m_ldtr.base = seg.base;
+		m_ldtr.flags = seg.flags;
+
+		m_task.segment = new_tr;
+		seg.selector = new_tr;
+		i386_load_protected_mode_segment(&seg,NULL);
+		m_task.limit = seg.limit;
+		m_task.base = seg.base;
+		m_task.flags = seg.flags;
+
 		i386_sreg_load(0x00, DS, NULL);
 		i386_sreg_load(0x00, ES, NULL);
 		i386_sreg_load(0x00, FS, NULL);
@@ -19071,6 +19092,16 @@ void hardware_run()
 #endif
 	while(!m_exit) {
 		hardware_run_cpu();
+#if defined (ENABLE_DEBUG_TRACE) && defined (USE_DEBUGGER)
+        	if(fp_debug_log != NULL) {
+			char buffer[256];
+			debugger_dasm(buffer, SREG(CS), m_eip);
+			fprintf(fp_debug_log, "%x:%x %s\n", SREG(CS), m_eip, buffer);
+		}
+#endif
+#ifdef EXPORT_DEBUG_TO_FILE
+		fflush(fp_debug_log);
+#endif
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
 	if(fp_debug_log != NULL) {
