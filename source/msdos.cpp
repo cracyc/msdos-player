@@ -1149,10 +1149,10 @@ void debugger_regs_info(char *buffer)
 		(flags & 0x00004) ? 'P' : '-',
 		(flags & 0x00001) ? 'C' : '-');
 #else
-	sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+	sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
 #if defined(HAS_I286)
-		PROTECTED_MODE ? "PE" : "--",
+		PM ? "PE" : "--",
 #else
 		"--",
 #endif
