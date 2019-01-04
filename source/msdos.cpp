@@ -7707,6 +7707,41 @@ inline void pcbios_int_10h_0fh()
 	REG8(BH) = mem[0x462];
 }
 
+inline void pcbios_int_10h_10h()
+{
+	switch(REG8(AL)) {
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x10:
+		if(REG8(BH))
+			break;
+		dac_col[REG8(BL)].rgbRed = REG8(DH) << 2;
+		dac_col[REG8(BL)].rgbGreen = REG8(CH) << 2;
+		dac_col[REG8(BL)].rgbBlue = REG8(CL) << 2;
+		dac_dirty = 1;
+		break;
+	case 0x12:
+	{
+		if(REG8(BH))
+			break;
+		int last = REG8(BL) + REG16(CX);
+		last = last > 256 ? 256 : last;
+		UINT8 *buf = mem + (SREG(ES) << 4) + REG16(DX);
+		for(int i = REG8(BL); i < last; i++) {
+			dac_col[i].rgbRed = buf[i*3] << 2;
+			dac_col[i].rgbGreen = buf[i*3 + 1] << 2;
+			dac_col[i].rgbBlue = buf[i*3 + 2] << 2;
+		}
+		dac_dirty = 1;
+		break;
+	}
+#endif
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void pcbios_int_10h_11h()
 {
 	switch(REG8(AL)) {
@@ -17355,7 +17390,7 @@ void msdos_syscall(unsigned num)
 		case 0x0d: pcbios_int_10h_0dh(); break;
 		case 0x0e: pcbios_int_10h_0eh(); break;
 		case 0x0f: pcbios_int_10h_0fh(); break;
-		case 0x10: break;
+		case 0x10: pcbios_int_10h_10h(); break;
 		case 0x11: pcbios_int_10h_11h(); break;
 		case 0x12: pcbios_int_10h_12h(); break;
 		case 0x13: pcbios_int_10h_13h(); break;
