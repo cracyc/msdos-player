@@ -3446,21 +3446,19 @@ bool update_console_input()
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
 					if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
-						if(mouse.hidden == 0 || (mouse.call_addr_ps2.dw && mouse.enabled_ps2)) {
-							// NOTE: if restore_console_on_exit, console is not scrolled
-							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
-								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-							}
-							// FIXME: character size is always 8x8 ???
-							int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
-							int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
-							
-							if(mouse.position.x != x || mouse.position.y != y) {
-								mouse.position.x = x;
-								mouse.position.y = y;
-								mouse.status |= 1;
-								mouse.status_alt |= 1;
-							}
+						// NOTE: if restore_console_on_exit, console is not scrolled
+						if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
+							GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+						}
+						// FIXME: character size is always 8x8 ???
+						int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
+						int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+
+						if(mouse.position.x != x || mouse.position.y != y) {
+							mouse.position.x = x;
+							mouse.position.y = y;
+							mouse.status |= 1;
+							mouse.status_alt |= 1;
 						}
 					} else if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
 						for(int j = 0; j < MAX_MOUSE_BUTTONS; j++) {
@@ -7312,6 +7310,7 @@ static void init_graphics(int width, int height, int bitdepth)
 	HeapFree(GetProcessHeap(), 0, bmap);
 	if(oldbmap = SelectObject(vgadc, newbmap))
 		DeleteObject(oldbmap);
+	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
 }
 #endif
 inline void pcbios_int_10h_00h()
