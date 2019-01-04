@@ -17,7 +17,7 @@ void exit_handler();
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
 
-#define ENABLE_DEBUG_LOG
+//#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
 	#define ENABLE_DEBUG_SYSCALL
@@ -1118,7 +1118,7 @@ int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 	UINT8 *oprom = ops;
 	
 #if defined(HAS_I386)
-	if(m_operand_size) {
+	if(m_sreg[CS].d) {
 		return(CPU_DISASSEMBLE_CALL(x86_32) & DASMFLAG_LENGTHMASK);
 	} else
 #endif
@@ -1130,8 +1130,7 @@ void debugger_regs_info(char *buffer)
 	UINT32 flags = i386_get_flags();
 	
 #if defined(HAS_I386)
-	if(m_operand_size) {
-		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+	sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		REG32(EAX), REG32(EBX), REG32(ECX), REG32(EDX), REG32(ESP), REG32(EBP), REG32(ESI), REG32(EDI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
 		PROTECTED_MODE ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
@@ -1149,18 +1148,14 @@ void debugger_regs_info(char *buffer)
 		(flags & 0x00010) ? 'A' : '-',
 		(flags & 0x00004) ? 'P' : '-',
 		(flags & 0x00001) ? 'C' : '-');
-	} else {
-#endif
-		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+#else
+	sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
-#if defined(HAS_I386)
+#if defined(HAS_I286)
 		PROTECTED_MODE ? "PE" : "--",
 #else
 		"--",
 #endif
-		(flags & 0x40000) ? 'A' : '-',
-		(flags & 0x20000) ? 'V' : '-',
-		(flags & 0x10000) ? 'R' : '-',
 		(flags & 0x04000) ? 'N' : '-',
 		(flags & 0x02000) ? '1' : '0',
 		(flags & 0x01000) ? '1' : '0',
@@ -1173,8 +1168,6 @@ void debugger_regs_info(char *buffer)
 		(flags & 0x00010) ? 'A' : '-',
 		(flags & 0x00004) ? 'P' : '-',
 		(flags & 0x00001) ? 'C' : '-');
-#if defined(HAS_I386)
-	}
 #endif
 }
 
@@ -1366,7 +1359,7 @@ void debugger_main()
 								data_seg += 0x1000;
 								data_ofs -= 0x10000;
 							}
-							telnet_printf("%06X:%04X ", data_seg, data_ofs);
+							telnet_printf("%04X:%04X ", data_seg, data_ofs);
 							memset(buffer, 0, sizeof(buffer));
 						}
 						if(addr < start_addr || addr > end_addr) {
