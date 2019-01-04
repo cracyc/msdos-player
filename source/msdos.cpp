@@ -378,6 +378,8 @@ UINT8 read_byte(offs_t byteaddress)
 UINT8 debugger_read_byte(offs_t byteaddress)
 #endif
 {
+	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE)))
+		return *(UINT8 *)(ems_addr(byteaddress - EMS_TOP));
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM) {
 		return mem[byteaddress];
@@ -422,6 +424,8 @@ UINT16 debugger_read_word(offs_t byteaddress)
 			if(empty) maybe_idle();
 		}
 	}
+	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 1)))
+		return *(UINT16 *)(ems_addr(byteaddress - EMS_TOP));
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
 		return *(UINT16 *)(mem + byteaddress);
@@ -453,6 +457,8 @@ UINT32 read_dword(offs_t byteaddress)
 UINT32 debugger_read_dword(offs_t byteaddress)
 #endif
 {
+	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 3)))
+		return *(UINT32 *)(ems_addr(byteaddress - EMS_TOP));
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
 		return *(UINT32 *)(mem + byteaddress);
@@ -645,6 +651,8 @@ void debugger_write_byte(offs_t byteaddress, UINT8 data)
 			write_text_vram_byte(byteaddress - shadow_buffer_top_address, data);
 		}
 		mem[byteaddress] = data;
+	} else if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE))) {
+		*(UINT8 *)(ems_addr(byteaddress - EMS_TOP)) = data;
 #if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM) {
 #else
@@ -696,6 +704,8 @@ void debugger_write_word(offs_t byteaddress, UINT16 data)
 			write_text_vram_word(byteaddress - shadow_buffer_top_address, data);
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
+	} else if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 1))) {
+		*(UINT16 *)(ems_addr(byteaddress - EMS_TOP)) = data;
 #if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM - 1) {
 #else
@@ -737,6 +747,8 @@ void debugger_write_dword(offs_t byteaddress, UINT32 data)
 			write_text_vram_dword(byteaddress - shadow_buffer_top_address, data);
 		}
 		*(UINT32 *)(mem + byteaddress) = data;
+	} else if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 3))) {
+		*(UINT32 *)(ems_addr(byteaddress - EMS_TOP)) = data;
 #if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM - 3) {
 #else
@@ -19393,10 +19405,6 @@ void ems_map_page(int physical, int handle, int logical)
 		if(ems_pages[physical].handle == handle && ems_pages[physical].page == logical) {
 			return;
 		}
-		ems_unmap_page(physical);
-	}
-	if(ems_handles[handle].allocated && ems_handles[handle].buffer != NULL && logical < ems_handles[handle].pages) {
-		memcpy(mem + EMS_TOP + 0x4000 * physical, ems_handles[handle].buffer + 0x4000 * logical, 0x4000);
 	}
 	ems_pages[physical].handle = handle;
 	ems_pages[physical].page = logical;
@@ -19408,12 +19416,17 @@ void ems_unmap_page(int physical)
 	if(ems_pages[physical].mapped) {
 		int handle = ems_pages[physical].handle;
 		int logical = ems_pages[physical].page;
-		
-		if(ems_handles[handle].allocated && ems_handles[handle].buffer != NULL && logical < ems_handles[handle].pages) {
-			memcpy(ems_handles[handle].buffer + 0x4000 * logical, mem + EMS_TOP + 0x4000 * physical, 0x4000);
-		}
 		ems_pages[physical].mapped = false;
 	}
+}
+
+static char *ems_addr(UINT16 addr)
+{
+	int page = addr >> 14;
+	if(!ems_pages[page].mapped)
+		return (char *)mem + EMS_TOP + addr;
+	addr &= 0x3fff;
+	return (char *)ems_handles[ems_pages[page].handle].buffer + (ems_pages[page].page * 0x4000) + addr;
 }
 
 // dma

@@ -463,6 +463,7 @@ void ems_reallocate_pages(int handle, int pages);
 void ems_release_pages(int handle);
 void ems_map_page(int physical, int handle, int logical);
 void ems_unmap_page(int physical);
+static char *ems_addr(UINT16 addr);
 
 // dma
 
