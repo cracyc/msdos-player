@@ -672,6 +672,13 @@ UINT8 crtc_regs[16] = {0};
 UINT8 crtc_changed[16] = {0};
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
+HANDLE running = 0;
+int width;
+int height;
+int colors;
+bool vsync = false;
+HDC vgadc = 0;
+
 // dac
 UINT8 dac_ridx = 0;
 UINT8 dac_widx = 0;
@@ -679,6 +686,22 @@ RGBQUAD dac_col[256] = {0};
 int dac_rcol = 0;
 int dac_wcol = 0;
 int dac_dirty = 0;
+
+// seq
+UINT8 seq_addr = 0;
+UINT8 seq_regs[5] = {0};
+
+// grph
+UINT8 grph_addr = 0;
+UINT8 grph_regs[9] = {0};
+
+// vram
+#define VRAM_SIZE 256 * 1024
+UINT8 vram[VRAM_SIZE];
+#define VGA_VRAM_LAST 0xbffff
+
+static UINT32 vga_read(offs_t addr, int size);
+static void vga_write(offs_t addr, UINT32 data, int size);
 #endif
 
 /* ----------------------------------------------------------------------------

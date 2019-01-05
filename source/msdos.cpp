@@ -380,6 +380,10 @@ UINT8 debugger_read_byte(offs_t byteaddress)
 {
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE)))
 		return *(UINT8 *)(ems_addr(byteaddress - EMS_TOP));
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+		return vga_read(byteaddress - VGA_VRAM_TOP, 1);
+#endif
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM) {
 		return mem[byteaddress];
@@ -426,6 +430,10 @@ UINT16 debugger_read_word(offs_t byteaddress)
 	}
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 1)))
 		return *(UINT16 *)(ems_addr(byteaddress - EMS_TOP));
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+		return vga_read(byteaddress - VGA_VRAM_TOP, 2);
+#endif
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
 		return *(UINT16 *)(mem + byteaddress);
@@ -459,6 +467,10 @@ UINT32 debugger_read_dword(offs_t byteaddress)
 {
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 3)))
 		return *(UINT32 *)(ems_addr(byteaddress - EMS_TOP));
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+		return vga_read(byteaddress - VGA_VRAM_TOP, 4);
+#endif
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
 		return *(UINT32 *)(mem + byteaddress);
@@ -640,6 +652,10 @@ void debugger_write_byte(offs_t byteaddress, UINT8 data)
 {
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		return vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
@@ -693,6 +709,10 @@ void debugger_write_word(offs_t byteaddress, UINT16 data)
 			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		return vga_write(byteaddress - VGA_VRAM_TOP, data, 2);
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
@@ -736,6 +756,10 @@ void debugger_write_dword(offs_t byteaddress, UINT32 data)
 {
 	if(byteaddress < MEMORY_END) {
 		*(UINT32 *)(mem + byteaddress) = data;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		return vga_write(byteaddress - VGA_VRAM_TOP, data, 4);
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
@@ -7239,16 +7263,9 @@ void pcbios_update_cursor_position()
 }
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
-static HANDLE running = 0;
-static int width;
-static int height;
-static int colors;
-static BOOL vsync;
-static HDC vgadc = 0;
-
 static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 {
-	vsync = TRUE;
+	vsync = true;
 	if (WaitForSingleObject(running, 0))
 	{
 		SetEvent(running);
@@ -7264,7 +7281,7 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 	int bottom = conrect.bottom;
 	int right = conrect.right;
 	HDC dc = get_console_window_device_context();
-	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), width * height, &mem[VGA_VRAM_TOP]);
+	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), width * height, vram + (crtc_regs[13] + (crtc_regs[12] << 8)) * 4);
 	if(((float)right / (float)width) > ((float)bottom / (float)height))
 		right = (bottom * width) / height;
 	else
@@ -7312,6 +7329,130 @@ static void init_graphics(int width, int height, int bitdepth)
 		DeleteObject(oldbmap);
 	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
 }
+
+static UINT32 vga_read(offs_t addr, int size)
+{
+	UINT32 ret = 0;
+	int i;
+	int mode = mem[0x449];
+	switch(mode)
+	{
+		case 0x04:
+		case 0x05:
+		case 0x06:
+			if(addr < 0x18000)
+				break;
+			addr -= 0x18000;
+			for(i = size; i >= 0; i--) {
+				ret |= vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i];
+				ret <<= 8;
+			}
+			break;
+		case 0x0d:
+		case 0x0e:
+		case 0x10:
+		case 0x12:
+		{
+			if(addr >= 0x10000) // 128K window mode?
+				break;
+			int plane = grph_regs[4] & 3;
+			for(i = (size * 4); i >= 0; i--) {
+				UINT8 byte = *(UINT8 *)(vram + ((addr + i) * 4) + plane);
+				ret |= (byte & (1 << plane) ? 1 : 0) | (((byte >> 4) & (1 << plane)) ? 2 : 0);
+				ret <<= 2;
+			}
+			break;
+		}
+		case 0x13:
+			if(addr >= 0x10000) // 128K window mode?
+				break;
+			if(!(seq_regs[4] & 8)) { // unchained
+				int plane = grph_regs[4] & 3;
+				for(i = size; i >= 0; i--) {
+					ret |= *(UINT8 *)(vram + ((addr + i) * 4) + plane);
+					ret <<= 8;
+				}
+				break;
+			}
+		default:
+		{
+			UINT32 vramaddr = addr - VGA_VRAM_TOP;
+			switch(size) {
+				case 4:
+					return *(UINT32 *)(vram + addr);
+				case 2:
+					return *(UINT16 *)(vram + addr);
+				case 1:
+					return *(UINT8 *)(vram + addr);
+			}
+		}
+	}
+	return ret;
+}
+
+static void vga_write(offs_t addr, UINT32 data, int size)
+{
+	int i;
+	int mode = mem[0x449];
+	switch(mode)
+	{
+		case 0x04:
+		case 0x05:
+		case 0x06:
+			if(addr < 0x18000)
+				break;
+			addr -= 0x18000;
+			for(i = 0; i < size; i++) {
+				vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i] = data;
+				data >>= 8;
+			}
+			break;
+		case 0x0d:
+		case 0x0e:
+		case 0x10:
+		case 0x12:
+			if(addr >= 0x10000) // 128K window mode?
+				break;
+			for(i = 0; i < (size * 4); i++) {
+				for(int j = 0; j < 4; j++) {
+					if(!(seq_regs[2] & (1 << j)))
+						continue;
+					UINT8 *vramaddr = vram + ((addr + i) * 4) + j;
+					UINT8 byte = *vramaddr & ~(1 << j) & ~(0x10 << j);
+					byte |= (data & 1 ? 1 << j : 0) | (data & 2 ? 0x10 << j : 0);
+					*vramaddr = byte;
+					data >>= 2;
+				}
+			}
+			break;
+		case 0x13:
+			if(addr >= 0x10000) // 128K window mode?
+				break;
+			if(!(seq_regs[4] & 8)) { // unchained
+				for(i = 0; i < size; i++) {
+					for(int j = 0; j < 4; j++) {
+						if(!(seq_regs[2] & (1 << j)))
+							continue;
+						*(UINT8 *)(vram + ((addr + i) * 4) + j) = data;
+						data >>= 8;
+					}
+				}
+				break;
+			}
+		default:
+		{
+			UINT32 vramaddr = addr - VGA_VRAM_TOP;
+			switch(size) {
+				case 4:
+					*(UINT32 *)(vram + addr) = data;
+				case 2:
+					*(UINT16 *)(vram + addr) = data;
+				case 1:
+					*(UINT8 *)(vram + addr) = data;
+			}
+		}
+	}
+}
 #endif
 inline void pcbios_int_10h_00h()
 {
@@ -7327,11 +7468,26 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x06:
+		width = 640;
+		height = 200;
+		colors = 2;
+		init_graphics(640, 200, 1);
+		start_retrace_timer();
+		break;
+	case 0x0d:
+		width = 320;
+		height = 200;
+		colors = 16;
+		init_graphics(320, 200, 4);
+		start_retrace_timer();
+		break;
 	case 0x13:
 		width = 320;
 		height = 200;
 		colors = 256;
 		init_graphics(320, 200, 8);
+		seq_regs[4] = 8;
 		start_retrace_timer();
 		break;
 #endif
@@ -20960,9 +21116,11 @@ UINT8 vga_read_status()
 	static const int period[3] = {16, 17, 17};
 	static int index = 0;
 	UINT32 time = timeGetTime() % period[index];
-	
+	bool oldvsync = vsync;
+	vsync = false;
+
 	index = (index + 1) % 3;
-	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
+	return((time < 4 ? 0x08 : 0) | ((time == 0 || oldvsync == true) ? 0 : 0x01));
 }
 
 // i/o bus
@@ -21074,6 +21232,13 @@ UINT8 debugger_read_io_byte(offs_t addr)
 		val = pio_read(2, addr);
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c4:
+		val = seq_addr;
+		break;
+	case 0x3c5:
+		if(seq_addr < 5)
+			val = seq_regs[seq_addr];
+		break;
 	case 0x3c8:
 		val = dac_widx;
 		break;
@@ -21092,6 +21257,13 @@ UINT8 debugger_read_io_byte(offs_t addr)
 				dac_ridx++;
 				break;
 		}
+		break;
+	case 0x3ce:
+		val = grph_addr;
+		break;
+	case 0x3cf:
+		if(grph_addr < 9)
+			val = grph_regs[grph_addr];
 		break;
 #endif
 	case 0x3d5:
@@ -21260,6 +21432,13 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		pio_write(2, addr, val);
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c4:
+		seq_addr = val;
+		break;
+	case 0x3c5:
+		if(seq_addr < 5)
+			seq_regs[seq_addr] = val;
+		break;
 	case 0x3c7:
 		dac_ridx = val;
 		dac_rcol = 0;
@@ -21284,6 +21463,13 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 				break;
 		}
 		dac_dirty = 1;
+		break;
+	case 0x3ce:
+		grph_addr = val;
+		break;
+	case 0x3cf:
+		if(grph_addr < 9)
+			grph_regs[grph_addr] = val;
 		break;
 #endif
 	case 0x3d4:
