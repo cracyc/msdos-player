@@ -7273,7 +7273,7 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 	}
 	if(dac_dirty)
 	{
-		SetDIBColorTable(vgadc, 0, colors, dac_col);
+		SetDIBColorTable(vgadc, 0, 1 << vga_bpp, dac_col);
 		dac_dirty = 0;
 	}
 	RECT conrect;
@@ -7281,13 +7281,13 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 	int bottom = conrect.bottom;
 	int right = conrect.right;
 	HDC dc = get_console_window_device_context();
-	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), width * height, vram + (crtc_regs[13] + (crtc_regs[12] << 8)) * 4);
-	if(((float)right / (float)width) > ((float)bottom / (float)height))
-		right = (bottom * width) / height;
+	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), vga_pitch * vga_height * vga_bpp / 8, vram + (crtc_regs[13] + (crtc_regs[12] << 8)) * 4);
+	if(((float)right / (float)vga_width) > ((float)bottom / (float)vga_height))
+		right = (bottom * vga_width) / vga_height;
 	else
-		bottom = (right * height) / width;
+		bottom = (right * vga_height) / vga_width;
 
-	StretchBlt(dc, 0, 0, right, bottom, vgadc, 0, 0, width, height, SRCCOPY);
+	StretchBlt(dc, 0, 0, right, bottom, vgadc, 0, 0, vga_width, vga_height, SRCCOPY);
 	ReleaseDC(get_console_window_handle(), dc);
 }
 
@@ -7310,16 +7310,20 @@ static void start_retrace_timer()
 	CloseHandle(CreateThread(NULL, 0, retrace_th, NULL, 0, NULL));
 }
 
-static void init_graphics(int width, int height, int bitdepth)
+static void init_graphics(int width, int height, int bitdepth, int pitch = 0)
 {
 	HGDIOBJ oldbmap = 0;
+	vga_width = width;
+	vga_pitch = pitch ? pitch : width;
+	vga_height = height;
+	vga_bpp = bitdepth;
 	if(!vgadc)
 		vgadc = CreateCompatibleDC(0);
 
 	BITMAPINFO *bmap = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 256*4 + sizeof(BITMAPINFOHEADER));
 	VOID *section;
 	bmap->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmap->bmiHeader.biWidth = width;
+	bmap->bmiHeader.biWidth = pitch;
 	bmap->bmiHeader.biHeight = height;
 	bmap->bmiHeader.biPlanes = 1;
 	bmap->bmiHeader.biBitCount = bitdepth;
@@ -7343,10 +7347,8 @@ static UINT32 vga_read(offs_t addr, int size)
 			if(addr < 0x18000)
 				break;
 			addr -= 0x18000;
-			for(i = size; i >= 0; i--) {
-				ret |= vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i];
-				ret <<= 8;
-			}
+			for(i = 0; i < size; i++)
+				ret |= vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i] << (i * 8);
 			break;
 		case 0x0d:
 		case 0x0e:
@@ -7356,11 +7358,16 @@ static UINT32 vga_read(offs_t addr, int size)
 			if(addr >= 0x10000) // 128K window mode?
 				break;
 			int plane = grph_regs[4] & 3;
-			for(i = (size * 4); i >= 0; i--) {
-				UINT8 byte = *(UINT8 *)(vram + ((addr + i) * 4) + plane);
-				ret |= (byte & (1 << plane) ? 1 : 0) | (((byte >> 4) & (1 << plane)) ? 2 : 0);
-				ret <<= 2;
+			for(i = 0; i < size; i++) {
+				UINT32 vramdata = *(UINT32 *)(vram + ((addr + i) * 4));
+				UINT8 byte;
+				byte = (vramdata & (0x10 << plane) ? 0x80 : 0) | (vramdata & (1 << plane) ? 0x40 : 0);
+				byte |= (vramdata & (0x10 << (plane + 8)) ? 0x20 : 0) | (vramdata & (1 << (plane + 8)) ? 0x10 : 0);
+				byte |= (vramdata & (0x10 << (plane + 16)) ? 8 : 0) | (vramdata & (1 << (plane + 16)) ? 4 : 0);
+				byte |= (vramdata & (0x10 << (plane + 24)) ? 2 : 0) | (vramdata & (1 << (plane + 24)) ? 1 : 0);
+				ret |= byte << (i * 8);
 			}
+			vga_latch = *(UINT32 *)(vram + ((addr + i - 1) * 4));
 			break;
 		}
 		case 0x13:
@@ -7368,10 +7375,9 @@ static UINT32 vga_read(offs_t addr, int size)
 				break;
 			if(!(seq_regs[4] & 8)) { // unchained
 				int plane = grph_regs[4] & 3;
-				for(i = size; i >= 0; i--) {
-					ret |= *(UINT8 *)(vram + ((addr + i) * 4) + plane);
-					ret <<= 8;
-				}
+				for(i = 0; i < size; i++)
+					ret |= *(UINT8 *)(vram + ((addr + i) * 4) + plane) << (i * 8);
+				vga_latch = *(UINT32 *)(vram + ((addr + i - 1) * 4));
 				break;
 			}
 		default:
@@ -7403,7 +7409,8 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 				break;
 			addr -= 0x18000;
 			for(i = 0; i < size; i++) {
-				vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i] = data;
+				offs_t vramaddr = addr + i;
+				vram[(((vramaddr & 0x3f80) << 1) | ((vramaddr & 0x4000) >> 7) | (vramaddr & 0x7f))] = data;
 				data >>= 8;
 			}
 			break;
@@ -7413,29 +7420,41 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 		case 0x12:
 			if(addr >= 0x10000) // 128K window mode?
 				break;
-			for(i = 0; i < (size * 4); i++) {
+			if((grph_regs[5] & 3) == 1)
+			{
+				*(UINT32 *)(vram + (addr * 4)) = vga_latch;
+				break;
+			}
+			for(i = 0; i < size; i++) {
+				UINT32 vramdata = *(UINT32 *)(vram + ((addr + i) * 4));
 				for(int j = 0; j < 4; j++) {
 					if(!(seq_regs[2] & (1 << j)))
 						continue;
-					UINT8 *vramaddr = vram + ((addr + i) * 4) + j;
-					UINT8 byte = *vramaddr & ~(1 << j) & ~(0x10 << j);
-					byte |= (data & 1 ? 1 << j : 0) | (data & 2 ? 0x10 << j : 0);
-					*vramaddr = byte;
-					data >>= 2;
+					vramdata &= ~(0x11111111 << j);
+					vramdata |= (data & 0x80 ? 0x10 << j : 0) | (data & 0x40 ? 1 << j : 0);
+					vramdata |= (data & 0x20 ? 0x10 << (j + 8) : 0) | (data & 0x10 ? 1 << (j + 8) : 0);
+					vramdata |= (data & 8 ? 0x10 << (j + 16) : 0) | (data & 4 ? 1 << (j + 16) : 0);
+					vramdata |= (data & 2 ? 0x10 << (j + 24) : 0) | (data & 1 ? 1 << (j + 24) : 0);
 				}
+				*(UINT32 *)(vram + ((addr + i) * 4)) = vramdata;
+				data >>= 8;
 			}
 			break;
 		case 0x13:
 			if(addr >= 0x10000) // 128K window mode?
 				break;
+			if((grph_regs[5] & 3) == 1)
+			{
+				*(UINT32 *)(vram + (addr * 4)) = vga_latch;
+				break;
+			}
 			if(!(seq_regs[4] & 8)) { // unchained
+				UINT32 m = seq_regs[2];
+				m = (m & 1 ? 1 : 0) | (m & 2 ? 1 << 8 : 0) | (m & 4 ? 1 << 16 : 0) | (m & 8 ? 1 << 24 : 0);
 				for(i = 0; i < size; i++) {
-					for(int j = 0; j < 4; j++) {
-						if(!(seq_regs[2] & (1 << j)))
-							continue;
-						*(UINT8 *)(vram + ((addr + i) * 4) + j) = data;
-						data >>= 8;
-					}
+					*(UINT32 *)(vram + ((addr + i) * 4)) &= ~(m * 0xff);
+					*(UINT32 *)(vram + ((addr + i) * 4)) |= m * (data & 0xff);
+					data >>= 8;
 				}
 				break;
 			}
@@ -7456,6 +7475,11 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 #endif
 inline void pcbios_int_10h_00h()
 {
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	const RGBQUAD ega_pal[] = {{0,0,0}, {170,0,0}, {0,170,0}, {170,170,0}, {0,0,170}, {170,0,170},
+				   {0,85,170}, {170,170,170}, {85,85,85}, {255,85,85}, {85,255,85},
+				   {255,255,85}, {85,85,255}, {255,85,255}, {85,255,255}, {255,255,255}};
+#endif
 	switch(REG8(AL) & 0x7f) {
 	case 0x70: // v-text mode
 	case 0x71: // extended cga v-text mode
@@ -7469,23 +7493,19 @@ inline void pcbios_int_10h_00h()
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
 	case 0x06:
-		width = 640;
-		height = 200;
-		colors = 2;
+		dac_col[0] = {0,0,0};
+		dac_col[1] = {255,255,255};
+		dac_dirty = 1;
 		init_graphics(640, 200, 1);
 		start_retrace_timer();
 		break;
 	case 0x0d:
-		width = 320;
-		height = 200;
-		colors = 16;
-		init_graphics(320, 200, 4);
+		memcpy(dac_col, ega_pal, sizeof(ega_pal));
+		dac_dirty = 1;
+		init_graphics(320, 200, 4, 384);
 		start_retrace_timer();
 		break;
 	case 0x13:
-		width = 320;
-		height = 200;
-		colors = 256;
 		init_graphics(320, 200, 8);
 		seq_regs[4] = 8;
 		start_retrace_timer();

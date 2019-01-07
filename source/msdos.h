@@ -673,9 +673,11 @@ UINT8 crtc_changed[16] = {0};
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
 HANDLE running = 0;
-int width;
-int height;
-int colors;
+int vga_width;
+int vga_pitch;
+int vga_height;
+int vga_bpp;
+UINT32 vga_latch;
 bool vsync = false;
 HDC vgadc = 0;
 
