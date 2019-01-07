@@ -6023,6 +6023,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		bool last_block;
+		int found_seg = 0;
 		
 		if(mcb->psp == 0) {
 			msdos_mem_merge(mcb_seg + 1);
@@ -6031,11 +6032,20 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 		}
 		if(!(last_block = (mcb->mz == 'Z'))) {
 			// check if the next is dummy mcb to link to umb
+			if((malloc_strategy & 0x0f) >= 2 && (mcb->paragraphs >= paragraphs) && !mcb->psp)
+				found_seg = mcb_seg;
 			int next_seg = mcb_seg + 1 + mcb->paragraphs;
 			mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
 			last_block = (next_mcb->mz == 'Z' && next_mcb->paragraphs == 0);
 		}
 		if(!(new_process && !last_block)) {
+			if((malloc_strategy & 0x0f) >= 2 && found_seg) {
+				mcb = (mcb_t *)(mem + (found_seg << 4));
+				msdos_mem_split(found_seg + 1, mcb->paragraphs - paragraphs + 1);
+				int next_seg = found_seg + 1 + mcb->paragraphs;
+				((mcb_t *)(mem + (next_seg << 4)))->psp = current_psp;
+				return(next_seg + 1);
+			}
 			if(mcb->psp == 0 && mcb->paragraphs >= paragraphs) {
 				msdos_mem_split(mcb_seg + 1, paragraphs);
 				mcb->psp = current_psp;
