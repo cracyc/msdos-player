@@ -7276,9 +7276,11 @@ void pcbios_update_cursor_position()
 static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 {
 	vsync = true;
-	if (WaitForSingleObject(running, 0))
+	if (WaitForSingleObject(running, 0) || mem[0x449] <= 3)
 	{
 		SetEvent(running);
+		CloseHandle(running);
+		running = NULL;
 		ExitThread(0);
 	}
 	if(dac_dirty)
@@ -7292,10 +7294,10 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 	int right = conrect.right;
 	HDC dc = get_console_window_device_context();
 	SetBitmapBits((HBITMAP)GetCurrentObject(vgadc, OBJ_BITMAP), vga_pitch * vga_height * vga_bpp / 8, vram + (crtc_regs[13] + (crtc_regs[12] << 8)) * 4);
-	if(((float)right / (float)vga_width) > ((float)bottom / (float)vga_height))
-		right = (bottom * vga_width) / vga_height;
+	if(((float)right / 4.0) > ((float)bottom / 3.0))
+		right = (bottom * 4) / 3;
 	else
-		bottom = (right * vga_height) / vga_width;
+		bottom = (right * 3) / 4;
 
 	StretchBlt(dc, 0, 0, right, bottom, vgadc, 0, 0, vga_width, vga_height, SRCCOPY);
 	ReleaseDC(get_console_window_handle(), dc);
@@ -7333,7 +7335,7 @@ static void init_graphics(int width, int height, int bitdepth, int pitch = 0)
 	BITMAPINFO *bmap = (BITMAPINFO *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 256*4 + sizeof(BITMAPINFOHEADER));
 	VOID *section;
 	bmap->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmap->bmiHeader.biWidth = pitch;
+	bmap->bmiHeader.biWidth = vga_pitch;
 	bmap->bmiHeader.biHeight = height;
 	bmap->bmiHeader.biPlanes = 1;
 	bmap->bmiHeader.biBitCount = bitdepth;
@@ -7357,8 +7359,15 @@ static UINT32 vga_read(offs_t addr, int size)
 			if(addr < 0x18000)
 				break;
 			addr -= 0x18000;
-			for(i = 0; i < size; i++)
-				ret |= vram[(((addr & 0x3f80) << 1) | ((addr & 0x4000) >> 7) | (addr & 0x7f)) + i] << (i * 8);
+			addr = (((addr & ~0xe000) / 80) * 160) + ((addr & ~0xe000) % 80) + (addr & 0x2000 ? 80 : 0);
+			for(i = 0; i < size; i++) {
+				if(mode == 6)
+					ret |= vram[addr + i] << (i * 8);
+				else {
+					UINT16 px = *(UINT16 *)(vram + ((addr + i) << 1));
+					ret |= ((((px & 3) | ((px >> 2) & 0x0c)) << 4) | (((px >> 4) & 0x30) | ((px >> 6) & 0xc0)) >> 4) << (i * 8);
+				}
+			}
 			break;
 		case 0x0d:
 		case 0x0e:
@@ -7418,9 +7427,14 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 			if(addr < 0x18000)
 				break;
 			addr -= 0x18000;
+			addr = (((addr & ~0xe000) / 80) * 160) + ((addr & ~0xe000) % 80) + (addr & 0x2000 ? 80 : 0);
 			for(i = 0; i < size; i++) {
-				offs_t vramaddr = addr + i;
-				vram[(((vramaddr & 0x3f80) << 1) | ((vramaddr & 0x4000) >> 7) | (vramaddr & 0x7f))] = data;
+				if(mode == 6)
+					vram[addr + i] = data;
+				else {
+					UINT16 px = (((data & 3) | ((data << 2) & 0x30)) << 8) | ((((data << 4) & 0x300) | ((data << 6) & 0x3000)) >> 8);
+					*(UINT16 *)(vram + ((addr + i) << 1)) = px;
+				}
 				data >>= 8;
 			}
 			break;
@@ -7489,6 +7503,7 @@ inline void pcbios_int_10h_00h()
 	const RGBQUAD ega_pal[] = {{0,0,0}, {170,0,0}, {0,170,0}, {170,170,0}, {0,0,170}, {170,0,170},
 				   {0,85,170}, {170,170,170}, {85,85,85}, {255,85,85}, {85,255,85},
 				   {255,255,85}, {85,85,255}, {255,85,255}, {85,255,255}, {255,255,255}};
+	const RGBQUAD cga_pal[] = {{0,0,0}, {255,85,255}, {255,255,85}, {255,255,255}};
 #endif
 	switch(REG8(AL) & 0x7f) {
 	case 0x70: // v-text mode
@@ -7502,6 +7517,12 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x04:
+		memcpy(dac_col, cga_pal, sizeof(cga_pal));
+		dac_dirty = 1;
+		init_graphics(320, 200, 4); // expand to 4bpp as 2bpp is not supported
+		start_retrace_timer();
+		break;
 	case 0x06:
 		dac_col[0] = {0,0,0};
 		dac_col[1] = {255,255,255};
@@ -7512,14 +7533,26 @@ inline void pcbios_int_10h_00h()
 	case 0x0d:
 		memcpy(dac_col, ega_pal, sizeof(ega_pal));
 		dac_dirty = 1;
-		init_graphics(320, 200, 4, 384);
+		init_graphics(320, 200, 4);
+		start_retrace_timer();
+		break;
+	case 0x12:
+		memcpy(dac_col, ega_pal, sizeof(ega_pal));
+		dac_dirty = 1;
+		init_graphics(640, 480, 4);
 		start_retrace_timer();
 		break;
 	case 0x13:
+	{
+		HPALETTE hpal = CreateHalftonePalette(vgadc); // this is similar to the default mode 13 palette
+		GetPaletteEntries(hpal, 0, 256, (LPPALETTEENTRY)dac_col);
+		DeleteObject(hpal);
+		dac_dirty = 1;
 		init_graphics(320, 200, 8);
 		seq_regs[4] = 8;
 		start_retrace_timer();
 		break;
+	}
 #endif
 	}
 	if(REG8(AL) & 0x80) {
