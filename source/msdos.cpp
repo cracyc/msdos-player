@@ -7467,14 +7467,14 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 		case 0x13:
 			if(addr >= 0x10000) // 128K window mode?
 				break;
-			if((grph_regs[5] & 3) == 1)
-			{
-				*(UINT32 *)(vram + (addr * 4)) = vga_latch;
-				break;
-			}
 			if(!(seq_regs[4] & 8)) { // unchained
 				UINT32 m = seq_regs[2];
 				m = (m & 1 ? 1 : 0) | (m & 2 ? 1 << 8 : 0) | (m & 4 ? 1 << 16 : 0) | (m & 8 ? 1 << 24 : 0);
+				if((grph_regs[5] & 3) == 1)
+				{
+					*(UINT32 *)(vram + (addr * 4)) = vga_latch;
+					break;
+				}
 				for(i = 0; i < size; i++) {
 					*(UINT32 *)(vram + ((addr + i) * 4)) &= ~(m * 0xff);
 					*(UINT32 *)(vram + ((addr + i) * 4)) |= m * (data & 0xff);
