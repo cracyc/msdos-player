@@ -21539,10 +21539,12 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		crtc_addr = val;
 		break;
 	case 0x3d5:
-		if(crtc_addr < 16) {
+		if(crtc_addr < 30) {
 			if(crtc_regs[crtc_addr] != val) {
 				crtc_regs[crtc_addr] = val;
 				crtc_changed[crtc_addr] = 1;
+				if(crtc_addr == 0x13 && mem[0x449] > 3)
+					init_graphics(vga_width, vga_height, vga_bpp, val * 4 * vga_bpp);
 			}
 		}
 		break;

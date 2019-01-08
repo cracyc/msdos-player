@@ -668,8 +668,8 @@ void kbd_write_command(UINT8 val);
 // crtc
 
 UINT8 crtc_addr = 0;
-UINT8 crtc_regs[16] = {0};
-UINT8 crtc_changed[16] = {0};
+UINT8 crtc_regs[30] = {0};
+UINT8 crtc_changed[30] = {0};
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
 HANDLE running = 0;
