@@ -7533,12 +7533,14 @@ inline void pcbios_int_10h_00h()
 	case 0x0d:
 		memcpy(dac_col, ega_pal, sizeof(ega_pal));
 		dac_dirty = 1;
+		crtc_regs[0x14] = 0x40;
 		init_graphics(320, 200, 4);
 		start_retrace_timer();
 		break;
 	case 0x12:
 		memcpy(dac_col, ega_pal, sizeof(ega_pal));
 		dac_dirty = 1;
+		crtc_regs[0x14] = 0x40;
 		init_graphics(640, 480, 4);
 		start_retrace_timer();
 		break;
@@ -7548,6 +7550,7 @@ inline void pcbios_int_10h_00h()
 		GetPaletteEntries(hpal, 0, 256, (LPPALETTEENTRY)dac_col);
 		DeleteObject(hpal);
 		dac_dirty = 1;
+		crtc_regs[0x14] = 0;
 		init_graphics(320, 200, 8);
 		seq_regs[4] = 8;
 		start_retrace_timer();
@@ -21561,8 +21564,10 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 			if(crtc_regs[crtc_addr] != val) {
 				crtc_regs[crtc_addr] = val;
 				crtc_changed[crtc_addr] = 1;
-				if(crtc_addr == 0x13 && mem[0x449] > 3)
-					init_graphics(vga_width, vga_height, vga_bpp, val * 4 * vga_bpp);
+				if(crtc_addr == 0x13 && mem[0x449] > 3) {
+					int mult = crtc_regs[0x14] & 0x40 ? 4 : 1;
+					init_graphics(vga_width, vga_height, vga_bpp, val * vga_bpp * mult);
+				}
 			}
 		}
 		break;
