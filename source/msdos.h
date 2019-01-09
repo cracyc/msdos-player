@@ -778,7 +778,7 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define SHADOW_BUF_TOP	0xf8000
 // text vram size: 80x25x2 = 4000 = 0fa0h
 // fffa0h-fffefh can be used for dummy routines
-#define DUMMY_TOP	0xfffc0
+#define DUMMY_TOP	0xfffb0
 //#define EMB_TOP	0x10fff0
 #define EMB_TOP		0x110000 // align to 4KB
 #define EMB_END		MAX_MEM

@@ -1133,7 +1133,7 @@ void telnet_set_color(int color)
 UINT32 debugger_trans_seg(UINT16 seg)
 {
 #if defined(HAS_I386)
-	if(PROTECTED_MODE)
+	if(PROTECTED_MODE && !V8086_MODE)
 	{
 		I386_SREG pseg;
 		pseg.selector = seg;
@@ -1166,8 +1166,8 @@ void debugger_regs_info(char *buffer)
 	UINT32 flags = i386_get_flags();
 	
 #if defined(HAS_I386)
-	sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
-		REG32(EAX), REG32(EBX), REG32(ECX), REG32(EDX), REG32(ESP), REG32(EBP), REG32(ESI), REG32(EDI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
+	sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FS=%04X  GS=%04X\nFLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		REG32(EAX), REG32(EBX), REG32(ECX), REG32(EDX), REG32(ESP), REG32(EBP), REG32(ESI), REG32(EDI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS), SREG(FS), SREG(GS),
 		PROTECTED_MODE ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
 		(flags & 0x20000) ? 'V' : '-',
@@ -5124,7 +5124,7 @@ UINT16 msdos_device_info(const char *path)
 //		return(0xa8c0);
 		return(0x80a0);
 	} else if(msdos_is_device_path(path)) {
-		if(strstr(path, "EMMXXXX0") != NULL) {
+		if(strstr(path, "EMMXXXX0") != NULL && support_ems) {
 			return(0xc0c0);
 		} else if(strstr(path, "MSCD001") != NULL) {
 			return(0xc880);
@@ -16753,14 +16753,9 @@ inline void msdos_int_67h_deh()
 	} else if(REG8(AL) == 0x01) {
 		REG8(AH) = 0x00;
 		// from DOSBox
-		for(int ct = 0; ct < 0xff; ct++) {
+		for(int ct = 0; ct < 0x100; ct++) {
 			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x00) = 0x67;		// access bits
 			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x01) = ct * 0x10;	// mapping
-			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x03) = 0x00;
-		}
-		for(int ct = 0xff; ct < 0x100; ct++) {
-			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x00) = 0x67;		// access bits
-			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x01) = (ct - 0xff) * 0x10 + 0x1100;	// mapping
 			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x03) = 0x00;
 		}
 		REG16(DI) += 0x400;		// advance pointer by 0x100*4
@@ -16769,8 +16764,8 @@ inline void msdos_int_67h_deh()
 		UINT32 cbseg_low  = (DUMMY_TOP & 0x00ffff) << 16;
 		UINT32 cbseg_high = (DUMMY_TOP & 0x1f0000) >> 16;
 		// Descriptor 1 (code segment, callback segment)
-		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x0000ffff | cbseg_low ;
-		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = 0x00009a00 | cbseg_high;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x0000ffff;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = 0x004f9a00;
 		// Descriptor 2 (data segment, full access)
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x08) = 0x0000ffff;
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c) = 0x00009200;
@@ -16778,7 +16773,7 @@ inline void msdos_int_67h_deh()
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x10) = 0x0000ffff;
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x14) = 0x00009200;
 		// Offset in code segment of protected mode entry point
-		REG32(EBX) = 0x2a; // fffc:002a
+		REG32(EBX) = DUMMY_TOP + 0x2a; // DUMMY_TOP:002a
 	} else if(REG8(AL) == 0x02) {
 		REG8(AH) = 0x00;
 		REG32(EDX) = (MAX_MEM - 1) & 0xfffff000;
@@ -16830,67 +16825,84 @@ inline void msdos_int_67h_deh()
 		pic[0].icw2 = REG8(BL);
 		pic[1].icw2 = REG8(CL);
 	} else if(REG8(AL) == 0x0c) {
-		// from DOSBox
-		I386_SREG seg;
-		m_IF = 0;
-		m_CPL = 0;
-		
-		// Read data from ESI (linear address)
-		UINT32 new_cr3      = *(UINT32 *)(mem + REG32(ESI) + 0x00);
-		UINT32 new_gdt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x04);
-		UINT32 new_idt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x08);
-		UINT16 new_ldt      = *(UINT16 *)(mem + REG32(ESI) + 0x0c);
-		UINT16 new_tr       = *(UINT16 *)(mem + REG32(ESI) + 0x0e);
-		UINT32 new_eip      = *(UINT32 *)(mem + REG32(ESI) + 0x10);
-		UINT16 new_cs       = *(UINT16 *)(mem + REG32(ESI) + 0x14);
-		
-		// Get GDT and IDT entries
-		UINT16 new_gdt_limit = *(UINT16 *)(mem + new_gdt_addr + 0);
-		UINT32 new_gdt_base  = *(UINT32 *)(mem + new_gdt_addr + 2);
-		UINT16 new_idt_limit = *(UINT16 *)(mem + new_idt_addr + 0);
-		UINT32 new_idt_base  = *(UINT32 *)(mem + new_idt_addr + 2);
-		
-		// Switch to protected mode, paging enabled if necessary
-		if(new_cr3 != 0) {
-			m_cr[0] |= 0x80000000;
+		if(!PROTECTED_MODE || V8086_MODE) {
+			// from DOSBox
+			I386_SREG seg;
+			m_IF = 0;
+			m_CPL = 0;
+
+			// Read data from ESI (linear address)
+			UINT32 new_cr3      = *(UINT32 *)(mem + REG32(ESI) + 0x00);
+			UINT32 new_gdt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x04);
+			UINT32 new_idt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x08);
+			UINT16 new_ldt      = *(UINT16 *)(mem + REG32(ESI) + 0x0c);
+			UINT16 new_tr       = *(UINT16 *)(mem + REG32(ESI) + 0x0e);
+			UINT32 new_eip      = *(UINT32 *)(mem + REG32(ESI) + 0x10);
+			UINT16 new_cs       = *(UINT16 *)(mem + REG32(ESI) + 0x14);
+
+			// Get GDT and IDT entries
+			UINT16 new_gdt_limit = *(UINT16 *)(mem + new_gdt_addr + 0);
+			UINT32 new_gdt_base  = *(UINT32 *)(mem + new_gdt_addr + 2);
+			UINT16 new_idt_limit = *(UINT16 *)(mem + new_idt_addr + 0);
+			UINT32 new_idt_base  = *(UINT32 *)(mem + new_idt_addr + 2);
+
+			// Switch to protected mode, paging enabled if necessary
+			if(new_cr3 != 0) {
+				m_cr[0] |= 0x80000000;
+			}
+			m_cr[3] = new_cr3;
+			m_cr[0] |= 1;
+
+			*(UINT8 *)(mem + new_gdt_base + (new_tr & 0xfff8) + 5) &= 0xfd;
+
+			// Load tables and initialize segment registers
+			m_gdtr.limit = new_gdt_limit;
+			m_gdtr.base = new_gdt_base;
+			m_idtr.limit = new_idt_limit;
+			m_idtr.base = new_idt_base;
+
+			m_ldtr.segment = new_ldt;
+			seg.selector = new_ldt;
+			i386_load_protected_mode_segment(&seg,NULL);
+			m_ldtr.limit = seg.limit;
+			m_ldtr.base = seg.base;
+			m_ldtr.flags = seg.flags;
+
+			m_task.segment = new_tr;
+			seg.selector = new_tr;
+			i386_load_protected_mode_segment(&seg,NULL);
+			m_task.limit = seg.limit;
+			m_task.base = seg.base;
+			m_task.flags = seg.flags;
+
+			i386_sreg_load(0x00, DS, NULL);
+			i386_sreg_load(0x00, ES, NULL);
+			i386_sreg_load(0x00, FS, NULL);
+			i386_sreg_load(0x00, GS, NULL);
+
+			//		i386_set_a20_line(1);
+
+			/* Switch to protected mode */
+			m_VM = m_NT = 0;
+			m_IOP1 = m_IOP2 = 1;
+
+			i386_jmp_far(new_cs, new_eip);
+		} else {
+			m_cr[0] &= 0x7fffffff;
+			REG32(ESP) += 8;
+			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) &= ~(0x200);
+			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) |= 0x23000;
+			i386_protected_mode_iret(1);
+			// just cheat and switch to real mode instead of v86 mode
+			// otherwise a GDT and IDT would need to be set up
+			// hopefully most vcpi programs are okay with that
+			m_cr[0] &= ~1;
+			m_CPL = 0;
+			m_VM = 0;
+			m_IOP1 = m_IOP2 = 0;
+			m_idtr.base = 0;
+			m_idtr.limit = 0x400;
 		}
-		m_cr[3] = new_cr3;
-		m_cr[0] |= 1;
-		
-		*(UINT8 *)(mem + new_gdt_base + (new_tr & 0xfff8) + 5) &= 0xfd;
-		
-		// Load tables and initialize segment registers
-		m_gdtr.limit = new_gdt_limit;
-		m_gdtr.base = new_gdt_base;
-		m_idtr.limit = new_idt_limit;
-		m_idtr.base = new_idt_base;
-
-		m_ldtr.segment = new_ldt;
-		seg.selector = new_ldt;
-		i386_load_protected_mode_segment(&seg,NULL);
-		m_ldtr.limit = seg.limit;
-		m_ldtr.base = seg.base;
-		m_ldtr.flags = seg.flags;
-
-		m_task.segment = new_tr;
-		seg.selector = new_tr;
-		i386_load_protected_mode_segment(&seg,NULL);
-		m_task.limit = seg.limit;
-		m_task.base = seg.base;
-		m_task.flags = seg.flags;
-
-		i386_sreg_load(0x00, DS, NULL);
-		i386_sreg_load(0x00, ES, NULL);
-		i386_sreg_load(0x00, FS, NULL);
-		i386_sreg_load(0x00, GS, NULL);
-		
-//		i386_set_a20_line(1);
-		
-		/* Switch to protected mode */
-		m_VM = m_NT = 0;
-		m_IOP1 = m_IOP2 = 1;
-		
-		i386_jmp_far(new_cs, new_eip);
 	} else {
 		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
@@ -19066,11 +19078,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	xms_device->attributes = 0xc000;
 	xms_device->strategy = XMS_SIZE - sizeof(dummy_device_routine);
 	xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
-	memcpy(xms_device->dev_name, "EMMXXXX0", 8);
+	if(support_ems) {
+		memcpy(xms_device->dev_name, "EMMXXXX0", 8);
 	
-	mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
-	mem[XMS_TOP + 0x13] = 0x65;
-	mem[XMS_TOP + 0x14] = 0xcf;	// iret
+		mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
+		mem[XMS_TOP + 0x13] = 0x65;
+		mem[XMS_TOP + 0x14] = 0xcf;	// iret
+	}
 #ifdef SUPPORT_XMS
 	if(support_xms) {
 		mem[XMS_TOP + 0x15] = 0xcd;	// int 66h (dummy)
@@ -19142,9 +19156,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
 	
 	// VCPI entry point
-	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 65h
-	mem[DUMMY_TOP + 0x2b] = 0x65;
-	mem[DUMMY_TOP + 0x2c] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x2a] = 0x9c;	// pushf
+	mem[DUMMY_TOP + 0x2b] = 0x0e;	// push cs
+	mem[DUMMY_TOP + 0x2c] = 0xe8;	// call near (IRET_TOP + 0x98)
+	INT32 addr = (IRET_TOP + 0x64) - (DUMMY_TOP + 0x31);
+	*(INT32 *)(mem + DUMMY_TOP + 0x2d) = addr;
+	mem[DUMMY_TOP + 0x31] = 0xcb;	// retf
 	
 	// boot routine
 	mem[0xffff0 + 0x00] = 0xf4;	// halt to exit MS-DOS Player
