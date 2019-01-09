@@ -19072,19 +19072,20 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
 	// ems (int 67h) and xms
-	device_t *xms_device = (device_t *)(mem + XMS_TOP);
-	xms_device->next_driver.w.l = 0xffff;
-	xms_device->next_driver.w.h = 0xffff;
-	xms_device->attributes = 0xc000;
-	xms_device->strategy = XMS_SIZE - sizeof(dummy_device_routine);
-	xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
 	if(support_ems) {
+		device_t *xms_device = (device_t *)(mem + XMS_TOP);
+		xms_device->next_driver.w.l = 0xffff;
+		xms_device->next_driver.w.h = 0xffff;
+		xms_device->attributes = 0xc000;
+		xms_device->strategy = XMS_SIZE - sizeof(dummy_device_routine);
+		xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
 		memcpy(xms_device->dev_name, "EMMXXXX0", 8);
 	
 		mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
 		mem[XMS_TOP + 0x13] = 0x65;
 		mem[XMS_TOP + 0x14] = 0xcf;	// iret
-	}
+	} else
+		mem[XMS_TOP + 0x12] = 0xcf;	// iret 
 #ifdef SUPPORT_XMS
 	if(support_xms) {
 		mem[XMS_TOP + 0x15] = 0xcd;	// int 66h (dummy)
