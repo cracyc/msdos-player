@@ -19011,8 +19011,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		last = device;
 	}
 	if(last != NULL) {
-		last->next_driver.w.l = 0;
-		last->next_driver.w.h = XMS_TOP >> 4;
+		if(support_ems) {
+			last->next_driver.w.l = 0;
+			last->next_driver.w.h = XMS_TOP >> 4;
+		} else {
+			last->next_driver.w.l = 0xffff;
+			last->next_driver.w.h = 0xffff;
+		}
 	}
 	memcpy(mem + DEVICE_TOP + DEVICE_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
