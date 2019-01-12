@@ -11713,6 +11713,35 @@ inline void msdos_int_21h_3fh()
 					REG16(AX) = 0;
 				}
 			} else {
+#if defined(HAS_I386)
+				if(PROTECTED_MODE && (m_cr[0] & 0x80000000))
+				{
+					int count = REG16(CX);
+					offs_t addr = SREG_BASE(DS) + REG16(DX);
+					int pgcnt = 4096 - (addr & 0xfff);
+					pgcnt = (pgcnt < count) ? pgcnt : count;
+					int total = 0;
+					while(count > 0)
+					{
+						offs_t outaddr = addr;
+						UINT32 error;
+						if(!translate_address(m_CPL, TRANSLATE_READ, &outaddr, &error)) {
+							fprintf(stderr, "Page fault in read file!\n");
+							REG16(AX) = 0x05;
+							m_CF = 1;
+							return;
+						}
+						int pgtot = msdos_read(fd, mem + outaddr, pgcnt);
+						total += pgtot;
+						if(pgtot != pgcnt)
+							break;
+						addr += pgtot;
+						count -= pgtot;
+						pgcnt = (count > 4096) ? 4096 : count;
+					}
+					REG16(AX) = total;
+				} else
+#endif
 				REG16(AX) = msdos_read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
 		} else {
