@@ -9008,6 +9008,13 @@ inline void pcbios_int_15h_8ah()
 	REG16(DX) = size >> 16;
 }
 
+inline void pcbios_int_15h_c0h()
+{
+	SREG(ES) = BIOS_TOP >> 4;
+	i386_load_segment_descriptor(ES);
+	REG16(BX) = 0xac;
+}
+
 #ifdef EXT_BIOS_TOP
 inline void pcbios_int_15h_c1h()
 {
@@ -17783,7 +17790,7 @@ void msdos_syscall(unsigned num)
 		case 0x8a: pcbios_int_15h_8ah(); break;
 		case 0x90: REG8(AH) = 0x00; break; // from DOSBox
 		case 0x91: REG8(AH) = 0x00; break; // from DOSBox
-		case 0xc0: // PS/2 ???
+		case 0xc0: pcbios_int_15h_c0h(); break;
 #ifndef EXT_BIOS_TOP
 		case 0xc1:
 #endif
@@ -18684,6 +18691,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
+	*(UINT16 *)(mem + 0x4ac) = 0x0a; // put rom config in reserved area
+	*(UINT8  *)(mem + 0x4b1) = 0x60; // 2nd pic, rtc
+	*(UINT32 *)(mem + 0x4b2) = 0x40; // int 16/09
 #ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + EXT_BIOS_TOP) = 1;
 #endif
