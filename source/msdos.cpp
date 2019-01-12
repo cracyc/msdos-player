@@ -1149,6 +1149,14 @@ int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 //	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
 	UINT8 ops[16];
 	for(int i = 0; i < 16; i++) {
+#if defined(HAS_I386)
+		if(PROTECTED_MODE && (m_cr[0] & 0x80000000)) {
+			offs_t addr = debugger_trans_seg(cs) + eip + i;
+			UINT32 error;
+			i386_translate_address(TRANSLATE_READ_DEBUG, &addr, NULL);
+			ops[i] = debugger_read_byte(addr & ADDR_MASK);
+		} else
+#endif
 		ops[i] = debugger_read_byte((debugger_trans_seg(cs) + (eip + i)) & ADDR_MASK);
 	}
 	UINT8 *oprom = ops;
