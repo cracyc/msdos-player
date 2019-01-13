@@ -23,7 +23,7 @@ void exit_handler();
 	#define ENABLE_DEBUG_SYSCALL
 	//#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
-	//#define ENABLE_DEBUG_TRACE
+	#define ENABLE_DEBUG_TRACE
 
 	#ifdef EXPORT_DEBUG_TO_FILE
 		FILE* fp_debug_log = NULL;
@@ -981,6 +981,9 @@ void i386_write_stack(UINT16 value)
 
 int svr_socket = 0;
 int cli_socket = 0;
+#ifdef ENABLE_DEBUG_TRACE
+bool debug_trace = false;
+#endif
 
 process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error);
 
@@ -2034,6 +2037,14 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
+#ifdef ENABLE_DEBUG_TRACE
+			} else if(stricmp(params[0], "TE") == 0) {
+				telnet_printf("debug trace enabled\n");
+				debug_trace = true;
+			} else if(stricmp(params[0], "TD") == 0) {
+				telnet_printf("debug trace disabled\n");
+				debug_trace = false;
+#endif
 			} else if(stricmp(params[0], "T") == 0) {
 				if(num == 1 || num == 2) {
 					int steps = 1;
@@ -19424,7 +19435,7 @@ void hardware_run()
 	while(!m_exit) {
 		hardware_run_cpu();
 #if defined (ENABLE_DEBUG_TRACE) && defined (USE_DEBUGGER)
-        	if(fp_debug_log != NULL) {
+        	if(debug_trace && fp_debug_log != NULL) {
 			char buffer[256];
 			debugger_dasm(buffer, SREG(CS), m_eip);
 			fprintf(fp_debug_log, "%x:%x %s\n", SREG(CS), m_eip, buffer);
