@@ -6814,7 +6814,20 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		if(paragraphs > free_paragraphs) {
 			paragraphs = free_paragraphs;
 		}
-		if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs, 1)) == -1) {
+		int start_seg = 0;
+		if(!header->min_alloc && !header->max_alloc) {
+			psp_seg = msdos_mem_alloc(first_mcb, PSP_SIZE >> 4, 1);
+			int oldstrat = malloc_strategy;
+			malloc_strategy = 2;
+			start_seg = msdos_mem_alloc(first_mcb, load_size >> 4, 1);
+			malloc_strategy = oldstrat;
+			if(start_seg == -1) {
+				if(psp_seg != -1)
+					msdos_mem_free(psp_seg);
+				msdos_mem_free(env_seg);
+				return(-1);
+			}
+		} else if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs, 1)) == -1) {
 			if((psp_seg = msdos_mem_alloc(UMB_TOP >> 4, paragraphs, 1)) == -1) {
 				if(umb_linked != 0) {
 					msdos_mem_link_umb();
@@ -6824,7 +6837,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			}
 		}
 		// relocation
-		int start_seg = psp_seg + (PSP_SIZE >> 4);
+		if(!start_seg)
+			start_seg = psp_seg + (PSP_SIZE >> 4);
 		for(int i = 0; i < header->relocations; i++) {
 			int ofs = *(UINT16 *)(file_buffer + header->relocation_table + i * 4 + 0);
 			int seg = *(UINT16 *)(file_buffer + header->relocation_table + i * 4 + 2);
