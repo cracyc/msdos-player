@@ -6797,6 +6797,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	exe_header_t *header = (exe_header_t *)file_buffer;
 	int paragraphs, free_paragraphs = msdos_mem_get_free(first_mcb, 1);
 	UINT16 cs, ss, ip, sp;
+	int start_seg = 0;
 	
 	if(header->mz == 0x4d5a || header->mz == 0x5a4d) {
 		// memory allocation
@@ -6814,7 +6815,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		if(paragraphs > free_paragraphs) {
 			paragraphs = free_paragraphs;
 		}
-		int start_seg = 0;
+		start_seg = 0;
 		if(!header->min_alloc && !header->max_alloc) {
 			psp_seg = msdos_mem_alloc(first_mcb, PSP_SIZE >> 4, 1);
 			int oldstrat = malloc_strategy;
@@ -6862,7 +6863,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				return(-1);
 			}
 		}
-		int start_seg = psp_seg + (PSP_SIZE >> 4);
+		start_seg = psp_seg + (PSP_SIZE >> 4);
 		memcpy(mem + (start_seg << 4), file_buffer, 0x10000 - PSP_SIZE);
 		// segments
 		cs = ss = psp_seg;
@@ -6876,7 +6877,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	// create psp
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = m_eip;
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = SREG(CS);
-	psp_t *psp = msdos_psp_create(psp_seg, psp_seg + paragraphs, current_psp, env_seg);
+	psp_t *psp = msdos_psp_create(psp_seg, start_seg + paragraphs - (PSP_SIZE >> 4), current_psp, env_seg);
 	memcpy(psp->fcb1, mem + (param->fcb1.w.h << 4) + param->fcb1.w.l, sizeof(psp->fcb1));
 	memcpy(psp->fcb2, mem + (param->fcb2.w.h << 4) + param->fcb2.w.l, sizeof(psp->fcb2));
 	memcpy(psp->buffer, mem + (param->cmd_line.w.h << 4) + param->cmd_line.w.l, sizeof(psp->buffer));
