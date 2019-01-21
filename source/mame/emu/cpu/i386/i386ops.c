@@ -2363,8 +2363,35 @@ static void I386OP(escape)()            // Opcodes 0xd8 - 0xdf
 	(void) LOAD_RM8(modrm);
 }
 
+static void i386_iret32();
+static void i386_iret16();
 static void I386OP(hlt)()               // Opcode 0xf4
 {
+	UINT32 old = m_pc - 1;
+	// Emulate system call on MS-DOS Player
+	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
+		int syscall = old - IRET_TOP;
+		if(m_operand_size)
+			i386_iret32();
+		else
+			i386_iret16();
+#ifdef USE_DEBUGGER
+		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+		m_int_num = syscall;
+#else
+		// Call msdos_syscall() here for better processing speed
+		if(m_lock)
+			m_lock = false;
+#ifdef SUPPORT_RDTSC
+		m_tsc += (m_base_cycles - m_cycles);
+#endif
+		msdos_syscall(syscall);
+#ifdef SUPPORT_RDTSC
+		m_cycles = m_base_cycles = 1;
+#endif
+#endif
+		return;
+	}
 	if(PROTECTED_MODE && m_CPL != 0)
 		FAULT(FAULT_GP,0);
 	m_halted = 1;

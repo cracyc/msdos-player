@@ -753,8 +753,6 @@ static void I386OP(inc_edi)()           // Opcode 0x47
 
 static void I386OP(iret32)()            // Opcode 0xcf
 {
-	UINT32 old = m_eip;
-
 	if( PROTECTED_MODE )
 	{
 		i386_protected_mode_iret(1);
@@ -770,25 +768,6 @@ static void I386OP(iret32)()            // Opcode 0xcf
 		CHANGE_PC(m_eip);
 	}
 	CYCLES(CYCLES_IRET);
-
-	// Emulate system call on MS-DOS Player
-	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		if(m_lock)
-			m_lock = false;
-#ifdef SUPPORT_RDTSC
-		m_tsc += (m_base_cycles - m_cycles);
-#endif
-		msdos_syscall(old - IRET_TOP);
-#ifdef SUPPORT_RDTSC
-		m_cycles = m_base_cycles = 1;
-#endif
-#endif
-	}
 }
 
 static void I386OP(ja_rel32)()          // Opcode 0x0f 87

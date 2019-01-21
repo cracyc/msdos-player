@@ -210,6 +210,8 @@ inline void maybe_idle()
 	idle_ops = 0;
 }
 
+#ifndef USE_HAXM
+
 /* ----------------------------------------------------------------------------
 	MAME i86/i386
 ---------------------------------------------------------------------------- */
@@ -357,6 +359,8 @@ enum address_spacenum
 
 // offsets and addresses are 32-bit (for now...)
 //typedef UINT32	offs_t;
+
+#endif //USE_HAXM
 
 // read accessors
 UINT8 read_byte(offs_t byteaddress)
@@ -803,15 +807,17 @@ void write_io_byte(offs_t byteaddress, UINT8 data);
 void write_io_word(offs_t byteaddress, UINT16 data);
 void write_io_dword(offs_t byteaddress, UINT32 data);
 
+// flag to exit MS-DOS Player
+// this is set when the first process is terminated and jump to FFFF:0000 HALT
+int m_exit = 0;
+
+#ifndef USE_HAXM
+
 /*****************************************************************************/
 /* src/osd/osdcomm.h */
 
 /* Highly useful macro for compile-time knowledge of an array size */
 #define ARRAY_LENGTH(x)     (sizeof(x) / sizeof(x[0]))
-
-// flag to exit MS-DOS Player
-// this is set when the first process is terminated and jump to FFFF:0000 HALT
-int m_exit = 0;
 
 #if defined(HAS_I386)
 	static CPU_TRANSLATE(i386);
@@ -834,6 +840,7 @@ int m_exit = 0;
 	int cpu_type, cpu_step;
 	#define i386_get_flags()		get_flags()
 	#define i386_set_flags(x)		set_flags(x)
+	#define CR(x)				m_cr[x]
 #else
 	#define REG8(x)				m_regs.b[x]
 	#define REG16(x)			m_regs.w[x]
@@ -969,11 +976,23 @@ void i386_write_stack(UINT16 value)
 #endif
 }
 
+#else // USE_HAXM
+
+#include "haxmvm.c"
+#define HAS_I386
+
+#endif
+
 /* ----------------------------------------------------------------------------
 	debugger
 ---------------------------------------------------------------------------- */
 
 #ifdef USE_DEBUGGER
+
+#ifdef USE_HAXM
+#error debugger not compatible with haxm
+#endif
+
 #define TELNET_BLUE      0x0004 // text color contains blue.
 #define TELNET_GREEN     0x0002 // text color contains green.
 #define TELNET_RED       0x0001 // text color contains red.
@@ -1153,7 +1172,7 @@ int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 	UINT8 ops[16];
 	for(int i = 0; i < 16; i++) {
 #if defined(HAS_I386)
-		if(PROTECTED_MODE && (m_cr[0] & 0x80000000)) {
+		if(PROTECTED_MODE && (CR(0) & 0x80000000)) {
 			offs_t addr = debugger_trans_seg(cs) + eip + i;
 			UINT32 error;
 			i386_translate_address(TRANSLATE_READ_DEBUG, &addr, NULL);
@@ -5567,7 +5586,7 @@ void msdos_putch(UINT8 data)
 	}
 	
 	// call int 29h ?
-	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
+	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// int 29h is not hooked, no need to call int 29h
 		msdos_putch_fast(data);
@@ -5585,21 +5604,25 @@ void msdos_putch(UINT8 data)
 		// this is called from main thread, so we can call int 29h :-)
 		in_service_29h = true;
 		try {
-			UINT32 tmp_pc = m_pc;
 			UINT16 tmp_ax = REG16(AX);
 			UINT32 tmp_bx = REG16(BX); // BX may be destroyed by some versions of DOS 3.3
 			
-			// call int 29h routine is at fffc:0027
+			// call int 29h routine is at fffb:0027
 			i386_call_far(DUMMY_TOP >> 4, 0x0027);
 			REG8(AL) = data;
 			
 			// run cpu until call int 29h routine is done
-			while(!m_exit && tmp_pc != m_pc) {
+			while(!m_exit && (m_pc != (DUMMY_TOP + 0x30))) {
 				try {
 					hardware_run_cpu();
 				} catch(...) {
 				}
 			}
+#if defined(HAS_I386)
+			I386OP(retf16)();
+#else
+			PREFIX86(_retf());
+#endif
 			REG16(AX) = tmp_ax;
 			REG16(BX) = tmp_bx;
 		} catch(...) {
@@ -7149,7 +7172,7 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 		mem[DUMMY_TOP + 0x15] = 0x78;	// js -4
 	}
 #endif
-	// dummy loop to wait BIOS/DOS service is done is at fffc:0013
+	// dummy loop to wait BIOS/DOS service is done is at fffb:0013
 	i386_call_far(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
@@ -8884,7 +8907,7 @@ inline void pcbios_int_15h_50h()
 			REG8(AH) = 0x06; // font is read only
 			m_CF = 1;
 		} else {
-			// dummy font read routine is at fffc:000d
+			// dummy font read routine is at fffb:000d
 			SREG(ES) = DUMMY_TOP >> 4;
 			i386_load_segment_descriptor(ES);
 			REG16(BX) = 0x000d;
@@ -9006,7 +9029,7 @@ inline void pcbios_int_15h_89h()
 	m_idtr.limit = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x10);
 	m_idtr.base  = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x10 + 0x02) & 0xffffff;
 #if defined(HAS_I386)
-	m_cr[0] |= 1;
+	CR(0) |= 1;
 #else
 	m_msw |= 1;
 #endif
@@ -10069,7 +10092,7 @@ inline void msdos_int_21h_01h()
 {
 #ifdef USE_SERVICE_THREAD
 	if(!in_service && !in_service_29h &&
-	   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
+	   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// msdos_putch() will be used in this service
 		// if int 29h is hooked, run this service in main thread to call int 29h
@@ -10288,7 +10311,7 @@ inline void msdos_int_21h_0ah()
 	if(mem[SREG_BASE(DS) + REG16(DX)] != 0x00) {
 #ifdef USE_SERVICE_THREAD
 		if(!in_service && !in_service_29h &&
-		   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
+		   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 		   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 			// msdos_putch() will be used in this service
 			// if int 29h is hooked, run this service in main thread to call int 29h
@@ -11259,7 +11282,7 @@ int get_country_info(country_info_t *ci, LCID locale = LOCALE_USER_DEFAULT)
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
-	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffc:000a
+	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffb:000a
 	ci->case_map.w.h = DUMMY_TOP >> 4;
 	GetLocaleInfoA(locale, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
@@ -11738,7 +11761,7 @@ inline void msdos_int_21h_3fh()
 				if(REG16(CX) != 0) {
 #ifdef USE_SERVICE_THREAD
 					if(!in_service && !in_service_29h &&
-					   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
+					   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 					   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 						// msdos_putch() will be used in this service
 						// if int 29h is hooked, run this service in main thread to call int 29h
@@ -11755,7 +11778,7 @@ inline void msdos_int_21h_3fh()
 				}
 			} else {
 #if defined(HAS_I386)
-				if(PROTECTED_MODE && (m_cr[0] & 0x80000000))
+				if(PROTECTED_MODE && (CR(0) & 0x80000000))
 				{
 					int count = REG16(CX);
 					offs_t addr = SREG_BASE(DS) + REG16(DX);
@@ -14842,7 +14865,7 @@ inline void msdos_int_2fh_12h()
 			i386_load_segment_descriptor(ES);
 			REG16(DI) = 0x00;
 		} else if(REG8(DL) == 0x08) {
-			// dummy parameter error message read routine is at fffc:0010
+			// dummy parameter error message read routine is at fffb:0010
 			SREG(ES) = DUMMY_TOP >> 4;
 			i386_load_segment_descriptor(ES);
 			REG16(DI) = 0x0010;
@@ -16473,7 +16496,7 @@ inline void msdos_int_67h_56h()
 #endif
 		UINT16 handles[4], pages[4];
 		
-		// alter page map and call routine is at fffc:001f
+		// alter page map and call routine is at fffb:001f
 		if(!(call_seg == 0 && call_ofs == 0)) {
 			mem[DUMMY_TOP + 0x1f] = 0x9a;	// call far
 			mem[DUMMY_TOP + 0x20] = (call_ofs >> 0) & 0xff;
@@ -16878,7 +16901,7 @@ inline void msdos_int_67h_deh()
 		REG32(EDX) = REG16(CX) << 12;
 	} else if(REG8(AL) == 0x07) {
 		REG8(AH) = 0x00;
-		REG32(EBX) = m_cr[0];
+		REG32(EBX) = CR(0);
 	} else if(REG8(AL) == 0x08) {
 		REG8(AH) = 0x00;
 		for(int i = 0; i < 8; i++) {
@@ -16921,10 +16944,10 @@ inline void msdos_int_67h_deh()
 
 			// Switch to protected mode, paging enabled if necessary
 			if(new_cr3 != 0) {
-				m_cr[0] |= 0x80000000;
+				CR(0) |= 0x80000000;
 			}
-			m_cr[3] = new_cr3;
-			m_cr[0] |= 1;
+			CR(3) = new_cr3;
+			CR(0) |= 1;
 
 			*(UINT8 *)(mem + new_gdt_base + (new_tr & 0xfff8) + 5) &= 0xfd;
 
@@ -16961,7 +16984,7 @@ inline void msdos_int_67h_deh()
 
 			i386_jmp_far(new_cs, new_eip);
 		} else {
-			m_cr[0] &= 0x7fffffff;
+			CR(0) &= 0x7fffffff;
 			REG32(ESP) += 8;
 			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) &= ~(0x200);
 			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) |= 0x23000;
@@ -16969,7 +16992,7 @@ inline void msdos_int_67h_deh()
 			// just cheat and switch to real mode instead of v86 mode
 			// otherwise a GDT and IDT would need to be set up
 			// hopefully most vcpi programs are okay with that
-			m_cr[0] &= ~1;
+			CR(0) &= ~1;
 			m_CPL = 0;
 			m_VM = 0;
 			m_IOP1 = m_IOP2 = 0;
@@ -18743,19 +18766,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
 	// so move iret table into allocated memory block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
-	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 5 * 128) >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 16) >> 4);
 	IRET_TOP = seg << 4;
-	seg += (IRET_SIZE + 5 * 128) >> 4;
-	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
-	
-	// note: SO1 checks int 21h vector and if it aims iret (cfh)
-	// it is recognized SO1 is not running on MS-DOS environment
-	for(int i = 0; i < 128; i++) {
-		// jmp far (IRET_TOP >> 4):(interrupt number)
-		*(UINT8  *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 0) = 0xea;
-		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 1) = i;
-		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 3) = IRET_TOP >> 4;
-	}
+	seg += (IRET_SIZE + 16) >> 4;
+	UINT8 fill = 0xf4; // hlt
+	memset(mem + IRET_TOP, fill, IRET_SIZE);
 	
 	// dummy xms/ems device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
@@ -19034,16 +19049,16 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		// 10-1F: PC BIOS
 		// 20-3F: MS-DOS system call
 		// 70-77: IRQ 8-15
-		*(UINT16 *)(mem + 4 * i + 0) = (i <= 0x3f || (i >= 0x70 && i <= 0x77)) ? (IRET_SIZE + 5 * i) : i;
+		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffc:0018 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffb:0018 irq0 (system timer)
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = DUMMY_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
 	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 irq12 (mouse)
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffb:0000 irq12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
 	
 	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
@@ -19235,7 +19250,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// call int 29h routine
 	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
 	mem[DUMMY_TOP + 0x28] = 0x29;
-	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x29] = 0xf4;	// hlt
 	
 	// VCPI entry point
 	mem[DUMMY_TOP + 0x2a] = 0x9c;	// pushf

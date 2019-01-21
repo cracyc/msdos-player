@@ -219,6 +219,8 @@ public:
 	#define CPU_MODEL i80286
 #elif defined(HAS_I386)
 	#define CPU_MODEL i386
+#elif defined(USE_HAXM)
+	#define CPU_MODEL haxm
 #else
 //	#if defined(HAS_I386SX)
 //		#define CPU_MODEL i386SX
@@ -431,7 +433,14 @@ drive_param_t drive_params[26] = {0};
 	#define ADDR_MASK 0xfffff
 	#define MAX_MEM 0x100000	/* 1MB */
 #endif
-UINT8 mem[MAX_MEM + 15];
+#ifdef _MSC_VER
+__declspec(align(4096))
+#endif
+UINT8 mem[MAX_MEM + 15] 
+#ifdef __GCC__
+__attribute__ ((aligned(4096)))
+#endif
+;
 
 // ems
 

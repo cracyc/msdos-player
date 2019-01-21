@@ -2156,13 +2156,11 @@ static void PREFIX86(_into)()    /* Opcode 0xce */
 #ifndef I80286
 static void PREFIX86(_iret)()    /* Opcode 0xcf */
 {
-	UINT32 old = m_pc - 1;
-
 	POP(m_pc);
 	POP(m_sregs[CS]);
 	m_base[CS] = SegBase(CS);
 	m_pc = (m_pc + m_base[CS]) & AMASK;
-		PREFIX(_popf)();
+	PREFIX(_popf)();
 	CHANGE_PC(m_pc);
 
 	/* if the IF is set, and an interrupt is pending, signal an interrupt */
@@ -2170,17 +2168,6 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 	{
 		PREFIX(_interrupt)((UINT32)-1);
 		m_irq_state = CLEAR_LINE;
-	}
-
-	// Emulate system call on MS-DOS Player
-	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		msdos_syscall(old - IRET_TOP);
-#endif
 	}
 }
 #endif
@@ -2581,6 +2568,20 @@ static void PREFIX(_sti)()    /* Opcode 0xfb */
 #ifndef I80186
 static void PREFIX86(_hlt)()    /* Opcode 0xf4 */
 {
+	UINT32 old = m_pc - 1;
+
+	// Emulate system call on MS-DOS Player
+	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
+		PREFIX(_iret)();
+#ifdef USE_DEBUGGER
+		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+		m_int_num = (old - IRET_TOP);
+#else
+		// Call msdos_syscall() here for better processing speed
+		msdos_syscall(old - IRET_TOP);
+#endif
+		return;
+	}
 #ifdef I80286
 	if(PM && (CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 #endif

@@ -13,11 +13,11 @@ X = .exe
 MKDIR = mkdir -p
 RM_F = rm -f
 CP = cp
-CC = gcc
-CXX = g++ 
+CC ?= gcc
+CXX ?= g++ 
 CFLAGS_OO=-o $@
 CFLAGS_OX=-o $@
-CFLAGS= -O3 -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
+CFLAGS= -Og -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -Wno-write-strings -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER -g
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
 LIBS = -lwinmm -lpsapi -lwsock32 -lsetupapi -lgdi32 -lmpr
@@ -55,6 +55,8 @@ CFLAGS_I386 = $(CFLAGS) -I. -DHAS_I386
 CXXFLAGS_I386 = $(CFLAGS_I386)
 CFLAGS_I486 = $(CFLAGS) -I. -DHAS_I486
 CXXFLAGS_I486 = $(CFLAGS_I486)
+CFLAGS_HAXM = $(CFLAGS) -I. -DUSE_HAXM
+CXXFLAGS_HAXM = $(CFLAGS_HAXM)
 
 #COMPILE = $(CC) $(CFLAGS) $(CFLAGS_EXTRA) $(CFLAGS_OO) $?
 
@@ -74,6 +76,7 @@ OUTD_BASE = .$(D)binary$(D)
 TARGET_I286 = $(OUTD_BASE)msdos_i286$(X)
 TARGET_I386 = $(OUTD_BASE)msdos_i386$(X)
 TARGET_I486 = $(OUTD_BASE)msdos_i486$(X)
+TARGET_HAXM = $(OUTD_BASE)msdos_haxm$(X)
 
 SRCS_I86 = \
 	$(SRCD_I86)ea.h \
@@ -134,14 +137,19 @@ SRCS_SOFTFLOAT = \
 	$(SRCD_SOFTFLOAT)softfloat.c \
 	$(SRCD_SOFTFLOAT)softfloat.h
 
+SRCS_HAXM = \
+	$(SRCD_BASE)haxmvm.c \
+	$(SRCD_BASE)haxmvm.h
 
-all : i286 i386 i486
+all : i286 i386 i486 haxm
 
 i286: $(TARGET_I286)
 
 i386: $(TARGET_I386)
 
 i486: $(TARGET_I486)
+
+haxm: $(TARGET_HAXM)
 
 $(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
 	$(CXX) $(CXXFLAGS_I286) $(CFLAGS_EXTRA) \
@@ -164,8 +172,15 @@ $(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
+$(TARGET_HAXM) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_HAXM)
+	$(CXX) $(CXXFLAGS_HAXM) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
 clean:
 	-$(RM_F) $(TARGET_I286)
 	-$(RM_F) $(TARGET_I386)
 	-$(RM_F) $(TARGET_I486)
-
+	-$(RM_F) $(TARGET_HAXM)
