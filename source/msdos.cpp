@@ -210,8 +210,6 @@ inline void maybe_idle()
 	idle_ops = 0;
 }
 
-#ifndef USE_HAXM
-
 /* ----------------------------------------------------------------------------
 	MAME i86/i386
 ---------------------------------------------------------------------------- */
@@ -256,6 +254,8 @@ inline void maybe_idle()
 
 #define CPU_MODEL_STR(name)			#name
 #define CPU_MODEL_NAME(name)			CPU_MODEL_STR(name)
+
+#ifndef USE_HAXM
 
 /*****************************************************************************/
 /* src/emu/didisasm.h */
@@ -11901,7 +11901,7 @@ inline void msdos_int_21h_43h(int lfn)
 		m_CF = 1;
 		return;
 	}
-	switch(REG8(lfn ? BL : AL)) {
+	switch(lfn ? REG8(BL) : REG8(AL)) {
 	case 0x00:
 		if((attr = GetFileAttributesA(path)) != -1) {
 			REG16(CX) = (UINT16)msdos_file_attribute_create((UINT16)attr);
@@ -19486,7 +19486,7 @@ void hardware_run()
 inline void hardware_run_cpu()
 {
 #if defined(HAS_I386)
-	CPU_EXECUTE_CALL(i386);
+	CPU_EXECUTE_CALL(CPU_MODEL);
 	if(m_eip != m_prev_eip) {
 		idle_ops++;
 	}

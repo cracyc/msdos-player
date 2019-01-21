@@ -437,7 +437,7 @@ drive_param_t drive_params[26] = {0};
 __declspec(align(4096))
 #endif
 UINT8 mem[MAX_MEM + 15] 
-#ifdef __GCC__
+#ifdef __GNUC__
 __attribute__ ((aligned(4096)))
 #endif
 ;
