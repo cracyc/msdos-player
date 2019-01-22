@@ -42,6 +42,8 @@ void haxmvm_panic(const char *fmt, ...)
 #define SREG(x) state.x.selector
 #define DS _ds
 #define ES _es
+#define FS _fs
+#define GS _gs
 #define CS _cs
 #define SS _ss
 
@@ -52,12 +54,16 @@ void haxmvm_panic(const char *fmt, ...)
 #define i386_push16 PUSH16
 #define i386_pop16 POP16
 #define vtlb_free(x) {}
+#define I386_SREG segment_desc_t
 
 #define m_eip state._eip
 #define m_pc (state._eip + state._cs.base)
 #define CR(x) state._cr ##x
+#define DR(x) state._dr ##x
 #define m_gdtr state._gdt
 #define m_idtr state._idt
+#define m_ldtr state._ldt
+#define m_task state._tr
 
 #define HAXMVM_STR2(s) #s
 #define HAXMVM_STR(s) HAXMVM_STR2(s)
@@ -72,40 +78,13 @@ void haxmvm_panic(const char *fmt, ...)
 #define CLEAR_LINE 0
 #define INPUT_LINE_IRQ 1
 
-#include <pshpack1.h>
-// same as segment_desc_t but flags instead of ar
-struct I386_SREG {
-	uint16 selector;
-	uint16 _dummy;
-	uint32 limit;
-	uint64 base;
-	union {
-		struct {
-			uint32 type : 4;
-			uint32 desc : 1;
-			uint32 dpl : 2;
-			uint32 present : 1;
-			uint32 : 4;
-			uint32 available : 1;
-			uint32 long_mode : 1;
-			uint32 operand_size : 1;
-			uint32 granularity : 1;
-			uint32 null : 1;
-			uint32 : 15;
-		};
-		uint32 flags;
-	};
-	uint32 ipad;
-};
-#include <poppack.h>
-
 static HANDLE hSystem;
 static HANDLE hVM;
 static HANDLE hVCPU;
 static struct hax_tunnel *tunnel;
 static struct vcpu_state_t state;
 static char *iobuf;
-static UINT8 m_CF, m_SF, m_ZF, m_IF;
+static UINT8 m_CF, m_SF, m_ZF, m_IF, m_IOP1, m_IOP2, m_VM, m_NT;
 static UINT32 m_a20_mask = 0xffffffff;
 static UINT8 cpu_type = 6; // ppro
 static UINT8 cpu_step = 0x0f; // whatever
@@ -113,6 +92,29 @@ static UINT8 m_CPL = 0; // always check at cpl 0
 static UINT32 m_int6h_skip_eip = 0xffff0; // TODO: ???
 static UINT8 m_ext;
 static UINT32 m_prev_eip;
+static UINT16 saved_vector = -1;
+
+static void CALLBACK cpu_int_cb(LPVOID arg, DWORD low, DWORD high)
+{
+	DWORD bytes;
+	int irq = 0xf8;
+	if (tunnel->ready_for_interrupt_injection)
+		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, NULL, 0, &irq, sizeof(irq), &bytes, NULL);
+	else
+		tunnel->request_interrupt_window = 1;
+}
+
+static DWORD CALLBACK cpu_int_th(LPVOID arg)
+{
+	LARGE_INTEGER when;
+	HANDLE timer;
+
+	if (!(timer = CreateWaitableTimerA( NULL, FALSE, NULL ))) return 0;
+
+	when.u.LowPart = when.u.HighPart = 0;
+	SetWaitableTimer(timer, &when, 55, cpu_int_cb, arg, FALSE); // 55ms for default 8254 rate
+	for (;;) SleepEx(INFINITE, TRUE);
+}
 
 static BOOL cpu_init_haxm()
 {
@@ -221,6 +223,8 @@ static BOOL cpu_init_haxm()
 	iobuf = (char *)tunnel_info.io_va;
 	DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
 	state._idt.limit = 0x400;
+
+	CloseHandle(CreateThread(NULL, 0, cpu_int_th, NULL, 0, NULL));
 	return TRUE;
 }
 
@@ -379,16 +383,16 @@ static void i386_write_stack(UINT32 value, bool dword = false)
 	else
 		addr += REG16(SP);
 	translate_address(0, TRANSLATE_WRITE, &addr, NULL);
-	dword ? write_word(addr, value) : write_dword(addr, value);
+	dword ? write_dword(addr, value) : write_word(addr, value);
 }
 
 static void PUSH16(UINT16 val)
 {
-	i386_write_stack(val);
 	if(state._ss.operand_size)
 		REG32(ESP) -= 2;
 	else
 		REG16(SP) = (REG16(SP) - 2) & 0xffff;
+	i386_write_stack(val);
 }
 
 static UINT16 POP16()
@@ -467,8 +471,6 @@ static void i386_set_a20_line(int state)
 	// TODO: implement this with page mapping
 }
 
-static UINT16 saved_vector = -1;
-
 static void i386_trap(int irq, int irq_gate, int trap_level)
 {
 	DWORD bytes;
@@ -483,9 +485,7 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 
 static void i386_set_irq_line(int irqline, int state)
 {
-	if (!state)
-		tunnel->request_interrupt_window = 0;
-	else
+	if (state)
 	{
 		if (tunnel->ready_for_interrupt_injection)
 		{
@@ -505,7 +505,8 @@ static void cpu_execute_haxm()
 	DWORD bytes;
 	while (TRUE)
 	{
-		state._eflags = (state._eflags & ~0x2c1) | (m_IF << 9) | (m_SF << 7) | (m_ZF << 6) | m_CF;
+		state._eflags = (state._eflags & ~0x2e2c1) | (m_VM << 17) | (m_NT << 14) | (m_IOP2 << 13) | (m_IOP1 << 12)
+							   | (m_IF << 9) | (m_SF << 7) | (m_ZF << 6) | m_CF;
 		m_prev_eip = state._eip;
 		if (!DeviceIoControl(hVCPU, HAX_VCPU_SET_REGS, &state, sizeof(state), NULL, 0, &bytes, NULL))
 			HAXMVM_ERRF("SET_REGS");
@@ -516,6 +517,11 @@ static void cpu_execute_haxm()
 		m_ZF = (state._eflags & 0x40) ? 1 : 0;
 		m_SF = (state._eflags & 0x80) ? 1 : 0;
 		m_IF = (state._eflags & 0x200) ? 1 : 0;
+		m_IOP1 = (state._eflags & 0x1000) ? 1 : 0;
+		m_IOP2 = (state._eflags & 0x2000) ? 1 : 0;
+		m_NT = (state._eflags & 0x4000) ? 1 : 0;
+		m_VM = (state._eflags & 0x20000) ? 1 : 0;
+
 		switch(tunnel->_exit_status)
 		{
 			case HAX_EXIT_IO:
@@ -573,6 +579,9 @@ static void cpu_execute_haxm()
 						}
 					}
 				}
+#ifdef EXPORT_DEBUG_TO_FILE
+				fflush(fp_debug_log);
+#endif
 				continue;
 			case HAX_EXIT_FAST_MMIO:
 			{
@@ -617,8 +626,15 @@ static void cpu_execute_haxm()
 				translate_address(0, TRANSLATE_READ, &hltaddr, NULL);
 				if((hltaddr > IRET_TOP) && (hltaddr < (IRET_TOP + IRET_SIZE)))
 				{
+					int syscall = hltaddr - IRET_TOP;
 					i386_iret16();
-					msdos_syscall(hltaddr - IRET_TOP);
+					if(syscall == 0xf8)
+						hardware_update();
+					else
+						msdos_syscall(syscall);
+#ifdef EXPORT_DEBUG_TO_FILE
+					fflush(fp_debug_log);
+#endif
 					continue;
 				}
 				else if(hltaddr == 0xffff1)
@@ -635,6 +651,8 @@ static void cpu_execute_haxm()
 				haxmvm_panic("hypervisor is panicked!!!");
 				return;
 			case HAX_EXIT_INTERRUPT:
+				tunnel->request_interrupt_window = 0;
+				hardware_update();
 				if(saved_vector == -1)
 					continue; // ?
 				if(saved_vector == -2)

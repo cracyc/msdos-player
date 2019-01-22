@@ -70,8 +70,12 @@ union interruptibility_state_t {
 
 typedef union interruptibility_state_t interruptibility_state_t;
 
+// modified
 struct segment_desc_t {
-    uint16 selector;
+    union {
+        uint16 selector;
+	uint16 segment;
+    };
     uint16 _dummy;
     uint32 limit;
     uint64 base;
@@ -90,6 +94,7 @@ struct segment_desc_t {
                      uint32 : 15;
         };
         uint32 ar;
+	uint32 flags;
     };
     uint32 ipad;
 };

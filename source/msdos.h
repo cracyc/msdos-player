@@ -324,6 +324,7 @@ CRITICAL_SECTION putch_crit_sect;
 bool in_service = false;
 bool service_exit = false;
 DWORD main_thread_id;
+UINT32 done_ax;
 
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
@@ -719,10 +720,10 @@ static void vga_write(offs_t addr, UINT32 data, int size);
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
-#if defined(HAS_I386)
+#if defined(HAS_I386) || defined(USE_HAXM)
 #define SUPPORT_VCPI
 #endif
-#if defined(HAS_I286) || defined(HAS_I386)
+#if defined(HAS_I286) || defined(HAS_I386) || defined(USE_HAXM)
 #define SUPPORT_XMS
 //#define SUPPORT_HMA
 #endif

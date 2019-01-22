@@ -257,6 +257,8 @@ inline void maybe_idle()
 
 #ifndef USE_HAXM
 
+#define cpu_execute_i486 cpu_execute_i386
+
 /*****************************************************************************/
 /* src/emu/didisasm.h */
 
@@ -841,6 +843,7 @@ int m_exit = 0;
 	#define i386_get_flags()		get_flags()
 	#define i386_set_flags(x)		set_flags(x)
 	#define CR(x)				m_cr[x]
+	#define DR(x)				m_dr[x]
 #else
 	#define REG8(x)				m_regs.b[x]
 	#define REG16(x)			m_regs.w[x]
@@ -7176,6 +7179,7 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 	i386_call_far(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
+	done_ax = REG16(AX);
 	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
 }
 
@@ -7196,6 +7200,7 @@ void finish_service_loop()
 		}
 #endif
 		in_service = false;
+		REG16(AX) = done_ax;
 	}
 }
 #endif
@@ -9472,7 +9477,7 @@ DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 			key_recv >>= 16;
 		}
 	}
-	REG16(AX) = key_code & 0xffff;
+	done_ax = key_code & 0xffff;
 	key_code >>= 16;
 	key_recv >>= 16;
 	
@@ -10079,7 +10084,7 @@ inline void msdos_int_21h_00h()
 
 DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 {
-	REG8(AL) = msdos_getche();
+	done_ax = (done_ax & 0xff00) | msdos_getche();
 	ctrl_break_detected = ctrl_break_pressed;
 	
 #ifdef USE_SERVICE_THREAD
@@ -10157,7 +10162,7 @@ inline void msdos_int_21h_06h()
 
 DWORD WINAPI msdos_int_21h_07h_thread(LPVOID)
 {
-	REG8(AL) = msdos_getch();
+	done_ax = (done_ax & 0xff00) | msdos_getch();
 	
 #ifdef USE_SERVICE_THREAD
 	service_exit = true;
@@ -10181,7 +10186,7 @@ inline void msdos_int_21h_07h()
 
 DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 {
-	REG8(AL) = msdos_getch();
+	done_ax = (done_ax & 0xff00) | msdos_getch();
 	ctrl_break_detected = ctrl_break_pressed;
 	
 #ifdef USE_SERVICE_THREAD
@@ -11741,7 +11746,7 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 			msdos_putch(chr);
 		}
 	}
-	REG16(AX) = p;
+	done_ax = p;
 	
 #ifdef USE_SERVICE_THREAD
 	service_exit = true;
@@ -16904,14 +16909,20 @@ inline void msdos_int_67h_deh()
 		REG32(EBX) = CR(0);
 	} else if(REG8(AL) == 0x08) {
 		REG8(AH) = 0x00;
-		for(int i = 0; i < 8; i++) {
-			*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i) = m_dr[i];
-		}
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 0) = DR(0);
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 1) = DR(1);
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 2) = DR(2);
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 3) = DR(3);
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 6) = DR(6);
+		*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 7) = DR(7);
 	} else if(REG8(AL) == 0x09) {
 		REG8(AH) = 0x00;
-		for(int i = 0; i < 8; i++) {
-			m_dr[i] = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i);
-		}
+		DR(0) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 0);
+		DR(1) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 1);
+		DR(2) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 2);
+		DR(3) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 3);
+		DR(6) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 6);
+		DR(7) = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * 7);
 	} else if(REG8(AL) == 0x0a) {
 		REG8(AH) = 0x00;
 		REG16(BX) = pic[0].icw2;
@@ -16984,20 +16995,26 @@ inline void msdos_int_67h_deh()
 
 			i386_jmp_far(new_cs, new_eip);
 		} else {
-			CR(0) &= 0x7fffffff;
-			REG32(ESP) += 8;
-			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) &= ~(0x200);
-			*(UINT32 *)(mem + SREG_BASE(SS) + REG32(ESP) + 8) |= 0x23000;
-			i386_protected_mode_iret(1);
 			// just cheat and switch to real mode instead of v86 mode
 			// otherwise a GDT and IDT would need to be set up
 			// hopefully most vcpi programs are okay with that
-			CR(0) &= ~1;
+			CR(0) &= 0x7ffffffe;
+			UINT32 stack = SREG_BASE(SS) + REG32(ESP) + 16;
+			translate_address(0, TRANSLATE_READ, &stack, NULL);
+			UINT32 *stkptr = (UINT32 *)(mem + stack);
+			stkptr[2] &= ~(0x200);
+			REG32(ESP) = stkptr[3];
+			i386_sreg_load(stkptr[4], SS, NULL);
+			i386_sreg_load(stkptr[5], DS, NULL);
+			i386_sreg_load(stkptr[6], ES, NULL);
+			i386_sreg_load(stkptr[7], FS, NULL);
+			i386_sreg_load(stkptr[8], GS, NULL);
 			m_CPL = 0;
 			m_VM = 0;
 			m_IOP1 = m_IOP2 = 0;
 			m_idtr.base = 0;
 			m_idtr.limit = 0x400;
+			i386_jmp_far(stkptr[1], stkptr[0]);
 		}
 	} else {
 		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
