@@ -644,7 +644,7 @@ static void cpu_execute_haxm()
 #endif
 					continue;
 				}
-				else if(hltaddr == 0xffff1)
+				else if(hltaddr == 0xffff0)
 				{
 					m_exit = 1;
 					return;
