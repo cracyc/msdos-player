@@ -424,7 +424,7 @@ drive_param_t drive_params[26] = {0};
 
 // memory
 
-#if defined(HAS_I386)
+#if defined(HAS_I386) || defined(USE_HAXM)
 	#define ADDR_MASK 0xffffffff
 	#define MAX_MEM 0x2000000	/* 32MB */
 #elif defined(HAS_I286)

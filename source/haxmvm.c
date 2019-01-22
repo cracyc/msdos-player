@@ -463,7 +463,14 @@ static void i386_iret16()
 	state._eip = POP16();
 	state._cs.selector = POP16();
 	load_segdesc(state._cs);
-	state._eflags = POP16();
+	state._eflags = state._eflags & 0xffff0002 | POP16();
+	m_CF = state._eflags & 1;
+	m_ZF = (state._eflags & 0x40) ? 1 : 0;
+	m_SF = (state._eflags & 0x80) ? 1 : 0;
+	m_IF = (state._eflags & 0x200) ? 1 : 0;
+	m_IOP1 = (state._eflags & 0x1000) ? 1 : 0;
+	m_IOP2 = (state._eflags & 0x2000) ? 1 : 0;
+	m_NT = (state._eflags & 0x4000) ? 1 : 0;
 }
 
 static void i386_set_a20_line(int state)

@@ -248,9 +248,9 @@ typedef enum exit_status {
     HAX_EXIT_PAGEFAULT
 } exit_status;
 typedef enum exit_reason {
-    EXIT_INTERRUPT_WIN = 0x07,
-    EXIT_HLT = 0x0c,
-    EXIT_INTERRUPT = 0x30
+    VMX_EXIT_PENDING_INTERRUPT = 0x07,
+    VMX_EXIT_HLT = 0x0c,
+    VMX_EXIT_EPT_VIOLATION = 0x30
 } exit_reason;
 struct hax_tunnel {
     exit_reason _exit_reason;
