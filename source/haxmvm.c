@@ -99,7 +99,7 @@ static void CALLBACK cpu_int_cb(LPVOID arg, DWORD low, DWORD high)
 	DWORD bytes;
 	int irq = 0xf8;
 	if (tunnel->ready_for_interrupt_injection)
-		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, NULL, 0, &irq, sizeof(irq), &bytes, NULL);
+		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
 	else
 		tunnel->request_interrupt_window = 1;
 }
@@ -224,7 +224,9 @@ static BOOL cpu_init_haxm()
 	DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
 	state._idt.limit = 0x400;
 
-	CloseHandle(CreateThread(NULL, 0, cpu_int_th, NULL, 0, NULL));
+	HANDLE thread = CreateThread(NULL, 0, cpu_int_th, NULL, 0, NULL);
+	SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+	CloseHandle(thread);
 	return TRUE;
 }
 
@@ -463,7 +465,7 @@ static void i386_iret16()
 	state._eip = POP16();
 	state._cs.selector = POP16();
 	load_segdesc(state._cs);
-	state._eflags = state._eflags & 0xffff0002 | POP16();
+	state._eflags = (state._eflags & 0xffff0002) | POP16();
 	m_CF = state._eflags & 1;
 	m_ZF = (state._eflags & 0x40) ? 1 : 0;
 	m_SF = (state._eflags & 0x80) ? 1 : 0;
@@ -482,7 +484,7 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 {
 	DWORD bytes;
 	if (tunnel->ready_for_interrupt_injection)
-		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, NULL, 0, &irq, sizeof(irq), &bytes, NULL);
+		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
 	else
 	{
 		saved_vector = irq;
@@ -497,7 +499,7 @@ static void i386_set_irq_line(int irqline, int state)
 		if (tunnel->ready_for_interrupt_injection)
 		{
 			DWORD bytes, irq = pic_ack();
-			DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, NULL, 0, &irq, sizeof(irq), &bytes, NULL);
+			DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
 		}
 		else
 		{
@@ -625,13 +627,15 @@ static void cpu_execute_haxm()
 							break;
 					}
 				}
+				else if(hft->direction == 0)
+					hft->value = val;
 				continue;
 			}
 			case HAX_EXIT_HLT:
 			{
 				offs_t hltaddr = state._cs.base + state._eip - 1;
 				translate_address(0, TRANSLATE_READ, &hltaddr, NULL);
-				if((hltaddr > IRET_TOP) && (hltaddr < (IRET_TOP + IRET_SIZE)))
+				if((hltaddr >= IRET_TOP) && (hltaddr < (IRET_TOP + IRET_SIZE)))
 				{
 					int syscall = hltaddr - IRET_TOP;
 					i386_iret16();
@@ -659,12 +663,14 @@ static void cpu_execute_haxm()
 				return;
 			case HAX_EXIT_INTERRUPT:
 				tunnel->request_interrupt_window = 0;
-				hardware_update();
 				if(saved_vector == -1)
-					continue; // ?
+				{
+					hardware_update();
+					continue;
+				}
 				if(saved_vector == -2)
 					saved_vector = pic_ack();
-				DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, NULL, 0, &saved_vector, sizeof(saved_vector), &bytes, NULL);
+				DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &saved_vector, sizeof(saved_vector), NULL, 0, &bytes, NULL);
 				saved_vector = -1;
 				continue;
 			default:

@@ -387,7 +387,7 @@ UINT8 debugger_read_byte(offs_t byteaddress)
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE)))
 		return *(UINT8 *)(ems_addr(byteaddress - EMS_TOP));
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
 		return vga_read(byteaddress - VGA_VRAM_TOP, 1);
 #endif
 #if defined(HAS_I386)
@@ -437,7 +437,7 @@ UINT16 debugger_read_word(offs_t byteaddress)
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 1)))
 		return *(UINT16 *)(ems_addr(byteaddress - EMS_TOP));
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
 		return vga_read(byteaddress - VGA_VRAM_TOP, 2);
 #endif
 #if defined(HAS_I386)
@@ -474,7 +474,7 @@ UINT32 debugger_read_dword(offs_t byteaddress)
 	if((byteaddress > EMS_TOP) && (byteaddress < (EMS_TOP + EMS_SIZE - 3)))
 		return *(UINT32 *)(ems_addr(byteaddress - EMS_TOP));
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3))
 		return vga_read(byteaddress - VGA_VRAM_TOP, 4);
 #endif
 #if defined(HAS_I386)
@@ -659,7 +659,7 @@ void debugger_write_byte(offs_t byteaddress, UINT8 data)
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
 		return vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -716,7 +716,7 @@ void debugger_write_word(offs_t byteaddress, UINT16 data)
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
 		return vga_write(byteaddress - VGA_VRAM_TOP, data, 2);
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -763,7 +763,7 @@ void debugger_write_dword(offs_t byteaddress, UINT32 data)
 	if(byteaddress < MEMORY_END) {
 		*(UINT32 *)(mem + byteaddress) = data;
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	} else if((byteaddress > VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
 		return vga_write(byteaddress - VGA_VRAM_TOP, data, 4);
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -7381,7 +7381,9 @@ static void start_retrace_timer()
 {
 	if (running) return;
 	running = CreateEventA(NULL, TRUE, TRUE, NULL);
-	CloseHandle(CreateThread(NULL, 0, retrace_th, NULL, 0, NULL));
+	HANDLE thread = CreateThread(NULL, 0, retrace_th, NULL, 0, NULL);
+	SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
+	CloseHandle(thread);
 }
 
 static void init_graphics(int width, int height, int bitdepth, int pitch = 0)
