@@ -112,8 +112,15 @@ static DWORD CALLBACK cpu_int_th(LPVOID arg)
 	if (!(timer = CreateWaitableTimerA( NULL, FALSE, NULL ))) return 0;
 
 	when.u.LowPart = when.u.HighPart = 0;
-	SetWaitableTimer(timer, &when, 55, cpu_int_cb, arg, FALSE); // 55ms for default 8254 rate
+	SetWaitableTimer(timer, &when, 10, cpu_int_cb, arg, FALSE);
 	for (;;) SleepEx(INFINITE, TRUE);
+}
+
+static void vm_exit()
+{
+	CloseHandle(hVCPU);
+	CloseHandle(hVM);
+	CloseHandle(hSystem);
 }
 
 static BOOL cpu_init_haxm()
@@ -203,14 +210,30 @@ static BOOL cpu_init_haxm()
 		return FALSE;
 	}
 	ram.pa_start = UMB_TOP;
-	ram.size = MAX_MEM - UMB_TOP;
+	ram.size = 0x100000 - UMB_TOP;
 	ram.va = (uint64_t)mem + UMB_TOP;
 	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
 	{
 		HAXMVM_ERRF("SET_RAM");
 		return FALSE;
 	}
-	ram.pa_start = MEMORY_END; // TODO: adjust pages for ems and a20
+	ram.pa_start = 0x100000;
+	ram.size = 0x100000;
+	ram.va = (uint64_t)mem;
+	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
+	{
+		HAXMVM_ERRF("SET_RAM");
+		return FALSE;
+	}
+	ram.pa_start = 0x200000;
+	ram.size = MAX_MEM - 0x200000;
+	ram.va = (uint64_t)mem + 0x200000;
+	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
+	{
+		HAXMVM_ERRF("SET_RAM");
+		return FALSE;
+	}
+	ram.pa_start = MEMORY_END;
 	ram.size = UMB_TOP - MEMORY_END;
 	ram.va = 0;
 	ram.flags = HAX_RAM_INFO_INVALID;
@@ -227,19 +250,12 @@ static BOOL cpu_init_haxm()
 	HANDLE thread = CreateThread(NULL, 0, cpu_int_th, NULL, 0, NULL);
 	SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
 	CloseHandle(thread);
+	atexit(vm_exit);
 	return TRUE;
 }
 
 static void cpu_reset_haxm()
 {
-}
-
-static BOOL vm_exit()
-{
-	CloseHandle(hVCPU);
-	CloseHandle(hVM);
-	CloseHandle(hSystem);
-	return TRUE;
 }
 
 const int TRANSLATE_READ            = 0;        // translate for read
@@ -477,7 +493,16 @@ static void i386_iret16()
 
 static void i386_set_a20_line(int state)
 {
-	// TODO: implement this with page mapping
+	DWORD bytes;
+	struct hax_set_ram_info ram = { 0 };
+	ram.pa_start = 0x100000;
+	ram.size = 0x100000;
+	if(state)
+		ram.va = (uint64_t)mem + 0x100000;
+	else
+		ram.va = (uint64_t)mem;
+	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
+		HAXMVM_ERRF("SET_RAM");
 }
 
 static void i386_trap(int irq, int irq_gate, int trap_level)
