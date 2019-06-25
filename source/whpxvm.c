@@ -1,8 +1,6 @@
-// from winevdm by otya128, GPL2 licensed
+#include <WinHvPlatform.h>
 
-#include "haxmvm.h"
-
-void haxmvm_panic(const char *fmt, ...)
+void whpxvm_panic(const char *fmt, ...)
 {
 	va_list arg;
 	va_start(arg, fmt);
@@ -11,81 +9,155 @@ void haxmvm_panic(const char *fmt, ...)
 	ExitProcess(1);
 }
 
-#define REG8(x) state.x
-#define AL _al
-#define AH _ah
-#define BL _bl
-#define BH _bh
-#define CL _cl
-#define CH _ch
-#define DL _dl
-#define DH _dh
-#define REG16(x) state.x
-#define AX _ax
-#define BX _bx
-#define CX _cx
-#define DX _dx
-#define SP _sp
-#define BP _bp
-#define SI _si
-#define DI _di
-#define REG32(x) state.x
-#define EAX _eax
-#define EBX _ebx
-#define ECX _ecx
-#define EDX _edx
-#define ESP _esp
-#define EBP _ebp
-#define ESI _esi
-#define EDI _edi
-#define SREG_BASE(x) state.x.base
-#define SREG(x) state.x.selector
-#define DS _ds
-#define ES _es
-#define FS _fs
-#define GS _gs
-#define CS _cs
-#define SS _ss
+#define REG16(x) values[x].Reg16
+#define AX EAX
+#define BX EBX
+#define CX ECX
+#define DX EDX
+#define SP ESP
+#define BP EBP
+#define SI ESI
+#define DI EDI
+#define REG32(x) values[x].Reg32
+#define SREG_BASE(x) values[x].Segment.Base
+#define SREG(x) values[x].Segment.Selector
 
-#define i386_load_segment_descriptor(x) load_segdesc(state.x)
-#define i386_sreg_load(x, y, z) state.y.selector = x; load_segdesc(state.y)
-#define i386_get_flags() state._eflags
-#define i386_set_flags(x) state._eflags = x
+#define i386_load_segment_descriptor(x) load_segdesc((segment_desc *)&values[x].Segment)
+#define i386_sreg_load(x, y, z) values[y].Segment.Selector = x; load_segdesc((segment_desc *)&values[y].Segment)
+#define i386_get_flags() values[EFLAGS].Reg32
+#define i386_set_flags(x) values[EFLAGS].Reg32 = x
 #define i386_push16 PUSH16
 #define i386_pop16 POP16
 #define vtlb_free(x) {}
-#define I386_SREG segment_desc_t
+#define I386_SREG segment_desc
 
-#define m_eip state._eip
-#define m_pc (state._eip + state._cs.base)
-#define CR(x) state._cr ##x
-#define DR(x) state._dr ##x
-#define m_gdtr state._gdt
-#define m_idtr state._idt
-#define m_ldtr state._ldt
-#define m_task state._tr
+#define m_eip values[EIP].Reg32
+#define m_pc (values[EIP].Reg32 + values[CS].Segment.Base)
+#define CR(x) values[CR ##x].Reg32
+#define DR(x) values[DR ##x].Reg32
+#define m_gdtr (*(segment_desc *)&values[GDTR].Segment)
+#define m_idtr (*(segment_desc *)&values[IDTR].Segment)
+#define m_ldtr (*(segment_desc *)&values[LDTR].Segment)
+#define m_task (*(segment_desc *)&values[TR].Segment)
 
-#define HAXMVM_STR2(s) #s
-#define HAXMVM_STR(s) HAXMVM_STR2(s)
-#define HAXMVM_ERR fprintf(stderr, "%s ("  HAXMVM_STR(__LINE__)  ") HAXM err.\n", __FUNCTION__)
-#define HAXMVM_ERRF(fmt, ...) fprintf(stderr, "%s ("  HAXMVM_STR(__LINE__)  ") " fmt "\n", __FUNCTION__, ##__VA_ARGS__)
+#define WHPXVM_STR2(s) #s
+#define WHPXVM_STR(s) WHPXVM_STR2(s)
+#define WHPXVM_ERR fprintf(stderr, "%s ("  WHPXVM_STR(__LINE__)  ") WHPX err.\n", __FUNCTION__)
+#define WHPXVM_ERRF(fmt, ...) fprintf(stderr, "%s ("  WHPXVM_STR(__LINE__)  ") " fmt "\n", __FUNCTION__, ##__VA_ARGS__)
 
-#define PROTECTED_MODE (state._cr0 & 1)
-#define V8086_MODE (state._eflags & 0x20000)
+#define PROTECTED_MODE (values[CR0].Reg32 & 1)
+#define V8086_MODE (values[EFLAGS].Reg32 & 0x20000)
 
 #define I386OP(x) i386_ ##x
 #define HOLD_LINE 1
 #define CLEAR_LINE 0
 #define INPUT_LINE_IRQ 1
 
-static HANDLE hSystem;
-static HANDLE hVM;
-static HANDLE hVCPU;
-static struct hax_tunnel *tunnel;
-static struct vcpu_state_t state;
-static char *iobuf;
+typedef struct
+{
+	UINT64 base;
+	UINT32 limit;
+	union {
+		UINT16 selector;
+		UINT16 segment;
+	};
+
+	union
+	{
+		struct
+		{
+			UINT16 SegmentType:4;
+			UINT16 NonSystemSegment:1;
+			UINT16 DescriptorPrivilegeLevel:2;
+			UINT16 Present:1;
+			UINT16 Reserved:4;
+			UINT16 Available:1;
+			UINT16 Long:1;
+			UINT16 Default:1;
+			UINT16 Granularity:1;
+		};
+
+		UINT16 flags;
+    };
+} segment_desc;
+
+static const WHV_REGISTER_NAME whpx_register_names[] = {
+	WHvX64RegisterRax,
+	WHvX64RegisterRcx,
+	WHvX64RegisterRdx,
+	WHvX64RegisterRbx,
+	WHvX64RegisterRsp,
+	WHvX64RegisterRbp,
+	WHvX64RegisterRsi,
+	WHvX64RegisterRdi,
+	WHvX64RegisterRip,
+	WHvX64RegisterRflags,
+
+	WHvX64RegisterEs,
+	WHvX64RegisterCs,
+	WHvX64RegisterSs,
+	WHvX64RegisterDs,
+	WHvX64RegisterFs,
+	WHvX64RegisterGs,
+
+	WHvX64RegisterCr0,
+	WHvX64RegisterCr2,
+	WHvX64RegisterCr3,
+	WHvX64RegisterCr4,
+
+	WHvX64RegisterDr0,
+	WHvX64RegisterDr1,
+	WHvX64RegisterDr2,
+	WHvX64RegisterDr3,
+	WHvX64RegisterDr6,
+	WHvX64RegisterDr7,
+
+	WHvX64RegisterLdtr,
+	WHvX64RegisterTr,
+	WHvX64RegisterIdtr,
+	WHvX64RegisterGdtr
+};
+
+enum {
+	EAX,
+	ECX,
+	EDX,
+	EBX,
+	ESP,
+	EBP,
+	ESI,
+	EDI,
+	EIP,
+	EFLAGS,
+	ES,
+	CS,
+	SS,
+	DS,
+	FS,
+	GS,
+	CR0,
+	CR2,
+	CR3,
+	CR4,
+	DR0,
+	DR1,
+	DR2,
+	DR3,
+	DR6,
+	DR7,
+	LDTR,
+	TR,
+	IDTR,
+	GDTR
+};
+
+
+
+static WHV_PARTITION_HANDLE part;
+static WHV_REGISTER_VALUE values[RTL_NUMBER_OF(whpx_register_names)];
+static WHV_RUN_VP_EXIT_CONTEXT exitctxt;
 static UINT8 m_CF, m_SF, m_ZF, m_IF, m_IOP1, m_IOP2, m_VM, m_NT;
-static UINT32 m_a20_mask = 0xffffffff;
+static UINT32 m_a20_mask = 0xffefffff;
 static UINT8 cpu_type = 6; // ppro
 static UINT8 cpu_step = 0x0f; // whatever
 static UINT8 m_CPL = 0; // always check at cpl 0
@@ -93,17 +165,50 @@ static UINT32 m_int6h_skip_eip = 0xffff0; // TODO: ???
 static UINT8 m_ext;
 static UINT32 m_prev_eip;
 static int saved_vector = -1;
+static bool cpu_running = false;
 
 static int instr_emu(int cnt);
 
+enum {
+	AL,
+	AH,
+	BL,
+	BH,
+	CL,
+	CH,
+	DL,
+	DH
+};
+
+#define REG8(x) *_REG8(x)
+
+static inline UINT8 *_REG8(int reg)
+{
+	switch(reg)
+	{
+	case AL:
+		return &values[EAX].Reg8;
+	case AH:
+		return &values[EAX].Reg8 + 1;
+	case BL:
+		return &values[EBX].Reg8;
+	case BH:
+		return &values[EBX].Reg8 + 1;
+	case CL:
+		return &values[ECX].Reg8;
+	case CH:
+		return &values[ECX].Reg8 + 1;
+	case DL:
+		return &values[EDX].Reg8;
+	case DH:
+		return &values[EDX].Reg8 + 1;
+	}
+	return NULL;
+}
+
 static void CALLBACK cpu_int_cb(LPVOID arg, DWORD low, DWORD high)
 {
-/*	DWORD bytes;
-	int irq = 0xf8;
-	if (tunnel->ready_for_interrupt_injection)
-		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
-	else
-		tunnel->request_interrupt_window = 1;*/
+	WHvCancelRunVirtualProcessor(part, 0, 0);
 }
 
 static DWORD CALLBACK cpu_int_th(LPVOID arg)
@@ -114,141 +219,72 @@ static DWORD CALLBACK cpu_int_th(LPVOID arg)
 	if (!(timer = CreateWaitableTimerA( NULL, FALSE, NULL ))) return 0;
 
 	when.u.LowPart = when.u.HighPart = 0;
-	SetWaitableTimer(timer, &when, 10, cpu_int_cb, arg, FALSE);
+	SetWaitableTimer(timer, &when, 20, cpu_int_cb, arg, FALSE);
 	for (;;) SleepEx(INFINITE, TRUE);
 }
 
 static void vm_exit()
 {
-	CloseHandle(hVCPU);
-	CloseHandle(hVM);
-	CloseHandle(hSystem);
+	WHvDeleteVirtualProcessor(part, 0);
+	WHvDeletePartition(part);
 }
 
-static BOOL cpu_init_haxm()
+static BOOL cpu_init_whpx()
 {
-	hSystem = CreateFileW(L"\\\\.\\HAX", 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hSystem == INVALID_HANDLE_VALUE)
+	WHV_CAPABILITY cap;
+	UINT32 val;
+	HRESULT hr;
+	if ((hr = WHvGetCapability(WHvCapabilityCodeHypervisorPresent, &cap, sizeof(cap), &val)) || !cap.HypervisorPresent)
 	{
-		HAXMVM_ERRF("HAXM is not installed.");
+		WHPXVM_ERRF("CAPABILITY %lx", hr);
 		return FALSE;
 	}
-	struct hax_module_version ver;
-	DWORD bytes;
-	if (!DeviceIoControl(hSystem, HAX_IOCTL_VERSION, NULL, 0, &ver, sizeof(ver), &bytes, NULL))
+	if ((hr = WHvCreatePartition(&part)))
 	{
-		HAXMVM_ERRF("VERSION");
+		WHPXVM_ERRF("CREATE_PARTITION %lx", hr);
 		return FALSE;
 	}
-	struct hax_capabilityinfo cap;
-	if (!DeviceIoControl(hSystem, HAX_IOCTL_CAPABILITY, NULL, 0, &cap, sizeof(cap), &bytes, NULL))
+	val = 1;
+	if ((hr = WHvSetPartitionProperty(part, WHvPartitionPropertyCodeProcessorCount, &val, sizeof(UINT32))))
 	{
-		HAXMVM_ERRF("CAPABILITY");
+		WHPXVM_ERRF("SET_PROPERTY %lx", hr);
 		return FALSE;
 	}
-	if ((cap.wstatus & HAX_CAP_WORKSTATUS_MASK) == HAX_CAP_STATUS_NOTWORKING)
+	if ((hr = WHvSetupPartition(part)))
 	{
-		HAXMVM_ERRF("Hax is disabled\n");
+		WHPXVM_ERRF("Could not create vm. %lx", hr);
 		return FALSE;
 	}
-	if (!(cap.winfo & HAX_CAP_UG))
+	if ((hr = WHvCreateVirtualProcessor(part, 0, 0)))
 	{
-		HAXMVM_ERRF("CPU unrestricted guest support required");
+		WHPXVM_ERRF("could not create vcpu. %lx", hr);
 		return FALSE;
 	}
-	
-	uint32_t vm_id;
-	if (!DeviceIoControl(hSystem, HAX_IOCTL_CREATE_VM, NULL, 0, &vm_id, sizeof(vm_id), &bytes, NULL))
+	if ((hr = WHvMapGpaRange(part, mem, 0, MEMORY_END,
+				WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute)))
 	{
-		HAXMVM_ERRF("CREATE_VM");
+		WHPXVM_ERRF("SET_RAM %lx", hr);
 		return FALSE;
 	}
-	WCHAR buf[1000];
-	swprintf_s(buf, RTL_NUMBER_OF(buf), L"\\\\.\\hax_vm%02d", vm_id);
-	hVM = CreateFileW(buf, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hVM == INVALID_HANDLE_VALUE)
+	if ((hr = WHvMapGpaRange(part, mem + UMB_TOP, UMB_TOP, 0x100000 - UMB_TOP,
+				WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute)))
 	{
-		HAXMVM_ERRF("Could not create vm.");
+		WHPXVM_ERRF("SET_RAM %lx", hr);
 		return FALSE;
 	}
-	uint32_t vcpu_id;
-	struct hax_qemu_version verq;
-	/* 3~ enable fast mmio */
-	verq.cur_version = 1;
-	verq.least_version = 0;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_NOTIFY_QEMU_VERSION, &verq, sizeof(verq), NULL, 0, &bytes, NULL))
+	if ((hr = WHvMapGpaRange(part, mem, 0x100000, 0x100000,
+				WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute)))
 	{
-	}
-	vcpu_id = 1;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_VCPU_CREATE, &vcpu_id, sizeof(vcpu_id), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("could not create vcpu.");
+		WHPXVM_ERRF("SET_RAM %lx", hr);
 		return FALSE;
 	}
-	swprintf_s(buf, RTL_NUMBER_OF(buf), L"\\\\.\\hax_vm%02d_vcpu%02d", vm_id, vcpu_id);
-	hVCPU = CreateFileW(buf, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	struct hax_tunnel_info tunnel_info;
-	if (!DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_SETUP_TUNNEL, NULL, 0, &tunnel_info, sizeof(tunnel_info), &bytes, NULL))
+	if ((hr = WHvMapGpaRange(part, mem + 0x200000, 0x200000, MAX_MEM - 0x200000,
+				WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute)))
 	{
-		HAXMVM_ERRF("SETUP_TUNNEL");
+		WHPXVM_ERRF("SET_RAM %lx", hr);
 		return FALSE;
 	}
-	/* memory mapping */
-	struct hax_alloc_ram_info alloc_ram = { 0 };
-	struct hax_set_ram_info ram = { 0 };
-	alloc_ram.size = MAX_MEM; 
-	alloc_ram.va = (uint64_t)mem;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_ALLOC_RAM, &alloc_ram, sizeof(alloc_ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("ALLOC_RAM");
-		return FALSE;
-	}
-	ram.pa_start = 0;
-	ram.size = MEMORY_END;
-	ram.va = (uint64_t)mem;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("SET_RAM");
-		return FALSE;
-	}
-	ram.pa_start = UMB_TOP;
-	ram.size = 0x100000 - UMB_TOP;
-	ram.va = (uint64_t)mem + UMB_TOP;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("SET_RAM");
-		return FALSE;
-	}
-	ram.pa_start = 0x100000;
-	ram.size = 0x100000;
-	ram.va = (uint64_t)mem;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("SET_RAM");
-		return FALSE;
-	}
-	ram.pa_start = 0x200000;
-	ram.size = MAX_MEM - 0x200000;
-	ram.va = (uint64_t)mem + 0x200000;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("SET_RAM");
-		return FALSE;
-	}
-/*	ram.pa_start = MEMORY_END;
-	ram.size = UMB_TOP - MEMORY_END;
-	ram.va = 0;
-	ram.flags = HAX_RAM_INFO_INVALID;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-	{
-		HAXMVM_ERRF("SET_RAM");
-		return FALSE;
-	}*/
-	tunnel = (struct hax_tunnel*)tunnel_info.va;
-	iobuf = (char *)tunnel_info.io_va;
-	DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
-	state._idt.limit = 0x400;
-
+	WHvGetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
 	HANDLE thread = CreateThread(NULL, 0, cpu_int_th, NULL, 0, NULL);
 	SetThreadPriority(thread, THREAD_PRIORITY_ABOVE_NORMAL);
 	CloseHandle(thread);
@@ -256,7 +292,7 @@ static BOOL cpu_init_haxm()
 	return TRUE;
 }
 
-static void cpu_reset_haxm()
+static void cpu_reset_whpx()
 {
 }
 
@@ -268,17 +304,17 @@ const int TRANSLATE_FETCH           = 2;        // translate for instruction fet
 // dos programs likly never used three level page tables
 static int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
 {
-	if(!(state._cr0 & 0x80000000))
+	if(!(values[CR0].Reg32 & 0x80000000))
 		return TRUE;
 
-	UINT32 *pdbr = (UINT32 *)(mem + (state._cr3 * 0xfffff000));
+	UINT32 *pdbr = (UINT32 *)(mem + (values[CR3].Reg32 * 0xfffff000));
 	UINT32 a = *address;
 	UINT32 dir = (a >> 22) & 0x3ff;
 	UINT32 table = (a >> 12) & 0x3ff;
 	UINT32 page_dir = pdbr[dir];
 	if(page_dir & 1)
 	{
-		if((page_dir & 0x80) && (state._cr4 & 0x10))
+		if((page_dir & 0x80) && (values[CR4].Reg32 & 0x10))
 		{
 			*address = (page_dir & 0xffc00000) | (a & 0x003fffff);
 			return TRUE;
@@ -314,13 +350,13 @@ static BOOL i386_load_protected_mode_segment(I386_SREG *seg, UINT32 *desc)
 
 	if ( seg->selector & 0x4 )
 	{
-		base = state._ldt.base;
-		limit = state._ldt.limit;
+		base = values[GDTR].Segment.Base;
+		limit = values[GDTR].Segment.Limit;
 	}
 	else
 	{
-		base = state._gdt.base;
-		limit = state._gdt.limit;
+		base = values[LDTR].Segment.Base;
+		limit = values[LDTR].Segment.Limit;
 	}
 
 	entry = seg->selector & ~0x7;
@@ -349,45 +385,45 @@ static void i386_set_descriptor_accessed(UINT16 selector)
 		return;
 
 	if ( selector & 0x4 )
-		base = state._ldt.base;
+		base = values[LDTR].Segment.Base;
 	else
-		base = state._gdt.base;
+		base = values[GDTR].Segment.Base;
 
 	addr = base + (selector & ~7) + 5;
 	translate_address(0, TRANSLATE_READ, &addr, NULL); 
 	mem[addr] |= 1;
 }
 
-static void load_segdesc(segment_desc_t &seg)
+static void load_segdesc(segment_desc *seg)
 {
 	if (PROTECTED_MODE)
 	{
 		if (!V8086_MODE)
 		{
-			i386_load_protected_mode_segment((I386_SREG *)&seg, NULL);
-			if(seg.selector)
-				i386_set_descriptor_accessed(seg.selector);
+			i386_load_protected_mode_segment((I386_SREG *)seg, NULL);
+			if(seg->selector)
+				i386_set_descriptor_accessed(seg->selector);
 		}
 		else
 		{
-			seg.base = seg.selector << 4;
-			seg.limit = 0xffff;
-			seg.ar = (&seg == &state._cs) ? 0xfb : 0xf3;
+			seg->base = seg->selector << 4;
+			seg->limit = 0xffff;
+			seg->flags = (seg == (segment_desc *)&values[CS].Segment) ? 0xfb : 0xf3;
 		}
 	}
 	else
 	{
-		seg.base = seg.selector << 4;
-		if(&seg == &state._cs)
-			seg.ar = 0x93;
+		seg->base = seg->selector << 4;
+		if(seg == (segment_desc *)&values[CS].Segment)
+			seg->flags = 0x93;
 	}
 }
 
 // TODO: check ss limit
 static UINT32 i386_read_stack(bool dword = false)
 {
-	UINT32 addr = state._ss.base;
-	if(state._ss.operand_size)
+	UINT32 addr = values[SS].Segment.Base;
+	if(values[SS].Segment.Default)
 		addr += REG32(ESP);
 	else
 		addr += REG16(SP) & 0xffff;
@@ -397,8 +433,8 @@ static UINT32 i386_read_stack(bool dword = false)
 
 static void i386_write_stack(UINT32 value, bool dword = false)
 {
-	UINT32 addr = state._ss.base;
-	if(state._ss.operand_size)
+	UINT32 addr = values[SS].Segment.Base;
+	if(values[SS].Segment.Default)
 		addr += REG32(ESP);
 	else
 		addr += REG16(SP);
@@ -408,7 +444,7 @@ static void i386_write_stack(UINT32 value, bool dword = false)
 
 static void PUSH16(UINT16 val)
 {
-	if(state._ss.operand_size)
+	if(values[SS].Segment.Default)
 		REG32(ESP) -= 2;
 	else
 		REG16(SP) = (REG16(SP) - 2) & 0xffff;
@@ -418,7 +454,7 @@ static void PUSH16(UINT16 val)
 static UINT16 POP16()
 {
 	UINT16 val = i386_read_stack();
-	if(state._ss.operand_size)
+	if(values[SS].Segment.Default)
 		REG32(ESP) += 2;
 	else
 		REG16(SP) = (REG16(SP) + 2) & 0xffff;
@@ -433,185 +469,223 @@ static void i386_call_far(UINT16 selector, UINT32 address)
 	if (PROTECTED_MODE)
 	{
 		if (!V8086_MODE)
-			haxmvm_panic("i386_call_far in protected mode and !v86mode not supported");
+			whpxvm_panic("i386_call_far in protected mode and !v86mode not supported");
 		else
 		{
-			if((state._cr0 & 0x80000000) && (selector == DUMMY_TOP))  // check that this is mapped
+			if((values[CR0].Reg32 & 0x80000000) && (selector == DUMMY_TOP))  // check that this is mapped
 			{
 				UINT32 addr = DUMMY_TOP + address;
 				translate_address(0, TRANSLATE_READ, &addr, NULL);
 				if (address != (DUMMY_TOP + address))
-					haxmvm_panic("i386_call_far to dummy segment with page unmapped");
+					whpxvm_panic("i386_call_far to dummy segment with page unmapped");
 			}
 		}
 	}
-	PUSH16(state._cs.selector);
-	PUSH16(state._eip);
-	state._cs.selector = selector;
-	load_segdesc(state._cs);
-	state._eip = address;
+	PUSH16(values[CS].Segment.Selector);
+	PUSH16(values[EIP].Reg16);
+	values[CS].Segment.Selector = selector;
+	load_segdesc((segment_desc *)&values[CS].Segment);
+	values[EIP].Reg32 = address;
 }
 
 static void i386_jmp_far(UINT16 selector, UINT32 address)
 {
 	if (PROTECTED_MODE && !V8086_MODE)
-		haxmvm_panic("i386_jmp_far in protected mode and !v86mode not supported");
-	state._cs.selector = selector;
-	load_segdesc(state._cs);
-	state._eip = address;
+		whpxvm_panic("i386_jmp_far in protected mode and !v86mode not supported");
+	values[CS].Segment.Selector = selector;
+	load_segdesc((segment_desc *)&values[CS].Segment);
+	values[EIP].Reg32 = address;
 }
 
 static void i386_pushf()
 {
-	PUSH16(state._eflags);
+	PUSH16(values[EFLAGS].Reg16);
 }
 
 static void i386_retf16()
 {
 	if (PROTECTED_MODE && !V8086_MODE)
-		haxmvm_panic("i386_retf16 in protected mode and !v86mode not supported");
-	state._eip = POP16();
-	state._cs.selector = POP16();
-	load_segdesc(state._cs);
+		whpxvm_panic("i386_retf16 in protected mode and !v86mode not supported");
+	values[EIP].Reg32 = POP16();
+	values[CS].Segment.Selector = POP16();
+	load_segdesc((segment_desc *)&values[CS]);
 
 }
 
 static void i386_iret16()
 {
 	if (PROTECTED_MODE && !V8086_MODE)
-		haxmvm_panic("i386_iret16 in protected mode and !v86mode not supported");
-	state._eip = POP16();
-	state._cs.selector = POP16();
-	load_segdesc(state._cs);
-	state._eflags = (state._eflags & 0xffff0002) | POP16();
-	m_CF = state._eflags & 1;
-	m_ZF = (state._eflags & 0x40) ? 1 : 0;
-	m_SF = (state._eflags & 0x80) ? 1 : 0;
-	m_IF = (state._eflags & 0x200) ? 1 : 0;
-	m_IOP1 = (state._eflags & 0x1000) ? 1 : 0;
-	m_IOP2 = (state._eflags & 0x2000) ? 1 : 0;
-	m_NT = (state._eflags & 0x4000) ? 1 : 0;
-	m_VM = (state._eflags & 0x20000) ? 1 : 0;
+		whpxvm_panic("i386_iret16 in protected mode and !v86mode not supported");
+	values[EIP].Reg32 = POP16();
+	values[CS].Segment.Selector = POP16();
+	load_segdesc((segment_desc *)&values[CS].Segment);
+	values[EFLAGS].Reg32 = (values[EFLAGS].Reg32 & 0xffff0002) | POP16();
+	m_CF = values[EFLAGS].Reg16 & 1;
+	m_ZF = (values[EFLAGS].Reg16 & 0x40) ? 1 : 0;
+	m_SF = (values[EFLAGS].Reg16 & 0x80) ? 1 : 0;
+	m_IF = (values[EFLAGS].Reg16 & 0x200) ? 1 : 0;
+	m_IOP1 = (values[EFLAGS].Reg16 & 0x1000) ? 1 : 0;
+	m_IOP2 = (values[EFLAGS].Reg16 & 0x2000) ? 1 : 0;
+	m_NT = (values[EFLAGS].Reg16 & 0x4000) ? 1 : 0;
+	m_VM = (values[EFLAGS].Reg32 & 0x20000) ? 1 : 0;
 }
 
 static void i386_set_a20_line(int state)
 {
 	DWORD bytes;
-	struct hax_set_ram_info ram = { 0 };
-	ram.pa_start = 0x100000;
-	ram.size = 0x100000;
+	UINT8 *addr;
 	if(state)
-		ram.va = (uint64_t)mem + 0x100000;
+	{
+		m_a20_mask = 0xffffffff;
+		addr = mem + 0x100000;
+	}
 	else
-		ram.va = (uint64_t)mem;
-	if (!DeviceIoControl(hVM, HAX_VM_IOCTL_SET_RAM, &ram, sizeof(ram), NULL, 0, &bytes, NULL))
-		HAXMVM_ERRF("SET_RAM");
+	{
+		m_a20_mask = 0xffefffff;
+		addr = mem;
+	}
+	if (WHvMapGpaRange(part, addr, 0x100000, 0x100000,
+				WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite | WHvMapGpaRangeFlagExecute))
+		WHPXVM_ERRF("SET_RAM");
+}
+
+static void int_inject(int vector)
+{
+	const WHV_REGISTER_NAME reg = WHvRegisterPendingInterruption;
+	WHV_REGISTER_VALUE extint = {0};
+	extint.PendingInterruption.InterruptionType = WHvX64PendingInterrupt;
+	extint.PendingInterruption.InterruptionPending = 1;
+	extint.PendingInterruption.InterruptionVector = vector;
+	WHvSetVirtualProcessorRegisters(part, 0, &reg, 1, &extint);
+}
+
+static void req_int()
+{
+	const WHV_REGISTER_NAME reg = WHvX64RegisterDeliverabilityNotifications;
+	WHV_REGISTER_VALUE delnot = {0};
+	delnot.DeliverabilityNotifications.InterruptNotification = 1;
+	WHvSetVirtualProcessorRegisters(part, 0, &reg, 1, &delnot);
 }
 
 static void i386_trap(int irq, int irq_gate, int trap_level)
 {
-	DWORD bytes;
-	if (tunnel->ready_for_interrupt_injection)
-		DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
+	if(exitctxt.VpContext.Rflags & 0x200)
+		int_inject(irq);
 	else
 	{
 		saved_vector = irq;
-		tunnel->request_interrupt_window = 1;
+		req_int();
 	}
 }
 
 static void i386_set_irq_line(int irqline, int state)
 {
-	if (state)
+	if(!state)
 	{
-		if (tunnel->ready_for_interrupt_injection)
-		{
-			DWORD bytes, irq = pic_ack();
-			DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &irq, sizeof(irq), NULL, 0, &bytes, NULL);
-		}
-		else
-		{
-			saved_vector = -2;
-			tunnel->request_interrupt_window = 1;
-		}
+		if (saved_vector == -2)
+			saved_vector = -1;
+		return;
+	}
+	if(exitctxt.VpContext.Rflags & 0x200)
+		int_inject(pic_ack());
+	else
+	{
+		saved_vector = -2;
+		req_int();
 	}
 }
 
-static void cpu_execute_haxm()
+static void cpu_execute_whpx()
 {
 	DWORD bytes;
-	state._eflags = (state._eflags & ~0x272c1) | (m_VM << 17) | (m_NT << 14) | (m_IOP2 << 13) | (m_IOP1 << 12)
+	values[EFLAGS].Reg32 = (values[EFLAGS].Reg32) | (m_VM << 17) | (m_NT << 14) | (m_IOP2 << 13) | (m_IOP1 << 12)
 		| (m_IF << 9) | (m_SF << 7) | (m_ZF << 6) | m_CF;
-	if (!DeviceIoControl(hVCPU, HAX_VCPU_SET_REGS, &state, sizeof(state), NULL, 0, &bytes, NULL))
-		HAXMVM_ERRF("SET_REGS");
+	if(WHvSetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values))
+		WHPXVM_ERRF("SET_REGS");
 	while (TRUE)
 	{
-		if (!DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_RUN, NULL, 0, NULL, 0, &bytes, NULL))
+		cpu_running = true;
+		if (WHvRunVirtualProcessor(part, 0, (void *)&exitctxt, sizeof(WHV_RUN_VP_EXIT_CONTEXT)))
 			return;
+		cpu_running = false;
 
-		switch(tunnel->_exit_status)
+		switch(exitctxt.ExitReason)
 		{
-			case HAX_EXIT_IO:
-				if(tunnel->io._port == 0xf7)
+			case WHvRunVpExitReasonX64IoPortAccess:
+			{
+				WHV_X64_IO_PORT_ACCESS_CONTEXT *io = &exitctxt.IoPortAccess;
+				WHV_REGISTER_VALUE vals[] = {{0}, {0}, {0}};
+				const WHV_REGISTER_NAME regs[] = {WHvX64RegisterRip, WHvX64RegisterRax, WHvX64RegisterRflags};
+#ifdef EXPORT_DEBUG_TO_FILE
+				values[EIP].Reg64 = exitctxt.VpContext.Rip;
+				values[CS].Segment = exitctxt.VpContext.Cs;
+#endif
+				vals[0].Reg32 = exitctxt.VpContext.Rip + exitctxt.VpContext.InstructionLength;
+				vals[1].Reg64 = io->Rax;
+				vals[2].Reg64 = exitctxt.VpContext.Rflags;
+				if(io->PortNumber == 0xf7)
 				{
-					DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
-					m_SF = (state._eflags & 0x80) ? 1 : 0;
+					Sleep(0);
+					values[EAX].Reg64 = io->Rax;
+					m_SF = (exitctxt.VpContext.Rflags & 0x80) ? 1 : 0;
 					write_io_byte(0xf7, 0);
-					state._eflags = (state._eflags & ~0x80) | (m_SF << 7);
-					DeviceIoControl(hVCPU, HAX_VCPU_SET_REGS, &state, sizeof(state), NULL, 0, &bytes, NULL);
-					continue;
+					vals[1].Reg64 = values[EAX].Reg64;
+					vals[2].Reg64 = (exitctxt.VpContext.Rflags & ~0x80) | (m_SF << 7);
 				}
-				if(!(tunnel->io._flags & 1))
+				else if(!(io->AccessInfo.StringOp))
 				{
-					char* addr = iobuf;
-					switch(tunnel->io._size)
+					switch(io->AccessInfo.AccessSize)
 					{
 						case 1:
-							if(tunnel->io._direction == HAX_IO_IN)
-								*(UINT8 *)addr = read_io_byte(tunnel->io._port);
+							if(!io->AccessInfo.IsWrite)
+								vals[1].Reg64 = (io->Rax & ~0xff) | read_io_byte(io->PortNumber);
 							else
-								write_io_byte(tunnel->io._port, *(UINT8 *)addr);
+								write_io_byte(io->PortNumber, io->Rax);
 							break;
 						case 2:
-							if(tunnel->io._direction == HAX_IO_IN)
-								*(UINT16 *)addr = read_io_word(tunnel->io._port);
+							if(!io->AccessInfo.IsWrite)
+								vals[1].Reg64 = (io->Rax & ~0xffff) | read_io_word(io->PortNumber);
 							else
-								write_io_word(tunnel->io._port, *(UINT16 *)addr);
+								write_io_word(io->PortNumber, io->Rax);
 							break;
 						case 4:
-							if(tunnel->io._direction == HAX_IO_IN)
-								*(UINT32 *)addr = read_io_dword(tunnel->io._port);
+							if(!io->AccessInfo.IsWrite)
+								vals[1].Reg64 = read_io_dword(io->PortNumber);
 							else
-								write_io_dword(tunnel->io._port, *(UINT32 *)addr);
+								write_io_dword(io->PortNumber, io->Rax);
 							break;
 					}
 				}
 				else
 				{
-					char* addr = iobuf;
-					addr += tunnel->io._df ? tunnel->io._count * tunnel->io._size : 0;
-					for(int i = 0; i < tunnel->io._count; i++)
+					UINT32 count = io->AccessInfo.RepPrefix ? io->Rcx : 1;
+					UINT8 *addr;
+					if(!io->AccessInfo.IsWrite)
+						addr = mem + io->Ds.Base + io->Rsi;
+					else
+						addr = mem + io->Es.Base + io->Rdi;
+					for(int i = 0; i < count; i++)
 					{
-						addr = tunnel->io._df ? addr - tunnel->io._size : addr + tunnel->io._size;
-						switch(tunnel->io._size)
+						addr = exitctxt.VpContext.Rflags & 0x400 ? addr - io->AccessInfo.AccessSize : addr + io->AccessInfo.AccessSize;
+						switch(io->AccessInfo.AccessSize)
 						{
 							case 1:
-								if(tunnel->io._direction == HAX_IO_OUT)
-									write_io_byte(tunnel->io._port, *(UINT8 *)addr);
+								if(!io->AccessInfo.IsWrite)
+									write_io_byte(io->PortNumber, *addr);
 								else
-									*(UINT8 *)addr = read_io_byte(tunnel->io._port);
+									*addr = read_io_byte(io->PortNumber);
 								break;
 							case 2:
-								if(tunnel->io._direction == HAX_IO_OUT)
-									write_io_word(tunnel->io._port, *(UINT16 *)addr);
+								if(!io->AccessInfo.IsWrite)
+									write_io_word(io->PortNumber, *(UINT16 *)addr);
 								else
-									*(UINT16 *)addr = read_io_word(tunnel->io._port);
+									*(UINT16 *)addr = read_io_word(io->PortNumber);
 								break;
 							case 4:
-								if(tunnel->io._direction == HAX_IO_OUT)
-									write_io_dword(tunnel->io._port, *(UINT32 *)addr);
+								if(!io->AccessInfo.IsWrite)
+									write_io_dword(io->PortNumber, *(UINT32 *)addr);
 								else
-									*(UINT32 *)addr = read_io_dword(tunnel->io._port);
+									*(UINT32 *)addr = read_io_dword(io->PortNumber);
 								break;
 						}
 					}
@@ -619,73 +693,31 @@ static void cpu_execute_haxm()
 #ifdef EXPORT_DEBUG_TO_FILE
 				fflush(fp_debug_log);
 #endif
-				continue;
-			case HAX_EXIT_FAST_MMIO:
-			{
-				// this doesn't work due to the way haxm emulates instructions
-				// without it though, programs that use vga are unusably slow
-				//DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
-				//instr_emu(0);
-				//DeviceIoControl(hVCPU, HAX_VCPU_SET_REGS, &state, sizeof(state), NULL, 0, &bytes, NULL);
-				//continue;
-				
-				struct hax_fastmmio *hft = (struct hax_fastmmio *)iobuf;
-				UINT32 val = (hft->direction == 1) ? hft->value : 0;
-				UINT32 gpaw = (hft->direction == 2) ? hft->gpa2 : hft->gpa;
-				if(hft->direction != 1)
-				{
-					switch(hft->size)
-					{
-						case 1:
-							val = read_byte(hft->gpa);
-							break;
-						case 2:
-							val = read_word(hft->gpa);
-							break;
-						case 4:
-							val = read_dword(hft->gpa);
-							break;
-					}
-				}
-				if(hft->direction != 0)
-				{
-					switch(hft->size)
-					{
-						case 1:
-							write_byte(gpaw, val);
-							break;
-						case 2:
-							write_word(gpaw, val);
-							break;
-						case 4:
-							write_dword(gpaw, val);
-							break;
-					}
-				}
-				else if(hft->direction == 0)
-					hft->value = val;
+				WHvSetVirtualProcessorRegisters(part, 0, regs, 3, vals);
 				continue;
 			}
-			case HAX_EXIT_HLT:
+			case WHvRunVpExitReasonMemoryAccess:
+				WHvGetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
+				instr_emu(0);
+				WHvSetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
+				continue;
+			case WHvRunVpExitReasonX64Halt:
 			{
-				DeviceIoControl(hVCPU, HAX_VCPU_GET_REGS, NULL, 0, &state, sizeof(state), &bytes, NULL);
-				offs_t hltaddr = state._cs.base + state._eip - 1;
+				offs_t hltaddr = exitctxt.VpContext.Cs.Base + exitctxt.VpContext.Rip - 1;
 				translate_address(0, TRANSLATE_READ, &hltaddr, NULL);
 				if((hltaddr >= IRET_TOP) && (hltaddr < (IRET_TOP + IRET_SIZE)))
 				{
 					int syscall = hltaddr - IRET_TOP;
+					WHvGetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
 					i386_iret16();
-					if(syscall == 0xf8)
-						hardware_update();
-					else
-						msdos_syscall(syscall);
+					msdos_syscall(syscall);
 #ifdef EXPORT_DEBUG_TO_FILE
 					fflush(fp_debug_log);
 #endif
-					state._eflags = (state._eflags & ~0x272c1) | (m_VM << 17) | (m_NT << 14) |
+					values[EFLAGS].Reg32 = (values[EFLAGS].Reg32 & ~0x272c1) | (m_VM << 17) | (m_NT << 14) |
 						(m_IOP2 << 13) | (m_IOP1 << 12) | (m_IF << 9) | (m_SF << 7) | (m_ZF << 6) | m_CF;
-					if (!DeviceIoControl(hVCPU, HAX_VCPU_SET_REGS, &state, sizeof(state), NULL, 0, &bytes, NULL))
-						HAXMVM_ERRF("SET_REGS");
+					if(WHvSetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values))
+						WHPXVM_ERRF("SET_REGS");
 					continue;
 				}
 				else if(hltaddr == 0xffff0)
@@ -696,25 +728,21 @@ static void cpu_execute_haxm()
 				else if((hltaddr >= DUMMY_TOP) && (hltaddr < 0xffff0))
 					return;
 				else 
-					haxmvm_panic("handle hlt");
+					whpxvm_panic("handle hlt");
 			}
-			case HAX_EXIT_STATECHANGE:
-				haxmvm_panic("hypervisor is panicked!!!");
-				return;
-			case HAX_EXIT_INTERRUPT:
-				tunnel->request_interrupt_window = 0;
+			case WHvRunVpExitReasonX64InterruptWindow:
 				if(saved_vector == -1)
-				{
-					hardware_update();
 					continue;
-				}
-				if(saved_vector == -2)
-					saved_vector = pic_ack();
-				DeviceIoControl(hVCPU, HAX_VCPU_IOCTL_INTERRUPT, &saved_vector, sizeof(saved_vector), NULL, 0, &bytes, NULL);
+				int_inject(saved_vector == -2 ? pic_ack() : saved_vector);
 				saved_vector = -1;
 				continue;
+			case WHvRunVpExitReasonCanceled:
+				if(exitctxt.CancelReason.CancelReason != WhvRunVpCancelReasonUser)
+					whpxvm_panic("execution canceled");
+				hardware_update();
+				continue;
 			default:
-				HAXMVM_ERRF("exit status: %d %04x:%04x", tunnel->_exit_status, state._cs.selector, state._eip);
+				WHPXVM_ERRF("exit status: %x %04x:%08x", exitctxt.ExitReason, exitctxt.VpContext.Cs.Selector, (UINT32)exitctxt.VpContext.Rip);
 				return;
 		}
 	}
@@ -753,13 +781,13 @@ static void cpu_execute_haxm()
 #define DF  (1 << 10)
 #define OF  (1 << 11)
 
-static unsigned char *MEM_BASE32(uint32 address)
+static unsigned char *MEM_BASE32(UINT32 address)
 {
 	translate_address(0, TRANSLATE_READ, &address, NULL); // TODO: check for page fault
 	return mem + address;
 }
 
-typedef uint32 dosaddr_t;
+typedef UINT32 dosaddr_t;
 #define DOSADDR_REL(x) (x - mem)
 
 /* assembly macros to speed up x86 on x86 emulation: the cpu helps us in setting
@@ -820,7 +848,7 @@ typedef struct x86_emustate {
 	unsigned operand_size;
 	unsigned prefixes, rep;
 	unsigned (*instr_binary)(unsigned op, unsigned op1,
-			unsigned op2, uint32 *eflags);
+			unsigned op2, UINT32 *eflags);
 	unsigned (*instr_read)(const unsigned char *addr);
 	void (*instr_write)(unsigned char *addr, unsigned u);
 	unsigned char *(*modrm)(unsigned char *cp, x86_emustate *x86, int *inst_len);
@@ -860,7 +888,7 @@ static unsigned char it[0x100] = {
 static unsigned seg, lock, rep;
 static int count;
 #define vga_base VGA_VRAM_TOP
-#define vga_end (vga_base + EMS_TOP)
+#define vga_end VGA_VRAM_LAST + 1
 
 static unsigned arg_len(unsigned char *, int);
 
@@ -870,8 +898,8 @@ static unsigned instr_read_dword(const unsigned char *addr);
 static void instr_write_byte(unsigned char *addr, unsigned char u);
 static void instr_write_word(unsigned char *addr, unsigned u);
 static void instr_write_dword(unsigned char *addr, unsigned u);
-static void instr_flags(unsigned val, unsigned smask, uint32 *eflags);
-static unsigned instr_shift(unsigned op, int op1, unsigned op2, unsigned size, uint32 *eflags);
+static void instr_flags(unsigned val, unsigned smask, UINT32 *eflags);
+static unsigned instr_shift(unsigned op, int op1, unsigned op2, unsigned size, UINT32 *eflags);
 static unsigned char *sib(unsigned char *cp, x86_emustate *x86, int *inst_len);
 static unsigned char *modrm32(unsigned char *cp, x86_emustate *x86, int *inst_len);
 static unsigned char *modrm16(unsigned char *cp, x86_emustate *x86, int *inst_len);
@@ -880,15 +908,15 @@ static void dump_x86_regs()
 {
 	instr_deb(
 			"eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x ebp=%08x esp=%08x\n",
-			state._eax, state._ebx, state._ecx, state._edx, state._esi, state._edi, state._ebp, state._esp
+			values[EAX].Reg32, values[EBX].Reg32, values[ECX].Reg32, values[EDX].Reg32, values[ESI].Reg32, values[EDI].Reg32, values[EBP].Reg32, values[ESP].Reg32
 		 );
 	instr_deb(
 			"eip=%08x cs=%04x/%08x ds=%04x/%08x es=%04x/%08x d=%u c=%u p=%u a=%u z=%u s=%u o=%u\n",
-			state._eip, state._cs.selector, (uint32)state._cs.base, state._ds.selector,
-			(uint32)state._ds.base, state._es.selector, (uint32)state._es.base,
-			(state._eflags&DF)>>10,
-			state._eflags&CF,(state._eflags&PF)>>2,(state._eflags&AF)>>4,
-			(state._eflags&ZF)>>6,(state._eflags&SF)>>7,(state._eflags&OF)>>11
+			values[EIP].Reg32, values[CS].Segment.Selector, (UINT32)values[CS].Segment.Base, values[DS].Segment.Selector,
+			(UINT32)values[DS].Segment.Base, values[ES].Segment.Selector, (UINT32)values[ES].Segment.Base,
+			(values[EFLAGS].Reg32&DF)>>10,
+			values[EFLAGS].Reg32&CF,(values[EFLAGS].Reg32&PF)>>2,(values[EFLAGS].Reg32&AF)>>4,
+			(values[EFLAGS].Reg32&ZF)>>6,(values[EFLAGS].Reg32&SF)>>7,(values[EFLAGS].Reg32&OF)>>11
 		 );
 }
 
@@ -896,6 +924,7 @@ static int instr_len(unsigned char *p, int is_32)
 {
 	unsigned u, osp, asp;
 	unsigned char *p0 = p;
+	int type;
 #ifdef ENABLE_DEBUG_LOG
 	unsigned char *p1 = p;
 #endif
@@ -940,17 +969,25 @@ static int instr_len(unsigned char *p, int is_32)
 	if(*p == 0x0f) {
 		p++;
 		switch (*p) {
+			case 0xa4:
+				type = 8;
+				break;
 			case 0xba:
 				p += 4;
 				return p - p0;
+			case 0xb6:
+				type = 7;
+				break;
 			default:
 				/* not yet */
 				instr_deb("unsupported instr_len %x %x\n", p[0], p[1]);
 				return 0;
 		}
 	}
+	else
+		type = it[*p];
 
-	switch(it[*p]) {
+	switch(type) {
 		case 1:	/* op-code */
 			p += 1; break;
 
@@ -1063,7 +1100,7 @@ static unsigned char instr_read_byte(const unsigned char *address)
 
 	if(addr >= vga_base && addr < vga_end) {
 		count = COUNT;
-		u = vga_read(addr, 1);
+		u = read_byte(addr);
 	}
 	else {
 		u = *address;
@@ -1087,7 +1124,7 @@ static unsigned instr_read_word(const unsigned char *address)
 	dosaddr_t addr = DOSADDR_REL(address);
 	if(addr >= vga_base && addr < vga_end) {
 		count = COUNT;
-		u = vga_read(addr, 2);
+		u = read_word(addr);
 	} else
 		u = *(unsigned short *)address;
 
@@ -1109,7 +1146,7 @@ static unsigned instr_read_dword(const unsigned char *address)
 	dosaddr_t addr = DOSADDR_REL(address);
 	if(addr >= vga_base && addr < vga_end) {
 		count = COUNT;
-		u = vga_read(addr, 4);
+		u = read_dword(addr);
 	} else
 		u = *(unsigned *)address;
 
@@ -1126,7 +1163,7 @@ static void instr_write_byte(unsigned char *address, unsigned char u)
 
 	if(addr >= vga_base && addr < vga_end) {
 		count = COUNT;
-		vga_write(addr, u, 1);
+		write_byte(addr, u);
 	}
 	else {
 		*address = u;
@@ -1148,7 +1185,7 @@ static void instr_write_word(unsigned char *address, unsigned u)
 
 	if(dst >= vga_base && dst < vga_end) {
 		count = COUNT;
-		vga_write(dst, u, 2);
+		write_word(dst, u);
 	}
 	else
 		*(unsigned short *)address = u;
@@ -1171,7 +1208,7 @@ static void instr_write_dword(unsigned char *address, unsigned u)
 
 	if(dst >= vga_base && dst < vga_end) {
 		count = COUNT;
-		vga_write(dst, u, 4);
+		write_dword(dst, u);
 	}
 	else
 		*(unsigned *)address = u;
@@ -1184,7 +1221,7 @@ static void instr_write_dword(unsigned char *address, unsigned u)
 
 /* We use the cpu itself to set the flags, which is easy since we are
    emulating x86 on x86. */
-static void instr_flags(unsigned val, unsigned smask, uint32 *eflags)
+static void instr_flags(unsigned val, unsigned smask, UINT32 *eflags)
 {
 	uintptr_t flags;
 
@@ -1198,7 +1235,7 @@ static void instr_flags(unsigned val, unsigned smask, uint32 *eflags)
 /* 6 logical and arithmetic "RISC" core functions
    follow
    */
-static unsigned char instr_binary_byte(unsigned char op, unsigned char op1, unsigned char op2, uint32 *eflags)
+static unsigned char instr_binary_byte(unsigned char op, unsigned char op1, unsigned char op2, UINT32 *eflags)
 {
 	uintptr_t flags;
 
@@ -1234,7 +1271,7 @@ static unsigned char instr_binary_byte(unsigned char op, unsigned char op1, unsi
 	return 0;
 }
 
-static unsigned instr_binary_word(unsigned op, unsigned op1, unsigned op2, uint32 *eflags)
+static unsigned instr_binary_word(unsigned op, unsigned op1, unsigned op2, UINT32 *eflags)
 {
 	uintptr_t flags;
 	unsigned short opw1 = op1;
@@ -1272,7 +1309,7 @@ static unsigned instr_binary_word(unsigned op, unsigned op1, unsigned op2, uint3
 	return 0;
 }
 
-static unsigned instr_binary_dword(unsigned op, unsigned op1, unsigned op2, uint32 *eflags)
+static unsigned instr_binary_dword(unsigned op, unsigned op1, unsigned op2, UINT32 *eflags)
 {
 	uintptr_t flags;
 
@@ -1308,7 +1345,7 @@ static unsigned instr_binary_dword(unsigned op, unsigned op1, unsigned op2, uint
 	return 0;
 }
 
-static unsigned instr_shift(unsigned op, int op1, unsigned op2, unsigned size, uint32 *eflags)
+static unsigned instr_shift(unsigned op, int op1, unsigned op2, unsigned size, UINT32 *eflags)
 {
 	unsigned result, carry;
 	unsigned width = size * 8;
@@ -1370,57 +1407,57 @@ static unsigned instr_shift(unsigned op, int op1, unsigned op2, unsigned size, u
 
 static inline void push(unsigned val, x86_emustate *x86)
 {
-	if (state._ss.operand_size)
-		state._esp -= x86->operand_size;
+	if (values[SS].Segment.Default)
+		values[ESP].Reg32 -= x86->operand_size;
 	else
-		state._sp -= x86->operand_size;
+		values[ESP].Reg16 -= x86->operand_size;
 	i386_write_stack(val, x86->operand_size == 4);
 }
 
 static inline void pop(unsigned *val, x86_emustate *x86)
 {
 	*val = i386_read_stack(x86->operand_size == 4);
-	if (state._ss.operand_size)
-		state._esp += x86->operand_size;
+	if (values[SS].Segment.Default)
+		values[ESP].Reg32 += x86->operand_size;
 	else
-		state._sp += x86->operand_size;
+		values[ESP].Reg16 += x86->operand_size;
 }
 
 /* helper functions/macros reg8/reg/sreg/sib/modrm16/32 for instr_sim
    for address and register decoding */
 enum { es_INDEX, cs_INDEX, ss_INDEX, ds_INDEX, fs_INDEX, gs_INDEX };
 
-#define reg8(reg) ((uint8 *)&state._regs[reg & 3] + ((reg & 4) ? 1 : 0))
-#define reg(reg) ((uint32 *)&state._regs[reg & 7])
+#define reg8(reg) ((UINT8 *)&values[reg & 3].Reg32 + ((reg & 4) ? 1 : 0))
+#define reg(reg) ((UINT32 *)&values[reg & 7].Reg32)
 #define sreg_idx(reg) (es_INDEX+((reg)&0x7))
 
-static uint16 *sreg(int reg)
+static UINT16 *sreg(int reg)
 {
-	segment_desc_t *sreg;
+	WHV_X64_SEGMENT_REGISTER *sreg;
 	switch(reg & 7)
 	{
 		case es_INDEX:
-			sreg = &state._es;
+			sreg = &values[ES].Segment;
 			break;
 		case cs_INDEX:
-			sreg = &state._cs;
+			sreg = &values[CS].Segment;
 			break;
 		case ss_INDEX:
-			sreg = &state._ss;
+			sreg = &values[SS].Segment;
 			break;
 		case ds_INDEX:
-			sreg = &state._ds;
+			sreg = &values[DS].Segment;
 			break;
 		case fs_INDEX:
-			sreg = &state._fs;
+			sreg = &values[FS].Segment;
 			break;
 		case gs_INDEX:
-			sreg = &state._gs;
+			sreg = &values[GS].Segment;
 			break;
 		default:
 			return 0;
 	}
-	return &sreg->selector;
+	return &sreg->Selector;
 }
 
 static unsigned char *sib(unsigned char *cp, x86_emustate *x86, int *inst_len)
@@ -1448,10 +1485,10 @@ static unsigned char *sib(unsigned char *cp, x86_emustate *x86, int *inst_len)
 		case 0x07:
 			return MEM_BASE32(addr + *reg(cp[2]) + x86->seg_base);
 		case 0x04: /* esp */
-			return MEM_BASE32(addr + state._esp + x86->seg_ss_base);
+			return MEM_BASE32(addr + values[ESP].Reg32 + x86->seg_ss_base);
 		case 0x05:
 			if (cp[1] >= 0x40)
-				return MEM_BASE32(addr + state._ebp + x86->seg_ss_base);
+				return MEM_BASE32(addr + values[EBP].Reg32 + x86->seg_ss_base);
 			else {
 				*inst_len += 4;
 				return MEM_BASE32(addr + R_DWORD(cp[3]) + x86->seg_base);
@@ -1484,26 +1521,26 @@ static unsigned char *modrm16(unsigned char *cp, x86_emustate *x86, int *inst_le
 
 	switch(cp[1] & 0x07) { /* decode address */
 		case 0x00:
-			return MEM_BASE32(((addr + state._ebx + state._esi) & 0xffff) + x86->seg_base);
+			return MEM_BASE32(((addr + values[EBX].Reg32 + values[ESI].Reg32) & 0xffff) + x86->seg_base);
 		case 0x01:
-			return MEM_BASE32(((addr + state._ebx + state._edi) & 0xffff) + x86->seg_base);
+			return MEM_BASE32(((addr + values[EBX].Reg32 + values[EDI].Reg32) & 0xffff) + x86->seg_base);
 		case 0x02:
-			return MEM_BASE32(((addr + state._ebp + state._esi) & 0xffff) + x86->seg_ss_base);
+			return MEM_BASE32(((addr + values[EBP].Reg32 + values[ESI].Reg32) & 0xffff) + x86->seg_ss_base);
 		case 0x03:
-			return MEM_BASE32(((addr + state._ebp + state._edi) & 0xffff) + x86->seg_ss_base);
+			return MEM_BASE32(((addr + values[EBP].Reg32 + values[EDI].Reg32) & 0xffff) + x86->seg_ss_base);
 		case 0x04:
-			return MEM_BASE32(((addr + state._esi) & 0xffff) + x86->seg_base);
+			return MEM_BASE32(((addr + values[ESI].Reg32) & 0xffff) + x86->seg_base);
 		case 0x05:
-			return MEM_BASE32(((addr + state._edi) & 0xffff) + x86->seg_base);
+			return MEM_BASE32(((addr + values[EDI].Reg32) & 0xffff) + x86->seg_base);
 		case 0x06:
 			if (cp[1] >= 0x40)
-				return MEM_BASE32(((addr + state._ebp) & 0xffff) + x86->seg_ss_base);
+				return MEM_BASE32(((addr + values[EBP].Reg32) & 0xffff) + x86->seg_ss_base);
 			else {
 				*inst_len += 2;
 				return MEM_BASE32(R_WORD(cp[2]) + x86->seg_base);
 			}
 		case 0x07:
-			return MEM_BASE32(((addr + state._ebx) & 0xffff) + x86->seg_base);
+			return MEM_BASE32(((addr + values[EBX].Reg32) & 0xffff) + x86->seg_base);
 	}
 	return 0; /* keep gcc happy */
 }
@@ -1541,7 +1578,7 @@ static unsigned char *modrm32(unsigned char *cp, x86_emustate *x86, int *inst_le
 			return sib(cp, x86, inst_len);
 		case 0x05:
 			if (cp[1] >= 0x40)
-				return MEM_BASE32(addr + state._ebp + x86->seg_ss_base);
+				return MEM_BASE32(addr + values[EBP].Reg32 + x86->seg_ss_base);
 			else {
 				*inst_len += 4;
 				return MEM_BASE32(R_DWORD(cp[2]) + x86->seg_base);
@@ -1552,35 +1589,35 @@ static unsigned char *modrm32(unsigned char *cp, x86_emustate *x86, int *inst_le
 
 static int handle_prefixes(x86_emustate *x86)
 {
-	unsigned eip = state._eip;
+	unsigned eip = values[EIP].Reg32;
 	int prefix = 0;
 
 	for (;; eip++) {
-		switch(*(unsigned char *)MEM_BASE32(state._cs.base + eip)) {
+		switch(*(unsigned char *)MEM_BASE32(values[CS].Segment.Base + eip)) {
 			/* handle (some) prefixes */
 			case 0x26:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._es.base;
+				x86->seg_base = x86->seg_ss_base = values[ES].Segment.Base;
 				break;
 			case 0x2e:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._cs.base;
+				x86->seg_base = x86->seg_ss_base = values[CS].Segment.Base;
 				break;
 			case 0x36:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._ss.base;
+				x86->seg_base = x86->seg_ss_base = values[SS].Segment.Base;
 				break;
 			case 0x3e:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._ds.base;
+				x86->seg_base = x86->seg_ss_base = values[DS].Segment.Base;
 				break;
 			case 0x64:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._fs.base;
+				x86->seg_base = x86->seg_ss_base = values[FS].Segment.Base;
 				break;
 			case 0x65:
 				prefix++;
-				x86->seg_base = x86->seg_ss_base = state._gs.base;
+				x86->seg_base = x86->seg_ss_base = values[GS].Segment.Base;
 				break;
 			case 0x66:
 				prefix++;
@@ -1617,9 +1654,9 @@ static int handle_prefixes(x86_emustate *x86)
 
 static void prepare_x86(x86_emustate *x86)
 {
-	x86->seg_base = state._ds.base;
-	x86->seg_ss_base = state._ss.base;
-	x86->address_size = x86->operand_size = (state._cs.operand_size + 1) * 2;
+	x86->seg_base = values[DS].Segment.Base;
+	x86->seg_ss_base = values[SS].Segment.Base;
+	x86->address_size = x86->operand_size = (values[CS].Segment.Default + 1) * 2;
 
 	x86->modrm = (x86->address_size == 4 ? modrm32 : modrm16);
 	x86->rep = REP_NONE;
@@ -1646,18 +1683,18 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 	unsigned char *ptr;
 	uintptr_t flags;
 	int i, i2, inst_len;
-	int loop_inc = (state._eflags&DF) ? -1 : 1;		// make it a char ?
-	unsigned eip = state._eip;
-	unsigned cs = state._cs.base;
+	int loop_inc = (values[EFLAGS].Reg32&DF) ? -1 : 1;		// make it a char ?
+	unsigned eip = values[EIP].Reg32;
+	unsigned cs = values[CS].Segment.Base;
 
 #ifdef ENABLE_DEBUG_TRACE
 	{
 		int refseg;
 		char frmtbuf[256];
 		const UINT8 *oprom = mem + cs + eip;
-		refseg = state._cs.selector;
+		refseg = values[CS].Segment.Selector;
 		dump_x86_regs();
-		i386_dasm_one(frmtbuf, eip, oprom, state._cs.operand_size ? 32 : 16);
+		i386_dasm_one(frmtbuf, eip, oprom, values[CS].Segment.Default ? 32 : 16);
 		instr_deb("%s, %d\n", frmtbuf, count);
 	}
 #endif
@@ -1673,217 +1710,217 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		/* TODO: All these rep instruction can still be heavily optimized */
 		i2 = 0;
 		if (x86->address_size == 4) {
-			repcount = state._ecx;
+			repcount = values[ECX].Reg32;
 			switch(*(unsigned char *)MEM_BASE32(cs + eip)) {
 				case 0xa4:         /* rep movsb */
 #ifdef ENABLE_DEBUG_LOG
-					if (state._es.base >= 0xa0000 && state._es.base < 0xb0000 &&
+					if (values[ES].Segment.Base >= 0xa0000 && values[ES].Segment.Base < 0xb0000 &&
 							x86->seg_base >= 0xa0000 && x86->seg_base < 0xb0000)
-						instr_deb("VGAEMU: Video to video memcpy, ecx=%x\n", state._ecx);
+						instr_deb("VGAEMU: Video to video memcpy, ecx=%x\n", values[ECX].Reg32);
 					/* TODO: accelerate this using memcpy */
 #endif
 					for (i = 0, und = 0; und < repcount;
 							i += loop_inc, und++)
-						instr_write_byte(MEM_BASE32(state._es.base + state._edi+i),
-								instr_read_byte(MEM_BASE32(x86->seg_base + state._esi+i)));
-					state._edi += i;
-					state._esi += i;
+						instr_write_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32+i),
+								instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32+i)));
+					values[EDI].Reg32 += i;
+					values[ESI].Reg32 += i;
 					break;
 
 				case 0xa5:         /* rep movsw/d */
 					/* TODO: accelerate this using memcpy */
 					for (i = 0, und = 0; und < repcount;
 							i += loop_inc*x86->operand_size, und++)
-						x86->instr_write(MEM_BASE32(state._es.base + state._edi+i),
-								x86->instr_read(MEM_BASE32(x86->seg_base + state._esi+i)));
-					state._edi += i;
-					state._esi += i;
+						x86->instr_write(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32+i),
+								x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg32+i)));
+					values[EDI].Reg32 += i;
+					values[ESI].Reg32 += i;
 					break;
 
 				case 0xa6:         /* rep cmpsb */
 					for (i = 0, und = 0; und < repcount;) {
-						instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + state._esi+i)),
-								instr_read_byte(MEM_BASE32(state._es.base + state._edi+i)), &state._eflags);
+						instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32+i)),
+								instr_read_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32+i)), &values[EFLAGS].Reg32);
 						i += loop_inc;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0xf2 repnz 0xf3 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0xf2 repnz 0xf3 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._edi += i;
-					state._esi += i;
+					values[EDI].Reg32 += i;
+					values[ESI].Reg32 += i;
 					break;
 
 				case 0xa7:         /* rep cmpsw/d */
 					for (i = 0, und = 0; und < repcount;) {
-						x86->instr_binary(7, instr_read_byte(MEM_BASE32(x86->seg_base + state._esi+i)),
-								x86->instr_read(MEM_BASE32(state._es.base + state._edi+i)), &state._eflags);
+						x86->instr_binary(7, instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32+i)),
+								x86->instr_read(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32+i)), &values[EFLAGS].Reg32);
 						i += loop_inc*x86->operand_size;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0xf2 repnz 0xf3 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0xf2 repnz 0xf3 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._edi += i;
-					state._esi += i;
+					values[EDI].Reg32 += i;
+					values[ESI].Reg32 += i;
 					break;
 
 				case 0xaa: /* rep stosb */
 					/* TODO: accelerate this using memset */
-					for (und2 = state._edi, und = 0; und < repcount;
+					for (und2 = values[EDI].Reg32, und = 0; und < repcount;
 							und2 += loop_inc, und++)
-						instr_write_byte(MEM_BASE32(state._es.base + und2), state._al);
-					state._edi = und2;
+						instr_write_byte(MEM_BASE32(values[ES].Segment.Base + und2), values[EAX].Reg8);
+					values[EDI].Reg32 = und2;
 					break;
 
 				case 0xab: /* rep stosw */
 					/* TODO: accelerate this using memset */
-					for (und2 = state._edi, und = 0; und < repcount;
+					for (und2 = values[EDI].Reg32, und = 0; und < repcount;
 							und2 += loop_inc*x86->operand_size, und++)
-						x86->instr_write(MEM_BASE32(state._es.base + und2), state._eax);
-					state._edi = und2;
+						x86->instr_write(MEM_BASE32(values[ES].Segment.Base + und2), values[EAX].Reg32);
+					values[EDI].Reg32 = und2;
 					break;
 
 				case 0xae: /* rep scasb */
-					for (und2 = state._edi, und = 0; und < repcount;) {
-						instr_binary_byte(7, state._al, instr_read_byte(MEM_BASE32(state._es.base + und2)), &state._eflags);
+					for (und2 = values[EDI].Reg32, und = 0; und < repcount;) {
+						instr_binary_byte(7, values[EAX].Reg8, instr_read_byte(MEM_BASE32(values[ES].Segment.Base + und2)), &values[EFLAGS].Reg32);
 						und2 += loop_inc;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._edi = und2;
+					values[EDI].Reg32 = und2;
 					break;
 
 				case 0xaf: /* rep scasw */
-					for (und2 = state._edi, und = 0; und < repcount;) {
-						x86->instr_binary(7, state._eax, x86->instr_read(MEM_BASE32(state._es.base + und2)), &state._eflags);
+					for (und2 = values[EDI].Reg32, und = 0; und < repcount;) {
+						x86->instr_binary(7, values[EAX].Reg32, x86->instr_read(MEM_BASE32(values[ES].Segment.Base + und2)), &values[EFLAGS].Reg32);
 						und2 += loop_inc*x86->operand_size;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._edi = und2;
+					values[EDI].Reg32 = und2;
 					break;
 
 				default:
 					return 0;
 			}
 
-			state._ecx -= und;
-			if (state._ecx > 0 && i2 == 0) return 1;
+			values[ECX].Reg32 -= und;
+			if (values[ECX].Reg32 > 0 && i2 == 0) return 1;
 
 		} else {
-			repcount = state._cx;
+			repcount = values[ECX].Reg16;
 			switch(*(unsigned char *)MEM_BASE32(cs + eip)) {
 				case 0xa4:         /* rep movsb */
 #ifdef ENABLE_DEBUG_LOG
-					if (state._es.base >= 0xa0000 && state._es.base < 0xb0000 &&
+					if (values[ES].Segment.Base >= 0xa0000 && values[ES].Segment.Base < 0xb0000 &&
 							x86->seg_base >= 0xa0000 && x86->seg_base < 0xb0000)
-						instr_deb("VGAEMU: Video to video memcpy, cx=%x\n", state._cx);
+						instr_deb("VGAEMU: Video to video memcpy, cx=%x\n", values[ECX].Reg16);
 					/* TODO: accelerate this using memcpy */
 #endif
 					for (i = 0, und = 0; und < repcount;
 							i += loop_inc, und++)
-						instr_write_byte(MEM_BASE32(state._es.base + ((state._edi+i) & 0xffff)),
-								instr_read_byte(MEM_BASE32(x86->seg_base + ((state._esi+i) & 0xffff))));
-					state._di += i;
-					state._si += i;
+						instr_write_byte(MEM_BASE32(values[ES].Segment.Base + ((values[EDI].Reg32+i) & 0xffff)),
+								instr_read_byte(MEM_BASE32(x86->seg_base + ((values[ESI].Reg32+i) & 0xffff))));
+					values[EDI].Reg16 += i;
+					values[ESI].Reg16 += i;
 					break;
 
 				case 0xa5:         /* rep movsw/d */
 					/* TODO: accelerate this using memcpy */
 					for (i = 0, und = 0; und < repcount;
 							i += loop_inc*x86->operand_size, und++)
-						x86->instr_write(MEM_BASE32(state._es.base + ((state._edi+i) & 0xffff)),
-								x86->instr_read(MEM_BASE32(x86->seg_base + ((state._esi+i) & 0xffff))));
-					state._di += i;
-					state._si += i;
+						x86->instr_write(MEM_BASE32(values[ES].Segment.Base + ((values[EDI].Reg32+i) & 0xffff)),
+								x86->instr_read(MEM_BASE32(x86->seg_base + ((values[ESI].Reg32+i) & 0xffff))));
+					values[EDI].Reg16 += i;
+					values[ESI].Reg16 += i;
 					break;
 
 				case 0xa6: /* rep?z cmpsb */
 					for (i = 0, und = 0; und < repcount;) {
-						instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + ((state._esi+i) & 0xffff))),
-								instr_read_byte(MEM_BASE32(state._es.base + ((state._edi+i) & 0xffff))), &state._eflags);
+						instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + ((values[ESI].Reg32+i) & 0xffff))),
+								instr_read_byte(MEM_BASE32(values[ES].Segment.Base + ((values[EDI].Reg32+i) & 0xffff))), &values[EFLAGS].Reg32);
 						i += loop_inc;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._di += i;
-					state._si += i;
+					values[EDI].Reg16 += i;
+					values[ESI].Reg16 += i;
 					break;
 
 				case 0xa7: /* rep?z cmpsw/d */
 					for (i = 0, und = 0; und < repcount;) {
-						x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + ((state._esi+i) & 0xffff))),
-								x86->instr_read(MEM_BASE32(state._es.base + ((state._edi+i) & 0xffff))), &state._eflags);
+						x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + ((values[ESI].Reg32+i) & 0xffff))),
+								x86->instr_read(MEM_BASE32(values[ES].Segment.Base + ((values[EDI].Reg32+i) & 0xffff))), &values[EFLAGS].Reg32);
 						i += loop_inc * x86->operand_size;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._di += i;
-					state._si += i;
+					values[EDI].Reg16 += i;
+					values[ESI].Reg16 += i;
 					break;
 
 				case 0xaa: /* rep stosb */
 					/* TODO: accelerate this using memset */
-					for (uns = state._di, und = 0; und < repcount;
+					for (uns = values[EDI].Reg16, und = 0; und < repcount;
 							uns += loop_inc, und++)
-						instr_write_byte(MEM_BASE32(state._es.base + uns), state._al);
-					state._di = uns;
+						instr_write_byte(MEM_BASE32(values[ES].Segment.Base + uns), values[EAX].Reg8);
+					values[EDI].Reg16 = uns;
 					break;
 
 				case 0xab: /* rep stosw/d */
 					/* TODO: accelerate this using memset */
-					for (uns = state._di, und = 0; und < repcount;
+					for (uns = values[EDI].Reg16, und = 0; und < repcount;
 							uns += loop_inc*x86->operand_size, und++)
-						x86->instr_write(MEM_BASE32(state._es.base + uns), (x86->operand_size == 4 ? state._eax : state._ax));
-					state._di = uns;
+						x86->instr_write(MEM_BASE32(values[ES].Segment.Base + uns), (x86->operand_size == 4 ? values[EAX].Reg32 : values[EAX].Reg16));
+					values[EDI].Reg16 = uns;
 					break;
 
 				case 0xae: /* rep scasb */
-					for (uns = state._di, und = 0; und < repcount;) {
-						instr_binary_byte(7, state._al, instr_read_byte(MEM_BASE32(state._es.base + uns)), &state._eflags);
+					for (uns = values[EDI].Reg16, und = 0; und < repcount;) {
+						instr_binary_byte(7, values[EAX].Reg8, instr_read_byte(MEM_BASE32(values[ES].Segment.Base + uns)), &values[EFLAGS].Reg32);
 						uns += loop_inc;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._di = uns;
+					values[EDI].Reg16 = uns;
 					break;
 
 				case 0xaf: /* rep scasw/d */
-					for (uns = state._di, und = 0; und < repcount;) {
-						x86->instr_binary(7, state._ax, instr_read_word(MEM_BASE32(state._es.base + uns)), &state._eflags);
+					for (uns = values[EDI].Reg16, und = 0; und < repcount;) {
+						x86->instr_binary(7, values[EAX].Reg16, instr_read_word(MEM_BASE32(values[ES].Segment.Base + uns)), &values[EFLAGS].Reg32);
 						uns += loop_inc*x86->operand_size;
 						und++;
-						if (((state._eflags & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
+						if (((values[EFLAGS].Reg32 & ZF) >> 6) != x86->rep) /* 0x0 repnz 0x1 repz */ {
 							i2 = 1; /* we're fine now! */
 							break;
 						}
 					}
-					state._di = uns;
+					values[EDI].Reg16 = uns;
 					break;
 
 				default:
 					return 0;
 			}
-			state._cx -= und;
-			if (state._cx > 0 && i2 == 0) return 1;
+			values[ECX].Reg16 -= und;
+			if (values[ECX].Reg16 > 0 && i2 == 0) return 1;
 		}
 		eip++;
 	}
@@ -1898,7 +1935,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x38:		/* cmp r/m8,reg8 */
 			ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			uc = instr_binary_byte((*(unsigned char *)MEM_BASE32(cs + eip))>>3,
-					instr_read_byte(ptr), *reg8((*(unsigned char *)MEM_BASE32(cs + eip + 1))>>3), &state._eflags);
+					instr_read_byte(ptr), *reg8((*(unsigned char *)MEM_BASE32(cs + eip + 1))>>3), &values[EFLAGS].Reg32);
 			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38)
 				instr_write_byte(ptr, uc);
 			eip += 2 + inst_len; break;
@@ -1912,7 +1949,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x31:		/* xor r/m16,reg16 */
 		case 0x39:		/* cmp r/m16,reg16 */
 			ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
-			und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip)>>3, x86->instr_read(ptr), *reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3), &state._eflags);
+			und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip)>>3, x86->instr_read(ptr), *reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3), &values[EFLAGS].Reg32);
 			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38)
 				x86->instr_write(ptr, und);
 			eip += 2 + inst_len; break;
@@ -1928,7 +1965,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			reg_8 = reg8(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3);
 			uc = instr_binary_byte(*(unsigned char *)MEM_BASE32(cs + eip)>>3,
 					*reg_8, instr_read_byte(x86->modrm(MEM_BASE32(cs + eip),
-							x86, &inst_len)), &state._eflags);
+							x86, &inst_len)), &values[EFLAGS].Reg32);
 			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) *reg_8 = uc;
 			eip += 2 + inst_len; break;
 
@@ -1943,7 +1980,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3);
 			und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip)>>3,
 					*dstreg, x86->instr_read(x86->modrm(MEM_BASE32(cs + eip), x86,
-							&inst_len)), &state._eflags);
+							&inst_len)), &values[EFLAGS].Reg32);
 			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) {
 				if (x86->operand_size == 2)
 					R_WORD(*dstreg) = und;
@@ -1960,9 +1997,9 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x2c:		/* sub al,imm8 */
 		case 0x34:		/* xor al,imm8 */
 		case 0x3c:		/* cmp al,imm8 */
-			uc = instr_binary_byte(*(unsigned char *)MEM_BASE32(cs + eip)>>3, state._al,
-					*(unsigned char *)MEM_BASE32(cs + eip + 1), &state._eflags);
-			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) state._al = uc;
+			uc = instr_binary_byte(*(unsigned char *)MEM_BASE32(cs + eip)>>3, values[EAX].Reg8,
+					*(unsigned char *)MEM_BASE32(cs + eip + 1), &values[EFLAGS].Reg32);
+			if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) values[EAX].Reg8 = uc;
 			eip += 2; break;
 
 		case 0x05:		/* add ax,imm16 */
@@ -1974,12 +2011,12 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x35:		/* xor ax,imm16 */
 		case 0x3d:		/* cmp ax,imm16 */
 			und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip)>>3,
-					state._eax, R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), &state._eflags);
+					values[EAX].Reg32, R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), &values[EFLAGS].Reg32);
 			if (x86->operand_size == 2) {
-				if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) state._ax = und;
+				if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) values[EAX].Reg16 = und;
 				eip += 3;
 			} else {
-				if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) state._eax = und;
+				if (*(unsigned char *)MEM_BASE32(cs + eip)<0x38) values[EAX].Reg32 = und;
 				eip += 5;
 			}
 			break;
@@ -1995,73 +2032,89 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			if (pmode || x86->operand_size == 4)
 				return 0;
 			else {
-				unsigned int seg = state._es.selector;
+				unsigned int seg = values[ES].Segment.Selector;
 				pop(&seg, x86);
-				state._es.selector = seg;
-				state._es.base = seg << 4;
+				values[ES].Segment.Selector = seg;
+				values[ES].Segment.Base = seg << 4;
 				eip++;
 			}
 			break;
 
-			/* don't do 0x0f (extended instructions) for now */
+		case 0x0f:
+			switch (*(unsigned char *)MEM_BASE32(cs + eip + 1))
+			{
+				case 0xb6:
+					if (x86->operand_size == 2)
+						R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3)) =
+							instr_read_byte(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
+					else
+						*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3) =
+							instr_read_byte(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
+					eip += inst_len + 3; break;
+				default:
+					return 0;
+
+			}
+			break;
+
 			/* 0x17 pop ss is a bit dangerous and rarely used */
 
 		case 0x1f:		/* pop ds */
 			if (pmode || x86->operand_size == 4)
 				return 0;
 			else {
-				unsigned int seg = state._ds.selector;
+				unsigned int seg = values[DS].Segment.Selector;
 				pop(&seg, x86);
-				state._ds.selector = seg;
-				state._ds.base = seg << 4;
+				values[DS].Segment.Selector = seg;
+				values[DS].Segment.Base = seg << 4;
 				eip++;
 			}
 			break;
 
 		case 0x27:  /* daa */
-			if (((state._al & 0xf) > 9) || (state._eflags&AF)) {
-				state._al += 6;
-				state._eflags |= AF;
+			if (((values[EAX].Reg8 & 0xf) > 9) || (values[EFLAGS].Reg32&AF)) {
+				values[EAX].Reg8 += 6;
+				values[EFLAGS].Reg32 |= AF;
 			} else
-				state._eflags &= ~AF;
-			if ((state._al > 0x9f) || (state._eflags&CF)) {
-				state._al += 0x60;
-				instr_flags(state._al, 0x80, &state._eflags);
-				state._eflags |= CF;
+				values[EFLAGS].Reg32 &= ~AF;
+			if ((values[EAX].Reg8 > 0x9f) || (values[EFLAGS].Reg32&CF)) {
+				values[EAX].Reg8 += 0x60;
+				instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
+				values[EFLAGS].Reg32 |= CF;
 			} else
-				instr_flags(state._al, 0x80, &state._eflags);
+				instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
 			eip++; break;
 
 		case 0x2f:  /* das */
-			if (((state._al & 0xf) > 9) || (state._eflags&AF)) {
-				state._al -= 6;
-				state._eflags |= AF;
+			if (((values[EAX].Reg8 & 0xf) > 9) || (values[EFLAGS].Reg32&AF)) {
+				values[EAX].Reg8 -= 6;
+				values[EFLAGS].Reg32 |= AF;
 			} else
-				state._eflags &= ~AF;
-			if ((state._al > 0x9f) || (state._eflags&CF)) {
-				state._al -= 0x60;
-				instr_flags(state._al, 0x80, &state._eflags);
-				state._eflags |= CF;
+				values[EFLAGS].Reg32 &= ~AF;
+			if ((values[EAX].Reg8 > 0x9f) || (values[EFLAGS].Reg32&CF)) {
+				values[EAX].Reg8 -= 0x60;
+				instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
+				values[EFLAGS].Reg32 |= CF;
 			} else
-				instr_flags(state._al, 0x80, &state._eflags);
+				instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
 			eip++; break;
 
 		case 0x37:  /* aaa */
-			if (((state._al & 0xf) > 9) || (state._eflags&AF)) {
-				state._al = (state._eax+6) & 0xf;
-				state._ah++;
-				state._eflags |= (CF|AF);
+			if (((values[EAX].Reg8 & 0xf) > 9) || (values[EFLAGS].Reg32&AF)) {
+				values[EAX].Reg8 = (values[EAX].Reg32+6) & 0xf;
+				(*(&values[EAX].Reg8 + 1))++;
+				values[EFLAGS].Reg32 |= (CF|AF);
 			} else
-				state._eflags &= ~(CF|AF);
+				values[EFLAGS].Reg32 &= ~(CF|AF);
 			eip++; break;
 
 		case 0x3f:  /* aas */
-			if (((state._al & 0xf) > 9) || (state._eflags&AF)) {
-				state._al = (state._eax-6) & 0xf;
-				state._ah--;
-				state._eflags |= (CF|AF);
+			if (((values[EAX].Reg8 & 0xf) > 9) || (values[EFLAGS].Reg32&AF)) {
+				values[EAX].Reg8 = (values[EAX].Reg32-6) & 0xf;
+				(*(&values[EAX].Reg8 + 1))--;
+				values[EFLAGS].Reg32 |= (CF|AF);
 			} else
-				state._eflags &= ~(CF|AF);
+				values[EFLAGS].Reg32 &= ~(CF|AF);
 			eip++; break;
 
 		case 0x40:
@@ -2072,14 +2125,14 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x45:
 		case 0x46:
 		case 0x47: /* inc reg */
-			state._eflags &= ~(OF|ZF|SF|PF|AF);
+			values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
 			dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip));
 			if (x86->operand_size == 2) {
 				OPandFLAG0(flags, incw, R_WORD(*dstreg), =r);
 			} else {
 				OPandFLAG0(flags, incl, *dstreg, =r);
 			}
-			state._eflags |= flags & (OF|ZF|SF|PF|AF);
+			values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
 			eip++; break;
 
 		case 0x48:
@@ -2090,14 +2143,14 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x4d:
 		case 0x4e:
 		case 0x4f: /* dec reg */
-			state._eflags &= ~(OF|ZF|SF|PF|AF);
+			values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
 			dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip));
 			if (x86->operand_size == 2) {
 				OPandFLAG0(flags, decw, R_WORD(*dstreg), =r);
 			} else {
 				OPandFLAG0(flags, decl, *dstreg, =r);
 			}
-			state._eflags |= flags & (OF|ZF|SF|PF|AF);
+			values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
 			eip++; break;
 
 		case 0x50:
@@ -2135,28 +2188,28 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			push((int)*(signed char *)MEM_BASE32(cs + eip + 1), x86);
 			eip += 2; break;
 
-		case 0x70: OP_JCC(state._eflags & OF);         /*jo*/
-		case 0x71: OP_JCC(!(state._eflags & OF));      /*jno*/
-		case 0x72: OP_JCC(state._eflags & CF);         /*jc*/
-		case 0x73: OP_JCC(!(state._eflags & CF));      /*jnc*/
-		case 0x74: OP_JCC(state._eflags & ZF);         /*jz*/
-		case 0x75: OP_JCC(!(state._eflags & ZF));      /*jnz*/
-		case 0x76: OP_JCC(state._eflags & (ZF|CF));    /*jbe*/
-		case 0x77: OP_JCC(!(state._eflags & (ZF|CF))); /*ja*/
-		case 0x78: OP_JCC(state._eflags & SF);         /*js*/
-		case 0x79: OP_JCC(!(state._eflags & SF));      /*jns*/
-		case 0x7a: OP_JCC(state._eflags & PF);         /*jp*/
-		case 0x7b: OP_JCC(!(state._eflags & PF));      /*jnp*/
-		case 0x7c: OP_JCC((state._eflags & SF)^((state._eflags & OF)>>4))         /*jl*/
-		case 0x7d: OP_JCC(!((state._eflags & SF)^((state._eflags & OF)>>4)))      /*jnl*/
-		case 0x7e: OP_JCC((state._eflags & (SF|ZF))^((state._eflags & OF)>>4))    /*jle*/
-		case 0x7f: OP_JCC(!((state._eflags & (SF|ZF))^((state._eflags & OF)>>4))) /*jg*/
+		case 0x70: OP_JCC(values[EFLAGS].Reg32 & OF);         /*jo*/
+		case 0x71: OP_JCC(!(values[EFLAGS].Reg32 & OF));      /*jno*/
+		case 0x72: OP_JCC(values[EFLAGS].Reg32 & CF);         /*jc*/
+		case 0x73: OP_JCC(!(values[EFLAGS].Reg32 & CF));      /*jnc*/
+		case 0x74: OP_JCC(values[EFLAGS].Reg32 & ZF);         /*jz*/
+		case 0x75: OP_JCC(!(values[EFLAGS].Reg32 & ZF));      /*jnz*/
+		case 0x76: OP_JCC(values[EFLAGS].Reg32 & (ZF|CF));    /*jbe*/
+		case 0x77: OP_JCC(!(values[EFLAGS].Reg32 & (ZF|CF))); /*ja*/
+		case 0x78: OP_JCC(values[EFLAGS].Reg32 & SF);         /*js*/
+		case 0x79: OP_JCC(!(values[EFLAGS].Reg32 & SF));      /*jns*/
+		case 0x7a: OP_JCC(values[EFLAGS].Reg32 & PF);         /*jp*/
+		case 0x7b: OP_JCC(!(values[EFLAGS].Reg32 & PF));      /*jnp*/
+		case 0x7c: OP_JCC((values[EFLAGS].Reg32 & SF)^((values[EFLAGS].Reg32 & OF)>>4))         /*jl*/
+		case 0x7d: OP_JCC(!((values[EFLAGS].Reg32 & SF)^((values[EFLAGS].Reg32 & OF)>>4)))      /*jnl*/
+		case 0x7e: OP_JCC((values[EFLAGS].Reg32 & (SF|ZF))^((values[EFLAGS].Reg32 & OF)>>4))    /*jle*/
+		case 0x7f: OP_JCC(!((values[EFLAGS].Reg32 & (SF|ZF))^((values[EFLAGS].Reg32 & OF)>>4))) /*jg*/
 
 		case 0x80:		/* logical r/m8,imm8 */
 		case 0x82:
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   uc = instr_binary_byte(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3,
-					   instr_read_byte(ptr), *(unsigned char *)MEM_BASE32(cs + eip + 2 + inst_len), &state._eflags);
+					   instr_read_byte(ptr), *(unsigned char *)MEM_BASE32(cs + eip + 2 + inst_len), &values[EFLAGS].Reg32);
 			   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) < 0x38)
 				   instr_write_byte(ptr, uc);
 			   eip += 3 + inst_len; break;
@@ -2164,7 +2217,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x81:		/* logical r/m,imm */
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3,
-					   x86->instr_read(ptr), R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 2 + inst_len)), &state._eflags);
+					   x86->instr_read(ptr), R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 2 + inst_len)), &values[EFLAGS].Reg32);
 			   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) < 0x38) x86->instr_write(ptr, und);
 			   eip += x86->operand_size + 2 + inst_len;
 			   break;
@@ -2173,7 +2226,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   und = x86->instr_binary(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3,
 					   x86->instr_read(ptr), (int)*(signed char *)MEM_BASE32(cs + eip + 2 + inst_len),
-					   &state._eflags);
+					   &values[EFLAGS].Reg32);
 			   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) < 0x38)
 				   x86->instr_write(ptr, und);
 			   eip += inst_len + 3; break;
@@ -2181,18 +2234,18 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x84: /* test r/m8, reg8 */
 			   instr_flags(instr_read_byte(x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len)) &
 					   *reg8(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3),
-					   0x80, &state._eflags);
+					   0x80, &values[EFLAGS].Reg32);
 			   eip += inst_len + 2; break;
 
 		case 0x85: /* test r/m16, reg */
 			   if (x86->operand_size == 2)
 				   instr_flags(instr_read_word(x86->modrm(MEM_BASE32(cs + eip), x86,
 								   &inst_len)) & R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3)),
-						   0x8000, &state._eflags);
+						   0x8000, &values[EFLAGS].Reg32);
 			   else
 				   instr_flags(instr_read_dword(x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len)) &
 						   *reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3),
-						   0x80000000, &state._eflags);
+						   0x80000000, &values[EFLAGS].Reg32);
 			   eip += inst_len + 2; break;
 
 		case 0x86:		/* xchg r/m8,reg8 */
@@ -2267,16 +2320,16 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 					   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 					   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1) & 0xc0) == 0xc0)  /* compensate for mov r,segreg */
 						   ptr = (unsigned char *)reg(*(unsigned char *)MEM_BASE32(cs + eip + 1));
-					   state._es.selector = instr_read_word(ptr);
-					   state._es.base = state._es.selector << 4;
+					   values[ES].Segment.Selector = instr_read_word(ptr);
+					   values[ES].Segment.Base = values[ES].Segment.Selector << 4;
 					   eip += inst_len + 2; break;
 				   case 0x18:
 					   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 					   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1) & 0xc0) == 0xc0) /* compensate for mov es,reg */
 						   ptr = (unsigned char *)reg(*(unsigned char *)MEM_BASE32(cs + eip + 1));
-					   state._ds.selector = instr_read_word(ptr);
-					   state._ds.base = state._ds.selector << 4;
-					   x86->seg_base = state._ds.base;
+					   values[DS].Segment.Selector = instr_read_word(ptr);
+					   values[DS].Segment.Base = values[DS].Segment.Selector << 4;
+					   x86->seg_base = values[DS].Segment.Base;
 					   eip += inst_len + 2; break;
 				   default:
 					   return 0;
@@ -2302,208 +2355,208 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x96:
 		case 0x97: /* xchg reg, ax */
 			   dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip));
-			   und = state._eax;
+			   und = values[EAX].Reg32;
 			   if (x86->operand_size == 2) {
-				   state._ax = *dstreg;
+				   values[EAX].Reg16 = *dstreg;
 				   R_WORD(*dstreg) = und;
 			   } else {
-				   state._eax = *dstreg;
+				   values[EAX].Reg32 = *dstreg;
 				   *dstreg = und;
 			   }
 			   eip++; break;
 
 		case 0x98:
 			   if (x86->operand_size == 2) /* cbw */
-				   state._ax = (short)(signed char)state._al;
+				   values[EAX].Reg16 = (short)(signed char)values[EAX].Reg8;
 			   else /* cwde */
-				   state._eax = (int)(short)state._ax;
+				   values[EAX].Reg32 = (int)(short)values[EAX].Reg16;
 			   eip++; break;
 
 		case 0x99:
 			   if (x86->operand_size == 2) /* cwd */
-				   state._dx = (state._ax > 0x7fff ? 0xffff : 0);
+				   values[EDX].Reg16 = (values[EAX].Reg16 > 0x7fff ? 0xffff : 0);
 			   else /* cdq */
-				   state._edx = (state._eax > 0x7fffffff ? 0xffffffff : 0);
+				   values[EDX].Reg32 = (values[EAX].Reg32 > 0x7fffffff ? 0xffffffff : 0);
 			   eip++; break;
 
 		case 0x9a: /*call far*/
 			   if (pmode || x86->operand_size == 4)
 				   return 0;
 			   else {
-				   unsigned sel = state._cs.selector;
+				   unsigned sel = values[CS].Segment.Selector;
 				   push(sel, x86);
 				   push(eip + 5, x86);
-				   state._cs.selector = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 3));
-				   state._cs.base = state._cs.selector << 4;
+				   values[CS].Segment.Selector = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 3));
+				   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
 				   eip = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
-				   cs = state._cs.base;
+				   cs = values[CS].Segment.Base;
 			   }
 			   break;
 			   /* NO: 0x9b wait 0x9c pushf 0x9d popf*/
 
 		case 0x9e: /* sahf */
-			   state._eflags = (state._eflags & ~0xd5) | (state._ah & 0xd5);
+			   values[EFLAGS].Reg32 = (values[EFLAGS].Reg32 & ~0xd5) | (*(&values[EAX].Reg8 + 1) & 0xd5);
 			   eip++; break;
 
 		case 0x9f: /* lahf */
-			   state._ah = state._eflags & 0xff; 
+			   *(&values[EAX].Reg8 + 1) = values[EFLAGS].Reg32 & 0xff; 
 			   eip++; break;
 
 		case 0xa0:		/* mov al,moff16 */
-			   state._al = instr_read_byte(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
+			   values[EAX].Reg8 = instr_read_byte(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
 							   wordmask[x86->address_size])+x86->seg_base));
 			   eip += 1 + x86->address_size; break;
 
 		case 0xa1:		/* mov ax,moff16 */
 			   if (x86->operand_size == 2)
-				   state._ax = instr_read_word(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
+				   values[EAX].Reg16 = instr_read_word(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
 								   wordmask[x86->address_size])+x86->seg_base));
 			   else
-				   state._eax = instr_read_dword(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
+				   values[EAX].Reg32 = instr_read_dword(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
 								   wordmask[x86->address_size])+x86->seg_base));
 			   eip += 1 + x86->address_size; break;
 
 		case 0xa2:		/* mov moff16,al */
 			   instr_write_byte(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
-							   wordmask[x86->address_size])+x86->seg_base), state._al);
+							   wordmask[x86->address_size])+x86->seg_base), values[EAX].Reg8);
 			   eip += 1 + x86->address_size; break;
 
 		case 0xa3:		/* mov moff16,ax */
 			   x86->instr_write(MEM_BASE32((R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)) &
-							   wordmask[x86->address_size])+x86->seg_base), state._eax);
+							   wordmask[x86->address_size])+x86->seg_base), values[EAX].Reg32);
 			   eip += 1 + x86->address_size; break;
 
 		case 0xa4:		/* movsb */
 			   if (x86->address_size == 4) {
-				   instr_write_byte(MEM_BASE32(state._es.base + state._edi),
-						   instr_read_byte(MEM_BASE32(x86->seg_base + state._esi)));
-				   state._edi += loop_inc;
-				   state._esi += loop_inc;
+				   instr_write_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32),
+						   instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32)));
+				   values[EDI].Reg32 += loop_inc;
+				   values[ESI].Reg32 += loop_inc;
 			   } else {
-				   instr_write_byte(MEM_BASE32(state._es.base + state._di),
-						   instr_read_byte(MEM_BASE32(x86->seg_base + state._si)));
-				   state._di += loop_inc;
-				   state._si += loop_inc;
+				   instr_write_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16),
+						   instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg16)));
+				   values[EDI].Reg16 += loop_inc;
+				   values[ESI].Reg16 += loop_inc;
 			   }
 			   eip++; break;
 
 		case 0xa5:		/* movsw */
 			   if (x86->address_size == 4) {
-				   x86->instr_write(MEM_BASE32(state._es.base + state._edi),
-						   x86->instr_read(MEM_BASE32(x86->seg_base + state._esi)));
-				   state._edi += loop_inc * x86->operand_size;
-				   state._esi += loop_inc * x86->operand_size;
+				   x86->instr_write(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32),
+						   x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg32)));
+				   values[EDI].Reg32 += loop_inc * x86->operand_size;
+				   values[ESI].Reg32 += loop_inc * x86->operand_size;
 			   }
 			   else {
-				   x86->instr_write(MEM_BASE32(state._es.base + state._di),
-						   x86->instr_read(MEM_BASE32(x86->seg_base + state._si)));
-				   state._di += loop_inc * x86->operand_size;
-				   state._si += loop_inc * x86->operand_size;
+				   x86->instr_write(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16),
+						   x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg16)));
+				   values[EDI].Reg16 += loop_inc * x86->operand_size;
+				   values[ESI].Reg16 += loop_inc * x86->operand_size;
 			   }
 			   eip++; break;
 
 		case 0xa6: /*cmpsb */
 			   if (x86->address_size == 4) {
-				   instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + state._esi)),
-						   instr_read_byte(MEM_BASE32(state._es.base + state._edi)), &state._eflags);
-				   state._edi += loop_inc;
-				   state._esi += loop_inc;
+				   instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32)),
+						   instr_read_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg32 += loop_inc;
+				   values[ESI].Reg32 += loop_inc;
 			   } else {
-				   instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + state._si)),
-						   instr_read_byte(MEM_BASE32(state._es.base + state._di)), &state._eflags);
-				   state._di += loop_inc;
-				   state._si += loop_inc;
+				   instr_binary_byte(7, instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg16)),
+						   instr_read_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg16 += loop_inc;
+				   values[ESI].Reg16 += loop_inc;
 			   }
 			   eip++; break;
 
 		case 0xa7: /* cmpsw */
 			   if (x86->address_size == 4) {
-				   x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + state._esi)),
-						   x86->instr_read(MEM_BASE32(state._es.base + state._edi)), &state._eflags);
-				   state._edi += loop_inc * x86->operand_size;
-				   state._esi += loop_inc * x86->operand_size;
+				   x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg32)),
+						   x86->instr_read(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg32 += loop_inc * x86->operand_size;
+				   values[ESI].Reg32 += loop_inc * x86->operand_size;
 			   } else {
-				   x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + state._si)),
-						   x86->instr_read(MEM_BASE32(state._es.base + state._di)), &state._eflags);
-				   state._di += loop_inc * x86->operand_size;
-				   state._si += loop_inc * x86->operand_size;
+				   x86->instr_binary(7, x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg16)),
+						   x86->instr_read(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg16 += loop_inc * x86->operand_size;
+				   values[ESI].Reg16 += loop_inc * x86->operand_size;
 			   }
 			   eip++; break;
 
 		case 0xa8: /* test al, imm */
-			   instr_flags(state._al & *(unsigned char *)MEM_BASE32(cs + eip + 1), 0x80, &state._eflags);
+			   instr_flags(values[EAX].Reg8 & *(unsigned char *)MEM_BASE32(cs + eip + 1), 0x80, &values[EFLAGS].Reg32);
 			   eip += 2; break;
 
 		case 0xa9: /* test ax, imm */
 			   if (x86->operand_size == 2) {
-				   instr_flags(state._ax & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), 0x8000, &state._eflags);
+				   instr_flags(values[EAX].Reg16 & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), 0x8000, &values[EFLAGS].Reg32);
 				   eip += 3; break;
 			   } else {
-				   instr_flags(state._eax & R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), 0x80000000, &state._eflags);
+				   instr_flags(values[EAX].Reg32 & R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), 0x80000000, &values[EFLAGS].Reg32);
 				   eip += 5; break;
 			   }
 
 		case 0xaa:		/* stosb */
 			   if (x86->address_size == 4) {
-				   instr_write_byte(MEM_BASE32(state._es.base + state._edi), state._al);
-				   state._edi += loop_inc;
+				   instr_write_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32), values[EAX].Reg8);
+				   values[EDI].Reg32 += loop_inc;
 			   } else {
-				   instr_write_byte(MEM_BASE32(state._es.base + state._di), state._al);
-				   state._di += loop_inc;
+				   instr_write_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16), values[EAX].Reg8);
+				   values[EDI].Reg16 += loop_inc;
 			   }
 			   eip++; break;
 
 		case 0xab:		/* stosw */
 			   if (x86->address_size == 4) {
-				   x86->instr_write(MEM_BASE32(state._es.base + state._edi), state._eax);
-				   state._edi += loop_inc * x86->operand_size;
+				   x86->instr_write(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32), values[EAX].Reg32);
+				   values[EDI].Reg32 += loop_inc * x86->operand_size;
 			   } else {
-				   x86->instr_write(MEM_BASE32(state._es.base + state._di), state._eax);
-				   state._di += loop_inc * x86->operand_size;
+				   x86->instr_write(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16), values[EAX].Reg32);
+				   values[EDI].Reg16 += loop_inc * x86->operand_size;
 			   }
 			   eip++; break;
 
 		case 0xac:		/* lodsb */
 			   if (x86->address_size == 4) {
-				   state._al = instr_read_byte(MEM_BASE32(x86->seg_base + state._esi));
-				   state._esi += loop_inc;
+				   values[EAX].Reg8 = instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg32));
+				   values[ESI].Reg32 += loop_inc;
 			   } else {
-				   state._al = instr_read_byte(MEM_BASE32(x86->seg_base + state._si));
-				   state._si += loop_inc;
+				   values[EAX].Reg8 = instr_read_byte(MEM_BASE32(x86->seg_base + values[ESI].Reg16));
+				   values[ESI].Reg16 += loop_inc;
 			   }
 			   eip++; break;
 
 		case 0xad: /* lodsw */
 			   if (x86->address_size == 4) {
-				   und = x86->instr_read(MEM_BASE32(x86->seg_base + state._esi));
-				   state._esi += loop_inc * x86->operand_size;
+				   und = x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg32));
+				   values[ESI].Reg32 += loop_inc * x86->operand_size;
 			   } else {
-				   und = x86->instr_read(MEM_BASE32(x86->seg_base + state._si));
-				   state._si += loop_inc * x86->operand_size;
+				   und = x86->instr_read(MEM_BASE32(x86->seg_base + values[ESI].Reg16));
+				   values[ESI].Reg16 += loop_inc * x86->operand_size;
 			   }
 			   if (x86->operand_size == 2)
-				   state._ax = und;
+				   values[EAX].Reg16 = und;
 			   else
-				   state._eax = und;
+				   values[EAX].Reg32 = und;
 			   eip++; break;
 
 		case 0xae: /* scasb */
 			   if (x86->address_size == 4) {
-				   instr_binary_byte(7, state._al, instr_read_byte(MEM_BASE32(state._es.base + state._edi)), &state._eflags);
-				   state._edi += loop_inc;
+				   instr_binary_byte(7, values[EAX].Reg8, instr_read_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg32 += loop_inc;
 			   } else {
-				   instr_binary_byte(7, state._al, instr_read_byte(MEM_BASE32(state._es.base + state._di)), &state._eflags);
-				   state._di += loop_inc;
+				   instr_binary_byte(7, values[EAX].Reg8, instr_read_byte(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg16 += loop_inc;
 			   }
 			   eip++; break;
 
 		case 0xaf: /* scasw */
 			   if (x86->address_size == 4) {
-				   x86->instr_binary(7, state._eax, x86->instr_read(MEM_BASE32(state._es.base + state._edi)), &state._eflags);
-				   state._edi += loop_inc * x86->operand_size;
+				   x86->instr_binary(7, values[EAX].Reg32, x86->instr_read(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg32)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg32 += loop_inc * x86->operand_size;
 			   } else {
-				   x86->instr_binary(7, state._eax, x86->instr_read(MEM_BASE32(state._es.base + state._di)), &state._eflags);
-				   state._di += loop_inc * x86->operand_size;
+				   x86->instr_binary(7, values[EAX].Reg32, x86->instr_read(MEM_BASE32(values[ES].Segment.Base + values[EDI].Reg16)), &values[EFLAGS].Reg32);
+				   values[EDI].Reg16 += loop_inc * x86->operand_size;
 			   }
 			   eip++; break;
 
@@ -2540,7 +2593,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38)==0x30) return 0;
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   instr_write_byte(ptr,instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, (signed char) instr_read_byte(ptr),
-						   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 1, &state._eflags));
+						   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 1, &values[EFLAGS].Reg32));
 			   eip += inst_len + 3; break;
 
 		case 0xc1: /* shift word, imm8 */
@@ -2548,18 +2601,18 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   if (x86->operand_size == 2)
 				   instr_write_word(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, (short)instr_read_word(ptr),
-							   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 2, &state._eflags));
+							   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 2, &values[EFLAGS].Reg32));
 			   else
 				   instr_write_dword(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, instr_read_dword(ptr),
-							   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 4, &state._eflags));
+							   *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 4, &values[EFLAGS].Reg32));
 			   eip += inst_len + 3; break;
 
 		case 0xc2:		/* ret imm16*/
 			   pop(&und, x86);
-			   if (state._cs.operand_size)
-				   state._esp += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
+			   if (values[CS].Segment.Default)
+				   values[ESP].Reg32 += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
 			   else
-				   state._sp += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
+				   values[ESP].Reg16 += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
 			   eip = und;
 			   break;
 
@@ -2572,8 +2625,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   return 0;
 			   else {
 				   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
-				   state._es.selector = instr_read_word(ptr+2);
-				   state._es.base = state._es.selector << 4;
+				   values[ES].Segment.Selector = instr_read_word(ptr+2);
+				   values[ES].Segment.Base = values[ES].Segment.Selector << 4;
 				   R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 1) >> 3)) = instr_read_word(ptr);
 				   eip += inst_len + 2; break;
 			   }
@@ -2583,8 +2636,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   return 0;
 			   else {
 				   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
-				   state._ds.selector = instr_read_word(ptr+2);
-				   state._ds.base = x86->seg_base = state._es.selector << 4;
+				   values[DS].Segment.Selector = instr_read_word(ptr+2);
+				   values[DS].Segment.Base = x86->seg_base = values[ES].Segment.Selector << 4;
 				   R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 1) >> 3)) = instr_read_word(ptr);
 				   eip += inst_len + 2; break;
 			   }
@@ -2602,11 +2655,11 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   /* 0xc8 enter */
 
 		case 0xc9: /*leave*/
-			   if (state._cs.operand_size)
-				   state._esp = state._ebp;
+			   if (values[CS].Segment.Default)
+				   values[ESP].Reg32 = values[EBP].Reg32;
 			   else
-				   state._sp = state._bp;
-			   pop(&state._ebp, x86);
+				   values[ESP].Reg16 = values[EBP].Reg16;
+			   pop(&values[EBP].Reg32, x86);
 			   eip++; break;
 
 		case 0xca: /*retf imm 16*/
@@ -2616,10 +2669,10 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   unsigned int sel;
 				   pop(&und, x86);
 				   pop(&sel, x86);
-				   state._cs.selector = sel;
-				   state._cs.base = state._cs.selector << 4;
-				   state._sp += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
-				   cs = state._cs.base;
+				   values[CS].Segment.Selector = sel;
+				   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
+				   values[ESP].Reg16 += R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
+				   cs = values[CS].Segment.Base;
 				   eip = und;
 			   }
 			   break;
@@ -2631,9 +2684,9 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   unsigned int sel;
 				   pop(&eip, x86);
 				   pop(&sel, x86);
-				   state._cs.selector = sel;
-				   state._cs.base = state._cs.selector << 4;
-				   cs = state._cs.base;
+				   values[CS].Segment.Selector = sel;
+				   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
+				   cs = values[CS].Segment.Base;
 			   }
 			   break;
 
@@ -2644,7 +2697,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   instr_write_byte(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3,
 						   (signed char) instr_read_byte(ptr),
-						   1, 1, &state._eflags));
+						   1, 1, &values[EFLAGS].Reg32));
 			   eip += inst_len + 2; break;
 
 		case 0xd1: /* shift r/m16, 1 */
@@ -2652,16 +2705,16 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   if (x86->operand_size == 2)
 				   instr_write_word(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, (short) instr_read_word(ptr),
-							   1, 2, &state._eflags));
+							   1, 2, &values[EFLAGS].Reg32));
 			   else
-				   instr_write_dword(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, instr_read_dword(ptr), 1, 4, &state._eflags));
+				   instr_write_dword(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, instr_read_dword(ptr), 1, 4, &values[EFLAGS].Reg32));
 			   eip += inst_len + 2; break;
 
 		case 0xd2: /* shift r/m8, cl */
 			   if ((*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38)==0x30) return 0;
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   instr_write_byte(ptr,instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, (signed char) instr_read_byte(ptr),
-						   state._cl, 1, &state._eflags));
+						   values[ECX].Reg8, 1, &values[EFLAGS].Reg32));
 			   eip += inst_len + 2; break;
 
 		case 0xd3: /* shift r/m16, cl */
@@ -2669,47 +2722,47 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   if (x86->operand_size == 2)
 				   instr_write_word(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, (short) instr_read_word(ptr),
-							   state._cl, 2, &state._eflags));
+							   values[ECX].Reg8, 2, &values[EFLAGS].Reg32));
 			   else
 				   instr_write_dword(ptr, instr_shift(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3, instr_read_dword(ptr),
-							   state._cl, 4, &state._eflags));
+							   values[ECX].Reg8, 4, &values[EFLAGS].Reg32));
 			   eip += inst_len + 2; break;
 
 		case 0xd4:  /* aam byte */
-			   state._ah = state._al / *(unsigned char *)MEM_BASE32(cs + eip + 1);
-			   state._al = state._al % *(unsigned char *)MEM_BASE32(cs + eip + 1);
-			   instr_flags(state._al, 0x80, &state._eflags);
+			   *(&values[EAX].Reg8 + 1) = values[EAX].Reg8 / *(unsigned char *)MEM_BASE32(cs + eip + 1);
+			   values[EAX].Reg8 = values[EAX].Reg8 % *(unsigned char *)MEM_BASE32(cs + eip + 1);
+			   instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
 			   eip += 2; break;
 
 		case 0xd5:  /* aad byte */
-			   state._al = state._ah * *(unsigned char *)MEM_BASE32(cs + eip + 1) + state._al;
-			   state._ah = 0;
-			   instr_flags(state._al, 0x80, &state._eflags);
+			   values[EAX].Reg8 = *(&values[EAX].Reg8 + 1) * *(unsigned char *)MEM_BASE32(cs + eip + 1) + values[EAX].Reg8;
+			   *(&values[EAX].Reg8 + 1) = 0;
+			   instr_flags(values[EAX].Reg8, 0x80, &values[EFLAGS].Reg32);
 			   eip += 2; break;
 
 		case 0xd6: /* salc */
-			   state._al = state._eflags & CF ? 0xff : 0;
+			   values[EAX].Reg8 = values[EFLAGS].Reg32 & CF ? 0xff : 0;
 			   eip++; break;
 
 		case 0xd7: /* xlat */
-			   state._al =  instr_read_byte(MEM_BASE32(x86->seg_base+(state._ebx & wordmask[x86->address_size])+state._al));
+			   values[EAX].Reg8 =  instr_read_byte(MEM_BASE32(x86->seg_base+(values[EBX].Reg32 & wordmask[x86->address_size])+values[EAX].Reg8));
 			   eip++; break;
 			   /* 0xd8 - 0xdf copro */
 
 		case 0xe0: /* loopnz */
-			   eip += ( (x86->address_size == 4 ? --state._ecx : --state._cx) && !(state._eflags & ZF) ?
+			   eip += ( (x86->address_size == 4 ? --values[ECX].Reg32 : --values[ECX].Reg16) && !(values[EFLAGS].Reg32 & ZF) ?
 					   2 + *(signed char *)MEM_BASE32(cs + eip + 1) : 2); break;
 
 		case 0xe1: /* loopz */
-			   eip += ( (x86->address_size == 4 ? --state._ecx : --state._cx) && (state._eflags & ZF) ?
+			   eip += ( (x86->address_size == 4 ? --values[ECX].Reg32 : --values[ECX].Reg16) && (values[EFLAGS].Reg32 & ZF) ?
 					   2 + *(signed char *)MEM_BASE32(cs + eip + 1) : 2); break;
 
 		case 0xe2: /* loop */
-			   eip += ( (x86->address_size == 4 ? --state._ecx : --state._cx) ?
+			   eip += ( (x86->address_size == 4 ? --values[ECX].Reg32 : --values[ECX].Reg16) ?
 					   2 + *(signed char *)MEM_BASE32(cs + eip + 1) : 2); break;
 
 		case 0xe3:  /* jcxz */
-			   eip += ((x86->address_size == 4 ? state._ecx : state._cx) ? 2 :
+			   eip += ((x86->address_size == 4 ? values[ECX].Reg32 : values[ECX].Reg16) ? 2 :
 					   2 + *(signed char *)MEM_BASE32(cs + eip + 1));
 			   break;
 
@@ -2727,10 +2780,10 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   if (pmode || x86->operand_size == 4)
 				   return 0;
 			   else {
-				   state._cs.selector = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip+3));
-				   state._cs.base = state._cs.selector << 4;
+				   values[CS].Segment.Selector = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip+3));
+				   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
 				   eip = R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 1));
-				   cs = state._cs.base;
+				   cs = values[CS].Segment.Base;
 			   }
 			   break;
 
@@ -2739,8 +2792,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 
 		case 0xec: /* in al, dx */
 			   /* Note that we short circuit if we can */
-			   if ((state._dx >= 0x3b0) && (state._dx < 0x3e0)) {
-				   state._al = read_io_byte(state._dx);
+			   if ((values[EDX].Reg16 >= 0x3b0) && (values[EDX].Reg16 < 0x3e0)) {
+				   values[EAX].Reg8 = read_io_byte(values[EDX].Reg16);
 				   eip++; break;
 			   }
 			   else
@@ -2749,8 +2802,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 
 		case 0xee: /* out dx, al */
 			   /* Note that we short circuit if we can */
-			   if ((state._dx >= 0x3b0) && (state._dx < 0x3e0)) {
-				   write_io_byte(state._dx, state._al);
+			   if ((values[EDX].Reg16 >= 0x3b0) && (values[EDX].Reg16 < 0x3e0)) {
+				   write_io_byte(values[EDX].Reg16, values[EAX].Reg8);
 				   eip++;
 			   }
 			   else
@@ -2759,8 +2812,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 
 		case 0xef: /* out dx, ax */
 			   if ((x86->operand_size == 2) &&
-					   (state._dx >= 0x3b0) && (state._dx < 0x3e0)) {
-				   write_io_word(state._dx, state._ax);
+					   (values[EDX].Reg16 >= 0x3b0) && (values[EDX].Reg16 < 0x3e0)) {
+				   write_io_word(values[EDX].Reg16, values[EAX].Reg16);
 				   eip++;
 			   }
 			   else
@@ -2773,51 +2826,51 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   /* 0xf4 hlt */
 
 		case 0xf5: /* cmc */
-			   state._eflags ^= CF;
+			   values[EFLAGS].Reg32 ^= CF;
 			   eip++; break;
 
 		case 0xf6:
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
 				   case 0x00: /* test ptr byte, imm */
-					   instr_flags(instr_read_byte(ptr) & *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 0x80, &state._eflags);
+					   instr_flags(instr_read_byte(ptr) & *(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len), 0x80, &values[EFLAGS].Reg32);
 					   eip += inst_len + 3; break;
 				   case 0x08: return 0;
 				   case 0x10: /*not byte*/
 					      instr_write_byte(ptr, ~instr_read_byte(ptr));
 					      eip += inst_len + 2; break;
 				   case 0x18: /*neg byte*/
-					      instr_write_byte(ptr, instr_binary_byte(7, 0, instr_read_byte(ptr), &state._eflags));
+					      instr_write_byte(ptr, instr_binary_byte(7, 0, instr_read_byte(ptr), &values[EFLAGS].Reg32));
 					      eip += inst_len + 2; break;
 				   case 0x20: /*mul byte*/
-					      state._ax = state._al * instr_read_byte(ptr);
-					      state._eflags &= ~(CF|OF);
-					      if (state._ah)
-						      state._eflags |= (CF|OF);
+					      values[EAX].Reg16 = values[EAX].Reg8 * instr_read_byte(ptr);
+					      values[EFLAGS].Reg32 &= ~(CF|OF);
+					      if (*(&values[EAX].Reg8 + 1))
+						      values[EFLAGS].Reg32 |= (CF|OF);
 					      eip += inst_len + 2; break;
 				   case 0x28: /*imul byte*/
-					      state._ax = (signed char)state._al * (signed char)instr_read_byte(ptr);
-					      state._eflags &= ~(CF|OF);
-					      if (state._ah)
-						      state._eflags |= (CF|OF);
+					      values[EAX].Reg16 = (signed char)values[EAX].Reg8 * (signed char)instr_read_byte(ptr);
+					      values[EFLAGS].Reg32 &= ~(CF|OF);
+					      if (*(&values[EAX].Reg8 + 1))
+						      values[EFLAGS].Reg32 |= (CF|OF);
 					      eip += inst_len + 2; break;
 				   case 0x30: /*div byte*/
-					      und = state._ax;
+					      und = values[EAX].Reg16;
 					      uc = instr_read_byte(ptr);
 					      if (uc == 0) return 0;
 					      und2 = und / uc;
 					      if (und2 & 0xffffff00) return 0;
-					      state._al = und2 & 0xff;
-					      state._ah = und % uc;
+					      values[EAX].Reg8 = und2 & 0xff;
+					      *(&values[EAX].Reg8 + 1) = und % uc;
 					      eip += inst_len + 2; break;
 				   case 0x38: /*idiv byte*/
-					      i = (short)state._ax;
+					      i = (short)values[EAX].Reg16;
 					      uc = instr_read_byte(ptr);
 					      if (uc == 0) return 0;
 					      i2 = i / (signed char)uc;
 					      if (i2<-128 || i2>127) return 0;
-					      state._al = i2 & 0xff;
-					      state._ah = i % (signed char)uc;
+					      values[EAX].Reg8 = i2 & 0xff;
+					      *(&values[EAX].Reg8 + 1) = i % (signed char)uc;
 					      eip += inst_len + 2; break;
 			   }
 			   break;
@@ -2827,73 +2880,73 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
 				   case 0x00: /* test ptr word, imm */
 					   if (x86->operand_size == 4) return 0;
-					   instr_flags(instr_read_word(ptr) & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len)), 0x8000, &state._eflags);
+					   instr_flags(instr_read_word(ptr) & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len)), 0x8000, &values[EFLAGS].Reg32);
 					   eip += inst_len + 4; break;
 				   case 0x08: return 0;
 				   case 0x10: /*not word*/
 					      x86->instr_write(ptr, ~x86->instr_read(ptr));
 					      eip += inst_len + 2; break;
 				   case 0x18: /*neg word*/
-					      x86->instr_write(ptr, x86->instr_binary(7, 0, x86->instr_read(ptr), &state._eflags));
+					      x86->instr_write(ptr, x86->instr_binary(7, 0, x86->instr_read(ptr), &values[EFLAGS].Reg32));
 					      eip += inst_len + 2; break;
 				   case 0x20: /*mul word*/
 					      if (x86->operand_size == 4) return 0;
-					      und = state._ax * instr_read_word(ptr);
-					      state._ax = und & 0xffff;
-					      state._dx = und >> 16;
-					      state._eflags &= ~(CF|OF);
-					      if (state._dx)
-						      state._eflags |= (CF|OF);
+					      und = values[EAX].Reg16 * instr_read_word(ptr);
+					      values[EAX].Reg16 = und & 0xffff;
+					      values[EDX].Reg16 = und >> 16;
+					      values[EFLAGS].Reg32 &= ~(CF|OF);
+					      if (values[EDX].Reg16)
+						      values[EFLAGS].Reg32 |= (CF|OF);
 					      eip += inst_len + 2; break;
 				   case 0x28: /*imul word*/
 					      if (x86->operand_size == 4) return 0;
-					      i = (short)state._ax * (short)instr_read_word(ptr);
-					      state._ax = i & 0xffff;
-					      state._dx = i >> 16;
-					      state._eflags &= ~(CF|OF);
-					      if (state._dx)
-						      state._eflags |= (CF|OF);
+					      i = (short)values[EAX].Reg16 * (short)instr_read_word(ptr);
+					      values[EAX].Reg16 = i & 0xffff;
+					      values[EDX].Reg16 = i >> 16;
+					      values[EFLAGS].Reg32 &= ~(CF|OF);
+					      if (values[EDX].Reg16)
+						      values[EFLAGS].Reg32 |= (CF|OF);
 					      eip += inst_len + 2; break;
 				   case 0x30: /*div word*/
 					      if (x86->operand_size == 4) return 0;
-					      und = (state._dx<<16) + state._ax;
+					      und = (values[EDX].Reg16<<16) + values[EAX].Reg16;
 					      uns = instr_read_word(ptr);
 					      if (uns == 0) return 0;
 					      und2 = und / uns;
 					      if (und2 & 0xffff0000) return 0;
-					      state._ax = und2 & 0xffff;
-					      state._dx = und % uns;
+					      values[EAX].Reg16 = und2 & 0xffff;
+					      values[EDX].Reg16 = und % uns;
 					      eip += inst_len + 2; break;
 				   case 0x38: /*idiv word*/
 					      if (x86->operand_size == 4) return 0;
-					      i = ((short)state._dx<<16) + state._ax;
+					      i = ((short)values[EDX].Reg16<<16) + values[EAX].Reg16;
 					      uns = instr_read_word(ptr);
 					      if (uns == 0) return 0;
 					      i2 = i / (short)uns;
 					      if (i2<-32768 || i2>32767) return 0;
-					      state._ax = i2 & 0xffff;
-					      state._dx = i % (short)uns;
+					      values[EAX].Reg16 = i2 & 0xffff;
+					      values[EDX].Reg16 = i % (short)uns;
 					      eip += inst_len + 2; break;
 			   }
 			   break;
 
 		case 0xf8: /* clc */
-			   state._eflags &= ~CF;
+			   values[EFLAGS].Reg32 &= ~CF;
 			   eip++; break;;
 
 		case 0xf9: /* stc */
-			   state._eflags |= CF;
+			   values[EFLAGS].Reg32 |= CF;
 			   eip++; break;;
 
 			   /* 0xfa cli 0xfb sti */
 
 		case 0xfc: /* cld */
-			   state._eflags &= ~DF;
+			   values[EFLAGS].Reg32 &= ~DF;
 			   loop_inc = 1;
 			   eip++; break;;
 
 		case 0xfd: /* std */
-			   state._eflags |= DF;
+			   values[EFLAGS].Reg32 |= DF;
 			   loop_inc = -1;
 			   eip++; break;;
 
@@ -2902,15 +2955,15 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   uc = instr_read_byte(ptr);
 			   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
 				   case 0x00:
-					   state._eflags &= ~(OF|ZF|SF|PF|AF);
+					   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
 					   OPandFLAG0(flags, incb, uc, =q);
-					   state._eflags |= flags & (OF|ZF|SF|PF|AF);
+					   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
 					   instr_write_byte(ptr, uc);
 					   eip += inst_len + 2; break;
 				   case 0x08:
-					   state._eflags &= ~(OF|ZF|SF|PF|AF);
+					   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
 					   OPandFLAG0(flags, decb, uc, =q);
-					   state._eflags |= flags & (OF|ZF|SF|PF|AF);
+					   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
 					   instr_write_byte(ptr, uc);
 					   eip += inst_len + 2; break;
 				   default:
@@ -2919,60 +2972,100 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   break;
 
 		case 0xff:
-			   if (x86->operand_size == 4) return 0;
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
-			   uns = instr_read_word(ptr);
-			   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
-				   case 0x00: /* inc */
-					   state._eflags &= ~(OF|ZF|SF|PF|AF);
-					   OPandFLAG0(flags, incw, uns, =r);
-					   state._eflags |= flags & (OF|ZF|SF|PF|AF);
-					   instr_write_word(ptr, uns);
-					   eip += inst_len + 2; break;
-				   case 0x08: /* dec */
-					   state._eflags &= ~(OF|ZF|SF|PF|AF);
-					   OPandFLAG0(flags, decw, uns, =r);
-					   state._eflags |= flags & (OF|ZF|SF|PF|AF);
-					   instr_write_word(ptr, uns);
-					   eip += inst_len + 2; break;;
-				   case 0x10: /*call near*/
-					   push(eip + inst_len + 2, x86);
-					   eip = uns;
-					   break;
-
-				   case 0x18: /*call far*/
-					   if (pmode || x86->operand_size == 4)
-						   return 0;
-					   else {
-						   push(state._cs.selector, x86);
-						   state._cs.selector = instr_read_word(ptr+2);
+			   if (x86->operand_size == 2)
+			   {
+				   uns = instr_read_word(ptr);
+				   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
+					   case 0x00: /* inc */
+						   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
+						   OPandFLAG0(flags, incw, uns, =r);
+						   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
+						   instr_write_word(ptr, uns);
+						   eip += inst_len + 2; break;
+					   case 0x08: /* dec */
+						   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
+						   OPandFLAG0(flags, decw, uns, =r);
+						   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
+						   instr_write_word(ptr, uns);
+						   eip += inst_len + 2; break;;
+					   case 0x10: /*call near*/
 						   push(eip + inst_len + 2, x86);
-						   state._cs.base = state._cs.selector << 4;
 						   eip = uns;
-						   cs = state._cs.base;
-					   }
-					   break;
+						   break;
 
-				   case 0x20: /*jmp near*/
-					   eip = uns;
-					   break;
+					   case 0x18: /*call far*/
+						   if (pmode)
+							   return 0;
+						   else {
+							   push(values[CS].Segment.Selector, x86);
+							   values[CS].Segment.Selector = instr_read_word(ptr+2);
+							   push(eip + inst_len + 2, x86);
+							   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
+							   eip = uns;
+							   cs = values[CS].Segment.Base;
+						   }
+						   break;
 
-				   case 0x28: /*jmp far*/
-					   if (pmode || x86->operand_size == 4)
+					   case 0x20: /*jmp near*/
+						   eip = uns;
+						   break;
+
+					   case 0x28: /*jmp far*/
+						   if (pmode)
+							   return 0;
+						   else {
+							   values[CS].Segment.Selector = instr_read_word(ptr+2);
+							   values[CS].Segment.Base = values[CS].Segment.Selector << 4;
+							   eip = uns;
+							   cs = values[CS].Segment.Base;
+						   }
+						   break;
+
+					   case 0x30: /*push*/
+						   push(uns, x86);
+						   eip += inst_len + 2; break;
+					   default:
 						   return 0;
-					   else {
-						   state._cs.selector = instr_read_word(ptr+2);
-						   state._cs.base = state._cs.selector << 4;
-						   eip = uns;
-						   cs = state._cs.base;
-					   }
-					   break;
+				}
+			   }
+			   else
+			   {
+				   und = instr_read_dword(ptr);
+				   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
+					   case 0x00: /* inc */
+						   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
+						   OPandFLAG0(flags, incl, und, =r);
+						   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
+						   instr_write_dword(ptr, und);
+						   eip += inst_len + 2; break;
+					   case 0x08: /* dec */
+						   values[EFLAGS].Reg32 &= ~(OF|ZF|SF|PF|AF);
+						   OPandFLAG0(flags, decl, und, =r);
+						   values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF);
+						   instr_write_dword(ptr, und);
+						   eip += inst_len + 2; break;;
+					   case 0x10: /*call near*/
+						   push(eip + inst_len + 2, x86);
+						   eip = und;
+						   break;
 
-				   case 0x30: /*push*/
-					   push(uns, x86);
-					   eip += inst_len + 2; break;
-				   default:
-					   return 0;
+					   case 0x18: /*call far*/
+						   return 0;
+
+					   case 0x20: /*jmp near*/
+						   eip = und;
+						   break;
+
+					   case 0x28: /*jmp far*/
+						   return 0;
+
+					   case 0x30: /*push*/
+						   push(und, x86);
+						   eip += inst_len + 2; break;
+					   default:
+						   return 0;
+				}
 			   }
 			   break;
 
@@ -2980,8 +3073,8 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   return 0;
 	}	/* switch (cs[eip]) */
 
-	eip &= wordmask[(state._cs.operand_size + 1) * 2];
-	state._eip = eip;
+	eip &= wordmask[(values[CS].Segment.Default + 1) * 2];
+	values[EIP].Reg32 = eip;
 
 #ifdef ENABLE_DEBUG_TRACE
 	dump_x86_regs();
@@ -2996,7 +3089,7 @@ static int instr_emu(int cnt)
 	unsigned int ref;
 	int refseg, rc;
 	unsigned char frmtbuf[256];
-	instr_deb("vga_emu: entry %04x:%08x\n", state._cs.selector, state._eip);
+	instr_deb("vga_emu: entry %04x:%08x\n", values[CS].Segment.Selector, values[EIP].Reg32);
 	dump_x86_regs();
 #endif
 	int i = 0;
@@ -3005,13 +3098,13 @@ static int instr_emu(int cnt)
 	x86.prefixes = 1;
 
 	do {
-		if (!instr_sim(&x86, !(state._eflags & (1 << 17)) && (state._cr0 & 1))) {
+		if (!instr_sim(&x86, !(values[EFLAGS].Reg32 & (1 << 17)) && (values[CR0].Reg32 & 1))) {
 #ifdef ENABLE_DEBUG_LOG
-			uint32 cp = state._cs.base + state._eip;
+			UINT32 cp = values[CS].Segment.Base + values[EIP].Reg32;
 			unsigned int ref;
 			char frmtbuf[256];
 			instr_deb("vga_emu: %u bytes not simulated %d: fault addr=%08x\n",
-					instr_len(MEM_BASE32(cp), state._cs.operand_size), count, state._cr2);
+					instr_len(MEM_BASE32(cp), values[CS].Segment.Default), count, values[CR2].Reg32);
 			dump_x86_regs();
 #endif
 			break;

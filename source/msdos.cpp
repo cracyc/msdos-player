@@ -17,13 +17,13 @@ void exit_handler();
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
 
-//#define ENABLE_DEBUG_LOG
+#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
 	#define ENABLE_DEBUG_SYSCALL
 	//#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
-	#define ENABLE_DEBUG_TRACE
+	//#define ENABLE_DEBUG_TRACE
 
 	#ifdef EXPORT_DEBUG_TO_FILE
 		FILE* fp_debug_log = NULL;
@@ -255,7 +255,7 @@ inline void maybe_idle()
 #define CPU_MODEL_STR(name)			#name
 #define CPU_MODEL_NAME(name)			CPU_MODEL_STR(name)
 
-#ifndef USE_HAXM
+#if !defined(USE_HAXM) && !defined(USE_WHPX)
 
 #define cpu_execute_i486 cpu_execute_i386
 
@@ -813,7 +813,7 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 // this is set when the first process is terminated and jump to FFFF:0000 HALT
 int m_exit = 0;
 
-#ifndef USE_HAXM
+#if !defined(USE_HAXM) && !defined(USE_WHPX)
 
 /*****************************************************************************/
 /* src/osd/osdcomm.h */
@@ -981,8 +981,13 @@ void i386_write_stack(UINT16 value)
 
 #else // USE_HAXM
 
-#include "haxmvm.c"
 #define HAS_I386
+
+#if defined(USE_HAXM)
+#include "haxmvm.c"
+#elif defined(USE_WHPX)
+#include "whpxvm.c"
+#endif
 
 #endif
 
@@ -992,7 +997,7 @@ void i386_write_stack(UINT16 value)
 
 #ifdef USE_DEBUGGER
 
-#ifdef USE_HAXM
+#if defined(USE_HAXM) || defined(USE_WHPX)
 #error debugger not compatible with haxm
 #endif
 
@@ -2262,6 +2267,7 @@ const char *debugger_get_putty_path()
 	if(getenv("ProgramFiles")) {
 		sprintf(path, "%s\\PuTTY\\putty.exe", getenv("ProgramFiles"));
 	}
+	SearchPathA(NULL, "putty.exe", NULL, MAX_PATH, path, NULL);
 	return(path);
 }
 
@@ -2575,21 +2581,7 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 
 HWND get_console_window_handle()
 {
-	static HWND hwndFound = 0;
-	
-	if(hwndFound == 0) {
-		// https://support.microsoft.com/en-us/help/124103/how-to-obtain-a-console-window-handle-hwnd
-		char pszNewWindowTitle[1024];
-		char pszOldWindowTitle[1024];
-		
-		GetConsoleTitleA(pszOldWindowTitle, 1024);
-		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
-		SetConsoleTitleA(pszNewWindowTitle);
-		Sleep(100);
-		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
-		SetConsoleTitleA(pszOldWindowTitle);
-	}
-	return hwndFound;
+	return GetConsoleWindow();
 }
 
 HDC get_console_window_device_context()
@@ -7337,7 +7329,9 @@ void pcbios_update_cursor_position()
 #ifdef SUPPORT_GRAPHIC_SCREEN
 static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 {
-	vsync = true;
+	LARGE_INTEGER count;
+	QueryPerformanceCounter(&count);
+	vsync = count.QuadPart;
 	if (WaitForSingleObject(running, 0) || mem[0x449] <= 3)
 	{
 		SetEvent(running);
@@ -7465,7 +7459,6 @@ static UINT32 vga_read(offs_t addr, int size)
 			}
 		default:
 		{
-			UINT32 vramaddr = addr - VGA_VRAM_TOP;
 			switch(size) {
 				case 4:
 					return *(UINT32 *)(vram + addr);
@@ -7548,7 +7541,6 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 			}
 		default:
 		{
-			UINT32 vramaddr = addr - VGA_VRAM_TOP;
 			switch(size) {
 				case 4:
 					*(UINT32 *)(vram + addr) = data;
@@ -17628,7 +17620,7 @@ void msdos_syscall(unsigned num)
 #ifdef ENABLE_DEBUG_SYSCALL
 	if(num == 0x08 || num == 0x1c) {
 		// don't log the timer interrupts
-//		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		//fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x30) {
 		// dummy interrupt for call 0005h (call near)
 		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -17641,7 +17633,7 @@ void msdos_syscall(unsigned num)
 	} else if(num >= 0x68 && num <= 0x6f) {
 		// dummy interrupt
 	} else {
-		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04x\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES), SREG(CS), m_eip);
 	}
 #endif
 	// update cursor position
@@ -21308,15 +21300,32 @@ void kbd_write_command(UINT8 val)
 
 UINT8 vga_read_status()
 {
-	// 60hz
-	static const int period[3] = {16, 17, 17};
-	static int index = 0;
-	UINT32 time = timeGetTime() % period[index];
-	bool oldvsync = vsync;
-	vsync = false;
+	bool vsyncstat = false;
+	static uint64_t msrate = 0;
+	static bool hsync = false;
+	static int hcount = 0;
+	if(!msrate)
+	{
+		LARGE_INTEGER rate;
+		QueryPerformanceFrequency(&rate);
+		msrate = rate.QuadPart / 1000;
+	}
 
-	index = (index + 1) % 3;
-	return((time < 4 ? 0x08 : 0) | ((time == 0 || oldvsync == true) ? 0 : 0x01));
+	if(running)
+	{
+		LARGE_INTEGER count;
+		QueryPerformanceCounter(&count);
+		if((vsync / msrate) == (count.QuadPart / msrate)) // vsync == ~1ms
+			vsyncstat = true;
+	}
+	else
+		vsyncstat = (timeGetTime() % 16) < 4;
+	if(hcount++ >= 10)
+	{
+		hsync = !hsync;
+		hcount = 0;
+	}
+	return(vsyncstat ? 9 : 0) | (hsync ? 1 : 0);
 }
 
 // i/o bus
@@ -21479,7 +21488,7 @@ UINT8 debugger_read_io_byte(offs_t addr)
 	}
 #ifdef ENABLE_DEBUG_IOPORT
 	if(fp_debug_log != NULL) {
-		fprintf(fp_debug_log, "inb %04X, %02X\n", addr, val);
+		fprintf(fp_debug_log, "inb %04X, %02X  cs:ip = %04X:%08X\n", addr, val, SREG(CS), m_eip);
 	}
 #endif
 	return(val);
@@ -21533,7 +21542,7 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 #ifdef USE_SERVICE_THREAD
 		if(addr != 0xf7)
 #endif
-		fprintf(fp_debug_log, "outb %04X, %02X\n", addr, val);
+		fprintf(fp_debug_log, "outb %04X, %02X  cs:ip = %04X:%08X\n", addr, val, SREG(CS), m_eip);
 	}
 #endif
 	switch(addr) {

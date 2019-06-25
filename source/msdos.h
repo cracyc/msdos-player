@@ -42,6 +42,7 @@
 #include <setupapi.h>
 #include <winsock.h>
 #include <intrin.h>
+#include <stdint.h>
 
 #ifdef _DEBUG
 // _malloca is defined in both intrin.h and crtdbg.h
@@ -221,6 +222,8 @@ public:
 	#define CPU_MODEL i386
 #elif defined(USE_HAXM)
 	#define CPU_MODEL haxm
+#elif defined(USE_WHPX)
+	#define CPU_MODEL whpx
 #else
 //	#if defined(HAS_I386SX)
 //		#define CPU_MODEL i386SX
@@ -324,11 +327,11 @@ CRITICAL_SECTION putch_crit_sect;
 bool in_service = false;
 bool service_exit = false;
 DWORD main_thread_id;
-UINT32 done_ax;
 
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
 #endif
+UINT32 done_ax;
 
 bool in_service_29h = false;
 
@@ -424,7 +427,7 @@ drive_param_t drive_params[26] = {0};
 
 // memory
 
-#if defined(HAS_I386) || defined(USE_HAXM)
+#if defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
 	#define ADDR_MASK 0xffffffff
 	#define MAX_MEM 0x2000000	/* 32MB */
 #elif defined(HAS_I286)
@@ -688,7 +691,7 @@ int vga_pitch;
 int vga_height;
 int vga_bpp;
 UINT32 vga_latch;
-bool vsync = false;
+uint64_t vsync = 0;
 HDC vgadc = 0;
 
 // dac
@@ -720,10 +723,10 @@ static void vga_write(offs_t addr, UINT32 data, int size);
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
-#if defined(HAS_I386) || defined(USE_HAXM)
+#if defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
 #define SUPPORT_VCPI
 #endif
-#if defined(HAS_I286) || defined(HAS_I386) || defined(USE_HAXM)
+#if defined(HAS_I286) || defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
 #define SUPPORT_XMS
 //#define SUPPORT_HMA
 #endif

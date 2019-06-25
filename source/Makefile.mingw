@@ -57,6 +57,8 @@ CFLAGS_I486 = $(CFLAGS) -I. -DHAS_I486
 CXXFLAGS_I486 = $(CFLAGS_I486)
 CFLAGS_HAXM = $(CFLAGS) -I. -DUSE_HAXM
 CXXFLAGS_HAXM = $(CFLAGS_HAXM)
+CFLAGS_WHPX = $(CFLAGS) -I. -DUSE_WHPX
+CXXFLAGS_WHPX = $(CFLAGS_WHPX)
 
 #COMPILE = $(CC) $(CFLAGS) $(CFLAGS_EXTRA) $(CFLAGS_OO) $?
 
@@ -77,6 +79,7 @@ TARGET_I286 = $(OUTD_BASE)msdos_i286$(X)
 TARGET_I386 = $(OUTD_BASE)msdos_i386$(X)
 TARGET_I486 = $(OUTD_BASE)msdos_i486$(X)
 TARGET_HAXM = $(OUTD_BASE)msdos_haxm$(X)
+TARGET_WHPX = $(OUTD_BASE)msdos_whpx$(X)
 
 SRCS_I86 = \
 	$(SRCD_I86)ea.h \
@@ -141,7 +144,12 @@ SRCS_HAXM = \
 	$(SRCD_BASE)haxmvm.c \
 	$(SRCD_BASE)haxmvm.h
 
-all : i286 i386 i486 haxm
+SRCS_WHPX = \
+	$(SRCD_BASE)whpxvm.c
+
+LIBS_WHPX = $(WINDIR)/system32/WinHvPlatform.dll
+
+all : i286 i386 i486 haxm whpx
 
 i286: $(TARGET_I286)
 
@@ -150,6 +158,8 @@ i386: $(TARGET_I386)
 i486: $(TARGET_I486)
 
 haxm: $(TARGET_HAXM)
+
+whpx: $(TARGET_WHPX)
 
 $(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
 	$(CXX) $(CXXFLAGS_I286) $(CFLAGS_EXTRA) \
@@ -179,8 +189,16 @@ $(TARGET_HAXM) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_HAXM)
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
+$(TARGET_WHPX) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_WHPX)
+	$(CXX) $(CXXFLAGS_WHPX) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) $(LIBS_WHPX) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
 clean:
 	-$(RM_F) $(TARGET_I286)
 	-$(RM_F) $(TARGET_I386)
 	-$(RM_F) $(TARGET_I486)
 	-$(RM_F) $(TARGET_HAXM)
+	-$(RM_F) $(TARGET_WHPX)
