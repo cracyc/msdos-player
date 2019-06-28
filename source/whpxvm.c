@@ -219,7 +219,7 @@ static DWORD CALLBACK cpu_int_th(LPVOID arg)
 	if (!(timer = CreateWaitableTimerA( NULL, FALSE, NULL ))) return 0;
 
 	when.u.LowPart = when.u.HighPart = 0;
-	SetWaitableTimer(timer, &when, 20, cpu_int_cb, arg, FALSE);
+	SetWaitableTimer(timer, &when, 10, cpu_int_cb, arg, FALSE);
 	for (;;) SleepEx(INFINITE, TRUE);
 }
 
@@ -772,12 +772,15 @@ static void cpu_execute_whpx()
 #define R_WORD(a) (*((unsigned short *) &(a)))
 #define R_DWORD(a) (*((unsigned *) &(a)))
 #define OP_JCC(cond) eip += (cond) ? 2 + *(signed char *)MEM_BASE32(cs + eip + 1) : 2; break;
+#define OP_JCCW(cond) eip += (x86->operand_size == 2) ? ((cond) ? 4 + *(signed short *)MEM_BASE32(cs + eip + 2) : 4) : \
+				((cond) ? 6 + *(signed *)MEM_BASE32(cs + eip + 2) : 6); break;
 
 #define CF  (1 <<  0)
 #define PF  (1 <<  2)
 #define AF  (1 <<  4)
 #define ZF  (1 <<  6)
 #define SF  (1 <<  7)
+#define IF  (1 <<  9)
 #define DF  (1 << 10)
 #define OF  (1 << 11)
 
@@ -970,14 +973,18 @@ static int instr_len(unsigned char *p, int is_32)
 		p++;
 		switch (*p) {
 			case 0xa4:
+			case 0xac:
 				type = 8;
+				break;
+			case 0xaf:
+			case 0xb6:
+			case 0xbe:
+			case 0xbf:
+				type = 7;
 				break;
 			case 0xba:
 				p += 4;
 				return p - p0;
-			case 0xb6:
-				type = 7;
-				break;
 			default:
 				/* not yet */
 				instr_deb("unsupported instr_len %x %x\n", p[0], p[1]);
@@ -2043,6 +2050,96 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 		case 0x0f:
 			switch (*(unsigned char *)MEM_BASE32(cs + eip + 1))
 			{
+				case 0x80: OP_JCCW(values[EFLAGS].Reg32 & OF);         /*jo*/
+				case 0x81: OP_JCCW(!(values[EFLAGS].Reg32 & OF));      /*jno*/
+				case 0x82: OP_JCCW(values[EFLAGS].Reg32 & CF);         /*jc*/
+				case 0x83: OP_JCCW(!(values[EFLAGS].Reg32 & CF));      /*jnc*/
+				case 0x84: OP_JCCW(values[EFLAGS].Reg32 & ZF);         /*jz*/
+				case 0x85: OP_JCCW(!(values[EFLAGS].Reg32 & ZF));      /*jnz*/
+				case 0x86: OP_JCCW(values[EFLAGS].Reg32 & (ZF|CF));    /*jbe*/
+				case 0x87: OP_JCCW(!(values[EFLAGS].Reg32 & (ZF|CF))); /*ja*/
+				case 0x88: OP_JCCW(values[EFLAGS].Reg32 & SF);         /*js*/
+				case 0x89: OP_JCCW(!(values[EFLAGS].Reg32 & SF));      /*jns*/
+				case 0x8a: OP_JCCW(values[EFLAGS].Reg32 & PF);         /*jp*/
+				case 0x8b: OP_JCCW(!(values[EFLAGS].Reg32 & PF));      /*jnp*/
+				case 0x8c: OP_JCCW((values[EFLAGS].Reg32 & SF)^((values[EFLAGS].Reg32 & OF)>>4))         /*jl*/
+				case 0x8d: OP_JCCW(!((values[EFLAGS].Reg32 & SF)^((values[EFLAGS].Reg32 & OF)>>4)))      /*jnl*/
+				case 0x8e: OP_JCCW((values[EFLAGS].Reg32 & (SF|ZF))^((values[EFLAGS].Reg32 & OF)>>4))    /*jle*/
+				case 0x8f: OP_JCCW(!((values[EFLAGS].Reg32 & (SF|ZF))^((values[EFLAGS].Reg32 & OF)>>4))) /*jg*/
+				case 0xa4:
+					ptr = x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len);
+					repcount = *(unsigned char *)MEM_BASE32(cs + eip + 3 + inst_len) & 31;
+					if (!repcount) break;
+					if (x86->operand_size == 2)
+					{
+						uns = R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3));
+						unsigned short uns2 = instr_read_word(ptr);
+						__asm__ __volatile__("\n\
+								shldw	%%cl, %3, %1\n\
+								pushf; pop	%0\n \
+								" : "=g" (flags), "+g" (uns2) : "c" (repcount), "r" (uns));
+						instr_write_word(ptr, uns2);
+					}
+					else
+					{
+						und = *reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3);
+						und2 = instr_read_dword(ptr);
+						__asm__ __volatile__("\n\
+								shldl	%%cl, %3, %1\n\
+								pushf; pop	%0\n \
+								" : "=g" (flags), "+g" (und2) : "c" (repcount), "r" (und));
+						instr_write_dword(ptr, und2);
+					}
+					values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF|CF);
+					eip += inst_len + 4;
+					break;
+				case 0xac:
+					ptr = x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len);
+					repcount = *(unsigned char *)MEM_BASE32(cs + eip + 3 + inst_len) & 31;
+					if (!repcount) break;
+					if (x86->operand_size == 2)
+					{
+						uns = R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3));
+						unsigned short uns2 = instr_read_word(ptr);
+						__asm__ __volatile__("\n\
+								shrdw	%%cl, %3, %1\n\
+								pushf; pop	%0\n \
+								" : "=g" (flags), "+g" (uns2) : "c" (repcount), "r" (uns));
+						instr_write_word(ptr, uns2);
+					}
+					else
+					{
+						und = *reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3);
+						und2 = instr_read_dword(ptr);
+						__asm__ __volatile__("\n\
+								shrdl	%%cl, %3, %1\n\
+								pushf; pop	%0\n \
+								" : "=g" (flags), "+g" (und2) : "c" (repcount), "r" (und));
+						instr_write_dword(ptr, und2);
+					}
+					values[EFLAGS].Reg32 |= flags & (OF|ZF|SF|PF|AF|CF);
+					eip += inst_len + 4;
+					break;
+				case 0xaf:
+					ptr = x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len);
+					dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3);
+					if (x86->operand_size == 4)
+					{
+						long long q = (long long)(int)*dstreg * (long long)(int)instr_read_dword(ptr);
+						*dstreg = q & 0xffffffff;
+						values[EFLAGS].Reg32 &= ~(CF|OF);
+						if (q & ~0xffffffffull)
+							values[EFLAGS].Reg32 |= (CF|OF);
+					}
+					else
+					{
+						i = (short)R_WORD(*dstreg) * (short)instr_read_word(ptr);
+						R_WORD(*dstreg) = i & 0xffff;
+						values[EFLAGS].Reg32 &= ~(CF|OF);
+						if (i & ~0xffff)
+							values[EFLAGS].Reg32 |= (CF|OF);
+					}
+					eip += inst_len + 3; break;
 				case 0xb6:
 					if (x86->operand_size == 2)
 						R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3)) =
@@ -2050,6 +2147,18 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 					else
 						*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3) =
 							instr_read_byte(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
+					eip += inst_len + 3; break;
+				case 0xbe:
+					if (x86->operand_size == 2)
+						R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3)) =
+							(char)instr_read_byte(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
+					else
+						*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3) =
+							(char)instr_read_byte(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
+					eip += inst_len + 3; break;
+				case 0xbf:
+					*reg(*(unsigned char *)MEM_BASE32(cs + eip + 2)>>3) =
+						(short)instr_read_word(x86->modrm(MEM_BASE32(cs + eip + 1), x86, &inst_len));
 					eip += inst_len + 3; break;
 				default:
 					return 0;
@@ -2179,10 +2288,57 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				*reg(*(unsigned char *)MEM_BASE32(cs + eip)) = und;
 			eip++; break;
 
-			/* 0x60 */
+		case 0x60:
+			und = values[ESP].Reg32;
+			push(values[EAX].Reg32, x86);
+			push(values[ECX].Reg32, x86);
+			push(values[EDX].Reg32, x86);
+			push(values[EBX].Reg32, x86);
+			push(und, x86);
+			push(values[EBP].Reg32, x86);
+			push(values[ESI].Reg32, x86);
+			push(values[EDI].Reg32, x86);
+			eip++;
+			break;
+
+		case 0x61:
+			pop(&values[EDI].Reg32, x86);
+			pop(&values[ESI].Reg32, x86);
+			pop(&values[EBP].Reg32, x86);
+			pop(&und, x86);
+			pop(&values[EBX].Reg32, x86);
+			pop(&values[EDX].Reg32, x86);
+			pop(&values[ECX].Reg32, x86);
+			pop(&values[EAX].Reg32, x86);
+			eip++;
+			break;
+
 		case 0x68: /* push imm16 */
 			push(R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 1)), x86);
 			eip += x86->operand_size + 1; break;
+
+		case 0x69:
+			ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
+			dstreg = reg(*(unsigned char *)MEM_BASE32(cs + eip + 1)>>3);
+			if (x86->operand_size == 4)
+			{
+				long long q = (long long)(int)instr_read_dword(ptr) * (long long)*(int *)MEM_BASE32(cs + eip + 2 + inst_len);
+				*dstreg = q & 0xffffffff;
+				values[EFLAGS].Reg32 &= ~(CF|OF);
+				if (q & ~0xffffffffull)
+					values[EFLAGS].Reg32 |= (CF|OF);
+				eip += inst_len + 6;
+			}
+			else
+			{
+				i = (short)R_WORD(*dstreg) * *(short *)MEM_BASE32(cs + eip + 2 + inst_len);
+				R_WORD(*dstreg) = i & 0xffff;
+				values[EFLAGS].Reg32 &= ~(CF|OF);
+				if (i & ~0xffff)
+					values[EFLAGS].Reg32 |= (CF|OF);
+				eip += inst_len + 4;
+			}
+			break;
 
 		case 0x6a: /* push imm8 */
 			push((int)*(signed char *)MEM_BASE32(cs + eip + 1), x86);
@@ -2637,7 +2793,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   else {
 				   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 				   values[DS].Segment.Selector = instr_read_word(ptr+2);
-				   values[DS].Segment.Base = x86->seg_base = values[ES].Segment.Selector << 4;
+				   values[DS].Segment.Base = x86->seg_base = values[DS].Segment.Selector << 4;
 				   R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 1) >> 3)) = instr_read_word(ptr);
 				   eip += inst_len + 2; break;
 			   }
@@ -2879,9 +3035,16 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   ptr = x86->modrm(MEM_BASE32(cs + eip), x86, &inst_len);
 			   switch (*(unsigned char *)MEM_BASE32(cs + eip + 1)&0x38) {
 				   case 0x00: /* test ptr word, imm */
-					   if (x86->operand_size == 4) return 0;
-					   instr_flags(instr_read_word(ptr) & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len)), 0x8000, &values[EFLAGS].Reg32);
-					   eip += inst_len + 4; break;
+					   if (x86->operand_size == 4)
+					   {
+						instr_flags(instr_read_dword(ptr) & R_DWORD(*(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len)), 0x80000000, &values[EFLAGS].Reg32);
+						eip += inst_len + 6; break;
+					   }
+					   else
+					   {
+						instr_flags(instr_read_word(ptr) & R_WORD(*(unsigned char *)MEM_BASE32(cs + eip + 2+inst_len)), 0x8000, &values[EFLAGS].Reg32);
+						eip += inst_len + 4; break;
+					   }
 				   case 0x08: return 0;
 				   case 0x10: /*not word*/
 					      x86->instr_write(ptr, ~x86->instr_read(ptr));
@@ -2890,32 +3053,66 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 					      x86->instr_write(ptr, x86->instr_binary(7, 0, x86->instr_read(ptr), &values[EFLAGS].Reg32));
 					      eip += inst_len + 2; break;
 				   case 0x20: /*mul word*/
-					      if (x86->operand_size == 4) return 0;
-					      und = values[EAX].Reg16 * instr_read_word(ptr);
-					      values[EAX].Reg16 = und & 0xffff;
-					      values[EDX].Reg16 = und >> 16;
-					      values[EFLAGS].Reg32 &= ~(CF|OF);
-					      if (values[EDX].Reg16)
-						      values[EFLAGS].Reg32 |= (CF|OF);
+					      if (x86->operand_size == 4)
+					      {
+						      unsigned long long unq = values[EAX].Reg32 * instr_read_dword(ptr);
+						      values[EAX].Reg32 = unq & 0xffffffff;
+						      values[EDX].Reg32 = unq >> 32;
+						      values[EFLAGS].Reg32 &= ~(CF|OF);
+						      if (values[EDX].Reg32)
+							      values[EFLAGS].Reg32 |= (CF|OF);
+					      }
+					      else
+					      {
+						      und = values[EAX].Reg16 * instr_read_word(ptr);
+						      values[EAX].Reg16 = und & 0xffff;
+						      values[EDX].Reg16 = und >> 16;
+						      values[EFLAGS].Reg32 &= ~(CF|OF);
+						      if (values[EDX].Reg16)
+							      values[EFLAGS].Reg32 |= (CF|OF);
+					      }
 					      eip += inst_len + 2; break;
 				   case 0x28: /*imul word*/
-					      if (x86->operand_size == 4) return 0;
-					      i = (short)values[EAX].Reg16 * (short)instr_read_word(ptr);
-					      values[EAX].Reg16 = i & 0xffff;
-					      values[EDX].Reg16 = i >> 16;
-					      values[EFLAGS].Reg32 &= ~(CF|OF);
-					      if (values[EDX].Reg16)
-						      values[EFLAGS].Reg32 |= (CF|OF);
+					      if (x86->operand_size == 4)
+					      {
+						      long long q = (long long)(int)values[EAX].Reg32 * (long long)(int)instr_read_dword(ptr);
+						      values[EAX].Reg32 = q & 0xffffffff;
+						      values[EDX].Reg32 = q >> 32;
+						      values[EFLAGS].Reg32 &= ~(CF|OF);
+						      if (values[EDX].Reg32)
+							      values[EFLAGS].Reg32 |= (CF|OF);
+					      }
+					      else
+					      {
+						      i = (short)values[EAX].Reg16 * (short)instr_read_word(ptr);
+						      values[EAX].Reg16 = i & 0xffff;
+						      values[EDX].Reg16 = i >> 16;
+						      values[EFLAGS].Reg32 &= ~(CF|OF);
+						      if (values[EDX].Reg16)
+							      values[EFLAGS].Reg32 |= (CF|OF);
+					      }
 					      eip += inst_len + 2; break;
 				   case 0x30: /*div word*/
-					      if (x86->operand_size == 4) return 0;
-					      und = (values[EDX].Reg16<<16) + values[EAX].Reg16;
-					      uns = instr_read_word(ptr);
-					      if (uns == 0) return 0;
-					      und2 = und / uns;
-					      if (und2 & 0xffff0000) return 0;
-					      values[EAX].Reg16 = und2 & 0xffff;
-					      values[EDX].Reg16 = und % uns;
+					      if (x86->operand_size == 4)
+					      {
+						      unsigned long long unq = (values[EDX].Reg32<<32) + values[EAX].Reg32;
+						      und = instr_read_dword(ptr);
+						      if (und == 0) return 0;
+						      unsigned long long unq2 = unq / und;
+						      if (unq2 & ~0xffffffff) return 0;
+						      values[EAX].Reg32 = unq2 & 0xffffffff;
+						      values[EDX].Reg32 = unq % und;
+					      }
+					      else
+					      {
+						      und = (values[EDX].Reg16<<16) + values[EAX].Reg16;
+						      uns = instr_read_word(ptr);
+						      if (uns == 0) return 0;
+						      und2 = und / uns;
+						      if (und2 & 0xffff0000) return 0;
+						      values[EAX].Reg16 = und2 & 0xffff;
+						      values[EDX].Reg16 = und % uns;
+					      }
 					      eip += inst_len + 2; break;
 				   case 0x38: /*idiv word*/
 					      if (x86->operand_size == 4) return 0;
@@ -2938,7 +3135,17 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   values[EFLAGS].Reg32 |= CF;
 			   eip++; break;;
 
-			   /* 0xfa cli 0xfb sti */
+		case 0xfa:
+			   if (pmode)
+				return 0;
+			   values[EFLAGS].Reg32 &= ~IF;
+			   eip++; break;
+
+		case 0xfb:
+			   if (pmode)
+				return 0;
+			   values[EFLAGS].Reg32 |= IF;
+			   eip++; break;
 
 		case 0xfc: /* cld */
 			   values[EFLAGS].Reg32 &= ~DF;
