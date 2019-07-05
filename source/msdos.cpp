@@ -255,7 +255,7 @@ inline void maybe_idle()
 #define CPU_MODEL_STR(name)			#name
 #define CPU_MODEL_NAME(name)			CPU_MODEL_STR(name)
 
-#if !defined(USE_HAXM) && !defined(USE_WHPX)
+#if !defined(USE_WHPX)
 
 #define cpu_execute_i486 cpu_execute_i386
 
@@ -362,7 +362,7 @@ enum address_spacenum
 // offsets and addresses are 32-bit (for now...)
 //typedef UINT32	offs_t;
 
-#endif //USE_HAXM
+#endif //USE_WHPX
 
 // read accessors
 UINT8 read_byte(offs_t byteaddress)
@@ -813,7 +813,7 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 // this is set when the first process is terminated and jump to FFFF:0000 HALT
 int m_exit = 0;
 
-#if !defined(USE_HAXM) && !defined(USE_WHPX)
+#if !defined(USE_WHPX)
 
 /*****************************************************************************/
 /* src/osd/osdcomm.h */
@@ -979,13 +979,11 @@ void i386_write_stack(UINT16 value)
 #endif
 }
 
-#else // USE_HAXM
+#else // USE_WHPX
 
 #define HAS_I386
 
-#if defined(USE_HAXM)
-#include "haxmvm.c"
-#elif defined(USE_WHPX)
+#if defined(USE_WHPX)
 #include "whpxvm.c"
 #endif
 
@@ -997,8 +995,8 @@ void i386_write_stack(UINT16 value)
 
 #ifdef USE_DEBUGGER
 
-#if defined(USE_HAXM) || defined(USE_WHPX)
-#error debugger not compatible with haxm
+#if defined(USE_WHPX)
+#error debugger not compatible with hardware vm
 #endif
 
 #define TELNET_BLUE      0x0004 // text color contains blue.
@@ -18780,7 +18778,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 16) >> 4);
 	IRET_TOP = seg << 4;
 	seg += (IRET_SIZE + 16) >> 4;
-	UINT8 fill = 0xf4; // hlt
+	UINT8 fill = 0xcc; // int3
 	memset(mem + IRET_TOP, fill, IRET_SIZE);
 	
 	// dummy xms/ems device
@@ -19261,7 +19259,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// call int 29h routine
 	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
 	mem[DUMMY_TOP + 0x28] = 0x29;
-	mem[DUMMY_TOP + 0x29] = 0xf4;	// hlt
+	mem[DUMMY_TOP + 0x29] = 0xcc;	// int 3
 	
 	// VCPI entry point
 	mem[DUMMY_TOP + 0x2a] = 0x9c;	// pushf

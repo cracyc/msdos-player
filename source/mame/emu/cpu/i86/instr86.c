@@ -2137,6 +2137,20 @@ static void PREFIX86(_retf)()    /* Opcode 0xcb */
 
 static void PREFIX86(_int3)()    /* Opcode 0xcc */
 {
+	UINT32 old = m_pc - 1;
+
+	// Emulate system call on MS-DOS Player
+	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
+		PREFIX(_iret)();
+#ifdef USE_DEBUGGER
+		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+		m_int_num = (old - IRET_TOP);
+#else
+		// Call msdos_syscall() here for better processing speed
+		msdos_syscall(old - IRET_TOP);
+#endif
+		return;
+	}
 	PREFIX(_interrupt)(3);
 }
 
@@ -2568,20 +2582,6 @@ static void PREFIX(_sti)()    /* Opcode 0xfb */
 #ifndef I80186
 static void PREFIX86(_hlt)()    /* Opcode 0xf4 */
 {
-	UINT32 old = m_pc - 1;
-
-	// Emulate system call on MS-DOS Player
-	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
-		PREFIX(_iret)();
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		msdos_syscall(old - IRET_TOP);
-#endif
-		return;
-	}
 #ifdef I80286
 	if(PM && (CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 #endif

@@ -233,6 +233,7 @@ static BOOL cpu_init_whpx()
 {
 	WHV_CAPABILITY cap;
 	UINT32 val;
+	WHV_PARTITION_PROPERTY prop;
 	HRESULT hr;
 	if ((hr = WHvGetCapability(WHvCapabilityCodeHypervisorPresent, &cap, sizeof(cap), &val)) || !cap.HypervisorPresent)
 	{
@@ -244,8 +245,21 @@ static BOOL cpu_init_whpx()
 		WHPXVM_ERRF("CREATE_PARTITION %lx", hr);
 		return FALSE;
 	}
-	val = 1;
-	if ((hr = WHvSetPartitionProperty(part, WHvPartitionPropertyCodeProcessorCount, &val, sizeof(UINT32))))
+	prop.ProcessorCount = 1;
+	if ((hr = WHvSetPartitionProperty(part, WHvPartitionPropertyCodeProcessorCount, &prop, sizeof(WHV_PARTITION_PROPERTY))))
+	{
+		WHPXVM_ERRF("SET_PROPERTY %lx", hr);
+		return FALSE;
+	}
+	prop.ExtendedVmExits.AsUINT64 = 0;
+	prop.ExtendedVmExits.ExceptionExit = 1;
+	if ((hr = WHvSetPartitionProperty(part, WHvPartitionPropertyCodeExtendedVmExits, &prop, sizeof(WHV_PARTITION_PROPERTY))))
+	{
+		WHPXVM_ERRF("SET_PROPERTY %lx", hr);
+		return FALSE;
+	}
+	prop.ExceptionExitBitmap = (1 << WHvX64ExceptionTypeBreakpointTrap);
+	if ((hr = WHvSetPartitionProperty(part, WHvPartitionPropertyCodeExceptionExitBitmap, &prop, sizeof(WHV_PARTITION_PROPERTY))))
 	{
 		WHPXVM_ERRF("SET_PROPERTY %lx", hr);
 		return FALSE;
@@ -307,7 +321,7 @@ static int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
 	if(!(values[CR0].Reg32 & 0x80000000))
 		return TRUE;
 
-	UINT32 *pdbr = (UINT32 *)(mem + (values[CR3].Reg32 * 0xfffff000));
+	UINT32 *pdbr = (UINT32 *)(mem + (values[CR3].Reg32 & 0xfffff000));
 	UINT32 a = *address;
 	UINT32 dir = (a >> 22) & 0x3ff;
 	UINT32 table = (a >> 12) & 0x3ff;
@@ -319,16 +333,16 @@ static int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
 			*address = (page_dir & 0xffc00000) | (a & 0x003fffff);
 			return TRUE;
 		}
-	}
-	else
-	{
-		UINT32 page_entry = *(UINT32 *)(mem + (page_dir & 0xfffff000) + (table * 4));
-		if(!(page_entry & 1))
-			return FALSE;
 		else
 		{
-			*address = (page_entry & 0xfffff000) | (a & 0xfff);
-			return TRUE;
+			UINT32 page_entry = *(UINT32 *)(mem + (page_dir & 0xfffff000) + (table * 4));
+			if(!(page_entry & 1))
+				return FALSE;
+			else
+			{
+				*address = (page_entry & 0xfffff000) | (a & 0xfff);
+				return TRUE;
+			}
 		}
 	}
 	return FALSE;
@@ -408,7 +422,7 @@ static void load_segdesc(segment_desc *seg)
 		{
 			seg->base = seg->selector << 4;
 			seg->limit = 0xffff;
-			seg->flags = (seg == (segment_desc *)&values[CS].Segment) ? 0xfb : 0xf3;
+			seg->flags = 0xf3;
 		}
 	}
 	else
@@ -701,13 +715,13 @@ static void cpu_execute_whpx()
 				instr_emu(0);
 				WHvSetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
 				continue;
-			case WHvRunVpExitReasonX64Halt:
+			case WHvRunVpExitReasonException:
 			{
-				offs_t hltaddr = exitctxt.VpContext.Cs.Base + exitctxt.VpContext.Rip - 1;
-				translate_address(0, TRANSLATE_READ, &hltaddr, NULL);
-				if((hltaddr >= IRET_TOP) && (hltaddr < (IRET_TOP + IRET_SIZE)))
+				offs_t xcptaddr = exitctxt.VpContext.Cs.Base + exitctxt.VpContext.Rip;
+				translate_address(0, TRANSLATE_READ, &xcptaddr, NULL);
+				if((xcptaddr >= IRET_TOP) && (xcptaddr < (IRET_TOP + IRET_SIZE)))
 				{
-					int syscall = hltaddr - IRET_TOP;
+					int syscall = xcptaddr - IRET_TOP;
 					WHvGetVirtualProcessorRegisters(part, 0, whpx_register_names, RTL_NUMBER_OF(whpx_register_names), values);
 					i386_iret16();
 					msdos_syscall(syscall);
@@ -720,7 +734,41 @@ static void cpu_execute_whpx()
 						WHPXVM_ERRF("SET_REGS");
 					continue;
 				}
-				else if(hltaddr == 0xffff0)
+				WHV_REGISTER_VALUE vals[] = {{0}, {0}};
+				const WHV_REGISTER_NAME regs[] = {WHvX64RegisterRip, WHvX64RegisterCs};
+				UINT16 sel;
+				UINT32 off = 3 * 4;
+				values[EIP].Reg64 = exitctxt.VpContext.Rip;
+				values[CS].Segment = exitctxt.VpContext.Cs;
+				switch (exitctxt.VpException.InstructionBytes[0])
+				{
+					case 0xcd:
+						values[EIP].Reg32 += 2;
+						break;
+					case 0xcc:
+						values[EIP].Reg32++;
+						break;
+					default:
+						whpxvm_panic("unknown bp inst");
+				}
+				if (PROTECTED_MODE)
+				{
+					WHPXVM_ERRF("pmode int3");
+					continue;
+				}
+				sel = *(UINT16 *)(mem + off + 2);
+				off = *(UINT16 *)(mem + off);
+				i386_pushf();
+				i386_call_far(sel, off);
+				vals[0] = values[EIP];
+				vals[1] = values[CS];
+				WHvSetVirtualProcessorRegisters(part, 0, regs, 2, vals);
+				continue;
+			}
+			case WHvRunVpExitReasonX64Halt:
+			{
+				offs_t hltaddr = exitctxt.VpContext.Cs.Base + exitctxt.VpContext.Rip - 1;
+				if(hltaddr == 0xffff0)
 				{
 					m_exit = 1;
 					return;
@@ -3095,7 +3143,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   case 0x30: /*div word*/
 					      if (x86->operand_size == 4)
 					      {
-						      unsigned long long unq = (values[EDX].Reg32<<32) + values[EAX].Reg32;
+						      unsigned long long unq = ((long long)values[EDX].Reg32<<32) + values[EAX].Reg32;
 						      und = instr_read_dword(ptr);
 						      if (und == 0) return 0;
 						      unsigned long long unq2 = unq / und;
