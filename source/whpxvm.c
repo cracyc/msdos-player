@@ -2224,6 +2224,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				pop(&seg, x86);
 				values[DS].Segment.Selector = seg;
 				values[DS].Segment.Base = seg << 4;
+				x86->seg_base = values[DS].Segment.Base;
 				eip++;
 			}
 			break;
@@ -2843,6 +2844,7 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 				   values[DS].Segment.Selector = instr_read_word(ptr+2);
 				   values[DS].Segment.Base = x86->seg_base = values[DS].Segment.Selector << 4;
 				   R_WORD(*reg(*(unsigned char *)MEM_BASE32(cs + eip + 1) >> 3)) = instr_read_word(ptr);
+				   x86->seg_base = values[DS].Segment.Base;
 				   eip += inst_len + 2; break;
 			   }
 
@@ -3184,13 +3186,13 @@ static inline int instr_sim(x86_emustate *x86, int pmode)
 			   eip++; break;;
 
 		case 0xfa:
-			   if (pmode)
+			   if (values[CR0].Reg32 & 1) // this needs to return in v86 mode
 				return 0;
 			   values[EFLAGS].Reg32 &= ~IF;
 			   eip++; break;
 
 		case 0xfb:
-			   if (pmode)
+			   if (values[CR0].Reg32 & 1)
 				return 0;
 			   values[EFLAGS].Reg32 |= IF;
 			   eip++; break;
