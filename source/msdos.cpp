@@ -18455,6 +18455,9 @@ void msdos_syscall(unsigned num)
 		break;
 */
 	case 0x69:
+	{
+		UINT16 seg = 0;
+		UINT16 off = 0;
 		// irq12 (mouse)
 		mouse_push_ax = REG16(AX);
 		mouse_push_bx = REG16(BX);
@@ -18470,14 +18473,9 @@ void msdos_syscall(unsigned num)
 			REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.position.y));
 			REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 			REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
-			
-			mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
-			mem[DUMMY_TOP + 0x03] = mouse.call_addr.w.l & 0xff;
-			mem[DUMMY_TOP + 0x04] = mouse.call_addr.w.l >> 8;
-			mem[DUMMY_TOP + 0x05] = mouse.call_addr.w.h & 0xff;
-			mem[DUMMY_TOP + 0x06] = mouse.call_addr.w.h >> 8;
-			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-			mem[DUMMY_TOP + 0x08] = 0x6b;
+		
+			seg = mouse.call_addr.w.h;
+			off = mouse.call_addr.w.l;
 			break;
 		}
 		for(int i = 0; i < 8; i++) {
@@ -18489,13 +18487,8 @@ void msdos_syscall(unsigned num)
 				REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 				REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 				
-				mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
-				mem[DUMMY_TOP + 0x03] = mouse.call_addr_alt[i].w.l & 0xff;
-				mem[DUMMY_TOP + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
-				mem[DUMMY_TOP + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
-				mem[DUMMY_TOP + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
-				mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-				mem[DUMMY_TOP + 0x08] = 0x6b;
+				seg = mouse.call_addr_alt[i].w.h;
+				off = mouse.call_addr_alt[i].w.l;
 				break;
 			}
 		}
@@ -18507,24 +18500,14 @@ void msdos_syscall(unsigned num)
 			i386_push16(data_3rd);
 			i386_push16(0x0000);
 			
-			mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
-			mem[DUMMY_TOP + 0x03] = mouse.call_addr_ps2.w.l & 0xff;
-			mem[DUMMY_TOP + 0x04] = mouse.call_addr_ps2.w.l >> 8;
-			mem[DUMMY_TOP + 0x05] = mouse.call_addr_ps2.w.h & 0xff;
-			mem[DUMMY_TOP + 0x06] = mouse.call_addr_ps2.w.h >> 8;
-			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
-			mem[DUMMY_TOP + 0x08] = 0x6a;
+			seg = mouse.call_addr_ps2.w.h;
+			off = mouse.call_addr_ps2.w.l;
 			break;
 		}
-		// invalid call addr :-(
-		mem[DUMMY_TOP + 0x02] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x03] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x04] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x05] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x06] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-		mem[DUMMY_TOP + 0x08] = 0x6b;
+		if(seg || off)
+			i386_call_far(seg, off);
 		break;
+	}
 	case 0x6a:
 		// end of ps/2 mouse bios
 		i386_pop16();
@@ -19204,16 +19187,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// irq12 routine (mouse)
 	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 69h (dummy)
 	mem[DUMMY_TOP + 0x01] = 0x69;
-	mem[DUMMY_TOP + 0x02] = 0x9a;	// call far mouse
-	mem[DUMMY_TOP + 0x03] = 0xff;
-	mem[DUMMY_TOP + 0x04] = 0xff;
-	mem[DUMMY_TOP + 0x05] = 0xff;
-	mem[DUMMY_TOP + 0x06] = 0xff;
-//	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
-//	mem[DUMMY_TOP + 0x08] = 0x6a;
-	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-	mem[DUMMY_TOP + 0x08] = 0x6b;
-	mem[DUMMY_TOP + 0x09] = 0xcf;	// iret
+	mem[DUMMY_TOP + 0x02] = 0xcd;	// int 6bh (dummy)
+	mem[DUMMY_TOP + 0x03] = 0x6b;
+	mem[DUMMY_TOP + 0x04] = 0xcf;	// iret
+
+	mem[DUMMY_TOP + 0x05] = 0x90;	// available
+	mem[DUMMY_TOP + 0x06] = 0x90;
+	mem[DUMMY_TOP + 0x07] = 0x90;
+	mem[DUMMY_TOP + 0x08] = 0x90;
+	mem[DUMMY_TOP + 0x09] = 0x90;
 	
 	// case map routine
 	mem[DUMMY_TOP + 0x0a] = 0xcd;	// int 6ch (dummy)
