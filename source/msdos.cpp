@@ -1253,12 +1253,9 @@ void debugger_process_info(char *buffer)
 	
 	while(!check[psp_seg] && (process  = msdos_process_info_get(psp_seg, false)) != NULL) {
 		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		char *file = process->module_path, *s;
+		char *file = process->module_name, *s;
 		char tmp[8192];
 		
-		while((s = strstr(file, "\\")) != NULL) {
-			file = s + 1;
-		}
 		sprintf(tmp, "PSP=%04X  ENV=%04X  RETURN=%04X:%04X  PROGRAM=%s\n", psp_seg, psp->env_seg, psp->int_22h.w.h, psp->int_22h.w.l, my_strupr(file));
 		strcat(tmp, buffer);
 		strcpy(buffer, tmp);
@@ -2766,6 +2763,13 @@ void get_sio_port_numbers()
 	}
 }
 
+static WCHAR origtitle[256];
+
+void restore_title()
+{
+	SetConsoleTitleW(origtitle);
+}
+
 #define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
 
 int main(int argc, char *argv[], char *envp[])
@@ -2780,6 +2784,8 @@ int main(int argc, char *argv[], char *envp[])
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	GetFullPathNameA(path, MAX_PATH, full, &name);
+	GetConsoleTitleW(origtitle, 256);
+	atexit(restore_title);
 	
 	char dummy_argv_0[] = "msdos.exe";
 	char dummy_argv_1[MAX_PATH];
@@ -6920,9 +6926,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	// process info
 	process_t *process = msdos_process_info_create(psp_seg);
 	strcpy(process->module_dir, msdos_short_full_dir(path));
-#ifdef USE_DEBUGGER
-	strcpy(process->module_path, path);
-#endif
+	char *s, *filename = path;
+	while((s = strstr(filename, "\\")) != NULL) {
+		filename = s + 1;
+	}
+	strcpy(process->module_name, filename);
 	process->dta.w.l = 0x80;
 	process->dta.w.h = psp_seg;
 	process->switchar = '/';
@@ -7012,6 +7020,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		// the AX value to be passed to the child program is put on top of the child's stack
 		*(UINT16 *)(mem + (ss << 4) + sp) = REG16(AX);
 	}
+	SetConsoleTitleA(process->module_name);
 	return(0);
 }
 
@@ -7074,6 +7083,9 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	current_psp = psp->parent_psp;
 	retval = ret;
 	msdos_sda_update(current_psp);
+	current_process = msdos_process_info_get(current_psp);
+	if (current_process)
+		SetConsoleTitleA(current_process->module_name);
 }
 
 // drive

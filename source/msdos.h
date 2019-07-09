@@ -257,7 +257,7 @@ public:
 	debugger
 ---------------------------------------------------------------------------- */
 
-//#define USE_DEBUGGER
+#define USE_DEBUGGER
 
 #ifdef USE_DEBUGGER
 #define MAX_BREAK_POINTS	8
@@ -1205,9 +1205,7 @@ static const struct {
 typedef struct {
 	UINT16 psp;
 	char module_dir[MAX_PATH];
-#ifdef USE_DEBUGGER
-	char module_path[MAX_PATH];
-#endif
+	char module_name[MAX_PATH];
 	PAIR32 dta;
 	UINT8 switchar;
 	UINT8 verify;
