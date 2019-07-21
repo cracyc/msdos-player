@@ -6839,17 +6839,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		}
 		start_seg = 0;
 		if(!header->min_alloc && !header->max_alloc) {
-			psp_seg = msdos_mem_alloc(first_mcb, PSP_SIZE >> 4, 1);
-			int oldstrat = malloc_strategy;
-			malloc_strategy = 2;
-			start_seg = msdos_mem_alloc(first_mcb, load_size >> 4, 1);
-			malloc_strategy = oldstrat;
-			if(start_seg == -1) {
-				if(psp_seg != -1)
-					msdos_mem_free(psp_seg);
-				msdos_mem_free(env_seg);
-				return(-1);
-			}
+			psp_seg = msdos_mem_alloc(first_mcb, free_paragraphs, 1);
+			start_seg = psp_seg + free_paragraphs - (load_size >> 4);
 		} else if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs, 1)) == -1) {
 			if((psp_seg = msdos_mem_alloc(UMB_TOP >> 4, paragraphs, 1)) == -1) {
 				if(umb_linked != 0) {
