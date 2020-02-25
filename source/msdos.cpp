@@ -7594,6 +7594,13 @@ inline void pcbios_int_10h_00h()
 		init_graphics(320, 200, 4);
 		start_retrace_timer();
 		break;
+	case 0x10:
+		memcpy(dac_col, ega_pal, sizeof(ega_pal));
+		dac_dirty = 1;
+		crtc_regs[0x14] = 0x40;
+		init_graphics(640, 350, 4);
+		start_retrace_timer();
+		break;
 	case 0x12:
 		memcpy(dac_col, ega_pal, sizeof(ega_pal));
 		dac_dirty = 1;
@@ -21420,6 +21427,13 @@ UINT8 debugger_read_io_byte(offs_t addr)
 		val = pio_read(2, addr);
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c0:
+		val = attr_addr;
+		break;
+	case 0x3c1:
+		if(attr_addr < 0x15)
+			val = attr_regs[attr_addr];
+		break;
 	case 0x3c4:
 		val = seq_addr;
 		break;
@@ -21620,6 +21634,13 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		pio_write(2, addr, val);
 		break;
 #ifdef SUPPORT_GRAPHIC_SCREEN
+	case 0x3c0:
+		attr_addr = val;
+		break;
+	case 0x3c1:
+		if(attr_addr < 0x15)
+			attr_regs[attr_addr] = val;
+		break;
 	case 0x3c4:
 		seq_addr = val;
 		break;

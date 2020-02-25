@@ -710,6 +710,10 @@ UINT8 seq_regs[5] = {0};
 UINT8 grph_addr = 0;
 UINT8 grph_regs[9] = {0};
 
+// attr
+UINT8 attr_addr = 0;
+UINT8 attr_regs[0x14] = {0};
+
 // vram
 #define VRAM_SIZE 256 * 1024
 UINT8 vram[VRAM_SIZE];

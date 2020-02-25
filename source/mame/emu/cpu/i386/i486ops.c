@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Philip Bennett
+// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
 // Intel 486+ specific opcodes
 
 static void I486OP(cpuid)()             // Opcode 0x0F A2
@@ -521,4 +521,9 @@ static void I486OP(mov_cr_r32)()        // Opcode 0x0f 22
 			return;
 	}
 	m_cr[cr] = data;
+}
+
+void I486OP(wait)()
+{
+	x87_mf_fault();
 }
