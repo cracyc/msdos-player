@@ -1,3 +1,6 @@
+This is an experimental fork.  The original is at http://takeda-toshiya.my.coocan.jp/msdos/index.html
+
+
 MS-DOS Player for Win32-x64 console
 								10/26/2017
 
