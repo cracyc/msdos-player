@@ -257,7 +257,7 @@ public:
 	debugger
 ---------------------------------------------------------------------------- */
 
-#define USE_DEBUGGER
+//#define USE_DEBUGGER
 
 #ifdef USE_DEBUGGER
 #define MAX_BREAK_POINTS	8

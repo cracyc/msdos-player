@@ -17,7 +17,7 @@ void exit_handler();
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
 
-#define ENABLE_DEBUG_LOG
+//#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
 	#define ENABLE_DEBUG_SYSCALL
