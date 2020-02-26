@@ -7074,7 +7074,7 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	current_psp = psp->parent_psp;
 	retval = ret;
 	msdos_sda_update(current_psp);
-	current_process = msdos_process_info_get(current_psp);
+	current_process = msdos_process_info_get(current_psp, false);
 	if (current_process)
 		SetConsoleTitleA(current_process->module_name);
 }
