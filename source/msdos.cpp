@@ -159,6 +159,7 @@ bool limit_max_memory = false;
 bool no_windows = false;
 bool stay_busy = false;
 bool support_ems = false;
+char *autoboot_command = 0;
 #ifdef SUPPORT_XMS
 bool support_xms = false;
 #endif
@@ -2971,6 +2972,38 @@ int main(int argc, char *argv[], char *envp[])
 			support_xms = true;
 #endif
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-a", 2) == 0) {
+			if(argv[i] + 2) {
+				int len = strlen(argv[i]) - 2;
+				autoboot_command = (char *)malloc(len + 1);
+				char *p = autoboot_command;
+				for(int j = 2; j < len + 2; j++) {
+					if(argv[i][j] == '\\') {
+						j++;
+						switch(argv[i][j])
+						{
+						case 'n':
+							*p = '\n';
+							p++;
+							*p = '\r';
+							break;
+						case 't':
+							*p = '\t';
+							break;
+						case '\\':
+							*p = '\\';
+							break;
+						default:
+							*p = argv[i][j];
+							break;
+						}
+					} else
+						*p = argv[i][j];
+					p++;
+				}
+				*p = '\0';
+			}
+			arg_offset++;
 		} else {
 			break;
 		}
@@ -2983,7 +3016,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		fprintf(stderr,
 			"Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
-			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] (command) [options]\n"
+			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] [-a\"cmd\"] (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -3007,6 +3040,7 @@ int main(int argc, char *argv[], char *envp[])
 #else
 			"\t-x\tenable LIM EMS\n"
 #endif
+			"\t-a\tcommand to automatically inject at start\n"
 		);
 		
 		if(!is_started_from_command_prompt()) {
@@ -19324,6 +19358,16 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// nls stuff
 	msdos_nls_tables_init();
+
+	if(autoboot_command)
+	{
+		int len = strlen(autoboot_command);
+		for(int i = 0; i < len; i++)
+			pcbios_set_key_buffer(autoboot_command[i], 0);
+		free(autoboot_command);
+		autoboot_command = NULL;
+	}
+			
 	
 	// execute command
 	try {
