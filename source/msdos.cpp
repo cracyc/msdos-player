@@ -19352,6 +19352,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	}
 	for(int i = 2; i < 26; i++) {
 		msdos_cds_update(i);
+		if(i == (_getdrive() - 1)) // make sure the dcwd env var is set
+		{
+			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * i);
+			_chdir(cds->path_name);
+		}
 		UINT16 seg, ofs;
 		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}
