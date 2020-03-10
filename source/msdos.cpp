@@ -18470,7 +18470,6 @@ void msdos_syscall(unsigned num)
 		
 			seg = mouse.call_addr.w.h;
 			off = mouse.call_addr.w.l;
-			break;
 		}
 		for(int i = 0; i < 8; i++) {
 			if((mouse.status_irq_alt & (1 << i)) && mouse.call_addr_alt[i].dw) {
@@ -18496,7 +18495,6 @@ void msdos_syscall(unsigned num)
 			
 			seg = mouse.call_addr_ps2.w.h;
 			off = mouse.call_addr_ps2.w.l;
-			break;
 		}
 		if(seg || off)
 			i386_call_far(seg, off);
