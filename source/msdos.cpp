@@ -12668,7 +12668,8 @@ inline void msdos_int_21h_47h(int lfn)
 	if(_getdcwd(REG8(DL), path, MAX_PATH) != NULL) {
 		if(!lfn) {
 			strcpy(path, msdos_short_path(path));
-		}
+		} else
+			GetLongPathNameA(path, path, MAX_PATH);
 		if(path[1] == ':') {
 			// the returned path does not include a drive or the initial backslash
 			strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), path + 3);

@@ -142,7 +142,7 @@ SRCS_WHPX = \
 
 LIBS_WHPX = $(WINDIR)/system32/WinHvPlatform.dll
 
-all : i286 i386 i486 haxm whpx
+all : i286 i386 i486 whpx
 
 i286: $(TARGET_I286)
 
