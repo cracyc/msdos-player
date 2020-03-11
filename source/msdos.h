@@ -691,10 +691,13 @@ HANDLE running = 0;
 int vga_width;
 int vga_pitch;
 int vga_height;
+float vga_widthscl;
+float vga_heightscl;
 int vga_bpp;
 UINT32 vga_latch;
 uint64_t vsync = 0;
 HDC vgadc = 0;
+BOOL vga_graph = false;
 
 // dac
 UINT8 dac_ridx = 0;
@@ -1369,6 +1372,7 @@ typedef struct {
 } mouse_t;
 
 mouse_t mouse;
+bool mouse_ps2_irq;
 
 UINT16 mouse_push_ax;
 UINT16 mouse_push_bx;

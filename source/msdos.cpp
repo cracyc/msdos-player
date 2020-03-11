@@ -833,7 +833,7 @@ int m_exit = 0;
 #else
 	#include "mame/emu/cpu/i86/i86.c"
 #endif
-#ifdef USE_DEBUGGER
+#if defined(USE_DEBUGGER) || defined(ENABLE_DEBUG_TRACE)
 	#include "mame/emu/cpu/i386/i386dasm.c"
 #endif
 
@@ -994,6 +994,58 @@ void i386_write_stack(UINT16 value)
 	debugger
 ---------------------------------------------------------------------------- */
 
+#ifdef ENABLE_DEBUG_TRACE
+#ifdef USE_DEBUGGER
+bool debug_trace = false;
+#else
+bool debug_trace = true;
+#endif
+#endif
+
+#if defined(USE_DEBUGGER) || defined(ENABLE_DEBUG_TRACE)
+#ifndef USE_DEBUGGER
+#define debugger_read_byte read_byte
+#endif
+UINT32 debugger_trans_seg(UINT16 seg)
+{
+#if defined(HAS_I386)
+	if(PROTECTED_MODE && !V8086_MODE)
+	{
+		I386_SREG pseg;
+		pseg.selector = seg;
+		i386_load_protected_mode_segment(&pseg, NULL);
+		return pseg.base;
+	}
+#endif
+	return seg << 4;
+}
+
+int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
+{
+//	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
+	UINT8 ops[16];
+	for(int i = 0; i < 16; i++) {
+#if defined(HAS_I386)
+		if(PROTECTED_MODE && (CR(0) & 0x80000000)) {
+			offs_t addr = debugger_trans_seg(cs) + eip + i;
+			UINT32 error;
+			i386_translate_address(TRANSLATE_READ_DEBUG, &addr, NULL);
+			ops[i] = debugger_read_byte(addr & ADDR_MASK);
+		} else
+#endif
+		ops[i] = debugger_read_byte((debugger_trans_seg(cs) + (eip + i)) & ADDR_MASK);
+	}
+	UINT8 *oprom = ops;
+	
+#if defined(HAS_I386)
+	if(m_sreg[CS].d) {
+		return(CPU_DISASSEMBLE_CALL(x86_32) & DASMFLAG_LENGTHMASK);
+	} else
+#endif
+	return(CPU_DISASSEMBLE_CALL(x86_16) & DASMFLAG_LENGTHMASK);
+}
+#endif
+
 #ifdef USE_DEBUGGER
 
 #if defined(USE_WHPX)
@@ -1007,9 +1059,6 @@ void i386_write_stack(UINT16 value)
 
 int svr_socket = 0;
 int cli_socket = 0;
-#ifdef ENABLE_DEBUG_TRACE
-bool debug_trace = false;
-#endif
 
 process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error);
 
@@ -1157,45 +1206,6 @@ bool telnet_disconnected()
 void telnet_set_color(int color)
 {
 	telnet_command("\033[%dm\033[3%dm", (color >> 3) & 1, (color & 7));
-}
-
-UINT32 debugger_trans_seg(UINT16 seg)
-{
-#if defined(HAS_I386)
-	if(PROTECTED_MODE && !V8086_MODE)
-	{
-		I386_SREG pseg;
-		pseg.selector = seg;
-		i386_load_protected_mode_segment(&pseg, NULL);
-		return pseg.base;
-	}
-#endif
-	return seg << 4;
-}
-
-int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
-{
-//	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
-	UINT8 ops[16];
-	for(int i = 0; i < 16; i++) {
-#if defined(HAS_I386)
-		if(PROTECTED_MODE && (CR(0) & 0x80000000)) {
-			offs_t addr = debugger_trans_seg(cs) + eip + i;
-			UINT32 error;
-			i386_translate_address(TRANSLATE_READ_DEBUG, &addr, NULL);
-			ops[i] = debugger_read_byte(addr & ADDR_MASK);
-		} else
-#endif
-		ops[i] = debugger_read_byte((debugger_trans_seg(cs) + (eip + i)) & ADDR_MASK);
-	}
-	UINT8 *oprom = ops;
-	
-#if defined(HAS_I386)
-	if(m_sreg[CS].d) {
-		return(CPU_DISASSEMBLE_CALL(x86_32) & DASMFLAG_LENGTHMASK);
-	} else
-#endif
-	return(CPU_DISASSEMBLE_CALL(x86_16) & DASMFLAG_LENGTHMASK);
 }
 
 void debugger_regs_info(char *buffer)
@@ -2357,6 +2367,7 @@ DWORD WINAPI debugger_thread(LPVOID)
 	return(0);
 }
 #endif
+
 
 /* ----------------------------------------------------------------------------
 	main
@@ -3545,9 +3556,20 @@ bool update_console_input()
 						if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
 							GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 						}
-						// FIXME: character size is always 8x8 ???
-						int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
-						int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+
+						int x, y;
+						POINT curpos;
+						GetCursorPos(&curpos);
+						ScreenToClient(get_console_window_handle(), &curpos);
+						if(vga_graph) {
+							x = curpos.x * vga_widthscl;
+							y = curpos.y * vga_heightscl;
+						} else {
+							get_console_font_size(&x, &y);
+							// FIXME: character size is always 8x8 ???
+							x = (curpos.x / x) * 8;
+							y = (curpos.y / y) * 8;
+						}
 
 						if(mouse.position.x != x || mouse.position.y != y) {
 							mouse.position.x = x;
@@ -7338,6 +7360,8 @@ static void CALLBACK retrace_cb(LPVOID arg, DWORD low, DWORD high)
 		right = (bottom * 4) / 3;
 	else
 		bottom = (right * 3) / 4;
+	vga_widthscl = (float)right / (float)vga_width;
+	vga_heightscl = (float)bottom / (float)vga_height;
 
 	StretchBlt(dc, 0, 0, right, bottom, vgadc, 0, 0, vga_width, vga_height, SRCCOPY);
 	ReleaseDC(get_console_window_handle(), dc);
@@ -7386,6 +7410,7 @@ static void init_graphics(int width, int height, int bitdepth, int pitch = 0)
 	if(oldbmap = SelectObject(vgadc, newbmap))
 		DeleteObject(oldbmap);
 	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
+	vga_graph = true;
 }
 
 static UINT32 vga_read(offs_t addr, int size)
@@ -7544,6 +7569,7 @@ inline void pcbios_int_10h_00h()
 				   {0,85,170}, {170,170,170}, {85,85,85}, {255,85,85}, {85,255,85},
 				   {255,255,85}, {85,85,255}, {255,85,255}, {85,255,255}, {255,255,255}};
 	const RGBQUAD cga_pal[] = {{0,0,0}, {255,85,255}, {255,255,85}, {255,255,255}};
+	vga_graph = false;
 #endif
 	switch(REG8(AL) & 0x7f) {
 	case 0x70: // v-text mode
@@ -18450,8 +18476,7 @@ void msdos_syscall(unsigned num)
 */
 	case 0x69:
 	{
-		UINT16 seg = 0;
-		UINT16 off = 0;
+		mouse_ps2_irq = false;
 		// irq12 (mouse)
 		mouse_push_ax = REG16(AX);
 		mouse_push_bx = REG16(BX);
@@ -18468,8 +18493,8 @@ void msdos_syscall(unsigned num)
 			REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 			REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 		
-			seg = mouse.call_addr.w.h;
-			off = mouse.call_addr.w.l;
+			i386_call_far(mouse.call_addr.w.h, mouse.call_addr.w.l);
+			break;
 		}
 		for(int i = 0; i < 8; i++) {
 			if((mouse.status_irq_alt & (1 << i)) && mouse.call_addr_alt[i].dw) {
@@ -18480,10 +18505,10 @@ void msdos_syscall(unsigned num)
 				REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 				REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 				
-				seg = mouse.call_addr_alt[i].w.h;
-				off = mouse.call_addr_alt[i].w.l;
+				i386_call_far(mouse.call_addr_alt[i].w.h, mouse.call_addr_alt[i].w.l);
 				break;
 			}
+			break;
 		}
 		if(mouse.status_irq_ps2 && mouse.call_addr_ps2.dw && mouse.enabled_ps2) {
 			UINT16 data_1st, data_2nd, data_3rd;
@@ -18493,20 +18518,20 @@ void msdos_syscall(unsigned num)
 			i386_push16(data_3rd);
 			i386_push16(0x0000);
 			
-			seg = mouse.call_addr_ps2.w.h;
-			off = mouse.call_addr_ps2.w.l;
+			mouse_ps2_irq = true;
+			i386_call_far(mouse.call_addr_ps2.w.h, mouse.call_addr_ps2.w.l);
+			break;
 		}
-		if(seg || off)
-			i386_call_far(seg, off);
 		break;
 	}
-	case 0x6a:
-		// end of ps/2 mouse bios
-		i386_pop16();
-		i386_pop16();
-		i386_pop16();
-		i386_pop16();
 	case 0x6b:
+		if(mouse_ps2_irq) {
+			// end of ps/2 mouse bios
+			i386_pop16();
+			i386_pop16();
+			i386_pop16();
+			i386_pop16();
+		}
 		// end of irq12 (mouse)
 		REG16(AX) = mouse_push_ax;
 		REG16(BX) = mouse_push_bx;
@@ -18744,6 +18769,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 	*(UINT16 *)(mem + 0x4ac) = 0x0a; // put rom config in reserved area
+	*(UINT8  *)(mem + 0x4ae) = 0xfc; // pc/at
 	*(UINT8  *)(mem + 0x4b1) = 0x60; // 2nd pic, rtc
 	*(UINT32 *)(mem + 0x4b2) = 0x40; // int 16/09
 #ifdef EXT_BIOS_TOP
@@ -19481,7 +19507,7 @@ void hardware_run()
 #endif
 	while(!m_exit) {
 		hardware_run_cpu();
-#if defined (ENABLE_DEBUG_TRACE) && defined (USE_DEBUGGER)
+#if defined (ENABLE_DEBUG_TRACE) || defined (USE_DEBUGGER)
         	if(debug_trace && fp_debug_log != NULL) {
 			char buffer[256];
 			debugger_dasm(buffer, SREG(CS), m_eip);
