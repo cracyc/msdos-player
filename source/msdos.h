@@ -1373,6 +1373,8 @@ typedef struct {
 
 mouse_t mouse;
 bool mouse_ps2_irq;
+bool mouse_capture = false;
+HWND mouse_window;
 
 UINT16 mouse_push_ax;
 UINT16 mouse_push_bx;

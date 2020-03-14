@@ -2777,9 +2777,57 @@ void get_sio_port_numbers()
 
 static WCHAR origtitle[256];
 
+void mouse_set(bool state)
+{
+	RAWINPUTDEVICE Rid[1];
+	Rid[0].usUsagePage = 1; //HID_USAGE_PAGE_GENERIC
+	Rid[0].usUsage = 2; //HID_USAGE_GENERIC_MOUSE
+	if(state) {
+		RECT wndrect;
+		GetClientRect(get_console_window_handle(), &wndrect);
+		MapWindowPoints(get_console_window_handle(), NULL, (POINT *)&wndrect, 2);
+		ClipCursor(&wndrect);
+		Rid[0].dwFlags = RIDEV_INPUTSINK;
+		Rid[0].hwndTarget = mouse_window;
+		mouse_capture = true;
+	} else {
+		ClipCursor(NULL);
+		Rid[0].dwFlags = RIDEV_REMOVE;
+		Rid[0].hwndTarget = NULL;
+		mouse_capture = false;
+	}
+	RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
+}
+
 void restore_title()
 {
+	ClipCursor(NULL);
 	SetConsoleTitleW(origtitle);
+}
+
+LRESULT CALLBACK mouse_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+{
+	switch(msg) {
+		case WM_INPUT:
+			if(mouse_capture) {
+				RAWINPUT ri;
+				UINT size = sizeof(RAWINPUT);
+				int x = mouse.position.x, y = mouse.position.y;
+				GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &ri, &size, sizeof(RAWINPUTHEADER));
+				if(ri.header.dwType == RIM_TYPEMOUSE) {
+					x += ri.data.mouse.lLastX;
+					y += ri.data.mouse.lLastY;
+				}
+				if(mouse.position.x != x || mouse.position.y != y) {
+					mouse.position.x = x;
+					mouse.position.y = y;
+					mouse.status |= 1;
+					mouse.status_alt |= 1;
+				}
+			}
+			break;
+	}
+	return DefWindowProc(hwnd, msg, wparam, lparam);
 }
 
 #define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
@@ -3259,7 +3307,10 @@ int main(int argc, char *argv[], char *envp[])
 	ci_old = ci_new = ci;
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
 	get_console_font_success = get_console_font_size(&font_width, &font_height);
-	
+	const WNDCLASS wndclass = {0, mouse_wndproc, 0, 0, NULL, NULL, NULL, NULL, NULL, "mouse_wnd"};
+	RegisterClassA(&wndclass);
+	mouse_window = CreateWindowA("mouse_wnd", "mouse_wnd", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, 0, NULL);
+
 	for(int y = 0; y < SCR_BUF_WIDTH; y++) {
 		for(int x = 0; x < SCR_BUF_HEIGHT; x++) {
 			SCR_BUF(y,x).Char.AsciiChar = ' ';
@@ -3557,6 +3608,13 @@ bool update_console_input()
 							GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 						}
 
+						if(mouse_capture)
+						{
+							MSG msg;
+							while(PeekMessage(&msg, mouse_window, 0, 0, PM_REMOVE))
+								DispatchMessage(&msg);
+							continue;
+						}
 						int x, y;
 						POINT curpos;
 						GetCursorPos(&curpos);
@@ -3727,6 +3785,8 @@ bool update_console_input()
 									};
 									scn = ctrl_map[scn - 0x35];
 								}
+								if((scn == 0x67) && vga_graph)
+									mouse_set(!mouse_capture);
 							} else if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
 								if(scn >= 0x3b && scn <= 0x44) {
 									scn += 0x54 - 0x3b;	// F1 to F10
@@ -7637,6 +7697,8 @@ inline void pcbios_int_10h_00h()
 		mem[0x487] &= ~0x80;
 	}
 	mem[0x449] = REG8(AL) & 0x7f;
+	if(!vga_graph)
+		mouse_set(false);
 }
 
 inline void pcbios_int_10h_01h()
