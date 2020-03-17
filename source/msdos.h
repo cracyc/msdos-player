@@ -11,8 +11,8 @@
 #define WIN32_LEAN_AND_MEAN
 #ifndef _WIN32_WINNT
 //#define _WIN32_WINNT 0x400	// Windows NT 4.0
-#define _WIN32_WINNT 0x500	// Windows 2000
-//#define _WIN32_WINNT 0x501	// Windows XP
+//#define _WIN32_WINNT 0x500	// Windows 2000
+#define _WIN32_WINNT 0x501	// Windows XP
 #endif
 #include <windows.h>
 #ifdef __MINGW32__
