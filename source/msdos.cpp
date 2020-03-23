@@ -2764,8 +2764,6 @@ void get_sio_port_numbers()
 	}
 }
 
-static WCHAR origtitle[256];
-
 void mouse_set(bool state)
 {
 	RAWINPUTDEVICE Rid[1];
@@ -2786,12 +2784,6 @@ void mouse_set(bool state)
 		mouse_capture = false;
 	}
 	RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
-}
-
-void restore_title()
-{
-	ClipCursor(NULL);
-	SetConsoleTitleW(origtitle);
 }
 
 LRESULT CALLBACK mouse_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
@@ -2829,12 +2821,12 @@ int main(int argc, char *argv[], char *envp[])
 	bool get_console_info_success = false;
 	bool get_console_font_success = false;
 	bool screen_size_changed = false;
+	WCHAR origtitle[256];
 	
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	GetFullPathNameA(path, MAX_PATH, full, &name);
 	GetConsoleTitleW(origtitle, 256);
-	atexit(restore_title);
 	
 	char dummy_argv_0[] = "msdos.exe";
 	char dummy_argv_1[MAX_PATH];
@@ -3442,6 +3434,8 @@ int main(int argc, char *argv[], char *envp[])
 		} else {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 		}
+		ClipCursor(NULL);
+		SetConsoleTitleW(origtitle);
 		
 		msdos_finish();
 		
