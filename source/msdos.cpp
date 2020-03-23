@@ -995,17 +995,11 @@ void i386_write_stack(UINT16 value)
 ---------------------------------------------------------------------------- */
 
 #ifdef ENABLE_DEBUG_TRACE
-#ifdef USE_DEBUGGER
-bool debug_trace = false;
-#else
 bool debug_trace = true;
 #endif
-#endif
 
-#if defined(USE_DEBUGGER) || defined(ENABLE_DEBUG_TRACE)
-#ifndef USE_DEBUGGER
-#define debugger_read_byte read_byte
-#endif
+#ifdef USE_DEBUGGER
+bool debug_trace = false;
 UINT32 debugger_trans_seg(UINT16 seg)
 {
 #if defined(HAS_I386)
@@ -1044,9 +1038,6 @@ int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 #endif
 	return(CPU_DISASSEMBLE_CALL(x86_16) & DASMFLAG_LENGTHMASK);
 }
-#endif
-
-#ifdef USE_DEBUGGER
 
 #if defined(USE_WHPX)
 #error debugger not compatible with hardware vm
@@ -2070,14 +2061,12 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-#ifdef ENABLE_DEBUG_TRACE
 			} else if(stricmp(params[0], "TE") == 0) {
 				telnet_printf("debug trace enabled\n");
 				debug_trace = true;
 			} else if(stricmp(params[0], "TD") == 0) {
 				telnet_printf("debug trace disabled\n");
 				debug_trace = false;
-#endif
 			} else if(stricmp(params[0], "T") == 0) {
 				if(num == 1 || num == 2) {
 					int steps = 1;
@@ -4194,12 +4183,22 @@ bool msdos_is_subst_drive(int drv);
 
 // process info
 
-process_t *msdos_process_info_create(UINT16 psp_seg)
+process_t *msdos_process_info_create(UINT16 psp_seg, const char *path, const char *filename)
 {
 	for(int i = 0; i < MAX_PROCESS; i++) {
 		if(process[i].psp == 0 || process[i].psp == psp_seg) {
 			memset(&process[i], 0, sizeof(process_t));
 			process[i].psp = psp_seg;
+			strcpy(process->module_dir, path);
+			strcpy(process->module_name, filename);
+			process[i].dta.w.l = 0x80;
+			process[i].dta.w.h = psp_seg;
+			process[i].switchar = '/';
+			process[i].max_files = 20;
+			process[i].parent_int_10h_feh_called = int_10h_feh_called;
+			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
+			process[i].parent_ds = SREG(DS);
+			process[i].parent_es = SREG(ES);
 			return(&process[i]);
 		}
 	}
@@ -6980,21 +6979,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	}
 	
 	// process info
-	process_t *process = msdos_process_info_create(psp_seg);
-	strcpy(process->module_dir, msdos_short_full_dir(path));
 	char *s, *filename = path;
 	while((s = strstr(filename, "\\")) != NULL) {
 		filename = s + 1;
 	}
-	strcpy(process->module_name, filename);
-	process->dta.w.l = 0x80;
-	process->dta.w.h = psp_seg;
-	process->switchar = '/';
-	process->max_files = 20;
-	process->parent_int_10h_feh_called = int_10h_feh_called;
-	process->parent_int_10h_ffh_called = int_10h_ffh_called;
-	process->parent_ds = SREG(DS);
-	process->parent_es = SREG(ES);
+	process_t *process = msdos_process_info_create(psp_seg, msdos_short_full_dir(path), filename);
 	
 	current_psp = psp_seg;
 	msdos_sda_update(current_psp);
@@ -13082,6 +13071,10 @@ inline void msdos_int_21h_55h()
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
 	psp->parent_psp = current_psp;
+	current_psp = REG16(DX);
+	process_t *process = msdos_process_info_get(psp->parent_psp);
+	msdos_process_info_create(current_psp, process->module_dir, process->module_name);
+	REG16(DX) = psp->parent_psp;
 }
 
 inline void msdos_int_21h_56h(int lfn)
