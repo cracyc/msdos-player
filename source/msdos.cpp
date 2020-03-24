@@ -4183,8 +4183,8 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path, const cha
 		if(process[i].psp == 0 || process[i].psp == psp_seg) {
 			memset(&process[i], 0, sizeof(process_t));
 			process[i].psp = psp_seg;
-			strcpy(process->module_dir, path);
-			strcpy(process->module_name, filename);
+			strcpy(process[i].module_dir, path);
+			strcpy(process[i].module_name, filename);
 			process[i].dta.w.l = 0x80;
 			process[i].dta.w.h = psp_seg;
 			process[i].switchar = '/';
@@ -7049,6 +7049,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		
 		*(UINT16 *)(mem + (ss << 4) + sp) = 0;
 		i386_jmp_far(cs, ip);
+		SetConsoleTitleA(process->module_name);
 	} else if(al == 0x01) {
 		// copy ss:sp and cs:ip to param block
 		param->sp = sp;
@@ -7059,7 +7060,6 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		// the AX value to be passed to the child program is put on top of the child's stack
 		*(UINT16 *)(mem + (ss << 4) + sp) = REG16(AX);
 	}
-	SetConsoleTitleA(process->module_name);
 	return(0);
 }
 
@@ -13012,6 +13012,9 @@ inline void msdos_int_21h_50h()
 inline void msdos_int_21h_51h()
 {
 	REG16(BX) = current_psp;
+	process_t *process = msdos_process_info_get(current_psp, false);
+	if (process)
+		SetConsoleTitleA(process->module_name);
 }
 
 inline void msdos_int_21h_52h()
