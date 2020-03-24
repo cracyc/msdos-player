@@ -13003,6 +13003,7 @@ inline void msdos_int_21h_50h()
 		process_t *process = msdos_process_info_get(current_psp);
 		if(process != NULL) {
 			process->psp = REG16(BX);
+			SetConsoleTitleA(process->module_name);
 		}
 		current_psp = REG16(BX);
 		msdos_sda_update(current_psp);
@@ -13012,9 +13013,6 @@ inline void msdos_int_21h_50h()
 inline void msdos_int_21h_51h()
 {
 	REG16(BX) = current_psp;
-	process_t *process = msdos_process_info_get(current_psp, false);
-	if (process)
-		SetConsoleTitleA(process->module_name);
 }
 
 inline void msdos_int_21h_52h()
@@ -13072,6 +13070,7 @@ inline void msdos_int_21h_55h()
 	process_t *process = msdos_process_info_get(psp->parent_psp);
 	msdos_process_info_create(current_psp, process->module_dir, process->module_name);
 	REG16(DX) = psp->parent_psp;
+	msdos_sda_update(current_psp);
 }
 
 inline void msdos_int_21h_56h(int lfn)
@@ -15731,21 +15730,11 @@ inline void msdos_int_33h_0001h()
 	if(mouse.hidden > 0) {
 		mouse.hidden--;
 	}
-	if(mouse.hidden == 0) {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
-		pic[1].imr &= ~0x10; // enable irq12
-	}
 }
 
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-	if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
-	} else {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
-	}
-	pic[1].imr |= 0x10; // disable irq12
 }
 
 inline void msdos_int_33h_0003h()
@@ -15840,6 +15829,17 @@ inline void msdos_int_33h_000ch()
 	mouse.call_mask = REG16(CX);
 	mouse.call_addr.w.l = REG16(DX);
 	mouse.call_addr.w.h = SREG(ES);
+	if(mouse.call_addr.dw || mouse.enabled_ps2)
+	{
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
+		pic[1].imr &= ~0x10; // enable irq12
+	} else {
+		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE))
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+		else
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		pic[1].imr |= 0x10; // disable irq12
+	}
 }
 
 inline void msdos_int_33h_000fh()
