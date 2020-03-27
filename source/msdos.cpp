@@ -5317,13 +5317,14 @@ void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 	file_handler[dst].lpt_port = file_handler[src].lpt_port;
 }
 
-void msdos_file_handler_close(int fd)
+int msdos_file_handler_close(int fd)
 {
-	file_handler[fd].valid = 0;
+	file_handler[fd].valid--;
 	
-	if(fd < 20) {
+	if((!file_handler[fd].valid) && fd < 20) {
 		memset(mem + SFT_TOP + 6 + 0x3b * fd, 0, 0x3b);
 	}
+	return file_handler[fd].valid;
 }
 
 inline int msdos_file_attribute_create(UINT16 new_attr)
@@ -7108,8 +7109,8 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 		
 		for(int i = 0; i < MAX_FILES; i++) {
 			if(file_handler[i].valid && file_handler[i].psp == psp_seg) {
-				_close(i);
-				msdos_file_handler_close(i);
+				if(!msdos_file_handler_close(i))
+					_close(i);
 				msdos_psp_set_file_table(i, 0x0ff, psp_seg); // FIXME: consider duplicated file handles
 			}
 		}
@@ -11714,8 +11715,8 @@ inline void msdos_int_21h_3eh()
 	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
-		_close(fd);
-		msdos_file_handler_close(fd);
+		if(!msdos_file_handler_close(fd))
+			_close(fd);
 		msdos_psp_set_file_table(REG16(BX), 0x0ff, current_psp);
 	} else {
 		REG16(AX) = 0x06;
@@ -12714,8 +12715,8 @@ inline void msdos_int_21h_46h()
 		m_CF = 1;
 	} else if(fd < process->max_files && file_handler[fd].valid && dup_fd < process->max_files) {
 		if(tmp_fd < process->max_files && file_handler[tmp_fd].valid) {
-			_close(tmp_fd);
-			msdos_file_handler_close(tmp_fd);
+			if(!msdos_file_handler_close(tmp_fd))
+				_close(tmp_fd);
 			msdos_psp_set_file_table(dup_fd, 0x0ff, current_psp);
 		}
 		if(_dup2(fd, dup_fd) != -1) {
@@ -13068,9 +13069,16 @@ inline void msdos_int_21h_55h()
 	psp->parent_psp = current_psp;
 	current_psp = REG16(DX);
 	process_t *process = msdos_process_info_get(psp->parent_psp);
-	msdos_process_info_create(current_psp, process->module_dir, process->module_name);
+	process = msdos_process_info_create(current_psp, process->module_dir, process->module_name);
 	REG16(DX) = psp->parent_psp;
 	msdos_sda_update(current_psp);
+	//increment file ref count
+	for(int i = 0; i < 20; i++)
+	{
+		int fd = msdos_psp_get_file_table(i, current_psp);
+		if(fd < process->max_files)
+			file_handler[fd].valid++;
+	}
 }
 
 inline void msdos_int_21h_56h(int lfn)
