@@ -13070,7 +13070,6 @@ inline void msdos_int_21h_55h()
 	current_psp = REG16(DX);
 	process_t *process = msdos_process_info_get(psp->parent_psp);
 	process = msdos_process_info_create(current_psp, process->module_dir, process->module_name);
-	REG16(DX) = psp->parent_psp;
 	msdos_sda_update(current_psp);
 	//increment file ref count
 	for(int i = 0; i < 20; i++)
