@@ -11868,7 +11868,26 @@ inline void msdos_int_21h_3fh()
 					REG16(AX) = total;
 				} else
 #endif
-				REG16(AX) = msdos_read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
+				if(SREG_BASE(DS) >= EMS_TOP)
+				{
+					int count = REG16(CX);
+					offs_t addr = SREG_BASE(DS) + REG16(DX);
+					int pgcnt = 16384 - (addr & 0x3fff);
+					pgcnt = (pgcnt < count) ? pgcnt : count;
+					int total = 0;
+					while((count > 0) && (addr < (EMS_TOP + EMS_SIZE)))
+					{
+						int pgtot = msdos_read(fd, ems_addr(addr - EMS_TOP), pgcnt);
+						total += pgtot;
+						if(pgtot != pgcnt)
+							break;
+						addr += pgtot;
+						count -= pgtot;
+						pgcnt = (count > 16384) ? 16384 : count;
+					}
+					REG16(AX) = total;
+				} else					
+					REG16(AX) = msdos_read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
 		} else {
 			REG16(AX) = 0x05;
@@ -12113,10 +12132,6 @@ inline void msdos_int_21h_44h()
 			m_CF = 1;
 			return;
 		}
-		if(strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) { // tie fighter expects this
-			REG16(AX) = 0xff;
-			return;
-		}
 		break;
 	case 0x08:
 	case 0x09:
@@ -12258,11 +12273,7 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x07: // Get Output Status
-		if(file_mode[file_handler[fd].mode].out) {
-			REG8(AL) = 0xff;
-		} else {
-			REG8(AL) = 0x00;
-		}
+		REG8(AL) = 0xff; // busy status is meaningless here
 		break;
 	case 0x08: // Check If Block Device Removable
 		if(msdos_is_removable_drive(drv) || msdos_is_cdrom_drive(drv)) {
@@ -16150,7 +16161,7 @@ inline void msdos_int_67h_43h()
 	} else if(REG16(BX) == 0) {
 		REG8(AH) = 0x89;
 	} else {
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(!ems_handles[i].allocated) {
 				ems_allocate_pages(i, REG16(BX));
 				REG8(AH) = 0x00;
@@ -16166,7 +16177,7 @@ inline void msdos_int_67h_44h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(!(REG16(BX) == 0xffff || REG16(BX) < ems_handles[REG16(DX)].pages)) {
 		REG8(AH) = 0x8a;
@@ -16185,7 +16196,7 @@ inline void msdos_int_67h_45h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else {
 		ems_release_pages(REG16(DX));
@@ -16210,7 +16221,7 @@ inline void msdos_int_67h_47h()
 	
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 //		REG8(AH) = 0x83;
 	} else if(process->ems_pages_stored) {
 		REG8(AH) = 0x8d;
@@ -16232,7 +16243,7 @@ inline void msdos_int_67h_48h()
 	
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 //		REG8(AH) = 0x83;
 	} else if(!process->ems_pages_stored) {
 		REG8(AH) = 0x8e;
@@ -16256,7 +16267,7 @@ inline void msdos_int_67h_4bh()
 	} else {
 		REG8(AH) = 0x00;
 		REG16(BX) = 0;
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				REG16(BX)++;
 			}
@@ -16268,7 +16279,7 @@ inline void msdos_int_67h_4ch()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else {
 		REG8(AH) = 0x00;
@@ -16283,7 +16294,7 @@ inline void msdos_int_67h_4dh()
 	} else {
 		REG8(AH) = 0x00;
 		REG16(BX) = 0;
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 0) = i;
 				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 2) = ems_handles[i].pages;
@@ -16311,7 +16322,7 @@ inline void msdos_int_67h_4eh()
 				UINT16 handle = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 0);
 				UINT16 page   = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 2);
 				
-				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+				if(handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
 					ems_map_page(i, handle, page);
 				} else {
 					ems_unmap_page(i);
@@ -16362,7 +16373,7 @@ inline void msdos_int_67h_4fh()
 //				REG8(AH) = 0x8b;
 //				return;
 //			} else
-			if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && logical < ems_handles[handle].pages) {
+			if(handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && logical < ems_handles[handle].pages) {
 				ems_map_page(physical & 3, handle, logical);
 			} else {
 				ems_unmap_page(physical & 3);
@@ -16382,7 +16393,7 @@ inline void msdos_int_67h_50h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
 		for(int i = 0; i < REG16(CX); i++) {
@@ -16416,7 +16427,7 @@ inline void msdos_int_67h_51h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG16(BX) > MAX_EMS_PAGES) {
 		REG8(AH) = 0x87;
@@ -16432,7 +16443,7 @@ inline void msdos_int_67h_52h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 //		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00) {
 		REG8(AL) = 0x00; // handle is volatile
@@ -16456,13 +16467,13 @@ inline void msdos_int_67h_53h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00) {
 		memcpy(mem + SREG_BASE(ES) + REG16(DI), ems_handles[REG16(DX)].name, 8);
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x01) {
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
 				REG8(AH) = 0xa1;
 				return;
@@ -16481,7 +16492,7 @@ inline void msdos_int_67h_54h()
 	if(!support_ems) {
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00) {
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				memcpy(mem + SREG_BASE(ES) + REG16(DI) + 10 * i + 2, ems_handles[i].name, 10);
 			} else {
@@ -16493,7 +16504,7 @@ inline void msdos_int_67h_54h()
 		REG8(AL) = MAX_EMS_HANDLES;
 	} else if(REG8(AL) == 0x01) {
 		REG8(AH) = 0xa0; // not found
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
 				REG8(AH) = 0x00;
 				REG16(DX) = i;
@@ -16503,149 +16514,6 @@ inline void msdos_int_67h_54h()
 	} else if(REG8(AL) == 0x02) {
 		REG8(AH) = 0x00;
 		REG16(BX) = MAX_EMS_HANDLES;
-	} else {
-		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0x8f;
-	}
-}
-
-inline void msdos_int_67h_55h()
-{
-	if(!support_ems) {
-		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
-		REG8(AH) = 0x83;
-	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
-		UINT16 jump_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0);
-		UINT16 jump_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2);
-		UINT8  entries  = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 4);
-		UINT16 map_ofs  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 5);
-		UINT16 map_seg  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 7);
-		
-		for(int i = 0; i < (int)entries; i++) {
-			int logical  = *(UINT16 *)(mem + (map_seg << 4) + map_ofs + 4 * i + 0);
-			int physical = *(UINT16 *)(mem + (map_seg << 4) + map_ofs + 4 * i + 2);
-			
-			if(REG8(AL) == 0x01) {
-				physical = ((physical << 4) - EMS_TOP) / 0x4000;
-			}
-//			if(!(physical < 4)) {
-//				REG8(AH) = 0x8b;
-//				return;
-//			} else
-			if(logical == 0xffff) {
-				ems_unmap_page(physical & 3);
-			} else if(logical < ems_handles[REG16(DX)].pages) {
-				ems_map_page(physical & 3, REG16(DX), logical);
-			} else {
-				REG8(AH) = 0x8a;
-				return;
-			}
-		}
-		i386_jmp_far(jump_seg, jump_ofs);
-		REG8(AH) = 0x00;
-	} else {
-		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0x8f;
-	}
-}
-
-inline void msdos_int_67h_56h()
-{
-	if(!support_ems) {
-		REG8(AH) = 0x84;
-	} else if(REG8(AL) == 0x02) {
-		REG16(BX) = (2 + 2) * 4;
-		REG8(AH) = 0x00;
-	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
-		REG8(AH) = 0x83;
-	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
-		UINT16 call_ofs    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  0);
-		UINT16 call_seg    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  2);
-		UINT8  new_entries = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) +  4);
-		UINT16 new_map_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  5);
-		UINT16 new_map_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  7);
-#if 0
-		UINT8  old_entries = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) +  9);
-		UINT16 old_map_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 10);
-		UINT16 old_map_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 12);
-#endif
-		UINT16 handles[4], pages[4];
-		
-		// alter page map and call routine is at fffb:001f
-		if(!(call_seg == 0 && call_ofs == 0)) {
-			mem[DUMMY_TOP + 0x1f] = 0x9a;	// call far
-			mem[DUMMY_TOP + 0x20] = (call_ofs >> 0) & 0xff;
-			mem[DUMMY_TOP + 0x21] = (call_ofs >> 8) & 0xff;
-			mem[DUMMY_TOP + 0x22] = (call_seg >> 0) & 0xff;
-			mem[DUMMY_TOP + 0x23] = (call_seg >> 8) & 0xff;
-		} else {
-			// invalid call addr :-(
-			mem[DUMMY_TOP + 0x1f] = 0x90;	// nop
-			mem[DUMMY_TOP + 0x20] = 0x90;	// nop
-			mem[DUMMY_TOP + 0x21] = 0x90;	// nop
-			mem[DUMMY_TOP + 0x22] = 0x90;	// nop
-			mem[DUMMY_TOP + 0x23] = 0x90;	// nop
-		}
-		// do call far (push cs/ip) in old mapping
-		i386_call_far(DUMMY_TOP >> 4, 0x001f);
-		
-		// get old mapping data
-#if 0
-		for(int i = 0; i < (int)old_entries; i++) {
-			int logical  = *(UINT16 *)(mem + (old_map_seg << 4) + old_map_ofs + 4 * i + 0);
-			int physical = *(UINT16 *)(mem + (old_map_seg << 4) + old_map_ofs + 4 * i + 2);
-			
-			if(REG8(AL) == 0x01) {
-				physical = ((physical << 4) - EMS_TOP) / 0x4000;
-			}
-//			if(!(physical < 4)) {
-//				REG8(AH) = 0x8b;
-//				return;
-//			} else
-			if(logical == 0xffff) {
-				ems_unmap_page(physical & 3);
-			} else if(logical < ems_handles[REG16(DX)].pages) {
-				ems_map_page(physical & 3, REG16(DX), logical);
-			} else {
-				REG8(AH) = 0x8a;
-				return;
-			}
-		}
-#endif
-		for(int i = 0; i < 4; i++) {
-			handles[i] = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
-			pages  [i] = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
-		}
-		
-		// set new mapping
-		for(int i = 0; i < (int)new_entries; i++) {
-			int logical  = *(UINT16 *)(mem + (new_map_seg << 4) + new_map_ofs + 4 * i + 0);
-			int physical = *(UINT16 *)(mem + (new_map_seg << 4) + new_map_ofs + 4 * i + 2);
-			
-			if(REG8(AL) == 0x01) {
-				physical = ((physical << 4) - EMS_TOP) / 0x4000;
-			}
-//			if(!(physical < 4)) {
-//				REG8(AH) = 0x8b;
-//				return;
-//			} else
-			if(logical == 0xffff) {
-				ems_unmap_page(physical & 3);
-			} else if(logical < ems_handles[REG16(DX)].pages) {
-				ems_map_page(physical & 3, REG16(DX), logical);
-			} else {
-				REG8(AH) = 0x8a;
-				return;
-			}
-		}
-		
-		// push old mapping data in new mapping
-		for(int i = 0; i < 4; i++) {
-			i386_push16(handles[i]);
-			i386_push16(pages  [i]);
-		}
-		REG8(AH) = 0x00;
 	} else {
 		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
@@ -16673,7 +16541,7 @@ inline void msdos_int_67h_57h_tmp()
 		src_addr = (src_seg << 4) + src_ofs;
 		src_addr_max = MAX_MEM;
 	} else {
-		if(!(src_handle >= 1 && src_handle <= MAX_EMS_HANDLES && ems_handles[src_handle].allocated)) {
+		if(!(src_handle <= MAX_EMS_HANDLES && ems_handles[src_handle].allocated)) {
 			REG8(AH) = 0x83;
 			return;
 		} else if(!(src_seg < ems_handles[src_handle].pages)) {
@@ -16691,7 +16559,7 @@ inline void msdos_int_67h_57h_tmp()
 		dest_addr = (dest_seg << 4) + dest_ofs;
 		dest_addr_max = MAX_MEM;
 	} else {
-		if(!(dest_handle >= 1 && dest_handle <= MAX_EMS_HANDLES && ems_handles[dest_handle].allocated)) {
+		if(!(dest_handle <= MAX_EMS_HANDLES && ems_handles[dest_handle].allocated)) {
 			REG8(AH) = 0x83;
 			return;
 		} else if(!(dest_seg < ems_handles[dest_handle].pages)) {
@@ -16811,7 +16679,7 @@ inline void msdos_int_67h_5ah()
 //	} else if(REG16(BX) == 0) {
 //		REG8(AH) = 0x89;
 	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
-		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+		for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 			if(!ems_handles[i].allocated) {
 				ems_allocate_pages(i, REG16(BX));
 				REG8(AH) = 0x00;
@@ -16828,26 +16696,21 @@ inline void msdos_int_67h_5ah()
 
 inline void msdos_int_67h_5bh()
 {
-	static UINT8  stored_bl = 0x00;
 	static UINT16 stored_es = 0x0000;
 	static UINT16 stored_di = 0x0000;
 	
 	if(!support_ems) {
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00) {
-		if(stored_bl == 0x00) {
-			if(!(stored_es == 0 && stored_di == 0)) {
-				for(int i = 0; i < 4; i++) {
-					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
-					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
-				}
+		if(!(stored_es == 0 && stored_di == 0)) {
+			for(int i = 0; i < 4; i++) {
+				*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
+				*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
 			}
-			SREG(ES) = stored_es;
-			i386_load_segment_descriptor(ES);
-			REG16(DI) = stored_di;
-		} else {
-			REG8(BL) = stored_bl;
 		}
+		SREG(ES) = stored_es;
+		i386_load_segment_descriptor(ES);
+		REG16(DI) = stored_di;
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x01) {
 		if(REG8(BL) == 0x00) {
@@ -16856,18 +16719,19 @@ inline void msdos_int_67h_5bh()
 					UINT16 handle = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 0);
 					UINT16 page   = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 2);
 					
-					if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+					if(handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
 						ems_map_page(i, handle, page);
 					} else {
 						ems_unmap_page(i);
 					}
 				}
 			}
+			stored_es = SREG(ES);
+			stored_di = REG16(DI);
+			REG8(AH) = 0x00;
 		}
-		stored_bl = REG8(BL);
-		stored_es = SREG(ES);
-		stored_di = REG16(DI);
-		REG8(AH) = 0x00;
+		else
+			REG8(AH) = 0x9c;
 	} else if(REG8(AL) == 0x02) {
 		REG16(DX) = 4 * 4;
 		REG8(AH) = 0x00;
@@ -16875,38 +16739,9 @@ inline void msdos_int_67h_5bh()
 		REG8(BL) = 0x00; // not supported
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x04) {
-		REG8(AH) = 0x00;
+		REG8(AH) = REG8(BL) ? 0x9c : 0x00;
 	} else if(REG8(AL) == 0x05) {
 		REG8(BL) = 0x00; // not supported
-		REG8(AH) = 0x00;
-	} else {
-		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0x8f;
-	}
-}
-
-inline void msdos_int_67h_5dh()
-{
-	if(!support_ems) {
-		REG8(AH) = 0x84;
-	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01 || REG8(AL) == 0x02) {
-		REG8(AH) = 0xa4; // operating system denied access
-	} else {
-		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0x8f;
-	}
-}
-
-inline void msdos_int_67h_70h()
-{
-	if(!support_ems) {
-		REG8(AH) = 0x84;
-	} else if(REG8(AL) == 0x00) {
-		REG8(AL) = 0x00;
-		REG8(AH) = 0x00;
-	} else if(REG8(AL) == 0x01) {
-		REG8(AL) = 0x00;
-//		REG8(AH) = (REG8(BL) == 0x00) ? 0x00 : 0x80;
 		REG8(AH) = 0x00;
 	} else {
 		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -16999,9 +16834,7 @@ inline void msdos_int_67h_deh()
 		REG16(BX) = pic[0].icw2;
 		REG16(CX) = pic[1].icw2;
 	} else if(REG8(AL) == 0x0b) {
-		REG8(AH) = 0x00;
-		pic[0].icw2 = REG8(BL);
-		pic[1].icw2 = REG8(CL);
+		REG8(AH) = 0x00;  // this is just a notification
 	} else if(REG8(AL) == 0x0c) {
 		if(!PROTECTED_MODE || V8086_MODE) {
 			// from DOSBox
@@ -18467,16 +18300,11 @@ void msdos_syscall(unsigned num)
 		case 0x52: msdos_int_67h_52h(); break;
 		case 0x53: msdos_int_67h_53h(); break;
 		case 0x54: msdos_int_67h_54h(); break;
-		case 0x55: msdos_int_67h_55h(); break;
-		case 0x56: msdos_int_67h_56h(); break;
 		case 0x57: msdos_int_67h_57h(); break;
 		case 0x58: msdos_int_67h_58h(); break;
 		case 0x59: msdos_int_67h_59h(); break;
 		case 0x5a: msdos_int_67h_5ah(); break;
 		case 0x5b: msdos_int_67h_5bh(); break;
-		// 0x5c: LIM EMS 4.0 - Prepare Expanded Memory Hardware For Warm Boot
-		case 0x5d: msdos_int_67h_5dh(); break;
-		case 0x70: msdos_int_67h_70h(); break;
 		// 0xde: VCPI
 		case 0xde: msdos_int_67h_deh(); break;
 		default:
@@ -18644,31 +18472,6 @@ void msdos_syscall(unsigned num)
 					break;
 				}
 			}
-		}
-		break;
-	case 0x6f:
-		// dummy interrupt for end of alter page map and call
-		{
-			UINT16 handles[4], pages[4];
-			
-			// pop old mapping data in new mapping
-			for(int i = 0; i < 4; i++) {
-				pages  [3 - i] = i386_pop16();
-				handles[3 - i] = i386_pop16();
-			}
-			
-			// restore old mapping
-			for(int i = 0; i < 4; i++) {
-				UINT16 handle = handles[i];
-				UINT16 page   = pages  [i];
-				
-				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
-					ems_map_page(i, handle, page);
-				} else {
-					ems_unmap_page(i);
-				}
-			}
-			// do ret_far (pop cs/ip) in old mapping
 		}
 		break;
 	case 0x70:
@@ -19122,8 +18925,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC"); // unlink umb
 #endif
 	
-	// first free mcb in upper memory block
-	msdos_mcb_create(UMB_TOP >> 4, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 1);
+	// first mcb in upper memory block
+	msdos_mcb_create(UMB_TOP >> 4, 'M', PSP_SYSTEM, 0);
+	// desqview expects there to be more than one mcb in the umb and the last to be the largest
+	msdos_mcb_create((UMB_TOP >> 4) + 1, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 2);
 	
 #ifdef SUPPORT_HMA
 	// first free mcb in high memory area
@@ -19323,16 +19128,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x1c] = 0x00;
 	mem[DUMMY_TOP + 0x1d] = ((IRET_TOP >> 4)     ) & 0xff;
 	mem[DUMMY_TOP + 0x1e] = ((IRET_TOP >> 4) >> 8) & 0xff;
-	
-	// alter page map and call routine
-	mem[DUMMY_TOP + 0x1f] = 0x9a;	// call far
-	mem[DUMMY_TOP + 0x20] = 0xff;
-	mem[DUMMY_TOP + 0x21] = 0xff;
-	mem[DUMMY_TOP + 0x22] = 0xff;
-	mem[DUMMY_TOP + 0x23] = 0xff;
-	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 6fh (dummy)
-	mem[DUMMY_TOP + 0x25] = 0x6f;
-	mem[DUMMY_TOP + 0x26] = 0xcb;	// retf
 	
 	// call int 29h routine
 	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
@@ -19796,6 +19591,7 @@ void ems_init()
 	memset(ems_handles, 0, sizeof(ems_handles));
 	memset(ems_pages, 0, sizeof(ems_pages));
 	free_ems_pages = MAX_EMS_PAGES;
+	ems_handles[0].allocated = true; //system handle
 }
 
 void ems_finish()
@@ -19805,7 +19601,7 @@ void ems_finish()
 
 void ems_release()
 {
-	for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
+	for(int i = 0; i <= MAX_EMS_HANDLES; i++) {
 		if(ems_handles[i].buffer != NULL) {
 			free(ems_handles[i].buffer);
 			ems_handles[i].buffer = NULL;
@@ -19864,7 +19660,8 @@ void ems_release_pages(int handle)
 			ems_handles[handle].buffer = NULL;
 		}
 		free_ems_pages += ems_handles[handle].pages;
-		ems_handles[handle].allocated = false;
+		if(handle)
+			ems_handles[handle].allocated = false;
 	}
 }
 

@@ -222,8 +222,6 @@ public:
 	#define CPU_MODEL i80286
 #elif defined(HAS_I386)
 	#define CPU_MODEL i386
-#elif defined(USE_HAXM)
-	#define CPU_MODEL haxm
 #elif defined(USE_WHPX)
 	#define CPU_MODEL whpx
 #else
@@ -429,7 +427,7 @@ drive_param_t drive_params[26] = {0};
 
 // memory
 
-#if defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
+#if defined(HAS_I386) || defined(USE_WHPX)
 	#define ADDR_MASK 0xffffffff
 	#define MAX_MEM 0x2000000	/* 32MB */
 #elif defined(HAS_I286)
@@ -732,10 +730,10 @@ static void vga_write(offs_t addr, UINT32 data, int size);
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
-#if defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
+#if defined(HAS_I386) || defined(USE_WHPX)
 #define SUPPORT_VCPI
 #endif
-#if defined(HAS_I286) || defined(HAS_I386) || defined(USE_HAXM) || defined(USE_WHPX)
+#if defined(HAS_I286) || defined(HAS_I386) || defined(USE_WHPX)
 #define SUPPORT_XMS
 //#define SUPPORT_HMA
 #endif
