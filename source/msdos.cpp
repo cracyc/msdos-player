@@ -2212,6 +2212,9 @@ void debugger_main()
 				telnet_printf("T [<count>] - trace (step in)\n");
 				telnet_printf("Q - quit\n");
 				telnet_printf("X - show dos process info\n");
+				telnet_printf("TE - enable cpu debug trace\n");
+				telnet_printf("TD - disable cpu debug trace\n");
+				telnet_printf("SELINFO - show pm segment descriptor\n");
 				
 				telnet_printf("> <filename> - output logfile\n");
 				telnet_printf("< <filename> - input commands from file\n");
@@ -16243,14 +16246,14 @@ inline void msdos_int_67h_deh()
 			// otherwise a GDT and IDT would need to be set up
 			// hopefully most vcpi programs are okay with that
 			CR(0) &= 0x7ffffffe;
-			UINT32 stack = SREG_BASE(SS) + REG32(ESP) + 16;
+			UINT32 stack = SREG_BASE(SS) + REG32(ESP) + 8;
 			translate_address(0, TRANSLATE_READ, &stack, NULL);
 			UINT32 *stkptr = (UINT32 *)(mem + stack);
 			stkptr[2] &= ~(0x200);
 			REG32(ESP) = stkptr[3];
 			i386_sreg_load(stkptr[4], SS, NULL);
-			i386_sreg_load(stkptr[5], DS, NULL);
-			i386_sreg_load(stkptr[6], ES, NULL);
+			i386_sreg_load(stkptr[5], ES, NULL);
+			i386_sreg_load(stkptr[6], DS, NULL);
 			i386_sreg_load(stkptr[7], FS, NULL);
 			i386_sreg_load(stkptr[8], GS, NULL);
 			m_CPL = 0;
@@ -18442,8 +18445,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// VCPI entry point
 	mem[DUMMY_TOP + 0x2a] = 0x9c;	// pushf
 	mem[DUMMY_TOP + 0x2b] = 0x0e;	// push cs
-	mem[DUMMY_TOP + 0x2c] = 0xe8;	// call near (IRET_TOP + 0x98)
-	INT32 addr = (IRET_TOP + 0x64) - (DUMMY_TOP + 0x31);
+	mem[DUMMY_TOP + 0x2c] = 0xe8;	// call near (IRET_TOP + 0x65)
+	INT32 addr = (IRET_TOP + 0x65) - (DUMMY_TOP + 0x31);
 	*(INT32 *)(mem + DUMMY_TOP + 0x2d) = addr;
 	mem[DUMMY_TOP + 0x31] = 0xcb;	// retf
 	
