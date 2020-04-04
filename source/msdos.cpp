@@ -7513,8 +7513,7 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 		case 0x12:
 			if(addr >= 0x10000) // 128K window mode?
 				break;
-			if((grph_regs[5] & 3) == 1)
-			{
+			if((grph_regs[5] & 3) == 1) {
 				*(UINT32 *)(vram + (addr * 4)) = vga_latch;
 				break;
 			}
@@ -7539,8 +7538,7 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 			if(!(seq_regs[4] & 8)) { // unchained
 				UINT32 m = seq_regs[2];
 				m = (m & 1 ? 1 : 0) | (m & 2 ? 1 << 8 : 0) | (m & 4 ? 1 << 16 : 0) | (m & 8 ? 1 << 24 : 0);
-				if((grph_regs[5] & 3) == 1)
-				{
+				if((grph_regs[5] & 3) == 1) {
 					*(UINT32 *)(vram + (addr * 4)) = vga_latch;
 					break;
 				}
@@ -7556,10 +7554,13 @@ static void vga_write(offs_t addr, UINT32 data, int size)
 			switch(size) {
 				case 4:
 					*(UINT32 *)(vram + addr) = data;
+					break;
 				case 2:
 					*(UINT16 *)(vram + addr) = data;
+					break;
 				case 1:
 					*(UINT8 *)(vram + addr) = data;
+					break;
 			}
 		}
 	}
@@ -18256,6 +18257,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffb:0000 irq12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
+	*(UINT16 *)(mem + 4 * 0xbe + 0) = 0xbd;		// dos4gw wants two vectors pointing to the same address
 	
 	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
 	static const struct {
