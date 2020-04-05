@@ -1125,14 +1125,14 @@ bool telnet_gets(char *str, int n)
 	while(!m_exit) {
 		int len = recv(cli_socket, buffer, sizeof(buffer), 0);
 		
-		if(len > 0 && buffer[0] != 0xff) {
+		if(len > 0 && buffer[0] != -1) {
 			for(int i = 0; i < len; i++) {
 				if(buffer[i] == 0x0d || buffer[i] == 0x0a) {
 					str[ptr] = 0;
 					telnet_command("\033[2h");  // key lock
 					telnet_command("\033[12h"); // local echo off
 					return(!m_exit);
-				} else if(buffer[i] == 0x08) {
+				} else if(buffer[i] == 0x08 || buffer[i] == 0x7f) {
 					if(ptr > 0) {
 						telnet_command("\033[0K"); // erase from cursor position
 						ptr--;
