@@ -8308,6 +8308,20 @@ inline void pcbios_int_10h_1ah()
 	}
 }
 
+inline void pcbios_int_10h_1bh()
+{
+	if(REG16(BX)) {
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		return;
+	}
+	int offs = SREG_BASE(ES) + REG16(DI);
+	memset(mem + offs, 0, 64);
+	memcpy(mem + offs + 4, mem + 0x449, 0x19);
+	mem[offs + 0x22] = mem[0x484];
+	REG8(AL) = 0x1b;
+}
+
 inline void pcbios_int_10h_1dh()
 {
 	switch(REG8(AL)) {
@@ -16987,7 +17001,7 @@ void msdos_syscall(unsigned num)
 		case 0x13: pcbios_int_10h_13h(); break;
 		case 0x18: pcbios_int_10h_18h(); break;
 		case 0x1a: pcbios_int_10h_1ah(); break;
-		case 0x1b: REG8(AL) = 0x00; break; // functionality/state information is not supported
+		case 0x1b: pcbios_int_10h_1bh(); break;
 		case 0x1c: REG8(AL) = 0x00; break; // save/restore video state is not supported
 		case 0x1d: pcbios_int_10h_1dh(); break;
 		case 0x1e: REG8(AL) = 0x00; break; // flat-panel functions are not supported
