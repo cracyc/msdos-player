@@ -5345,7 +5345,9 @@ void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 
 int msdos_file_handler_close(int fd)
 {
-	file_handler[fd].valid--;
+	// don't close the standard streams even if a program wants to
+	if((fd > 2) || (file_handler[fd].valid > 1))
+		file_handler[fd].valid--;
 	
 	if((!file_handler[fd].valid) && fd < 20) {
 		memset(mem + SFT_TOP + 6 + 0x3b * fd, 0, 0x3b);
