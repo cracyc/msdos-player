@@ -4243,6 +4243,27 @@ void msdos_dta_info_init()
 	}
 }
 
+static bool msdos_dta_info_clean()
+{
+	find_t *dta;
+	bool ret = false;
+	for(int i = 0; i < MAX_DTAINFO; i++) {
+		if(dtalist[i].dta > EMB_TOP) {
+			ret = true;
+			FindClose(dtalist[i].find_handle);
+			dtalist[i].find_handle = INVALID_HANDLE_VALUE;
+		} else {
+			dta = (find_t *)(mem + dtalist[i].dta);
+			if(dta->find_magic != FIND_MAGIC) {
+				ret = true;
+				FindClose(dtalist[i].find_handle);
+				dtalist[i].find_handle = INVALID_HANDLE_VALUE;
+			}
+		}
+	}
+	return ret;
+}
+
 dtainfo_t *msdos_dta_info_get(UINT16 psp_seg, UINT32 dta_laddr)
 {
 	dtainfo_t *free_dta = NULL;
@@ -4260,6 +4281,8 @@ dtainfo_t *msdos_dta_info_get(UINT16 psp_seg, UINT32 dta_laddr)
 		free_dta->dta = dta_laddr;
 		return(free_dta);
 	}
+	if(msdos_dta_info_clean())
+		return msdos_dta_info_get(psp_seg, dta_laddr);
 	fatalerror("too many dta\n");
 	return(NULL);
 }
@@ -17823,15 +17846,8 @@ void msdos_syscall(unsigned num)
 	if(num == 0x08 || num == 0x1c) {
 		// don't log the timer interrupts
 		//fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num == 0x30) {
-		// dummy interrupt for call 0005h (call near)
-		fprintf(fp_debug_log, "out      (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) CF=%x\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES), m_CF);
-	} else if(num == 0x65) {
-		// dummy interrupt for EMS (int 67h)
-		fprintf(fp_debug_log, "out     (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) CF=%x\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES), m_CF);
-	} else if(num == 0x66) {
-		// dummy interrupt for XMS (call far)
-		fprintf(fp_debug_log, "out     (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) CF=%x\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES), m_CF);
+	} else if(num == 0x16) {
+		fprintf(fp_debug_log, "out     (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) ZF=%x\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES), m_ZF);
 	} else if(num >= 0x68 && num <= 0x6f) {
 		// dummy interrupt
 	} else {
