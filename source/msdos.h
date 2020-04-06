@@ -600,6 +600,7 @@ UINT8 kbd_read_data();
 void kbd_write_data(UINT8 val);
 UINT8 kbd_read_status();
 void kbd_write_command(UINT8 val);
+void kbd_reset();
 
 // crtc
 

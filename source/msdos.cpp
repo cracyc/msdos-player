@@ -852,6 +852,7 @@ int m_exit = 0;
 	#define SREG_BASE(x)			m_base[x]
 	#define m_eip				(m_pc - m_base[CS])
 	#define m_CF				m_CarryVal
+	#define m_ZF				m_ZeroVal
 	#define m_a20_mask			AMASK
 	#define i386_load_segment_descriptor(x)	m_base[x] = SegBase(x)
 	void i386_sreg_load(UINT16 selector, UINT8 reg, bool *fault)
@@ -1003,13 +1004,15 @@ bool debug_trace = false;
 UINT32 debugger_trans_seg(UINT16 seg)
 {
 #if defined(HAS_I386)
-	if(PROTECTED_MODE && !V8086_MODE)
-	{
+	if(PROTECTED_MODE && !V8086_MODE) {
 		I386_SREG pseg;
 		pseg.selector = seg;
 		i386_load_protected_mode_segment(&pseg, NULL);
 		return pseg.base;
 	}
+#elif defined(HAS_I286)
+	if(PM)
+		return SREG_BASE(CS);
 #endif
 	return seg << 4;
 }
@@ -20494,6 +20497,42 @@ UINT8 kbd_read_status()
 	return(kbd_status);
 }
 
+void kbd_reset()
+{
+	if((cmos[0x0f] & 0x7f) == 9) {
+		CPU_RESET_CALL(CPU_MODEL);
+		i386_sreg_load(*(UINT16 *)(mem + 0x469), SS, NULL);
+		REG16(SP) = *(UINT16 *)(mem + 0x467);
+		i386_sreg_load(i386_pop16(), ES, NULL);
+		i386_sreg_load(i386_pop16(), DS, NULL);
+		REG16(DI) = i386_pop16();
+		REG16(SI) = i386_pop16();
+		REG16(BP) = i386_pop16();
+		i386_pop16();
+		REG16(BX) = i386_pop16();
+		REG16(DX) = i386_pop16();
+		REG16(CX) = i386_pop16();
+		REG16(AX) = i386_pop16();
+#if defined(HAS_I386)
+		I386OP(iret16)();
+#else
+		PREFIX86(_iret());
+#endif
+	} else {
+		if((cmos[0x0f] & 0x7f) == 5) {
+			// reset pic
+			pic_init();
+			pic[0].irr = pic[1].irr = 0x00;
+			pic[0].imr = pic[1].imr = 0xff;
+		}
+		CPU_RESET_CALL(CPU_MODEL);
+		UINT16 address = *(UINT16 *)(mem + 0x467);
+		UINT16 selector = *(UINT16 *)(mem + 0x469);
+		i386_jmp_far(selector, address);
+	}
+}
+
+
 void kbd_write_command(UINT8 val)
 {
 	switch(val) {
@@ -20509,18 +20548,8 @@ void kbd_write_command(UINT8 val)
 		break;
 	case 0xf0: case 0xf1: case 0xf2: case 0xf3: case 0xf4: case 0xf5: case 0xf6: case 0xf7:
 	case 0xf8: case 0xf9: case 0xfa: case 0xfb: case 0xfc: case 0xfd: case 0xfe: case 0xff:
-		if(!(val & 1)) {
-			if((cmos[0x0f] & 0x7f) == 5) {
-				// reset pic
-				pic_init();
-				pic[0].irr = pic[1].irr = 0x00;
-				pic[0].imr = pic[1].imr = 0xff;
-			}
-			CPU_RESET_CALL(CPU_MODEL);
-			UINT16 address = *(UINT16 *)(mem + 0x467);
-			UINT16 selector = *(UINT16 *)(mem + 0x469);
-			i386_jmp_far(selector, address);
-		}
+		if(!(val & 1))
+			kbd_reset();
 		i386_set_a20_line((val >> 1) & 1);
 		break;
 	}

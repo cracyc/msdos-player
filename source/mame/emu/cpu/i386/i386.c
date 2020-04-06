@@ -693,15 +693,8 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 		}
 		if(trap_level >= 3)
 		{
-			UINT16 offset = READ16(0x467);
-			UINT16 selector = READ16(0x469);
 			logerror("IRQ: Triple fault. CPU reset.\n");
-			CPU_RESET_CALL(CPU_MODEL);
-			m_sreg[CS].selector = selector;
-			m_performed_intersegment_jump = 1;
-			m_eip = offset;
-			i386_load_segment_descriptor(CS);
-			CHANGE_PC(m_eip);
+			kbd_reset();
 			return;
 		}
 

@@ -115,10 +115,7 @@ static void i80286_trap2(UINT32 error)
 		// this is supposed to triggered by support hardware
 		// create a shutdown output line that causes a reset
 		// NMI can wake processor without reset
-		UINT16 offset = ReadWord(0x467);
-		UINT16 selector = ReadWord(0x469);
-		CPU_RESET_CALL(CPU_MODEL);
-		i80286_code_descriptor(selector, offset, 1);
+		kbd_reset();
 	}
 	m_trap_level = 0;
 }
@@ -625,7 +622,6 @@ static void PREFIX286(_0fpre)()
 		case 0x30: /* lmsw */
 			if (PM&&(CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 			msw = GetRMWord(ModRM);
-			if (!PM&&(msw&1)) m_sregs[CS] = IDX(m_sregs[CS]); // cheat and set cpl to 0
 			m_msw=(m_msw&1)|msw;
 			break;
 		default:
