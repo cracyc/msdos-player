@@ -16154,15 +16154,15 @@ inline void msdos_int_67h_deh()
 		UINT32 cbseg_high = (DUMMY_TOP & 0x1f0000) >> 16;
 		// Descriptor 1 (code segment, callback segment)
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x0000ffff;
-		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = 0x004f9a00;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = 0x00409a0f;
 		// Descriptor 2 (data segment, full access)
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x08) = 0x0000ffff;
-		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c) = 0x00009200;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c) = 0x0000920f;
 		// Descriptor 3 (full access)
 		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x10) = 0x0000ffff;
-		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x14) = 0x00009200;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x14) = 0x0000920f;
 		// Offset in code segment of protected mode entry point
-		REG32(EBX) = DUMMY_TOP + 0x2a; // DUMMY_TOP:002a
+		REG32(EBX) = DUMMY_TOP + 0x2a - 0xf0000; // DUMMY_TOP:002a
 	} else if(REG8(AL) == 0x02) {
 		REG8(AH) = 0x00;
 		REG32(EDX) = (MAX_MEM - 1) & 0xfffff000;
@@ -17994,18 +17994,20 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// iret table
 	// note: int 2eh vector should address the routine in command.com,
 	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
-	// so move iret table into allocated memory block
+	// so make a trampoline in the XMS block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
-	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 16) >> 4);
-	IRET_TOP = seg << 4;
-	seg += (IRET_SIZE + 16) >> 4;
-	UINT8 fill = 0xcc; // int3
-	memset(mem + IRET_TOP, fill, IRET_SIZE);
-	
+	memset(mem + IRET_TOP, 0xcc, IRET_SIZE);
+
 	// dummy xms/ems device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
 	XMS_TOP = seg << 4;
 	seg += XMS_SIZE >> 4;
+
+	mem[XMS_TOP + 0x1c0] = 0xea;	// jmp far (IRET_TOP >> 4):0008
+	mem[XMS_TOP + 0x1c1] = 0x2e;
+	mem[XMS_TOP + 0x1c2] = 0x00;
+	mem[XMS_TOP + 0x1c3] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[XMS_TOP + 0x1c4] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
 	// environment
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ENV_SIZE >> 4);
@@ -18288,6 +18290,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = DUMMY_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
+	*(UINT16 *)(mem + 4 * 0x2e + 0) = 0x01c0;	// xxxx:01c0 int 2eh trampoline
+	*(UINT16 *)(mem + 4 * 0x2e + 2) = XMS_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffb:0000 irq12 (mouse)

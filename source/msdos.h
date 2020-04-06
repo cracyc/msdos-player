@@ -717,7 +717,7 @@ static void vga_write(offs_t addr, UINT32 data, int size);
 #define EMS_TOP		0xc0000
 #define EMS_SIZE	0x10000
 UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
-#define UMB_END		0xf8000
+#define UMB_END		0xf7f00
 #define SHADOW_BUF_TOP	0xf8000
 // text vram size: 80x25x2 = 4000 = 0fa0h
 // fffa0h-fffefh can be used for dummy routines
@@ -726,7 +726,7 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define EMB_TOP		0x110000 // align to 4KB
 #define EMB_END		MAX_MEM
 
-UINT32 IRET_TOP = 0;
+#define IRET_TOP	UMB_END
 #define IRET_SIZE	0x100
 UINT32 XMS_TOP = 0;
 // XMS_TOP + 0x000	EMMXXXX0 driver
@@ -734,7 +734,8 @@ UINT32 XMS_TOP = 0;
 // XMS_TOP + 0x015	XMS dummy routine
 // XMS_TOP + 0x018	EMMXXXX0 ioctrl recv buffer
 // XMS_TOP + 0x1b9	EMMXXXX0 driver dummy routine (at XMS_TOP + XMS_SIZE - 7)
-#define XMS_SIZE	0x1c0	/* 18 + 6 + 413 + 7 */
+// XMS_TOP + 0x1c0	int 2eh tramopoline
+#define XMS_SIZE	0x1d0	/* 18 + 6 + 413 + 7 */
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x1000
