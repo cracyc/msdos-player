@@ -18300,6 +18300,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffb:0000 irq12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0xbe + 0) = 0xbd;		// dos4gw wants two vectors pointing to the same address
+	*(UINT16 *)(mem + 4 * 0xbf + 0) = 0;		// 123R3 wants a null vector
+	*(UINT16 *)(mem + 4 * 0xbf + 2) = 0;
 	
 	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
 	static const struct {
