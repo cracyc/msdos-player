@@ -712,9 +712,10 @@ static void vga_write(offs_t addr, UINT32 data, int size);
 #define MEMORY_END	0xa0000
 #define VGA_VRAM_TOP	0xa0000
 #else
-#define MEMORY_END	0xb8000
+#define MEMORY_END	0xb0000
 #endif
 #define TEXT_VRAM_TOP	0xb8000
+#define MDA_VRAM_TOP	0xb0000
 #define EMS_TOP		0xc0000
 #define EMS_SIZE	0x10000
 UINT32 UMB_TOP = EMS_TOP; // EMS is disabled

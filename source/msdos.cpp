@@ -660,7 +660,7 @@ void debugger_write_byte(offs_t byteaddress, UINT8 data)
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
 #ifdef SUPPORT_GRAPHIC_SCREEN
-	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3) && (mem[0x449] != 7)) {
 		return vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -7274,6 +7274,8 @@ int pcbios_get_text_vram_address(int page)
 {
 	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		return TEXT_VRAM_TOP;
+	} else if(mem[0x449] == 0x07) {
+		return MDA_VRAM_TOP;
 	} else {
 		return TEXT_VRAM_TOP + VIDEO_REGEN * (page % vram_pages);
 	}
@@ -7613,6 +7615,7 @@ inline void pcbios_int_10h_00h()
 		break;
 	case 0x73:
 	case 0x03:
+	case 0x07:
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
