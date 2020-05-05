@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: mkdir -p binary
-      working-directory: ./source
+      working-directory: .
     - name: make i286
       run: make -f Makefile.mingw i286
       working-directory: ./source
@@ -27,5 +27,5 @@ jobs:
     - uses: actions/upload-artifact@master
       with:
         name: mingw
-        path: ./source/binary
+        path: ./binary
 

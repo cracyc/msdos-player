@@ -8769,13 +8769,13 @@ inline void pcbios_int_15h_87h()
 	int ofs = SREG_BASE(ES) + REG16(SI);
 	int src = (*(UINT32 *)(mem + ofs + 0x12) & 0xffffff); // + (mem[ofs + 0x16] << 24);
 	int dst = (*(UINT32 *)(mem + ofs + 0x1a) & 0xffffff); // + (mem[ofs + 0x1e] << 24);
-	memcpy(mem + dst, mem + src, len);
+	memmove(mem + dst, mem + src, len);
 	REG16(AX) = 0x00;
 }
 
 inline void pcbios_int_15h_88h()
 {
-	REG16(AX) = ((min(MAX_MEM, 0x4000000) - 0x100000) >> 10);
+	REG16(AX) = support_ems ? 0 : ((min(MAX_MEM, 0x4000000) - 0x100000) >> 10);
 }
 
 inline void pcbios_int_15h_89h()
@@ -17549,6 +17549,10 @@ void msdos_syscall(unsigned num)
 				if(REG8(AH) == 0xfe && REG16(DI) == 0x4e55) {
 					break;
 				}
+				// Borland C++ DPMILOAD.EXE is not installed
+				if((REG16(AX) == 0xfb42 && REG16(BX) == 0x0014) || (REG16(AX) == 0xfb43 && REG16(BX) == 0x0100)) {
+ 					break;
+ 				}
 				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x01; // invalid function
 				m_CF = 1;
