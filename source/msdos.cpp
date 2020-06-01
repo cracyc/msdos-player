@@ -14742,8 +14742,8 @@ inline void msdos_int_2fh_48h()
 //		REG8(AL) = 0x00;
 		break;
 	case 0x10:
-		msdos_int_21h_0ah();
-		REG16(AX) = 0x00;
+//		msdos_int_21h_0ah();
+//		REG16(AX) = 0x00;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
