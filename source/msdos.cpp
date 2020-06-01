@@ -490,13 +490,45 @@ UINT32 debugger_read_dword(offs_t byteaddress)
 #endif
 }
 
+static char convert_to_ansi(const CHAR_INFO &chr)
+{
+	char outchr[2];
+	WideCharToMultiByte(active_code_page, 0, &chr.Char.UnicodeChar, 1, outchr, 2, NULL, NULL);
+	if(chr.Attributes & COMMON_LVB_TRAILING_BYTE)
+		return outchr[1];
+	return outchr[0];
+}
+
+static CHAR_INFO convert_to_unicode(const CHAR_INFO &chr, const CHAR_INFO &nchr)
+{
+	static WCHAR lastchr = 0;
+	WCHAR ret = 0;
+	if(lastchr)
+	{
+		ret = lastchr;
+		lastchr = 0;
+		return {ret, (WORD)(COMMON_LVB_TRAILING_BYTE | chr.Attributes)};
+	}
+	if(IsDBCSLeadByteEx(active_code_page, chr.Char.AsciiChar))
+	{
+		char dbchr[2] = {chr.Char.AsciiChar, nchr.Char.AsciiChar};
+		MultiByteToWideChar(active_code_page, 0, dbchr, 2, &lastchr, 1);
+		return {lastchr, (WORD)(COMMON_LVB_LEADING_BYTE | chr.Attributes)};
+	}
+	MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, &chr.Char.AsciiChar, 1, &ret, 1);
+	return {ret, chr.Attributes};
+}
+
 // write accessors
 #ifdef USE_VRAM_THREAD
 void vram_flush_char()
 {
 	if(vram_length_char != 0) {
 		DWORD num;
-		WriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length_char, vram_coord_char, &num);
+		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, vram_length_char * 2);
+		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, scr_char, vram_length_char, uchar, vram_length_char);
+		WriteConsoleOutputCharacterW(GetStdHandle(STD_OUTPUT_HANDLE), uchar, vram_length_char, vram_coord_char, &num);
+		HeapFree(GetProcessHeap(), 0, uchar);
 		vram_length_char = vram_last_length_char = 0;
 	}
 }
@@ -545,11 +577,13 @@ void write_text_vram_char(offs_t offset, UINT8 data)
 #else
 	COORD co;
 	DWORD num;
+	WCHAR uchar;
 	
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_char[0] = data;
-	WriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
+	MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, &scr_char, 1, &uchar, 1);
+	WriteConsoleOutputCharacterW(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
 #endif
 }
 
@@ -3493,14 +3527,14 @@ void change_console_size(int width, int height)
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
 	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
 		if(csbi.srWindow.Right - csbi.srWindow.Left + 1 == width && csbi.srWindow.Bottom - csbi.srWindow.Top + 1 == height) {
-			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
+			ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
-			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		} else if(csbi.dwCursorPosition.Y > height - 1) {
 			SET_RECT(rect, 0, csbi.dwCursorPosition.Y - (height - 1), width - 1, csbi.dwCursorPosition.Y);
-			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
-			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		}
 	}
 	if(csbi.dwCursorPosition.Y > height - 1) {
@@ -3569,7 +3603,7 @@ void clear_scr_buffer(WORD attr)
 {
 	for(int y = 0; y < scr_height; y++) {
 		for(int x = 0; x < scr_width; x++) {
-			SCR_BUF(y,x).Char.AsciiChar = ' ';
+			SCR_BUF(y,x).Char.UnicodeChar = ' ';
 			SCR_BUF(y,x).Attributes = attr;
 		}
 	}
@@ -5789,7 +5823,7 @@ void msdos_putch_tmp(UINT8 data)
 				co.Y--;
 			} else if(tmp[1] == '*') {
 				SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 				co.X = 0;
 				co.Y = csbi.srWindow.Top;
 			} else if(tmp[1] == '[') {
@@ -5818,46 +5852,46 @@ void msdos_putch_tmp(UINT8 data)
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						if(co.Y < csbi.srWindow.Bottom) {
 							SET_RECT(rect, 0, co.Y + 1, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-							WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+							WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						}
 					} else if(param[0] == 1) {
 						if(co.Y > csbi.srWindow.Top) {
 							SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, co.Y - 1);
-							WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+							WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						}
 						SET_RECT(rect, 0, co.Y, co.X, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 2) {
 						SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						co.X = co.Y = 0;
 					}
 				} else if(data == 'K') {
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 1) {
 						SET_RECT(rect, 0, co.Y, co.X, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 2) {
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					}
 				} else if(data == 'L') {
 					if(params == 0) {
 						param[0] = 1;
 					}
 					SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-					ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					SET_RECT(rect, 0, co.Y + param[0], csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-					WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					clear_scr_buffer(csbi.wAttributes);
 					SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, co.Y + param[0] - 1);
-					WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					co.X = 0;
 				} else if(data == 'M') {
 					if(params == 0) {
@@ -5866,12 +5900,12 @@ void msdos_putch_tmp(UINT8 data)
 					if(co.Y + param[0] > csbi.srWindow.Bottom) {
 						clear_scr_buffer(csbi.wAttributes);
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else {
 						SET_RECT(rect, 0, co.Y + param[0], csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						clear_scr_buffer(csbi.wAttributes);
 					}
 					co.X = 0;
@@ -7341,7 +7375,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		}
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
-		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length_char = vram_last_length_char = 0;
 		vram_length_attr = vram_last_length_attr = 0;
 #ifdef USE_VRAM_THREAD
@@ -7742,21 +7776,20 @@ inline void pcbios_int_10h_05h()
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-		ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
 		for(int y = 0, ofs = pcbios_get_shadow_buffer_address(mem[0x462]); y < scr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
-				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar;
+				mem[ofs++] = convert_to_ansi(SCR_BUF(y,x));
 				mem[ofs++] = SCR_BUF(y,x).Attributes;
 			}
 		}
 		for(int y = 0, ofs = pcbios_get_shadow_buffer_address(REG8(AL)); y < scr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
-				SCR_BUF(y,x).Char.AsciiChar = mem[ofs++];
-				SCR_BUF(y,x).Attributes = mem[ofs++];
+				SCR_BUF(y,x) = convert_to_unicode({mem[ofs++], mem[ofs++]}, {mem[ofs], mem[ofs]});
 			}
 		}
-		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
 		COORD co;
 		co.X = mem[0x450 + REG8(AL) * 2];
@@ -7787,7 +7820,7 @@ inline void pcbios_int_10h_06h()
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	
 	int right = min(REG8(DL), scr_width - 1);
 	int bottom = min(REG8(DH), scr_height - 1);
@@ -7795,7 +7828,7 @@ inline void pcbios_int_10h_06h()
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= bottom; y++) {
 			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
-				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar = ' ';
+				mem[ofs++] = SCR_BUF(y,x).Char.UnicodeChar = ' ';
 				mem[ofs++] = SCR_BUF(y,x).Attributes = REG8(BH);
 			}
 		}
@@ -7805,15 +7838,15 @@ inline void pcbios_int_10h_06h()
 				if(y2 <= bottom) {
 					SCR_BUF(y,x) = SCR_BUF(y2,x);
 				} else {
-					SCR_BUF(y,x).Char.AsciiChar = ' ';
+					SCR_BUF(y,x).Char.UnicodeChar = ' ';
 					SCR_BUF(y,x).Attributes = REG8(BH);
 				}
-				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar;
+				mem[ofs++] = convert_to_ansi(SCR_BUF(y,x));
 				mem[ofs++] = SCR_BUF(y,x).Attributes;
 			}
 		}
 	}
-	WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_07h()
@@ -7827,7 +7860,7 @@ inline void pcbios_int_10h_07h()
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	
 	int right = min(REG8(DL), scr_width - 1);
 	int bottom = min(REG8(DH), scr_height - 1);
@@ -7835,7 +7868,7 @@ inline void pcbios_int_10h_07h()
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= bottom; y++) {
 			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
-				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar = ' ';
+				mem[ofs++] = SCR_BUF(y,x).Char.UnicodeChar = ' ';
 				mem[ofs++] = SCR_BUF(y,x).Attributes = REG8(BH);
 			}
 		}
@@ -7845,15 +7878,15 @@ inline void pcbios_int_10h_07h()
 				if(y2 >= REG8(CH)) {
 					SCR_BUF(y,x) = SCR_BUF(y2,x);
 				} else {
-					SCR_BUF(y,x).Char.AsciiChar = ' ';
+					SCR_BUF(y,x).Char.UnicodeChar = ' ';
 					SCR_BUF(y,x).Attributes = REG8(BH);
 				}
-				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar;
+				mem[ofs++] = convert_to_ansi(SCR_BUF(y,x));
 				mem[ofs++] = SCR_BUF(y,x).Attributes;
 			}
 		}
 	}
-	WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	WriteConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_08h()
@@ -8187,7 +8220,10 @@ inline void pcbios_int_10h_13h()
 			if(csbi.wAttributes != REG8(BL)) {
 				SetConsoleTextAttribute(hStdout, REG8(BL));
 			}
-			WriteConsoleA(hStdout, &mem[ofs], REG16(CX), &num, NULL);
+			int size = REG16(CX);
+			WCHAR *uchars = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, size * 2);
+			size = MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, (const char *)(mem + ofs), size, uchars, size);
+			WriteConsoleW(hStdout, uchars, size, &num, NULL);
 			
 			if(csbi.wAttributes != REG8(BL)) {
 				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
@@ -17990,10 +18026,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// initial screen
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputW(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	for(int y = 0, ofs1 = TEXT_VRAM_TOP, ofs2 = SHADOW_BUF_TOP; y < scr_height; y++) {
 		for(int x = 0; x < scr_width; x++) {
-			mem[ofs1++] = mem[ofs2++] = SCR_BUF(y,x).Char.AsciiChar;
+			mem[ofs1++] = mem[ofs2++] = convert_to_ansi(SCR_BUF(y,x));
 			mem[ofs1++] = mem[ofs2++] = SCR_BUF(y,x).Attributes;
 		}
 	}
