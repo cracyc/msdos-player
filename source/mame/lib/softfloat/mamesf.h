@@ -1,5 +1,3 @@
-#pragma once
-
 /*----------------------------------------------------------------------------
 | One of the macros `BIGENDIAN' or `LITTLEENDIAN' must be defined.
 *----------------------------------------------------------------------------*/
@@ -23,17 +21,17 @@
 | implementations of C, `flag', `uint8', and `int8' should all be `typedef'ed
 | to the same as `int'.
 *----------------------------------------------------------------------------*/
-//#include "emu.h"
+#include "assert.h"
 
-typedef INT8 flag;
-typedef UINT8 uint8;
-typedef INT8 int8;
-typedef UINT16 uint16;
-typedef INT16 int16;
-typedef UINT32 uint32;
-typedef INT32 int32;
-typedef UINT64 uint64;
-typedef INT64 int64;
+typedef int8_t flag;
+typedef uint8_t uint8;
+typedef int8_t int8;
+typedef uint16_t uint16;
+typedef int16_t int16;
+typedef uint32_t uint32;
+typedef int32_t int32;
+typedef uint64_t uint64;
+typedef int64_t int64;
 
 /*----------------------------------------------------------------------------
 | Each of the following `typedef's defines a type that holds integers
@@ -41,14 +39,14 @@ typedef INT64 int64;
 | implementation of C, `bits16' and `sbits16' should be `typedef'ed to
 | `unsigned short int' and `signed short int' (or `short int'), respectively.
 *----------------------------------------------------------------------------*/
-typedef UINT8 bits8;
-typedef INT8 sbits8;
-typedef UINT16 bits16;
-typedef INT16 sbits16;
-typedef UINT32 bits32;
-typedef INT32 sbits32;
-typedef UINT64 bits64;
-typedef INT64 sbits64;
+typedef uint8_t bits8;
+typedef int8_t sbits8;
+typedef uint16_t bits16;
+typedef int16_t sbits16;
+typedef uint32_t bits32;
+typedef int32_t sbits32;
+typedef uint64_t bits64;
+typedef int64_t sbits64;
 
 /*----------------------------------------------------------------------------
 | The `LIT64' macro takes as its argument a textual integer literal and
@@ -65,4 +63,4 @@ typedef INT64 sbits64;
 | a compiler does not support explicit inlining, this macro should be defined
 | to be `static'.
 *----------------------------------------------------------------------------*/
-// MAME defines INLINE
+//#define INLINE static inline

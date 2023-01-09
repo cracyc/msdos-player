@@ -220,7 +220,7 @@ inline void maybe_idle()
 #endif
 
 #ifndef INLINE
-#define INLINE inline
+#define INLINE static inline
 #endif
 #define U64(v) UINT64(v)
 
@@ -860,6 +860,9 @@ int m_exit = 0;
 	static CPU_TRANSLATE(i386);
 	#include "mame/lib/softfloat/softfloat.c"
 	#include "mame/lib/softfloat/fsincos.c"
+	#include "mame/lib/softfloat/fpatan.c"
+	#include "mame/lib/softfloat/f2xm1.c"
+	#include "mame/lib/softfloat/fyl2x.c"
 	#include "mame/emu/cpu/i386/i386.c"
 	#include "mame/emu/cpu/vtlb.c"
 #elif defined(HAS_I286)

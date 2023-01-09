@@ -17,7 +17,7 @@ CC ?= gcc
 CXX ?= g++ 
 CFLAGS_OO=-o $@
 CFLAGS_OX=-o $@
-CFLAGS= -O2 -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -Wno-write-strings -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
+CFLAGS= -Os -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -Wno-write-strings -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
 LIBS = -lwinmm -lpsapi -lwsock32 -lsetupapi -lgdi32 -lmpr
@@ -130,6 +130,8 @@ SRCS_SOFTFLOAT = \
 	$(SRCD_SOFTFLOAT)fpu_constant.h \
 	$(SRCD_SOFTFLOAT)fsincos.c \
 	$(SRCD_SOFTFLOAT)fyl2x.c \
+	$(SRCD_SOFTFLOAT)fpatan.c \
+	$(SRCD_SOFTFLOAT)f2xm1.c \
 	$(SRCD_SOFTFLOAT)mamesf.h \
 	$(SRCD_SOFTFLOAT)milieu.h \
 	$(SRCD_SOFTFLOAT)softfloat-macros \
