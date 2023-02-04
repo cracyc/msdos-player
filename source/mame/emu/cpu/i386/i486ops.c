@@ -525,5 +525,10 @@ static void I486OP(mov_cr_r32)()        // Opcode 0x0f 22
 
 void I486OP(wait)()
 {
+	if ((m_cr[0] & 0xa) == 0xa)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	x87_mf_fault();
 }

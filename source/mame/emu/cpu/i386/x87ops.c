@@ -278,6 +278,23 @@ int x87_dec_stack()
 	return ret;
 }
 
+static int x87_ck_over_stack()
+{
+	int ret = 1;
+
+	// Check for stack overflow
+	if (!X87_IS_ST_EMPTY(7))
+	{
+		ret = 0;
+		x87_set_stack_overflow();
+
+		// Don't update the stack if the exception is unmasked
+		if (~m_x87_cw & X87_CW_IM)
+			return ret;
+	}
+
+	return ret;
+}
 
 /*************************************
  *
@@ -306,7 +323,7 @@ UINT32 Getx87EA(UINT8 modrm, int rwn)
 	if (PROTECTED_MODE && !V8086_MODE)
 		m_x87_data_ptr = ea;
 	else
-		m_x87_data_ptr = ea + (segment << 4);
+		m_x87_data_ptr = ea + (m_x87_ds << 4);
 	m_x87_opcode = ((m_opcode << 8) | modrm) & 0x7ff;
 	return ret;
 }
@@ -2848,7 +2865,7 @@ void x87_fld_m32real(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (x87_dec_stack())
+	if (x87_ck_over_stack())
 	{
 		UINT32 m32real = READ32(ea);
 
@@ -2868,7 +2885,10 @@ void x87_fld_m32real(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
 		x87_write_stack(0, value, TRUE);
+	}
 
 	CYCLES(3);
 }
@@ -2880,7 +2900,7 @@ void x87_fld_m64real(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (x87_dec_stack())
+	if (x87_ck_over_stack())
 	{
 		UINT64 m64real = READ64(ea);
 
@@ -2900,7 +2920,10 @@ void x87_fld_m64real(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
 		x87_write_stack(0, value, TRUE);
+	}
 
 	CYCLES(3);
 }
@@ -2912,7 +2935,7 @@ void x87_fld_m80real(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (x87_dec_stack())
+	if (x87_ck_over_stack())
 	{
 		m_x87_sw &= ~X87_SW_C1;
 		value = READ80(ea);
@@ -2923,7 +2946,10 @@ void x87_fld_m80real(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
 		x87_write_stack(0, value, TRUE);
+	}
 
 	CYCLES(6);
 }
@@ -2960,7 +2986,7 @@ void x87_fild_m16int(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (!x87_dec_stack())
+	if (!x87_ck_over_stack())
 	{
 		value = fx80_inan;
 	}
@@ -2973,10 +2999,10 @@ void x87_fild_m16int(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
-		x87_write_stack(0, value, TRUE);
-	m_x87_opcode = ((m_opcode << 8) | modrm) & 0x7ff;
-	m_x87_data_ptr = 0;
-	m_x87_ds = 0;
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
+		x87_write_stack(0, value, true);
+	}
 
 	CYCLES(13);
 }
@@ -2988,7 +3014,7 @@ void x87_fild_m32int(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (!x87_dec_stack())
+	if (!x87_ck_over_stack())
 	{
 		value = fx80_inan;
 	}
@@ -3001,7 +3027,10 @@ void x87_fild_m32int(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
-		x87_write_stack(0, value, TRUE);
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
+		x87_write_stack(0, value, true);
+	}
 
 	CYCLES(9);
 }
@@ -3013,7 +3042,7 @@ void x87_fild_m64int(UINT8 modrm)
  	if (x87_mf_fault())
  		return;
  	UINT32 ea = Getx87EA(modrm, 0);
-	if (!x87_dec_stack())
+	if (!x87_ck_over_stack())
 	{
 		value = fx80_inan;
 	}
@@ -3026,7 +3055,10 @@ void x87_fild_m64int(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
-		x87_write_stack(0, value, TRUE);
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
+		x87_write_stack(0, value, true);
+	}
 
 	CYCLES(10);
 }
@@ -3036,7 +3068,7 @@ void x87_fbld(UINT8 modrm)
 	floatx80 value;
 
 	UINT32 ea = GetEA(modrm, 0, 10);
-	if (!x87_dec_stack())
+	if (!x87_ck_over_stack())
 	{
 		value = fx80_inan;
 	}
@@ -3064,7 +3096,10 @@ void x87_fbld(UINT8 modrm)
 	}
 
 	if (x87_check_exceptions())
-		x87_write_stack(0, value, TRUE);
+	{
+		x87_set_stack_top(ST_TO_PHYS(7));
+		x87_write_stack(0, value, true);
+	}
 
 	CYCLES(75);
 }
@@ -3288,7 +3323,10 @@ void x87_fist_m16int(UINT8 modrm)
 		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
 			m16int = floatx80_to_int32(fx80);
 		else
+		{
+			float_exception_flags = float_flag_invalid;
 			m16int = -32768;
+		}
 	}
 
  	UINT32 ea = Getx87EA(modrm, 1);
@@ -3323,7 +3361,10 @@ void x87_fist_m32int(UINT8 modrm)
 		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
 			m32int = floatx80_to_int32(fx80);
 		else
+		{
+			float_exception_flags = float_flag_invalid;
 			m32int = 0x80000000;
+		}
 	}
 
  	UINT32 ea = Getx87EA(modrm, 1);
@@ -3358,7 +3399,10 @@ void x87_fistp_m16int(UINT8 modrm)
 		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
 			m16int = floatx80_to_int32(fx80);
 		else
-			m16int = (UINT16)0x8000;
+		{
+			float_exception_flags = float_flag_invalid;
+			m16int = (uint16_t)0x8000;
+		}
 	}
 
  	UINT32 ea = Getx87EA(modrm, 1);
@@ -3394,7 +3438,10 @@ void x87_fistp_m32int(UINT8 modrm)
 		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
 			m32int = floatx80_to_int32(fx80);
 		else
+		{
+			float_exception_flags = float_flag_invalid;
 			m32int = 0x80000000;
+		}
 	}
 
  	UINT32 ea = Getx87EA(modrm, 1);
@@ -3430,7 +3477,10 @@ void x87_fistp_m64int(UINT8 modrm)
 		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
 			m64int = floatx80_to_int64(fx80);
 		else
-			m64int = U64(0x8000000000000000);
+		{
+			float_exception_flags = float_flag_invalid;
+			m64int = 0x8000000000000000U;
+		}
 	}
 
  	UINT32 ea = Getx87EA(modrm, 1);
@@ -5193,48 +5243,88 @@ void x87_invalid(UINT8 modrm)
 
 static void I386OP(x87_group_d8)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_d8[modrm](modrm);
 }
 
 static void I386OP(x87_group_d9)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_d9[modrm](modrm);
 }
 
 static void I386OP(x87_group_da)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_da[modrm](modrm);
 }
 
 static void I386OP(x87_group_db)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_db[modrm](modrm);
 }
 
 static void I386OP(x87_group_dc)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_dc[modrm](modrm);
 }
 
 static void I386OP(x87_group_dd)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_dd[modrm](modrm);
 }
 
 static void I386OP(x87_group_de)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_de[modrm](modrm);
 }
 
 static void I386OP(x87_group_df)()
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	UINT8 modrm = FETCH();
 	m_opcode_table_x87_df[modrm](modrm);
 }

@@ -2514,6 +2514,11 @@ static void I386OP(clts)()              // Opcode 0x0f 0x06
 
 static void I386OP(wait)()              // Opcode 0x9B
 {
+	if ((m_cr[0] & 0xa) == 0xa)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	// TODO
 }
 
