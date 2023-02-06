@@ -1985,6 +1985,11 @@ static void MMXOP(paddd_r64_rm64)()  // Opcode 0f fe
 
 static void MMXOP(emms)() // Opcode 0f 77
 {
+	if (m_cr[0] & 0xc)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	m_x87_tw = 0xffff; // tag word = 0xffff
 	// TODO
 	CYCLES(1);     // TODO: correct cycle count
