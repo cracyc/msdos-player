@@ -873,7 +873,7 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if(key_buf_char->count() != 0) {
+	if(key_buf_char->count() != 0 || key_code != 0) {
 		return(1);
 	} else {
 		return(_kbhit());
@@ -906,12 +906,18 @@ retry:
 	}
 	
 	// input from console
-	while(key_buf_char->count() == 0) {
-		update_key_buffer();
+	int key_char, key_scan;
+	if(key_code != 0) {
+		key_char = (key_code >> 0) & 0xff;
+		key_scan = (key_code >> 8) & 0xff;
+		key_code >>= 16;
+	} else {
+		while(key_buf_char->count() == 0) {
+			update_key_buffer();
+		}
+		key_char = key_buf_char->read();
+		key_scan = key_buf_scan->read();
 	}
-	int key_char = key_buf_char->read();
-	int key_scan = key_buf_scan->read();
-	
 	if(echo && key_char) {
 		msdos_putch(key_char);
 	}
@@ -2487,8 +2493,6 @@ UINT32 get_key_code(bool clear_buffer)
 
 inline void pcbios_int_16h_00h()
 {
-	static UINT32 key_code = 0;
-	
 	while(key_code == 0) {
 		key_code = get_key_code(true);
 	}
@@ -2505,24 +2509,33 @@ inline void pcbios_int_16h_00h()
 
 inline void pcbios_int_16h_01h()
 {
-	UINT32 key_code = get_key_code(false);
+	static UINT32 key_code_prev = 0;
+	UINT32 key_code_tmp = key_code;
 	
-	if(key_code != 0) {
-		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
+	if(key_code_tmp == 0) {
+		key_code_tmp = get_key_code(false);
+	}
+	if(key_code_prev == key_code_tmp && (key_code_tmp & 0xffffff) == 0x00e000 && (key_code_tmp & 0xff000000) != 0) {
+		key_code_prev = key_code_tmp = 0;
+	} else {
+		key_code_prev = key_code_tmp;
+	}
+	if(key_code_tmp != 0) {
+		if((key_code_tmp & 0xffff) == 0x0000 || (key_code_tmp & 0xffff) == 0xe000) {
 			if(REG8(AH) == 0x11) {
-				key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
+				key_code_tmp = ((key_code_tmp >> 8) & 0xff) | ((key_code_tmp >> 16) & 0xff00);
 			} else {
-				key_code = ((key_code >> 16) & 0xff00);
+				key_code_tmp = ((key_code_tmp >> 16) & 0xff00);
 			}
 		}
 	}
-	if(key_code != 0) {
-		REG16(AX) = key_code & 0xffff;
+	if(key_code_tmp != 0) {
+		REG16(AX) = key_code_tmp & 0xffff;
 	}
 #if defined(HAS_I386)
-	m_ZF = (key_code == 0);
+	m_ZF = (key_code_tmp == 0);
 #else
-	m_ZeroVal = (key_code != 0);
+	m_ZeroVal = (key_code_tmp != 0);
 #endif
 }
 

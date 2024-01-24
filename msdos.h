@@ -455,6 +455,7 @@ bool cursor_moved;
 
 FIFO *key_buf_char;
 FIFO *key_buf_scan;
+UINT32 key_code = 0;
 
 int active_code_page;
 int system_code_page;
