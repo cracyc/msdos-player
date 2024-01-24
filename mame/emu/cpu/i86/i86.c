@@ -189,7 +189,10 @@ static void set_irq_line(int irqline, int state)
 
 		/* if the IF is set, signal an interrupt */
 		if (state != CLEAR_LINE && m_IF)
+		{
 			PREFIX(_interrupt)((UINT32)-1);
+			m_irq_state = CLEAR_LINE;
+		}
 	}
 }
 

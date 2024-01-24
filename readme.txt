@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/8/2015
+								1/15/2015
 
 ----- What's this
 
@@ -95,7 +95,9 @@ INT 10H		PC BIOS - Video
 	1311H	Read Characters and Extended Attributes
 	1320H	Write Characters and Standard Attributes
 	1321H	Write Characters and Extended Attributes
+	1BH	Perform Gray-Scale Summing
 	8200H	Get/Set Scroll Mode
+	EFH	Get Video Adapter Type and Mode (*1)
 	FEH	Get Shadow Buffer
 	FFH	Update Screen from Shadow Buffer
 
@@ -177,13 +179,13 @@ INT 21H		MS-DOS System Call
 	2DH	Set Time
 	2EH	Set/Reset Verify Switch
 	2FH	Get Disk Transfer Address
-	30H	Get Version Number (*1)
+	30H	Get Version Number (*2)
 	31H	Keep Process
 	32H	Get DOS Drive Parameter Block
 	3300H	Get Ctrl-Break
 	3301H	Set Ctrl-Break
 	3305H	Get Boot Drive
-	3306H	Get MS-DOS Version (*1)
+	3306H	Get MS-DOS Version (*2)
 	3307H	Windows95 - Set/Clear DOS_FLAG
 	35H	Get Vector
 	36H	Get Disk Free Space
@@ -302,8 +304,8 @@ INT 2FH		Multiplex Interrupt
 	AE01H	Execute
 	B700H	APPEND Installation Check (*4)
 
-(*1) MS-DOS Version: 7.10
-(*2) No ROM Programs
+(*1) Not a Hercules-compatible video adapter
+(*2) MS-DOS Version: 7.10
 (*3) ANSI.SYS is installed
 (*4) XMS/HMA/APPEND are not installed
 

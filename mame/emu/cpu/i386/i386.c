@@ -1264,6 +1264,7 @@ static void i386_check_irq_line()
 		m_cycles -= 2;
 #endif
 		i386_trap(pic_ack(), 1, 0);
+		m_irq_state = CLEAR_LINE;
 	}
 }
 

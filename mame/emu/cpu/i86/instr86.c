@@ -1801,7 +1801,10 @@ static void PREFIX86(_popf)()    /* Opcode 0x9d */
 
 	/* if the IF is set, and an interrupt is pending, signal an interrupt */
 	if (m_IF && m_irq_state)
+	{
 		PREFIX(_interrupt)((UINT32)-1);
+		m_irq_state = CLEAR_LINE;
+	}
 }
 #endif
 
@@ -2144,7 +2147,10 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 
 	/* if the IF is set, and an interrupt is pending, signal an interrupt */
 	if (m_IF && m_irq_state)
+	{
 		PREFIX(_interrupt)((UINT32)-1);
+		m_irq_state = CLEAR_LINE;
+	}
 
 	// MS-DOS system call
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
@@ -2530,11 +2536,14 @@ static void PREFIX(_sti)()    /* Opcode 0xfb */
 
 	/* if an interrupt is pending, signal an interrupt */
 	if (m_irq_state)
+	{
 #ifdef I80286
 		i80286_interrupt_descriptor(pic_ack(), 2, -1);
 #else
 		PREFIX86(_interrupt)((UINT32)-1);
 #endif
+		m_irq_state = CLEAR_LINE;
+	}
 }
 
 #ifndef I80186

@@ -34,25 +34,28 @@
 #else
 	#if defined(HAS_I386SX)
 		#define CPU_MODEL i386SX
-	#elif defined(HAS_I486)
-		#define CPU_MODEL i486
 	#else
-		#if defined(HAS_PENTIUM)
-			#define CPU_MODEL pentium
-		#elif defined(HAS_MEDIAGX)
-			#define CPU_MODEL mediagx
-		#elif defined(HAS_PENTIUM_PRO)
-			#define CPU_MODEL pentium_pro
-		#elif defined(HAS_PENTIUM_MMX)
-			#define CPU_MODEL pentium_mmx
-		#elif defined(HAS_PENTIUM2)
-			#define CPU_MODEL pentium2
-		#elif defined(HAS_PENTIUM3)
-			#define CPU_MODEL pentium3
-		#elif defined(HAS_PENTIUM4)
-			#define CPU_MODEL pentium4
+		#if defined(HAS_I486)
+			#define CPU_MODEL i486
+		#else
+			#if defined(HAS_PENTIUM)
+				#define CPU_MODEL pentium
+			#elif defined(HAS_MEDIAGX)
+				#define CPU_MODEL mediagx
+			#elif defined(HAS_PENTIUM_PRO)
+				#define CPU_MODEL pentium_pro
+			#elif defined(HAS_PENTIUM_MMX)
+				#define CPU_MODEL pentium_mmx
+			#elif defined(HAS_PENTIUM2)
+				#define CPU_MODEL pentium2
+			#elif defined(HAS_PENTIUM3)
+				#define CPU_MODEL pentium3
+			#elif defined(HAS_PENTIUM4)
+				#define CPU_MODEL pentium4
+			#endif
+			#define SUPPORT_RDTSC
 		#endif
-		#define SUPPORT_RDTSC
+		#define SUPPORT_FPU
 	#endif
 	#define HAS_I386
 #endif
@@ -866,6 +869,14 @@ char *msdos_local_file_path(char *path, int lfn)
 		}
 	}
 	return(trimmed);
+}
+
+bool msdos_is_con_path(char *path)
+{
+	char full[MAX_PATH], *name;
+	
+	GetFullPathName(path, MAX_PATH, full, &name);
+	return(_stricmp(full, "\\\\.\\CON") == 0);
 }
 
 char *msdos_remove_double_quote(char *path)
@@ -3689,11 +3700,14 @@ inline void msdos_int_21h_3ch()
 	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int attr = GetFileAttributes(path);
 	int fd = -1;
+	UINT16 info;
 	
-	if(_stricmp(path, "CON") == 0) {
-		fd = _open(path, _O_WRONLY | _O_BINARY);
+	if(msdos_is_con_path(path)) {
+		fd = _open("CON", _O_WRONLY | _O_BINARY);
+		info = 0x80d3;
 	} else {
 		fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+		info = msdos_drive_number(path);
 	}
 	if(fd != -1) {
 		if(attr == -1) {
@@ -3701,7 +3715,7 @@ inline void msdos_int_21h_3ch()
 		}
 		SetFileAttributes(path, attr);
 		REG16(AX) = fd;
-		msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
+		msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
 	} else {
 		REG16(AX) = errno;
 		m_CF = 1;
@@ -3712,13 +3726,20 @@ inline void msdos_int_21h_3dh()
 {
 	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int mode = REG8(AL) & 0x03;
+	int fd = -1;
+	UINT16 info;
 	
 	if(mode < 0x03) {
-		int fd = _open(path, file_mode[mode].mode);
-		
+		if(msdos_is_con_path(path)) {
+			fd = _open("CON", file_mode[mode].mode);
+			info = 0x80d3;
+		} else {
+			fd = _open(path, file_mode[mode].mode);
+			info = msdos_drive_number(path);
+		}
 		if(fd != -1) {
 			REG16(AX) = fd;
-			msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_drive_number(path), current_psp);
+			msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -4715,12 +4736,20 @@ inline void msdos_int_21h_6ch(int lfn)
 		if(_access(path, 0) == 0) {
 			// file exists
 			if(REG8(DL) & 1) {
-				int fd = _open(path, file_mode[mode].mode);
+				int fd = -1;
+				UINT16 info;
 				
+				if(msdos_is_con_path(path)) {
+					fd = _open("CON", file_mode[mode].mode);
+					info = 0x80d3;
+				} else {
+					fd = _open(path, file_mode[mode].mode);
+					info = msdos_drive_number(path);
+				}
 				if(fd != -1) {
 					REG16(AX) = fd;
 					REG16(CX) = 1;
-					msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_drive_number(path), current_psp);
+					msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
 				} else {
 					REG16(AX) = errno;
 					m_CF = 1;
@@ -4728,11 +4757,14 @@ inline void msdos_int_21h_6ch(int lfn)
 			} else if(REG8(DL) & 2) {
 				int attr = GetFileAttributes(path);
 				int fd = -1;
+				UINT16 info;
 				
-				if(_stricmp(path, "CON") == 0) {
-					fd = _open(path, file_mode[mode].mode);
+				if(msdos_is_con_path(path)) {
+					fd = _open("CON", file_mode[mode].mode);
+					info = 0x80d3;
 				} else {
 					fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+					info = msdos_drive_number(path);
 				}
 				if(fd != -1) {
 					if(attr == -1) {
@@ -4741,7 +4773,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					SetFileAttributes(path, attr);
 					REG16(AX) = fd;
 					REG16(CX) = 3;
-					msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
+					msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
 				} else {
 					REG16(AX) = errno;
 					m_CF = 1;
@@ -5387,9 +5419,11 @@ void msdos_syscall(unsigned num)
 		case 0x13: pcbios_int_10h_13h(); break;
 		case 0x18: REG8(AL) = 0x86; break;
 		case 0x1a: REG8(AL) = 0x00; break;
+		case 0x1b: break;
 		case 0x1c: REG8(AL) = 0x00; break;
 		case 0x1d: pcbios_int_10h_1dh(); break;
 		case 0x82: pcbios_int_10h_82h(); break;
+		case 0xef: REG16(DX) = 0xffff; break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
@@ -5399,7 +5433,11 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x11:
 		// PC BIOS - Get Equipment List
+#ifdef SUPPORT_FPU
+		REG16(AX) = 0x22;
+#else
 		REG16(AX) = 0x20;
+#endif
 		break;
 	case 0x12:
 		// PC BIOS - Get Memory Size

@@ -185,7 +185,10 @@ static void set_irq_line(int irqline, int state)
 
 			/* if the IF is set, signal an interrupt */
 			if (state != CLEAR_LINE && m_IF)
+			{
 				i80286_interrupt_descriptor(pic_ack(), 2, -1);
+				m_irq_state = CLEAR_LINE;
+			}
 
 		}
 	}
