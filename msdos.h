@@ -25,17 +25,46 @@
 #include <mbctype.h>
 #include <direct.h>
 #include <errno.h>
+#include <tlhelp32.h>
+#include <psapi.h>
 
-// variable scope of 'for' loop for microsoft visual c++ 6.0 and embedded visual c++ 4.0
-#if (defined(_MSC_VER) && (_MSC_VER == 1200)) || defined(_WIN32_WCE)
+// variable scope of 'for' loop for Microsoft Visual C++ 6.0
+#if defined(_MSC_VER) && (_MSC_VER == 1200)
 #define for if(0);else for
 #endif
-// disable warnings C4189, C4995 and C4996 for microsoft visual c++ 2005
+
+// disable warnings for Microsoft Visual C++ 2005 or later
 #if defined(_MSC_VER) && (_MSC_VER >= 1400)
 #pragma warning( disable : 4819 )
 #pragma warning( disable : 4995 )
 #pragma warning( disable : 4996 )
+// for MAME i86/i386
+#pragma warning( disable : 4018 )
+#pragma warning( disable : 4065 )
+#pragma warning( disable : 4146 )
+#pragma warning( disable : 4244 )
+#pragma warning( disable : 4267 )
 #endif
+
+// endian
+#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+	#if defined(__BYTE_ORDER) && (defined(__LITTLE_ENDIAN) || defined(__BIG_ENDIAN))
+		#if __BYTE_ORDER == __LITTLE_ENDIAN
+			#define __LITTLE_ENDIAN__
+		#elif __BYTE_ORDER == __BIG_ENDIAN
+			#define __BIG_ENDIAN__
+		#endif
+	#elif defined(WORDS_LITTLEENDIAN)
+		#define __LITTLE_ENDIAN__
+	#elif defined(WORDS_BIGENDIAN)
+		#define __BIG_ENDIAN__
+	#endif
+#endif
+#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+	// Microsoft Visual C++
+	#define __LITTLE_ENDIAN__
+#endif
+
 // compat for mingw32 headers
 #ifndef COMMON_LVB_UNDERSCORE
 #define COMMON_LVB_UNDERSCORE 0x8000
@@ -65,7 +94,11 @@ typedef signed int INT32;
 typedef union {
 	UINT32 dw;
 	struct {
+#ifdef __BIG_ENDIAN__
+		UINT16 h, l;
+#else
 		UINT16 l, h;
+#endif
 	} w;
 } PAIR32;
 #pragma pack()
@@ -485,6 +518,7 @@ bool int_10h_ffh_called = false;
 ---------------------------------------------------------------------------- */
 
 void hardware_init();
+void hardware_finish();
 void hardware_run();
 void hardware_update();
 

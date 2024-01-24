@@ -699,6 +699,7 @@ static void I386OP(mov_cr_r32)()        // Opcode 0x0f 22
 		case 2: CYCLES(CYCLES_MOV_REG_CR2); break;
 		case 3:
 			CYCLES(CYCLES_MOV_REG_CR3);
+			vtlb_flush_dynamic(m_vtlb);
 			break;
 		case 4: CYCLES(1); break; // TODO
 		default:
@@ -1131,6 +1132,7 @@ static void I386OP(repeat)(int invert_flag)
 		break;
 		case 0x66:
 		m_operand_size ^= 1;
+		m_xmm_operand_size ^= 1;
 		break;
 		case 0x67:
 		m_address_size ^= 1;
@@ -2283,6 +2285,7 @@ static void I386OP(operand_size)()      // Opcode prefix 0x66
 	if(m_operand_prefix == 0)
 	{
 		m_operand_size ^= 1;
+		m_xmm_operand_size ^= 1;
 		m_operand_prefix = 1;
 	}
 	m_opcode = FETCH();
@@ -2480,7 +2483,7 @@ static void I386OP(wait)()              // Opcode 0x9B
 static void I386OP(lock)()              // Opcode 0xf0
 {
 	// lock doesn't depend on iopl on 386
-	// TODO: lock causes UD on unlockable opcodes
+	m_lock = true;
 	CYCLES(CYCLES_LOCK);       // TODO: Determine correct cycle count
 	I386OP(decode_opcode)();
 }

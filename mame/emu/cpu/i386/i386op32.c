@@ -1604,8 +1604,12 @@ static void I386OP(popfd)()             // Opcode 0x9d
 
 static void I386OP(push_eax)()          // Opcode 0x50
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(EAX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1614,8 +1618,12 @@ static void I386OP(push_eax)()          // Opcode 0x50
 
 static void I386OP(push_ecx)()          // Opcode 0x51
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(ECX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1624,8 +1632,12 @@ static void I386OP(push_ecx)()          // Opcode 0x51
 
 static void I386OP(push_edx)()          // Opcode 0x52
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(EDX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1634,8 +1646,12 @@ static void I386OP(push_edx)()          // Opcode 0x52
 
 static void I386OP(push_ebx)()          // Opcode 0x53
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(EBX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1644,8 +1660,12 @@ static void I386OP(push_ebx)()          // Opcode 0x53
 
 static void I386OP(push_esp)()          // Opcode 0x54
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(ESP) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1654,8 +1674,12 @@ static void I386OP(push_esp)()          // Opcode 0x54
 
 static void I386OP(push_ebp)()          // Opcode 0x55
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(EBP) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1664,8 +1688,12 @@ static void I386OP(push_ebp)()          // Opcode 0x55
 
 static void I386OP(push_esi)()          // Opcode 0x56
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(ESI) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1674,8 +1702,12 @@ static void I386OP(push_esi)()          // Opcode 0x56
 
 static void I386OP(push_edi)()          // Opcode 0x57
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(REG32(EDI) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1684,8 +1716,12 @@ static void I386OP(push_edi)()          // Opcode 0x57
 
 static void I386OP(push_cs32)()         // Opcode 0x0e
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[CS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1694,8 +1730,12 @@ static void I386OP(push_cs32)()         // Opcode 0x0e
 
 static void I386OP(push_ds32)()         // Opcode 0x1e
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[DS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1704,8 +1744,12 @@ static void I386OP(push_ds32)()         // Opcode 0x1e
 
 static void I386OP(push_es32)()         // Opcode 0x06
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[ES].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1714,8 +1758,12 @@ static void I386OP(push_es32)()         // Opcode 0x06
 
 static void I386OP(push_fs32)()         // Opcode 0x0f a0
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[FS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1724,8 +1772,12 @@ static void I386OP(push_fs32)()         // Opcode 0x0f a0
 
 static void I386OP(push_gs32)()         // Opcode 0x0f a8
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[GS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1734,8 +1786,12 @@ static void I386OP(push_gs32)()         // Opcode 0x0f a8
 
 static void I386OP(push_ss32)()         // Opcode 0x16
 {
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(m_sreg[SS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1745,8 +1801,12 @@ static void I386OP(push_ss32)()         // Opcode 0x16
 static void I386OP(push_i32)()          // Opcode 0x68
 {
 	UINT32 value = FETCH32();
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(value);
 	else
 		FAULT(FAULT_SS,0)
@@ -1756,8 +1816,12 @@ static void I386OP(push_i32)()          // Opcode 0x68
 static void I386OP(pushad)()            // Opcode 0x60
 {
 	UINT32 temp = REG32(ESP);
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-32) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 32;
+	else
+		offset = (REG16(SP) - 32) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 	{
 		PUSH32(REG32(EAX) );
 		PUSH32(REG32(ECX) );
@@ -1777,8 +1841,12 @@ static void I386OP(pushfd)()            // Opcode 0x9c
 {
 	if(!m_IOP1 && !m_IOP2 && V8086_MODE)
 		FAULT(FAULT_GP,0)
-	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset-4) == 0)
+	UINT32 offset;
+	if(STACK_32BIT)
+		offset = REG32(ESP) - 4;
+	else
+		offset = (REG16(SP) - 4) & 0xffff;
+	if(i386_limit_check(SS,offset) == 0)
 		PUSH32(get_flags() & 0x00fcffff );
 	else
 		FAULT(FAULT_SS,0)
@@ -2944,9 +3012,14 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 				memset(&seg, 0, sizeof(seg));
 				seg.selector = m_task.segment;
 				i386_load_protected_mode_segment(&seg,NULL);
+
+				UINT32 addr = ((seg.selector & 4) ? m_ldtr.base : m_gdtr.base) + (seg.selector & ~7) + 5;
+				i386_translate_address(TRANSLATE_READ, &addr, NULL);
+				write_byte(addr, (seg.flags & 0xff) | 2);
+
 				m_task.limit = seg.limit;
 				m_task.base = seg.base;
-				m_task.flags = seg.flags;
+				m_task.flags = seg.flags | 2;
 			}
 			else
 			{

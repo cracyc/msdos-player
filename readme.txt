@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/6/2014
+								1/8/2015
 
 ----- What's this
 
@@ -19,7 +19,7 @@ For example compile sample.c with LSI C-86 and execute compiled binary:
 
 The emulator can access host's file path and envrionment variables directly.
 
-Any softwares (for example DoDiary Version 1.55) invite that the environment
+Some softwares (for example DoDiary Version 1.55) invite that the environment
 variable table should be less than 1024 bytes.
 On the Windows OS, there are many variables and the variable table size will
 be more than 1024 bytes and it causes an error.
@@ -54,9 +54,9 @@ This archive contains 6 executable binaries:
 If you don't need the protected mode or mnemonics added with 80386/80486,
 I recommend i286_x86 or i286_x64 binary.
 
-You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4/MediaGX.
+You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4 or MediaGX.
 Replace "HAS_I486" with for example "HAS_PENTIUM" in source/msdos.vcproj.
-See also source/msdos.cpp, line 48-62.
+See also source/msdos.cpp, line 26-58.
 
 
 ----- Supported hardwares
@@ -70,7 +70,7 @@ Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 000000H -	Conventional Memory (736KB)
 0B8000H -	VGA Text Video RAM
 0C0000H -	Upper Memory Block (224KB)
-0F8000H -	Shadow Buffer
+0F8000H -	V-TEXT Shadow Buffer
 0FFFF0H -	CPU Boot Address
 100000H -	Upper Memory (15MB)
 
@@ -311,7 +311,7 @@ INT 2FH		Multiplex Interrupt
 ----- Thanks
 
 80286 code is based on MAME 0.149.
-80386 code is based on MAME 0.152.
+80386 code is based on MAME 0.152 and fixes in MAME 0.154/0.157 are applied.
 
 INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
 are based on DOSBox.

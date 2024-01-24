@@ -7,14 +7,6 @@
 
 #include "msdos.h"
 
-#ifdef _MSC_VER
-#pragma warning( disable : 4018 )
-#pragma warning( disable : 4065 )
-#pragma warning( disable : 4146 )
-#pragma warning( disable : 4244 )
-#pragma warning( disable : 4267 )
-#endif
-
 #define my_strchr(str, chr) (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr))
 #define my_strtok(tok, del) (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del))
 #define my_strupr(str) (char *)_mbsupr((unsigned char *)(str))
@@ -65,7 +57,9 @@
 	#define HAS_I386
 #endif
 
+#ifndef __BIG_ENDIAN__
 #define LSB_FIRST
+#endif
 
 #ifndef INLINE
 #define INLINE inline
@@ -76,6 +70,41 @@
 #define logerror(...)
 //#define popmessage(...) fprintf(stderr, __VA_ARGS__)
 #define popmessage(...)
+
+/*****************************************************************************/
+/* src/emu/devcpu.h */
+
+// CPU interface functions
+#define CPU_INIT_NAME(name)			cpu_init_##name
+#define CPU_INIT(name)				void CPU_INIT_NAME(name)()
+#define CPU_INIT_CALL(name)			CPU_INIT_NAME(name)()
+
+#define CPU_RESET_NAME(name)			cpu_reset_##name
+#define CPU_RESET(name)				void CPU_RESET_NAME(name)()
+#define CPU_RESET_CALL(name)			CPU_RESET_NAME(name)()
+
+#define CPU_EXECUTE_NAME(name)			cpu_execute_##name
+#define CPU_EXECUTE(name)			void CPU_EXECUTE_NAME(name)()
+#define CPU_EXECUTE_CALL(name)			CPU_EXECUTE_NAME(name)()
+
+#define CPU_TRANSLATE_NAME(name)		cpu_translate_##name
+#define CPU_TRANSLATE(name)			int CPU_TRANSLATE_NAME(name)(address_spacenum space, int intention, offs_t *address)
+#define CPU_TRANSLATE_CALL(name)		CPU_TRANSLATE_NAME(name)(space, intention, address)
+
+#define CPU_DISASSEMBLE_NAME(name)		cpu_disassemble_##name
+#define CPU_DISASSEMBLE(name)			int CPU_DISASSEMBLE_NAME(name)(char *buffer, offs_t eip, const UINT8 *oprom)
+#define CPU_DISASSEMBLE_CALL(name)		CPU_DISASSEMBLE_NAME(name)(buffer, eip, oprom)
+
+/*****************************************************************************/
+/* src/emu/didisasm.h */
+
+// Disassembler constants
+const UINT32 DASMFLAG_SUPPORTED     = 0x80000000;   // are disassembly flags supported?
+const UINT32 DASMFLAG_STEP_OUT      = 0x40000000;   // this instruction should be the end of a step out sequence
+const UINT32 DASMFLAG_STEP_OVER     = 0x20000000;   // this instruction should be stepped over by setting a breakpoint afterwards
+const UINT32 DASMFLAG_OVERINSTMASK  = 0x18000000;   // number of extra instructions to skip when stepping over
+const UINT32 DASMFLAG_OVERINSTSHIFT = 27;           // bits to shift after masking to get the value
+const UINT32 DASMFLAG_LENGTHMASK    = 0x0000ffff;   // the low 16-bits contain the actual length
 
 /*****************************************************************************/
 /* src/emu/diexec.h */
@@ -97,27 +126,66 @@ enum
 };
 
 /*****************************************************************************/
-/* src/emu/devcpu.h */
+/* src/emu/dimemory.h */
 
-// CPU interface functions
-#define CPU_INIT_NAME(name)			cpu_init_##name
-#define CPU_INIT(name)				void CPU_INIT_NAME(name)()
-#define CPU_INIT_CALL(name)			CPU_INIT_NAME(name)()
+// Translation intentions
+const int TRANSLATE_TYPE_MASK       = 0x03;     // read write or fetch
+const int TRANSLATE_USER_MASK       = 0x04;     // user mode or fully privileged
+const int TRANSLATE_DEBUG_MASK      = 0x08;     // debug mode (no side effects)
 
-#define CPU_RESET_NAME(name)			cpu_reset_##name
-#define CPU_RESET(name)				void CPU_RESET_NAME(name)()
-#define CPU_RESET_CALL(name)			CPU_RESET_NAME(name)()
+const int TRANSLATE_READ            = 0;        // translate for read
+const int TRANSLATE_WRITE           = 1;        // translate for write
+const int TRANSLATE_FETCH           = 2;        // translate for instruction fetch
+const int TRANSLATE_READ_USER       = (TRANSLATE_READ | TRANSLATE_USER_MASK);
+const int TRANSLATE_WRITE_USER      = (TRANSLATE_WRITE | TRANSLATE_USER_MASK);
+const int TRANSLATE_FETCH_USER      = (TRANSLATE_FETCH | TRANSLATE_USER_MASK);
+const int TRANSLATE_READ_DEBUG      = (TRANSLATE_READ | TRANSLATE_DEBUG_MASK);
+const int TRANSLATE_WRITE_DEBUG     = (TRANSLATE_WRITE | TRANSLATE_DEBUG_MASK);
+const int TRANSLATE_FETCH_DEBUG     = (TRANSLATE_FETCH | TRANSLATE_DEBUG_MASK);
 
-#define CPU_EXECUTE_NAME(name)			cpu_execute_##name
-#define CPU_EXECUTE(name)			void CPU_EXECUTE_NAME(name)()
-#define CPU_EXECUTE_CALL(name)			CPU_EXECUTE_NAME(name)()
+/*****************************************************************************/
+/* src/emu/emucore.h */
 
-#define CPU_DISASSEMBLE_NAME(name)		cpu_disassemble_##name
-#define CPU_DISASSEMBLE(name)			int CPU_DISASSEMBLE_NAME(name)(char *buffer, offs_t eip, const UINT8 *oprom)
-#define CPU_DISASSEMBLE_CALL(name)		CPU_DISASSEMBLE_NAME(name)(buffer, eip, oprom)
+// constants for expression endianness
+enum endianness_t
+{
+	ENDIANNESS_LITTLE,
+	ENDIANNESS_BIG
+};
+
+// declare native endianness to be one or the other
+#ifdef LSB_FIRST
+const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_LITTLE;
+#else
+const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
+#endif
+
+// endian-based value: first value is if 'endian' is little-endian, second is if 'endian' is big-endian
+#define ENDIAN_VALUE_LE_BE(endian,leval,beval)	(((endian) == ENDIANNESS_LITTLE) ? (leval) : (beval))
+
+// endian-based value: first value is if native endianness is little-endian, second is if native is big-endian
+#define NATIVE_ENDIAN_VALUE_LE_BE(leval,beval)	ENDIAN_VALUE_LE_BE(ENDIANNESS_NATIVE, leval, beval)
+
+// endian-based value: first value is if 'endian' matches native, second is if 'endian' doesn't match native
+#define ENDIAN_VALUE_NE_NNE(endian,leval,beval)	(((endian) == ENDIANNESS_NATIVE) ? (neval) : (nneval))
 
 /*****************************************************************************/
 /* src/emu/memory.h */
+
+// address spaces
+enum address_spacenum
+{
+	AS_0,                           // first address space
+	AS_1,                           // second address space
+	AS_2,                           // third address space
+	AS_3,                           // fourth address space
+	ADDRESS_SPACES,                 // maximum number of address spaces
+
+	// alternate address space names for common use
+	AS_PROGRAM = AS_0,              // program address space
+	AS_DATA = AS_1,                 // data address space
+	AS_IO = AS_2                    // I/O address space
+};
 
 // offsets and addresses are 32-bit (for now...)
 typedef UINT32	offs_t;
@@ -318,58 +386,23 @@ void write_io_word(offs_t byteaddress, UINT16 data);
 void write_io_dword(offs_t byteaddress, UINT32 data);
 
 /*****************************************************************************/
-/* src/emu/emucore.h */
-
-// constants for expression endianness
-enum endianness_t
-{
-	ENDIANNESS_LITTLE,
-	ENDIANNESS_BIG
-};
-
-// declare native endianness to be one or the other
-#ifdef LSB_FIRST
-const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_LITTLE;
-#else
-const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
-#endif
-
-// endian-based value: first value is if 'endian' is little-endian, second is if 'endian' is big-endian
-#define ENDIAN_VALUE_LE_BE(endian,leval,beval)	(((endian) == ENDIANNESS_LITTLE) ? (leval) : (beval))
-
-// endian-based value: first value is if native endianness is little-endian, second is if native is big-endian
-#define NATIVE_ENDIAN_VALUE_LE_BE(leval,beval)	ENDIAN_VALUE_LE_BE(ENDIANNESS_NATIVE, leval, beval)
-
-// endian-based value: first value is if 'endian' matches native, second is if 'endian' doesn't match native
-#define ENDIAN_VALUE_NE_NNE(endian,leval,beval)	(((endian) == ENDIANNESS_NATIVE) ? (neval) : (nneval))
-
-/*****************************************************************************/
-/* src/emu/didisasm.h */
-
-// Disassembler constants
-const UINT32 DASMFLAG_SUPPORTED     = 0x80000000;   // are disassembly flags supported?
-const UINT32 DASMFLAG_STEP_OUT      = 0x40000000;   // this instruction should be the end of a step out sequence
-const UINT32 DASMFLAG_STEP_OVER     = 0x20000000;   // this instruction should be stepped over by setting a breakpoint afterwards
-const UINT32 DASMFLAG_OVERINSTMASK  = 0x18000000;   // number of extra instructions to skip when stepping over
-const UINT32 DASMFLAG_OVERINSTSHIFT = 27;           // bits to shift after masking to get the value
-const UINT32 DASMFLAG_LENGTHMASK    = 0x0000ffff;   // the low 16-bits contain the actual length
-
-/*****************************************************************************/
 /* src/osd/osdcomm.h */
 
 /* Highly useful macro for compile-time knowledge of an array size */
 #define ARRAY_LENGTH(x)     (sizeof(x) / sizeof(x[0]))
 
 #if defined(HAS_I386)
-	#include "softfloat/softfloat.c"
-	#include "i386/i386.c"
+	static CPU_TRANSLATE(i386);
+	#include "mame/lib/softfloat/softfloat.c"
+	#include "mame/emu/cpu/vtlb.c"
+	#include "mame/emu/cpu/i386/i386.c"
 #elif defined(HAS_I286)
-	#include "i86/i286.c"
+	#include "mame/emu/cpu/i86/i286.c"
 #else
-	#include "i86/i86.c"
+	#include "mame/emu/cpu/i86/i86.c"
 #endif
 #ifdef SUPPORT_DISASSEMBLER
-	#include "i386/i386dasm.c"
+	#include "mame/emu/cpu/i386/i386dasm.c"
 	bool dasm = false;
 #endif
 
@@ -419,6 +452,41 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 	main
 ---------------------------------------------------------------------------- */
 
+bool is_started_from_command_prompt()
+{
+	bool ret = false;
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if(hSnapshot != INVALID_HANDLE_VALUE) {
+		DWORD dwParentProcessID = 0;
+		PROCESSENTRY32 pe32;
+		pe32.dwSize = sizeof(PROCESSENTRY32);
+		if(Process32First(hSnapshot, &pe32)) {
+			do {
+				if(pe32.th32ProcessID == GetCurrentProcessId()) {
+					dwParentProcessID = pe32.th32ParentProcessID;
+					break;
+				}
+			} while(Process32Next(hSnapshot, &pe32));
+		}
+		CloseHandle(hSnapshot);
+		if(dwParentProcessID != 0) {
+			HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, dwParentProcessID);
+			if(hProcess != NULL) {
+				HMODULE hMod;
+				DWORD cbNeeded;
+				if(EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
+					char module_name[MAX_PATH];
+					if(GetModuleBaseName(hProcess, hMod, module_name, sizeof(module_name))) {
+						ret = (_strnicmp(module_name, "cmd.exe", 7) == 0);
+					}
+				}
+				CloseHandle(hProcess);
+			}
+		}
+	}
+	return(ret);
+}
+
 #define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
 
 int main(int argc, char *argv[], char *envp[])
@@ -448,6 +516,13 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr, "MS-DOS Player for Win32 console\n\n");
 #endif
 		fprintf(stderr, "Usage: MSDOS [-e] [-vX.XX] (command file) [opions]\n");
+		
+		if(!is_started_from_command_prompt()) {
+			fprintf(stderr, "\nStart this program from a command prompt!\n\nHit any key to quit...");
+			while(!_kbhit()) {
+				Sleep(10);
+			}
+		}
 		return(EXIT_FAILURE);
 	}
 	
@@ -484,6 +559,8 @@ int main(int argc, char *argv[], char *envp[])
 		msdos_finish();
 		timeEndPeriod(caps.wPeriodMin);
 	}
+	
+	hardware_finish();
 	
 	delete key_buf_char;
 	delete key_buf_scan;
@@ -5928,6 +6005,13 @@ void hardware_init()
 #endif
 	cmos_init();
 	kbd_init();
+}
+
+void hardware_finish()
+{
+#if defined(HAS_I386)
+	vtlb_free(m_vtlb);
+#endif
 }
 
 void hardware_run()

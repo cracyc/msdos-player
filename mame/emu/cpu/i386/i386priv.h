@@ -4,8 +4,9 @@
 #define __I386_H__
 
 //#include "i386.h"
-#include "../softfloat/milieu.h"
-#include "../softfloat/softfloat.h"
+#include "../../../lib/softfloat/milieu.h"
+#include "../../../lib/softfloat/softfloat.h"
+#include "../vtlb.h"
 
 //#define DEBUG_MISSING_OPCODE
 
@@ -153,7 +154,16 @@ enum
 	X87_ST4,
 	X87_ST5,
 	X87_ST6,
-	X87_ST7
+	X87_ST7,
+
+	SSE_XMM0,
+	SSE_XMM1,
+	SSE_XMM2,
+	SSE_XMM3,
+	SSE_XMM4,
+	SSE_XMM5,
+	SSE_XMM6,
+	SSE_XMM7
 };
 
 enum
@@ -377,6 +387,7 @@ union XMM_REG {
 	int m_halted;
 
 	int m_operand_size;
+	int m_xmm_operand_size;
 	int m_address_size;
 	int m_operand_prefix;
 	int m_address_prefix;
@@ -432,8 +443,12 @@ union XMM_REG {
 	void (*m_opcode_table3f3_16[256])();
 	void (*m_opcode_table3f3_32[256])();
 
+	bool m_lock_table[2][256];
+
 	UINT8 *m_cycle_table_pm;
 	UINT8 *m_cycle_table_rm;
+
+	vtlb_state *m_vtlb;
 
 	bool m_smm;
 	bool m_smi;
@@ -442,6 +457,7 @@ union XMM_REG {
 	bool m_nmi_latched;
 	UINT32 m_smbase;
 //	devcb_resolved_write_line m_smiact;
+	bool m_lock;
 
 	// bytes in current opcode, debug only
 #ifdef DEBUG_MISSING_OPCODE
@@ -543,125 +559,160 @@ INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn)
 	return m_sreg[segment].base + ip;
 }
 
-// rwn; read = 0, write = 1, none = -1, read at PL 0 = -2
-INLINE int translate_address(int rwn, UINT32 *address, UINT32 *error)
+#define VTLB_FLAG_DIRTY 0x100
+
+INLINE vtlb_entry get_permissions(UINT32 pte, int wp)
+{
+	vtlb_entry ret = VTLB_READ_ALLOWED | ((pte & 4) ? VTLB_USER_READ_ALLOWED : 0);
+	if(!wp)
+		ret |= VTLB_WRITE_ALLOWED;
+	if(pte & 2)
+		ret |= VTLB_WRITE_ALLOWED | ((pte & 4) ? VTLB_USER_WRITE_ALLOWED : 0);
+	return ret;
+}
+
+static int i386_translate_address(int intention, offs_t *address, vtlb_entry *entry)
 {
 	UINT32 a = *address;
 	UINT32 pdbr = m_cr[3] & 0xfffff000;
 	UINT32 directory = (a >> 22) & 0x3ff;
 	UINT32 table = (a >> 12) & 0x3ff;
-	UINT32 offset = a & 0xfff;
-	UINT32 page_entry;
-	UINT32 ret = 1;
-	bool user = (m_CPL == 3) && (rwn >= 0);
-	*error = 0;
+	vtlb_entry perm = 0;
+	int ret = FALSE;
+	bool user = (intention & TRANSLATE_USER_MASK) ? true : false;
+	bool write = (intention & TRANSLATE_WRITE) ? true : false;
+	bool debug = (intention & TRANSLATE_DEBUG_MASK) ? true : false;
+
+	if(!(m_cr[0] & 0x80000000))
+	{
+		if(entry)
+			*entry = 0x77;
+		return TRUE;
+	}
 
 	UINT32 page_dir = read_dword(pdbr + directory * 4);
-	if((page_dir & 1) && ((page_dir & 4) || !user))
+	if(page_dir & 1)
 	{
-		if (!(m_cr[4] & 0x10))
+		if ((page_dir & 0x80) && (m_cr[4] & 0x10))
 		{
-			page_entry = read_dword((page_dir & 0xfffff000) + (table * 4));
-			if(!(page_entry & 1))
-				ret = 0;
-			else if((!(page_entry & 2) && (user || WP) && (rwn == 1)) || (!(page_entry & 4) && user))
+			a = (page_dir & 0xffc00000) | (a & 0x003fffff);
+			if(debug)
 			{
-				*error = 1;
-				ret = 0;
+				*address = a;
+				return TRUE;
 			}
+			perm = get_permissions(page_dir, WP);
+			if(write && (!(perm & VTLB_WRITE_ALLOWED) || (user && !(perm & VTLB_USER_WRITE_ALLOWED))))
+				ret = FALSE;
+			else if(user && !(perm & VTLB_USER_READ_ALLOWED))
+				ret = FALSE;
 			else
 			{
-				if(!(page_dir & 0x20) && (rwn != -1))
+				if(write)
+					perm |= VTLB_FLAG_DIRTY;
+				if(!(page_dir & 0x40) && write)
+					write_dword(pdbr + directory * 4, page_dir | 0x60);
+				else if(!(page_dir & 0x20))
 					write_dword(pdbr + directory * 4, page_dir | 0x20);
-				if(!(page_entry & 0x40) && (rwn == 1))
-					write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x60);
-				else if(!(page_entry & 0x20) && (rwn != -1))
-					write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x20);
-				*address = (page_entry & 0xfffff000) | offset;
+				ret = TRUE;
 			}
 		}
 		else
 		{
-			if (page_dir & 0x80)
-			{
-				if(!(page_dir & 2) && (user || WP) && (rwn == 1))
-				{
-					*error = 1;
-					ret = 0;
-				}
-				else
-				{
-					if(!(page_dir & 0x40) && (rwn == 1))
-						write_dword(pdbr + directory * 4, page_dir | 0x60);
-					else if(!(page_dir & 0x20) && (rwn != -1))
-						write_dword(pdbr + directory * 4, page_dir | 0x20);
-					*address = (page_dir & 0xffc00000) | (a & 0x003fffff);
-				}
-			}
+			UINT32 page_entry = read_dword((page_dir & 0xfffff000) + (table * 4));
+			if(!(page_entry & 1))
+				ret = FALSE;
 			else
 			{
-				page_entry = read_dword((page_dir & 0xfffff000) + (table * 4));
-				if(!(page_entry & 1))
-					ret = 0;
-				else if((!(page_entry & 2) && (user || WP) && (rwn == 1)) || (!(page_entry & 4) && user))
+				a = (page_entry & 0xfffff000) | (a & 0xfff);
+				if(debug)
 				{
-					*error = 1;
-					ret = 0;
+					*address = a;
+					return TRUE;
 				}
+				perm = get_permissions(page_entry, WP);
+				if(write && (!(perm & VTLB_WRITE_ALLOWED) || (user && !(perm & VTLB_USER_WRITE_ALLOWED))))
+					ret = FALSE;
+				else if(user && !(perm & VTLB_USER_READ_ALLOWED))
+					ret = FALSE;
 				else
 				{
-					if(!(page_dir & 0x20) && (rwn != -1))
+					if(write)
+						perm |= VTLB_FLAG_DIRTY;
+					if(!(page_dir & 0x20))
 						write_dword(pdbr + directory * 4, page_dir | 0x20);
-					if(!(page_entry & 0x40) && (rwn == 1))
+					if(!(page_entry & 0x40) && write)
 						write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x60);
-					else if(!(page_entry & 0x20) && (rwn != -1))
+					else if(!(page_entry & 0x20))
 						write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x20);
-					*address = (page_entry & 0xfffff000) | offset;
+					ret = TRUE;
 				}
 			}
 		}
 	}
 	else
+		ret = FALSE;
+	if(entry)
+		*entry = perm;
+	if(ret)
+		*address = a;
+	return ret;
+}
+
+//#define TEST_TLB
+
+INLINE int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
+{
+	if(!(m_cr[0] & 0x80000000)) // Some (very few) old OS's won't work with this
+		return TRUE;
+
+	const vtlb_entry *table = vtlb_table(m_vtlb);
+	UINT32 index = *address >> 12;
+	vtlb_entry entry = table[index];
+	if(type == TRANSLATE_FETCH)
+		type = TRANSLATE_READ;
+	if(pl == 3)
+		type |= TRANSLATE_USER_MASK;
+#ifdef TEST_TLB
+	UINT32 test_addr = *address;
+#endif
+
+	if(!(entry & VTLB_FLAG_VALID) || ((type & TRANSLATE_WRITE) && !(entry & VTLB_FLAG_DIRTY)))
 	{
-		if(page_dir & 1)
-			*error = 1;
-		ret = 0;
+		if(!i386_translate_address(type, address, &entry))
+		{
+			*error = ((type & TRANSLATE_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0);
+			if(entry)
+				*error |= 1;
+			return FALSE;
+		}
+		vtlb_dynload(m_vtlb, index, *address, entry);
+		return TRUE;
 	}
-	if(!ret)
+	if(!(entry & (1 << type)))
 	{
-		if(rwn != -1)
-			*error |= ((rwn == 1)<<1) | ((m_CPL == 3)<<2);
-		return 0;
+		*error = ((type & TRANSLATE_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0) | 1;
+		return FALSE;
 	}
-	return 1;
+	*address = (entry & 0xfffff000) | (*address & 0xfff);
+#ifdef TEST_TLB
+	int test_ret = i386_translate_address(type | TRANSLATE_DEBUG_MASK, &test_addr, NULL);
+	if(!test_ret || (test_addr != *address))
+		logerror("TLB-PTE mismatch! %06X %06X %06x\n", *address, test_addr, m_pc);
+#endif
+	return TRUE;
 }
 
 INLINE void CHANGE_PC(UINT32 pc)
 {
-	UINT32 address, error;
 	m_pc = i386_translate(CS, pc, -1 );
-
-	address = m_pc;
-
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		translate_address(-1,&address,&error);
-	}
 }
 
 INLINE void NEAR_BRANCH(INT32 offs)
 {
-	UINT32 address, error;
 	/* TODO: limit */
 	m_eip += offs;
 	m_pc += offs;
-
-	address = m_pc;
-
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		translate_address(-1,&address,&error);
-	}
 }
 
 INLINE UINT8 FETCH()
@@ -669,11 +720,8 @@ INLINE UINT8 FETCH()
 	UINT8 value;
 	UINT32 address = m_pc, error;
 
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		if(!translate_address(0,&address,&error))
-			PF_THROW(error);
-	}
+	if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+		PF_THROW(error);
 
 	value = read_decrypted_byte(address & m_a20_mask);
 #ifdef DEBUG_MISSING_OPCODE
@@ -693,11 +741,8 @@ INLINE UINT16 FETCH16()
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(0,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+			PF_THROW(error);
 		address &= m_a20_mask;
 		value = read_decrypted_word(address);
 		m_eip += 2;
@@ -716,11 +761,8 @@ INLINE UINT32 FETCH32()
 		value |= (FETCH() << 16);
 		value |= (FETCH() << 24);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(0,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = read_decrypted_dword(address);
@@ -734,11 +776,8 @@ INLINE UINT8 READ8(UINT32 ea)
 {
 	UINT32 address = ea, error;
 
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		if(!translate_address(0,&address,&error))
-			PF_THROW(error);
-	}
+	if(!translate_address(m_CPL,TRANSLATE_READ,&address, &error))
+		PF_THROW(error);
 
 	address &= m_a20_mask;
 	return read_byte(address);
@@ -752,11 +791,8 @@ INLINE UINT16 READ16(UINT32 ea)
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(0,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = read_word( address );
@@ -774,11 +810,8 @@ INLINE UINT32 READ32(UINT32 ea)
 		value |= (READ8( address+2 ) << 16),
 		value |= (READ8( address+3 ) << 24);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(0,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = read_dword( address );
@@ -801,11 +834,8 @@ INLINE UINT64 READ64(UINT32 ea)
 		value |= (((UINT64) READ8( address+6 )) << 48);
 		value |= (((UINT64) READ8( address+7 )) << 56);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(0,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = (((UINT64) read_dword( address+0 )) << 0);
@@ -817,11 +847,8 @@ INLINE UINT8 READ8PL0(UINT32 ea)
 {
 	UINT32 address = ea, error;
 
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		if(!translate_address(-2,&address,&error))
-			PF_THROW(error);
-	}
+	if(!translate_address(0,TRANSLATE_READ,&address,&error))
+		PF_THROW(error);
 
 	address &= m_a20_mask;
 	return read_byte(address);
@@ -835,17 +862,15 @@ INLINE UINT16 READ16PL0(UINT32 ea)
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(-2,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(0,TRANSLATE_READ,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = read_word( address );
 	}
 	return value;
 }
+
 INLINE UINT32 READ32PL0(UINT32 ea)
 {
 	UINT32 value;
@@ -857,11 +882,8 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 		value |= (READ8PL0( address+2 ) << 16);
 		value |= (READ8PL0( address+3 ) << 24);
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(-2,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(0,TRANSLATE_READ,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		value = read_dword( address );
@@ -872,22 +894,16 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 INLINE void WRITE_TEST(UINT32 ea)
 {
 	UINT32 address = ea, error;
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		if(!translate_address(1,&address,&error))
-			PF_THROW(error);
-	}
+	if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+		PF_THROW(error);
 }
 
 INLINE void WRITE8(UINT32 ea, UINT8 value)
 {
 	UINT32 address = ea, error;
 
-	if (m_cr[0] & 0x80000000)       // page translation enabled
-	{
-		if(!translate_address(1,&address,&error))
-			PF_THROW(error);
-	}
+	if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+		PF_THROW(error);
 
 	address &= m_a20_mask;
 	write_byte(address, value);
@@ -900,11 +916,8 @@ INLINE void WRITE16(UINT32 ea, UINT16 value)
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(1,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+			PF_THROW(error);
 
 		address &= m_a20_mask;
 		write_word(address, value);
@@ -920,11 +933,8 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 		WRITE8( address+2, (value >> 16) & 0xff );
 		WRITE8( address+3, (value >> 24) & 0xff );
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(1,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+			PF_THROW(error);
 
 		ea &= m_a20_mask;
 		write_dword(address, value);
@@ -945,11 +955,8 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 		WRITE8( address+6, (value >> 48) & 0xff );
 		WRITE8( address+7, (value >> 56) & 0xff );
 	} else {
-		if (m_cr[0] & 0x80000000)       // page translation enabled
-		{
-			if(!translate_address(1,&address,&error))
-				PF_THROW(error);
-		}
+		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+			PF_THROW(error);
 
 		ea &= m_a20_mask;
 		write_dword(address+0, value & 0xffffffff);
@@ -1510,6 +1517,30 @@ void p6_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 	}
 }
 
+// PIV (Pentium 4+)
+UINT64 piv_msr_read(UINT32 offset,UINT8 *valid_msr)
+{
+	switch(offset)
+	{
+	default:
+		logerror("RDMSR: unimplemented register called %08x at %08x\n",offset,m_pc-2);
+		*valid_msr = 1;
+		return 0;
+	}
+	return -1;
+}
+
+void piv_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
+{
+	switch(offset)
+	{
+	default:
+		logerror("WRMSR: unimplemented register called %08x (%08x%08x) at %08x\n",offset,(UINT32)(data >> 32),(UINT32)data,m_pc-2);
+		*valid_msr = 1;
+		break;
+	}
+}
+
 INLINE UINT64 MSR_READ(UINT32 offset,UINT8 *valid_msr)
 {
 	UINT64 res;
@@ -1524,6 +1555,9 @@ INLINE UINT64 MSR_READ(UINT32 offset,UINT8 *valid_msr)
 		break;
 	case 6:  // Pentium Pro, Pentium II, Pentium III
 		res = p6_msr_read(offset,valid_msr);
+		break;
+	case 15:  // Pentium 4+
+		res = piv_msr_read(offset,valid_msr);
 		break;
 	default:
 		res = 0;
@@ -1545,6 +1579,9 @@ INLINE void MSR_WRITE(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 		break;
 	case 6:  // Pentium Pro, Pentium II, Pentium III
 		p6_msr_write(offset,data,valid_msr);
+		break;
+	case 15:  // Pentium 4+
+		piv_msr_write(offset,data,valid_msr);
 		break;
 	}
 }

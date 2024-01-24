@@ -1,6 +1,6 @@
 CXX=i586-mingw32msvc-g++
 CXXFLAGS=-O2 -Wall -Wextra -DHAS_I286
-LIBS=-lwinmm
+LIBS=-lwinmm -lpsapi
 OBJS=msdos.o
 EXE=msdos.exe
 
