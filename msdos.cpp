@@ -3212,9 +3212,9 @@ inline void msdos_int_21h_33h()
 		}
 		break;
 	case 0x06:
-		// MS-DOS version (7.00)
+		// MS-DOS version (7.10)
 		REG8(BL) = 7;
-		REG8(BH) = 0;
+		REG8(BH) = 10;
 		REG8(DL) = 0;
 		REG8(DH) = 0x10; // in HMA
 		break;
@@ -5684,7 +5684,7 @@ void pic_update()
 		return;
 	}
 	i386_set_irq_line(cpustate, INPUT_LINE_IRQ, CLEAR_LINE);
-};
+}
 
 // pit
 
