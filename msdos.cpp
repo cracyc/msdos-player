@@ -25,6 +25,8 @@
 	MAME i386
 ---------------------------------------------------------------------------- */
 
+//#define SUPPORT_DISASSEMBLER
+
 #define CPU_MODEL i386
 //#define CPU_MODEL i486
 //#define CPU_MODEL pentium
@@ -82,6 +84,10 @@ enum
 #define CPU_EXECUTE(name)			void CPU_EXECUTE_NAME(name)(i386_state *cpustate)
 #define CPU_EXECUTE_CALL(name)			CPU_EXECUTE_NAME(name)(cpustate)
 
+#define CPU_DISASSEMBLE_NAME(name)		cpu_disassemble_##name
+#define CPU_DISASSEMBLE(name)			int CPU_DISASSEMBLE_NAME(name)(char *buffer, offs_t eip, const UINT8 *oprom)
+#define CPU_DISASSEMBLE_CALL(name)		CPU_DISASSEMBLE_NAME(name)(buffer, eip, oprom)
+
 /*****************************************************************************/
 /* src/emu/memory.h */
 
@@ -123,6 +129,23 @@ UINT32 read_dword(offs_t byteaddress)
 void write_byte(offs_t byteaddress, UINT8 data)
 {
 	if(byteaddress < MAX_MEM) {
+		if(byteaddress >= tvram_base_address && byteaddress < tvram_base_address + 4000) {
+			if(int_10h_feh_called && !int_10h_ffh_called && mem[byteaddress] != data) {
+				COORD co;
+				DWORD num;
+				
+				co.X = ((byteaddress - tvram_base_address) >> 1) % 80;
+				co.Y = ((byteaddress - tvram_base_address) >> 1) / 80;
+				
+				if(byteaddress & 1) {
+					scr_attr[0] = data;
+					WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+				} else {
+					scr_char[0] = data;
+					WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+				}
+			}
+		}
 		mem[byteaddress] = data;
 	}
 }
@@ -130,14 +153,60 @@ void write_byte(offs_t byteaddress, UINT8 data)
 void write_word(offs_t byteaddress, UINT16 data)
 {
 	if(byteaddress < MAX_MEM - 1) {
-		*(UINT16 *)(mem + byteaddress) = data;;
+		if(byteaddress >= tvram_base_address && byteaddress < tvram_base_address + 4000) {
+			if(int_10h_feh_called && !int_10h_ffh_called && *(UINT16 *)(mem + byteaddress) != data) {
+				if(byteaddress & 1) {
+					write_byte(byteaddress    , data     );
+					write_byte(byteaddress + 1, data >> 8);
+				} else {
+					COORD co;
+					DWORD num;
+					
+					co.X = ((byteaddress - tvram_base_address) >> 1) % 80;
+					co.Y = ((byteaddress - tvram_base_address) >> 1) / 80;
+					
+					scr_char[0] = data;
+					scr_attr[0] = data >> 8;
+					
+					WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+					WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+				}
+				return;
+			}
+		}
+		*(UINT16 *)(mem + byteaddress) = data;
 	}
 }
 
 void write_dword(offs_t byteaddress, UINT32 data)
 {
 	if(byteaddress < MAX_MEM - 3) {
-		*(UINT32 *)(mem + byteaddress) = data;;
+		if(byteaddress >= tvram_base_address && byteaddress < tvram_base_address + 4000) {
+			if(int_10h_feh_called && !int_10h_ffh_called && *(UINT32 *)(mem + byteaddress) != data) {
+				if(byteaddress & 1) {
+					write_byte(byteaddress    , data      );
+					write_byte(byteaddress + 1, data >>  8);
+					write_byte(byteaddress + 2, data >> 16);
+					write_byte(byteaddress + 3, data >> 24);
+				} else {
+					COORD co;
+					DWORD num;
+					
+					co.X = ((byteaddress - tvram_base_address) >> 1) % 80;
+					co.Y = ((byteaddress - tvram_base_address) >> 1) / 80;
+					
+					scr_char[0] = data;
+					scr_attr[0] = data >> 8;
+					scr_char[1] = data >> 16;
+					scr_attr[1] = data >> 24;
+					
+					WriteConsoleOutputCharacter(hStdout, scr_char, 2, co, &num);
+					WriteConsoleOutputAttribute(hStdout, scr_attr, 2, co, &num);
+				}
+				return;
+			}
+		}
+		*(UINT32 *)(mem + byteaddress) = data;
 	}
 }
 
@@ -180,8 +249,29 @@ const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
 // endian-based value: first value is if 'endian' matches native, second is if 'endian' doesn't match native
 #define ENDIAN_VALUE_NE_NNE(endian,leval,beval)	(((endian) == ENDIANNESS_NATIVE) ? (neval) : (nneval))
 
+/*****************************************************************************/
+/* src/emu/didisasm.h */
+
+// Disassembler constants
+const UINT32 DASMFLAG_SUPPORTED     = 0x80000000;   // are disassembly flags supported?
+const UINT32 DASMFLAG_STEP_OUT      = 0x40000000;   // this instruction should be the end of a step out sequence
+const UINT32 DASMFLAG_STEP_OVER     = 0x20000000;   // this instruction should be stepped over by setting a breakpoint afterwards
+const UINT32 DASMFLAG_OVERINSTMASK  = 0x18000000;   // number of extra instructions to skip when stepping over
+const UINT32 DASMFLAG_OVERINSTSHIFT = 27;           // bits to shift after masking to get the value
+const UINT32 DASMFLAG_LENGTHMASK    = 0x0000ffff;   // the low 16-bits contain the actual length
+
+/*****************************************************************************/
+/* src/osd/osdcomm.h */
+
+/* Highly useful macro for compile-time knowledge of an array size */
+#define ARRAY_LENGTH(x)     (sizeof(x) / sizeof(x[0]))
+
 #include "softfloat/softfloat.c"
 #include "i386/i386.c"
+#ifdef SUPPORT_DISASSEMBLER
+#include "i386/i386dasm.c"
+bool dasm = false;
+#endif
 
 i386_state *cpustate;
 int cpu_type, cpu_step;
@@ -205,19 +295,23 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 
 int main(int argc, char *argv[], char *envp[])
 {
-	if(argc < 2) {
+	int standard_env = (argc > 1 && _stricmp(argv[1], "-e") == 0);
+	
+	if(argc < 2 + standard_env) {
 #ifdef _WIN64
 		fprintf(stderr, "MS-DOS Player for Win32-x64 console\n\n");
 #else
 		fprintf(stderr, "MS-DOS Player for Win32 console\n\n");
 #endif
-		fprintf(stderr, "Usage: MSDOS (command file) [opions]\n");
+		fprintf(stderr, "Usage: MSDOS [-e] (command file) [opions]\n");
 		return(EXIT_FAILURE);
 	}
 	
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
+	
 	for(int y = 0; y < SCR_BUF_SIZE; y++) {
 		for(int x = 0; x < 80; x++) {
 			scr_buf[y][x].Char.AsciiChar = ' ';
@@ -227,10 +321,16 @@ int main(int argc, char *argv[], char *envp[])
 	scr_buf_size.X = 80;
 	scr_buf_size.Y = SCR_BUF_SIZE;
 	scr_buf_pos.X = scr_buf_pos.Y = 0;
-	key_buf_cnt = key_buf_set = key_buf_get = 0;
+	scr_width = csbi.dwSize.X;
+	scr_height = csbi.dwSize.Y;
+	cursor_moved = false;
+	
+	key_buf_char = new FIFO();
+	key_buf_scan = new FIFO();
 	
 	hardware_init();
-	if(msdos_init(argc - 1, argv + 1, envp)) {
+	
+	if(msdos_init(argc - (standard_env + 1), argv + (standard_env + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
 		timeBeginPeriod(1);
@@ -240,6 +340,9 @@ int main(int argc, char *argv[], char *envp[])
 	}
 	hardware_finish();
 	
+	delete key_buf_char;
+	delete key_buf_scan;
+	
 	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 	
 	return(retval);
@@ -248,6 +351,37 @@ int main(int argc, char *argv[], char *envp[])
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
+
+void update_key_buffer()
+{
+	DWORD dwRead;
+	INPUT_RECORD ir[16];
+	
+	if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
+		for(int i = 0; i < dwRead; i++) {
+			if((ir[i].EventType & KEY_EVENT) && ir[i].Event.KeyEvent.bKeyDown) {
+				if(ir[i].Event.KeyEvent.uChar.AsciiChar == 0) {
+					// ignore shift, ctrl and alt keys
+					if(ir[i].Event.KeyEvent.wVirtualScanCode != 0x1d &&
+					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x2a &&
+					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x36 &&
+					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x38) {
+						key_buf_char->write(0x00);
+						key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+						key_buf_char->write(0x00);
+						key_buf_scan->write(ir[i].Event.KeyEvent.wVirtualScanCode & 0xff);
+					}
+				} else {
+					key_buf_char->write(ir[i].Event.KeyEvent.uChar.AsciiChar & 0xff);
+					key_buf_scan->write(ir[i].Event.KeyEvent.wVirtualScanCode & 0xff);
+				}
+			}
+		}
+	}
+	if(key_buf_char->count() == 0) {
+		Sleep(10);
+	}
+}
 
 // process info
 
@@ -375,6 +509,45 @@ char *msdos_trimmed_path(char *path, int lfn)
 	return(tmp);
 }
 
+char *msdos_fcb_path(fcb_t *fcb)
+{
+	static char tmp[MAX_PATH];
+	char name[9], ext[4];
+	
+	memset(name, 0, sizeof(name));
+	memcpy(name, fcb->file_name, 8);
+	strcpy(name, msdos_trimmed_path(name, 0));
+	
+	memset(ext, 0, sizeof(ext));
+	memcpy(ext, fcb->file_name + 8, 3);
+	strcpy(ext, msdos_trimmed_path(ext, 0));
+	
+	if(name[0] == '\0' || strcmp(name, "????????") == 0) {
+		strcpy(name, "*");
+	}
+	if(ext[0] == '\0') {
+		strcpy(tmp, name);
+	} else {
+		if(strcmp(ext, "???") == 0) {
+			strcpy(ext, "*");
+		}
+		sprintf(tmp, "%s.%s", name, ext);
+	}
+	return(tmp);
+}
+
+void msdos_set_fcb_path(fcb_t *fcb, char *path)
+{
+	char *ext = strstr(path, ".");
+	
+	memset(fcb->file_name, 0x20, 8 + 3);
+	if(ext != NULL && path[0] != '.') {
+		*ext = '\0';
+		memcpy(fcb->file_name + 8, ext + 1, strlen(ext + 1));
+	}
+	memcpy(fcb->file_name, path, strlen(path));
+}
+
 char *msdos_short_path(char *path)
 {
 	static char tmp[MAX_PATH];
@@ -423,7 +596,7 @@ char *msdos_local_file_path(char *path, int lfn)
 	return(trimmed);
 }
 
-inline int msdos_drive_number(char *path)
+int msdos_drive_number(char *path)
 {
 	char tmp[MAX_PATH], *name;
 	
@@ -594,6 +767,8 @@ void msdos_find_file_conv_local_time(WIN32_FIND_DATA *fd)
 
 // i/o
 
+void msdos_putch(UINT8 data);
+
 void msdos_stdio_reopen()
 {
 	if(!file_handler[0].valid) {
@@ -620,14 +795,14 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if(key_buf_cnt > 0) {
+	if(key_buf_char->count() != 0) {
 		return(1);
 	} else {
 		return(_kbhit());
 	}
 }
 
-inline int msdos_getch_ex(int echo)
+int msdos_getch_ex(int echo)
 {
 	static char prev = 0;
 	
@@ -653,28 +828,24 @@ retry:
 	}
 	
 	// input from console
-	if(key_buf_cnt > 0) {
-		int code = key_buf[key_buf_get];
-		key_buf_get++;
-		key_buf_get &= KEY_BUF_MASK;
-		key_buf_cnt--;
-		return(code);
-	} else {
-		// XXX: need to consider function/cursor key
-		if(echo) {
-			return(_getche());
-		} else {
-			return(_getch());
-		}
+	while(key_buf_char->count() == 0) {
+		update_key_buffer();
 	}
+	int key_char = key_buf_char->read();
+	int key_scan = key_buf_scan->read();
+	
+	if(echo && key_char) {
+		msdos_putch(key_char);
+	}
+	return key_char ? key_char : key_scan;
 }
 
-int msdos_getch()
+inline int msdos_getch()
 {
 	return(msdos_getch_ex(0));
 }
 
-int msdos_getche()
+inline int msdos_getche()
 {
 	return(msdos_getch_ex(1));
 }
@@ -739,6 +910,9 @@ void msdos_putch(UINT8 data)
 			co.X = tmp[3] - 0x20;
 			co.Y = tmp[2] - 0x20;
 			SetConsoleCursorPosition(hStdout, co);
+			mem[0x450 + mem[0x462] * 2] = co.X;
+			mem[0x451 + mem[0x462] * 2] = co.Y;
+			cursor_moved = false;
 			p = is_esc = 0;
 		} else if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z') || data == '*') {
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -922,13 +1096,9 @@ void msdos_putch(UINT8 data)
 						char tmp[16];
 						sprintf(tmp, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
 						int len = strlen(tmp);
-						if(key_buf_cnt + len <= KEY_BUF_SIZE) {
-							for(int i = 0; i < len; i++) {
-								key_buf[key_buf_set] = tmp[i];
-								key_buf_set++;
-								key_buf_set &= KEY_BUF_MASK;
-							}
-							key_buf_cnt += len;
+						for(int i = 0; i < len; i++) {
+							key_buf_char->write(tmp[i]);
+							key_buf_scan->write(0x00);
 						}
 					}
 				} else if(data == 's') {
@@ -953,6 +1123,9 @@ void msdos_putch(UINT8 data)
 			}
 			if(co.X != csbi.dwCursorPosition.X || co.Y != csbi.dwCursorPosition.Y) {
 				SetConsoleCursorPosition(hStdout, co);
+				mem[0x450 + mem[0x462] * 2] = co.X;
+				mem[0x451 + mem[0x462] * 2] = co.Y;
+				cursor_moved = false;
 			}
 			if(wAttributes != csbi.wAttributes) {
 				SetConsoleTextAttribute(hStdout, wAttributes);
@@ -972,6 +1145,7 @@ void msdos_putch(UINT8 data)
 	tmp[p++] = '\0';
 	p = 0;
 	printf("%s", tmp);
+	cursor_moved = true;
 }
 
 int msdos_aux_in()
@@ -1019,7 +1193,7 @@ mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, UINT16 paragraphs)
 	return(mcb);
 }
 
-inline void msdos_mcb_check(mcb_t *mcb)
+void msdos_mcb_check(mcb_t *mcb)
 {
 	if(!(mcb->mz == 'M' || mcb->mz == 'Z')) {
 		fatalerror("broken mcb\n");
@@ -1456,10 +1630,14 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	process->switchar = '/';
 	process->max_files = 20;
 	process->find_handle = INVALID_HANDLE_VALUE;
+	process->parent_int_10h_feh_called = int_10h_feh_called;
+	process->parent_int_10h_ffh_called = int_10h_ffh_called;
 	
 	current_psp = psp_seg;
 	
 	if(al == 0x00) {
+		int_10h_feh_called = int_10h_ffh_called = false;
+		
 		// registers and segments
 		REG16(AX) = REG16(BX) = 0x00;
 		REG16(CX) = 0xff;
@@ -1498,6 +1676,10 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	REG16(SP) = psp->stack.w.l;
 	i386_jmp_far(psp->int_22h.w.h, psp->int_22h.w.l);
 	
+	process_t *process = msdos_process_info_get(psp_seg);
+	int_10h_feh_called = process->parent_int_10h_feh_called;
+	int_10h_ffh_called = process->parent_int_10h_ffh_called;
+	
 	if(mem_free) {
 		int mcb_seg = psp->env_seg - 1;
 		msdos_mcb_create(mcb_seg, 'Z', 0, (MEMORY_END >> 4) - mcb_seg - 1);
@@ -1510,14 +1692,12 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 		}
 		msdos_stdio_reopen();
 		
-		process_t *process = msdos_process_info_get(psp_seg);
 		if(process->find_handle != INVALID_HANDLE_VALUE) {
 			FindClose(process->find_handle);
 			process->find_handle = INVALID_HANDLE_VALUE;
 		}
 	}
 	
-	process_t *process = msdos_process_info_get(psp_seg);
 	memset(process, 0, sizeof(process_t));
 	
 	current_psp = psp->parent_psp;
@@ -1588,6 +1768,445 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 
 // pc bios
 
+int get_tvram_address(int page)
+{
+	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
+		return TVRAM_TOP;
+	} else {
+		return TVRAM_TOP + 0x1000 * (page & 7);
+	}
+}
+
+inline int get_tvram_address(int page, int x, int y)
+{
+	return get_tvram_address(page) + (x + y * 80) * 2;
+}
+
+inline void pcbios_int_10h_00h()
+{
+	mem[0x449] = REG8(AL) & 0x7f;
+	tvram_base_address = get_tvram_address(mem[0x462]);
+	
+	if(REG8(AL) & 0x80) {
+		mem[0x487] |= 0x80;
+	} else {
+		for(int y = 0, ofs = get_tvram_address(mem[0x462]); y < 25; y++) {
+			for(int x = 0; x < 80; x++) {
+				scr_buf[y][x].Char.AsciiChar = ' ';
+				scr_buf[y][x].Attributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+				mem[ofs++] = 0x20;
+				mem[ofs++] = 0x07;
+			}
+		}
+		SMALL_RECT rect;
+		SET_RECT(rect, 0, 0, 79, 24);
+		WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		mem[0x487] &= ~0x80;
+	}
+}
+
+inline void pcbios_int_10h_01h()
+{
+	 mem[0x460] = REG8(CL);
+	 mem[0x461] = REG8(CH);
+}
+
+inline void pcbios_int_10h_02h()
+{
+	if(mem[0x462] == REG8(BH)) {
+		COORD co;
+		co.X = REG8(DL);
+		co.Y = REG8(DH);
+		SetConsoleCursorPosition(hStdout, co);
+	}
+	mem[0x450 + (REG8(BH) & 7) * 2] = REG8(DL);
+	mem[0x451 + (REG8(BH) & 7) * 2] = REG8(DH);
+}
+
+inline void pcbios_int_10h_03h()
+{
+	REG8(DL) = mem[0x450 + (REG8(BH) & 7) * 2];
+	REG8(DH) = mem[0x451 + (REG8(BH) & 7) * 2];
+	REG8(CL) = mem[0x460];
+	REG8(CH) = mem[0x461];
+}
+
+inline void pcbios_int_10h_05h()
+{
+	if(mem[0x462] != REG8(BH)) {
+		SMALL_RECT rect;
+		SET_RECT(rect, 0, 0, 79, 24);
+		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		
+		for(int y = 0, ofs = get_tvram_address(mem[0x462]); y < 25; y++) {
+			for(int x = 0; x < 80; x++) {
+				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
+				mem[ofs++] = scr_buf[y][x].Attributes;
+			}
+		}
+		for(int y = 0, ofs = get_tvram_address(REG8(BH)); y < 25; y++) {
+			for(int x = 0; x < 80; x++) {
+				scr_buf[y][x].Char.AsciiChar = mem[ofs++];
+				scr_buf[y][x].Attributes = mem[ofs++];
+			}
+		}
+		WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		
+		COORD co;
+		co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+		co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+		SetConsoleCursorPosition(hStdout, co);
+	}
+	mem[0x462] = REG8(BH) & 7;
+	mem[0x44e] = 0;
+	mem[0x44f] = REG8(BH) << 4;
+	tvram_base_address = get_tvram_address(mem[0x462]);
+}
+
+inline void pcbios_int_10h_06h()
+{
+	SMALL_RECT rect;
+	SET_RECT(rect, 0, 0, 79, 24);
+	ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+	
+	if(REG8(AL) == 0) {
+		for(int y = REG8(CH); y <= REG8(DH); y++) {
+			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+				scr_buf[y][x].Char.AsciiChar = ' ';
+				scr_buf[y][x].Attributes = REG8(BH);
+				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
+				mem[ofs++] = scr_buf[y][x].Attributes;
+			}
+		}
+	} else {
+		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		for(int y = REG8(CH), y2 = REG8(CH) + REG8(AL); y <= REG8(DH); y++, y2++) {
+			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+				if(y2 <= REG8(DH) && y2 >= 0 && y2 < SCR_BUF_SIZE) {
+					scr_buf[y][x] = scr_buf[y2][x];
+				} else {
+					scr_buf[y][x].Char.AsciiChar = ' ';
+					scr_buf[y][x].Attributes = REG8(BH);
+				}
+				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
+				mem[ofs++] = scr_buf[y][x].Attributes;
+			}
+		}
+	}
+	WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+}
+
+inline void pcbios_int_10h_07h()
+{
+	SMALL_RECT rect;
+	SET_RECT(rect, 0, 0, 79, 24);
+	ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+	
+	if(REG8(AL) == 0) {
+		for(int y = REG8(CH); y <= REG8(DH); y++) {
+			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+				scr_buf[y][x].Char.AsciiChar = ' ';
+				scr_buf[y][x].Attributes = REG8(BH);
+				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
+				mem[ofs++] = scr_buf[y][x].Attributes;
+			}
+		}
+	} else {
+		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		for(int y = REG8(DH), y2 = REG8(DH) - REG8(AL); y >= REG8(CH); y--, y2--) {
+			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+				if(y2 >= REG8(CH) && y2 >= 0 && y2 < SCR_BUF_SIZE) {
+					scr_buf[y][x] = scr_buf[y2][x];
+				} else {
+					scr_buf[y][x].Char.AsciiChar = ' ';
+					scr_buf[y][x].Attributes = REG8(BH);
+				}
+				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
+				mem[ofs++] = scr_buf[y][x].Attributes;
+			}
+		}
+	}
+	WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+}
+
+inline void pcbios_int_10h_08h()
+{
+	COORD co;
+	DWORD num;
+	
+	co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+	co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+	
+	if(mem[0x462] == REG8(BH)) {
+		ReadConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+		ReadConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+		REG8(AL) = scr_char[0];
+		REG8(AH) = scr_attr[0];
+	} else {
+		REG16(AX) = *(UINT16 *)(mem + get_tvram_address(REG8(BH), co.X, co.Y));
+	}
+}
+
+inline void pcbios_int_10h_09h()
+{
+	COORD co;
+	DWORD num;
+	
+	co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+	co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+	
+	if(mem[0x462] == REG8(BH)) {
+		for(int i = 0; i < REG16(CX) && i < 80 * 25; i++) {
+			scr_char[i] = REG8(AL);
+			scr_attr[i] = REG8(BL);
+		}
+		WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
+		WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
+	} else {
+		for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+			mem[dest++] = REG8(AL);
+			mem[dest++] = REG8(BL);
+			if(++co.X == 80) {
+				if(++co.Y == 25) {
+					break;
+				}
+				co.X = 0;
+			}
+		}
+	}
+}
+
+inline void pcbios_int_10h_0ah()
+{
+	COORD co;
+	DWORD num;
+	
+	co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+	co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+	
+	if(mem[0x462] == REG8(BH)) {
+		for(int i = 0; i < REG16(CX) && i < 80 * 25; i++) {
+			scr_char[i] = REG8(AL);
+//			scr_attr[i] = REG8(BL);
+		}
+		WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
+//		WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
+	} else {
+		for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+			mem[dest++] = REG8(AL);
+//			mem[dest++] = REG8(BL);
+			dest++;
+			if(++co.X == 80) {
+				if(++co.Y == 25) {
+					break;
+				}
+				co.X = 0;
+			}
+		}
+	}
+}
+
+inline void pcbios_int_10h_0eh()
+{
+	msdos_putch(REG8(AL));
+}
+
+inline void pcbios_int_10h_0fh()
+{
+	REG8(AL) = mem[0x449];
+	REG8(AH) = mem[0x44a];
+	REG8(BH) = mem[0x462];
+}
+
+inline void pcbios_int_10h_13h()
+{
+	int ofs = cpustate->sreg[ES].base + REG16(BP);
+	COORD co;
+	DWORD num;
+	
+	co.X = REG8(DL);
+	co.Y = REG8(DH);
+	
+	switch(REG8(AL)) {
+	case 0x00:
+	case 0x01:
+		if(mem[0x462] == REG8(BH)) {
+			CONSOLE_SCREEN_BUFFER_INFO csbi;
+			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			SetConsoleCursorPosition(hStdout, co);
+			
+			if(csbi.wAttributes != REG8(BL)) {
+				SetConsoleTextAttribute(hStdout, REG8(BL));
+			}
+			for(int i = 0; i < REG16(CX); i++) {
+				msdos_putch(mem[ofs++]);
+			}
+			if(csbi.wAttributes != REG8(BL)) {
+				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+			}
+			if(REG8(AL) == 0x00) {
+				co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+				co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+				SetConsoleCursorPosition(hStdout, co);
+			} else {
+				cursor_moved = true;
+			}
+		} else {
+			cpustate->CF = 1;
+		}
+		break;
+	case 0x02:
+	case 0x03:
+		if(mem[0x462] == REG8(BH)) {
+			CONSOLE_SCREEN_BUFFER_INFO csbi;
+			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			SetConsoleCursorPosition(hStdout, co);
+			
+			WORD wAttributes = csbi.wAttributes;
+			for(int i = 0; i < REG16(CX); i++, ofs += 2) {
+				if(wAttributes != mem[ofs + 1]) {
+					SetConsoleTextAttribute(hStdout, mem[ofs + 1]);
+					wAttributes = mem[ofs + 1];
+				}
+				msdos_putch(mem[ofs]);
+			}
+			if(csbi.wAttributes != wAttributes) {
+				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+			}
+			if(REG8(AL) == 0x02) {
+				co.X = mem[0x450 + (REG8(BH) & 7) * 2];
+				co.Y = mem[0x451 + (REG8(BH) & 7) * 2];
+				SetConsoleCursorPosition(hStdout, co);
+			} else {
+				cursor_moved = true;
+			}
+		} else {
+			cpustate->CF = 1;
+		}
+		break;
+	case 0x10:
+	case 0x11:
+		if(mem[0x462] == REG8(BH)) {
+			ReadConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
+			ReadConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
+			for(int i = 0; i < num; i++) {
+				mem[ofs++] = scr_char[i];
+				mem[ofs++] = scr_attr[i];
+				if(REG8(AL) == 0x11) {
+					mem[ofs++] = 0;
+					mem[ofs++] = 0;
+				}
+			}
+		} else {
+			for(int i = 0, src = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+				mem[ofs++] = mem[src++];
+				mem[ofs++] = mem[src++];
+				if(REG8(AL) == 0x11) {
+					mem[ofs++] = 0;
+					mem[ofs++] = 0;
+				}
+				if(++co.X == 80) {
+					if(++co.Y == 25) {
+						break;
+					}
+					co.X = 0;
+				}
+			}
+		}
+		break;
+	case 0x20:
+	case 0x21:
+		if(mem[0x462] == REG8(BH)) {
+			for(int i = 0; i < REG16(CX) && i < 80 * 25; i++) {
+				scr_char[i] = mem[ofs++];
+				scr_attr[i] = mem[ofs++];
+				if(REG8(AL) == 0x21) {
+					ofs += 2;
+				}
+			}
+			WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
+			WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
+		} else {
+			for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+				mem[dest++] = mem[ofs++];
+				mem[dest++] = mem[ofs++];
+				if(REG8(AL) == 0x21) {
+					ofs += 2;
+				}
+				if(++co.X == 80) {
+					if(++co.Y == 25) {
+						break;
+					}
+					co.X = 0;
+				}
+			}
+		}
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_10h_1dh()
+{
+	switch(REG8(AL)) {
+	case 0x01:
+		break;
+	case 0x02:
+		REG16(BX) = 0;
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_10h_82h()
+{
+	static UINT8 mode = 0;
+	
+	switch(REG8(AL)) {
+	case 0:
+		if(REG8(BL) != 0xff) {
+			mode = REG8(BL);
+		}
+		REG8(AL) = mode;
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_10h_feh()
+{
+	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
+		cpustate->sreg[ES].selector = (TVRAM_TOP >> 4);
+		i386_load_segment_descriptor(cpustate, ES);
+		REG16(DI) = (TVRAM_TOP & 0x0f);
+	}
+	int_10h_feh_called = true;
+}
+
+inline void pcbios_int_10h_ffh()
+{
+	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
+		COORD co;
+		DWORD num;
+		
+		co.X = (REG16(DI) >> 1) % 80;
+		co.Y = (REG16(DI) >> 1) / 80;
+		for(int i = 0, ofs = get_tvram_address(0, co.X, co.Y); i < REG16(CX) && i < 80 * 25; i++) {
+			scr_char[i] = mem[ofs++];
+			scr_attr[i] = mem[ofs++];
+		}
+		WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
+		WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
+	}
+	int_10h_ffh_called = true;
+}
+
 inline void pcbios_int_15h_23h()
 {
 	switch(REG8(AL)) {
@@ -1627,6 +2246,12 @@ inline void pcbios_int_15h_24h()
 		REG16(BX) = 0;
 		break;
 	}
+}
+
+inline void pcbios_int_15h_49h()
+{
+	REG8(AL) = 0;
+	REG8(BL) = 0;	// DOS/V;
 }
 
 inline void pcbios_int_15h_87h()
@@ -1722,6 +2347,144 @@ inline void pcbios_int_15h_cah()
 	}
 }
 
+UINT32 get_key_code()
+{
+	UINT32 code = 0;
+	
+	if(key_buf_char->count() == 0) {
+		update_key_buffer();
+	}
+	if(key_buf_char->count() != 0) {
+		code = key_buf_char->read() | (key_buf_scan->read() << 8);
+	}
+	if(key_buf_char->count() != 0) {
+		code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
+	}
+	return code;
+}
+
+UINT32 key_code = 0;
+
+inline void pcbios_int_16h_00h()
+{
+	while(key_code == 0) {
+		key_code = get_key_code();
+	}
+	if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
+		if(REG8(AH) == 0x10) {
+			key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
+		} else {
+			key_code = ((key_code >> 16) & 0xff00);
+		}
+	}
+	REG16(AX) = key_code & 0xffff;
+	key_code >>= 16;
+}
+
+inline void pcbios_int_16h_01h()
+{
+	if(key_code == 0) {
+		key_code = get_key_code();
+	}
+	if(key_code != 0) {
+		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
+			if(REG8(AH) == 0x11) {
+				key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
+			} else {
+				key_code = ((key_code >> 16) & 0xff00);
+			}
+		}
+	}
+	if(key_code != 0) {
+		REG16(AX) = key_code & 0xffff;
+	}
+	cpustate->ZF = (key_code == 0);
+}
+
+inline void pcbios_int_16h_02h()
+{
+	REG8(AL)  = (GetAsyncKeyState(VK_INSERT ) & 0x0001) ? 0x80 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_SCROLL ) & 0x0001) ? 0x10 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_MENU   ) & 0x8000) ? 0x08 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_CONTROL) & 0x8000) ? 0x04 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_LSHIFT ) & 0x8000) ? 0x02 : 0;
+	REG8(AL) |= (GetAsyncKeyState(VK_RSHIFT ) & 0x8000) ? 0x01 : 0;
+}
+
+inline void pcbios_int_16h_03h()
+{
+	static UINT16 status = 0;
+	
+	switch(REG8(AL)) {
+	case 0x05:
+		status = REG16(BX);
+		break;
+	case 0x06:
+		REG16(BX) = status;
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_16h_05h()
+{
+	_ungetch(REG8(CL));
+	REG8(AL) = 0x00;
+}
+
+inline void pcbios_int_16h_12h()
+{
+	pcbios_int_16h_02h();
+	
+	REG8(AH)  = 0;//(GetAsyncKeyState(VK_SYSREQ  ) & 0x8000) ? 0x80 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_CAPITAL ) & 0x8000) ? 0x40 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x8000) ? 0x20 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_SCROLL  ) & 0x8000) ? 0x10 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_RMENU   ) & 0x8000) ? 0x08 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_RCONTROL) & 0x8000) ? 0x04 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_LMENU   ) & 0x8000) ? 0x02 : 0;
+	REG8(AH) |= (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ? 0x01 : 0;
+}
+
+inline void pcbios_int_16h_13h()
+{
+	static UINT16 status = 0;
+	
+	switch(REG8(AL)) {
+	case 0x00:
+		status = REG16(DX);
+		break;
+	case 0x01:
+		REG16(DX) = status;
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_16h_14h()
+{
+	static UINT8 status = 0;
+	
+	switch(REG8(AL)) {
+	case 0x00:
+	case 0x01:
+		status = REG8(AL);
+		break;
+	case 0x02:
+		REG8(AL) = status;
+		break;
+	default:
+		cpustate->CF = 1;
+		break;
+	}
+}
+
 inline void pcbios_int_1ah_00h()
 {
 	static WORD prev_day = 0;
@@ -1758,7 +2521,7 @@ inline void pcbios_int_1ah_04h()
 	SYSTEMTIME time;
 	
 	GetLocalTime(&time);
-	REG8(CH) = to_bcd((int)((time.wYear - 1) / 100) + 1);
+	REG8(CH) = to_bcd(time.wYear / 100);
 	REG8(CL) = to_bcd(time.wYear);
 	REG8(DH) = to_bcd(time.wMonth);
 	REG8(DL) = to_bcd(time.wDay);
@@ -1820,8 +2583,8 @@ inline void msdos_int_21h_06h()
 		} else {
 			REG8(AL) = 0;
 			cpustate->ZF = 1;
+			Sleep(10);
 		}
-		Sleep(0);
 	} else {
 		msdos_putch(REG8(DL));
 	}
@@ -1890,7 +2653,12 @@ inline void msdos_int_21h_0ah()
 
 inline void msdos_int_21h_0bh()
 {
-	REG8(AL) = msdos_kbhit() ? 0xff : 0x00;
+	if(msdos_kbhit()) {
+		REG8(AL) = 0xff;
+	} else {
+		REG8(AL) = 0x00;
+		Sleep(10);
+	}
 }
 
 inline void msdos_int_21h_0ch()
@@ -1937,6 +2705,150 @@ inline void msdos_int_21h_0eh()
 		_chdrive(REG8(DL) + 1);
 	}
 	REG8(AL) = 26; // zdrive
+}
+
+inline void msdos_int_21h_11h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + cpustate->sreg[DS].base + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(mem + cpustate->sreg[DS].base + REG16(DX) + (ext_fcb->flag == 0xff ? 7 : 0));
+	
+	process_t *process = msdos_process_info_get(current_psp);
+	ext_fcb_t *ext_find = (ext_fcb_t *)(mem + (process->dta.w.h << 4) + process->dta.w.l);
+	find_fcb_t *find = (find_fcb_t *)(mem + (process->dta.w.h << 4) + process->dta.w.l + (ext_fcb->flag == 0xff ? 7 : 0));
+	char *path = msdos_fcb_path(fcb);
+	WIN32_FIND_DATA fd;
+	
+	if(process->find_handle != INVALID_HANDLE_VALUE) {
+		FindClose(process->find_handle);
+		process->find_handle = INVALID_HANDLE_VALUE;
+	}
+	strcpy(process->volume_label, msdos_volume_label(path));
+	process->allowable_mask = (ext_fcb->flag == 0xff) ? ext_fcb->attribute : 0x20;
+	
+	if((process->find_handle = FindFirstFile(path, &fd)) != INVALID_HANDLE_VALUE) {
+		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, process->allowable_mask, 0)) {
+			if(!FindNextFile(process->find_handle, &fd)) {
+				FindClose(process->find_handle);
+				process->find_handle = INVALID_HANDLE_VALUE;
+				break;
+			}
+		}
+	}
+	if(process->find_handle != INVALID_HANDLE_VALUE) {
+		if(ext_fcb->flag == 0xff) {
+			ext_find->flag = 0xff;
+			memset(ext_find->reserved, 0, 5);
+			ext_find->attribute = (UINT8)(fd.dwFileAttributes & 0x3f);
+		}
+		find->drive = _getdrive();
+		msdos_set_fcb_path((fcb_t *)find, msdos_short_path(fd.cFileName));
+		find->attribute = (UINT8)(fd.dwFileAttributes & 0x3f);
+		find->nt_res = 0;
+		msdos_find_file_conv_local_time(&fd);
+		find->create_time_ms = 0;
+		FileTimeToDosDateTime(&fd.ftCreationTime, &find->creation_date, &find->creation_time);
+		FileTimeToDosDateTime(&fd.ftLastAccessTime, &find->last_access_date, &find->last_write_time);
+		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->last_write_date, &find->last_write_time);
+		find->cluster_hi = find->cluster_lo = 0;
+		find->file_size = fd.nFileSizeLow;
+		REG8(AL) = 0x00;
+	} else if(process->allowable_mask & 8) {
+		if(ext_fcb->flag == 0xff) {
+			ext_find->flag = 0xff;
+			memset(ext_find->reserved, 0, 5);
+			ext_find->attribute = 8;
+		}
+		find->drive = _getdrive();
+		msdos_set_fcb_path((fcb_t *)find, msdos_short_volume_label(process->volume_label));
+		find->attribute = 8;
+		find->nt_res = 0;
+		msdos_find_file_conv_local_time(&fd);
+		find->create_time_ms = 0;
+		FileTimeToDosDateTime(&fd.ftCreationTime, &find->creation_date, &find->creation_time);
+		FileTimeToDosDateTime(&fd.ftLastAccessTime, &find->last_access_date, &find->last_write_time);
+		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->last_write_date, &find->last_write_time);
+		find->cluster_hi = find->cluster_lo = 0;
+		find->file_size = 0;
+		process->allowable_mask &= ~8;
+		REG8(AL) = 0x00;
+	} else {
+		REG8(AL) = 0xff;
+	}
+}
+
+inline void msdos_int_21h_12h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + cpustate->sreg[DS].base + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(mem + cpustate->sreg[DS].base + REG16(DX) + (ext_fcb->flag == 0xff ? 7 : 0));
+	
+	process_t *process = msdos_process_info_get(current_psp);
+	ext_fcb_t *ext_find = (ext_fcb_t *)(mem + (process->dta.w.h << 4) + process->dta.w.l);
+	find_fcb_t *find = (find_fcb_t *)(mem + (process->dta.w.h << 4) + process->dta.w.l + (ext_fcb->flag == 0xff ? 7 : 0));
+	WIN32_FIND_DATA fd;
+	
+	if(process->find_handle != INVALID_HANDLE_VALUE) {
+		if(FindNextFile(process->find_handle, &fd)) {
+			while(!msdos_find_file_check_attribute(fd.dwFileAttributes, process->allowable_mask, 0)) {
+				if(!FindNextFile(process->find_handle, &fd)) {
+					FindClose(process->find_handle);
+					process->find_handle = INVALID_HANDLE_VALUE;
+					break;
+				}
+			}
+		} else {
+			FindClose(process->find_handle);
+			process->find_handle = INVALID_HANDLE_VALUE;
+		}
+	}
+	if(process->find_handle != INVALID_HANDLE_VALUE) {
+		if(ext_fcb->flag == 0xff) {
+			ext_find->flag = 0xff;
+			memset(ext_find->reserved, 0, 5);
+			ext_find->attribute = (UINT8)(fd.dwFileAttributes & 0x3f);
+		}
+		find->drive = _getdrive();
+		msdos_set_fcb_path((fcb_t *)find, msdos_short_path(fd.cFileName));
+		find->attribute = (UINT8)(fd.dwFileAttributes & 0x3f);
+		find->nt_res = 0;
+		msdos_find_file_conv_local_time(&fd);
+		find->create_time_ms = 0;
+		FileTimeToDosDateTime(&fd.ftCreationTime, &find->creation_date, &find->creation_time);
+		FileTimeToDosDateTime(&fd.ftLastAccessTime, &find->last_access_date, &find->last_write_time);
+		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->last_write_date, &find->last_write_time);
+		find->cluster_hi = find->cluster_lo = 0;
+		find->file_size = fd.nFileSizeLow;
+		REG8(AL) = 0x00;
+	} else if(process->allowable_mask & 8) {
+		if(ext_fcb->flag == 0xff) {
+			ext_find->flag = 0xff;
+			memset(ext_find->reserved, 0, 5);
+			ext_find->attribute = 8;
+		}
+		find->drive = _getdrive();
+		msdos_set_fcb_path((fcb_t *)find, msdos_short_volume_label(process->volume_label));
+		find->attribute = 8;
+		find->nt_res = 0;
+		msdos_find_file_conv_local_time(&fd);
+		find->create_time_ms = 0;
+		FileTimeToDosDateTime(&fd.ftCreationTime, &find->creation_date, &find->creation_time);
+		FileTimeToDosDateTime(&fd.ftLastAccessTime, &find->last_access_date, &find->last_write_time);
+		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->last_write_date, &find->last_write_time);
+		find->cluster_hi = find->cluster_lo = 0;
+		find->file_size = 0;
+		process->allowable_mask &= ~8;
+		REG8(AL) = 0x00;
+	} else {
+		REG8(AL) = 0xff;
+	}
+}
+
+inline void msdos_int_21h_13h()
+{
+	if(remove(msdos_fcb_path((fcb_t *)(mem + cpustate->sreg[DS].base + REG16(DX))))) {
+		REG8(AL) = 0xff;
+	} else {
+		REG8(AL) = 0x00;
+	}
 }
 
 inline void msdos_int_21h_18h()
@@ -2209,7 +3121,7 @@ inline void msdos_int_21h_31h()
 	mcb_seg += mcb->paragraphs + 1;
 	msdos_mcb_create(mcb_seg, 'Z', 0, (MEMORY_END >> 4) - mcb_seg - 1);
 	
-	msdos_process_terminate(current_psp, REG8(AL), 0);
+	msdos_process_terminate(current_psp, REG8(AL) | 0x300, 0);
 }
 
 inline void msdos_int_21h_32h()
@@ -2230,13 +3142,15 @@ inline void msdos_int_21h_32h()
 
 inline void msdos_int_21h_33h()
 {
-	char path[MAX_PATH];;
+	static UINT8 state = 0x00;
+	char path[MAX_PATH];
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(DL) = 0x00;
+		REG8(DL) = state;
 		break;
 	case 0x01:
+		state = REG8(DL);
 		break;
 	case 0x05:
 		GetSystemDirectory(path, MAX_PATH);
@@ -2798,11 +3712,13 @@ inline void msdos_int_21h_4eh()
 		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->date, &find->time);
 		find->size = fd.nFileSizeLow;
 		strcpy(find->name, msdos_short_path(fd.cFileName));
+		REG16(AX) = 0;
 	} else if(process->allowable_mask & 8) {
 		find->attrib = 8;
 		find->size = 0;
 		strcpy(find->name, msdos_short_volume_label(process->volume_label));
 		process->allowable_mask &= ~8;
+		REG16(AX) = 0;
 	} else {
 		REG16(AX) = 0x12;	// NOTE: return 0x02 if file path is invalid
 		cpustate->CF = 1;
@@ -2835,11 +3751,13 @@ inline void msdos_int_21h_4fh()
 		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->date, &find->time);
 		find->size = fd.nFileSizeLow;
 		strcpy(find->name, msdos_short_path(fd.cFileName));
+		REG16(AX) = 0;
 	} else if(process->allowable_mask & 8) {
 		find->attrib = 8;
 		find->size = 0;
 		strcpy(find->name, msdos_short_volume_label(process->volume_label));
 		process->allowable_mask &= ~8;
+		REG16(AX) = 0;
 	} else {
 		REG16(AX) = 0x12;
 		cpustate->CF = 1;
@@ -3432,6 +4350,29 @@ inline void msdos_int_21h_71a8h()
 	}
 }
 
+inline void msdos_int_21h_7303h()
+{
+	char *path = (char *)(mem + cpustate->sreg[DS].base + REG16(DX));
+	ext_free_space_t *space = (ext_free_space_t *)(mem + cpustate->sreg[ES].base + REG16(DI));
+	DWORD sectors_per_cluster, bytes_per_sector, free_clusters, total_clusters;
+	
+	if(GetDiskFreeSpace(path, &sectors_per_cluster, &bytes_per_sector, &free_clusters, &total_clusters)) {
+		space->size_of_structure = sizeof(ext_free_space_t);
+		space->structure_version = 0;
+		space->sectors_per_cluster = sectors_per_cluster;
+		space->bytes_per_sector = bytes_per_sector;
+		space->available_clusters_on_drive = free_clusters;
+		space->total_clusters_on_drive = total_clusters;
+		space->available_sectors_on_drive = sectors_per_cluster * free_clusters;
+		space->total_sectors_on_drive = sectors_per_cluster * total_clusters;
+		space->available_allocation_units = free_clusters;	// ???
+		space->total_allocation_units = total_clusters;		// ???
+	} else {
+		REG16(AX) = errno;
+		cpustate->CF = 1;
+	}
+}
+
 inline void msdos_int_25h()
 {
 	UINT16 seg, ofs;
@@ -3524,7 +4465,7 @@ inline void msdos_int_27h()
 	mcb_seg += mcb->paragraphs + 1;
 	msdos_mcb_create(mcb_seg, 'Z', 0, (MEMORY_END >> 4) - mcb_seg - 1);
 	
-	msdos_process_terminate(cpustate->sreg[CS].selector, retval, 0);
+	msdos_process_terminate(cpustate->sreg[CS].selector, retval | 0x300, 0);
 }
 
 inline void msdos_int_29h()
@@ -3614,21 +4555,128 @@ void msdos_syscall(unsigned num)
 //		error("illegal instruction\n");
 //		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
 		break;
+	case 0x10:
+		// PC BIOS
+		if(scr_width != 80 || scr_height != 25) {
+			CONSOLE_SCREEN_BUFFER_INFO csbi;
+			SMALL_RECT rect;
+			COORD co;
+			
+			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			if(csbi.dwCursorPosition.Y > 24) {
+				SET_RECT(rect, 0, 0, scr_width - 1, scr_height - 1);
+				ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+				for(int y = 0, y2 = csbi.dwCursorPosition.Y - 24; y < 25; y++, y2++) {
+					for(int x = 0; x < 80; x++) {
+						scr_buf[y][x] = scr_buf[y2][x];
+					}
+				}
+				WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+				
+				co.X = csbi.dwCursorPosition.X;
+				co.Y = 24;
+				SetConsoleCursorPosition(hStdout, co);
+				cursor_moved = true;
+			}
+			SET_RECT(rect, 0, 0, 79, 24);
+			co.X = 80;
+			co.Y = 25;
+			SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			SetConsoleScreenBufferSize(hStdout, co);
+			scr_width = 80;
+			scr_height = 25;
+		}
+		cpustate->CF = 0;
+		switch(REG8(AH)) {
+		case 0x00: pcbios_int_10h_00h(); break;
+		case 0x01: pcbios_int_10h_01h(); break;
+		case 0x02: pcbios_int_10h_02h(); break;
+		case 0x03: pcbios_int_10h_03h(); break;
+		case 0x05: pcbios_int_10h_05h(); break;
+		case 0x06: pcbios_int_10h_06h(); break;
+		case 0x07: pcbios_int_10h_07h(); break;
+		case 0x08: pcbios_int_10h_08h(); break;
+		case 0x09: pcbios_int_10h_09h(); break;
+		case 0x0a: pcbios_int_10h_0ah(); break;
+		case 0x0b: break;
+		case 0x0c: break;
+//		case 0x0d: break;
+		case 0x0e: pcbios_int_10h_0eh(); break;
+		case 0x0f: pcbios_int_10h_0fh(); break;
+		case 0x10: break;
+//		case 0x11: break;
+		case 0x12: break;
+		case 0x13: pcbios_int_10h_13h(); break;
+		case 0x1d: pcbios_int_10h_1dh(); break;
+		case 0x82: pcbios_int_10h_82h(); break;
+		case 0xfe: pcbios_int_10h_feh(); break;
+		case 0xff: pcbios_int_10h_ffh(); break;
+		default:
+			fatalerror("int 10h (ah=%2xh al=%2xh bl=%2xh)\n", REG8(AH), REG8(AL), REG8(BL));
+			break;
+		}
+		break;
+	case 0x11:
+		// PC BIOS
+		REG16(AX) = 0x20;
+		break;
+	case 0x12:
+		// PC BIOS
+		REG16(AX) = MEMORY_END / 1024;
+		break;
+	case 0x13:
+		// PC BIOS
+		fatalerror("int 13h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		break;
+	case 0x14:
+		// PC BIOS
+		fatalerror("int 14h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		break;
 	case 0x15:
 		// PC BIOS
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
 		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
+		case 0x49: pcbios_int_15h_49h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
 		case 0xc9: pcbios_int_15h_c9h(); break;
 		case 0xca: pcbios_int_15h_cah(); break;
 		default:
-			fatalerror("int 15h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//			fatalerror("int 15h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			REG8(AH)=0x86;
+			cpustate->CF = 1;
 			break;
 		}
+		break;
+	case 0x16:
+		// PC BIOS
+		cpustate->CF = 0;
+		switch(REG8(AH)) {
+		case 0x00: pcbios_int_16h_00h(); break;
+		case 0x01: pcbios_int_16h_01h(); break;
+		case 0x02: pcbios_int_16h_02h(); break;
+		case 0x03: pcbios_int_16h_03h(); break;
+		case 0x05: pcbios_int_16h_05h(); break;
+		case 0x10: pcbios_int_16h_00h(); break;
+		case 0x11: pcbios_int_16h_01h(); break;
+		case 0x12: pcbios_int_16h_12h(); break;
+		case 0x13: pcbios_int_16h_13h(); break;
+		case 0x14: pcbios_int_16h_14h(); break;
+		default:
+			fatalerror("int 16h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			break;
+		}
+		break;
+	case 0x17:
+		// PC BIOS
+		fatalerror("int 17h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		break;
+	case 0x18:
+		// PC BIOS
+		fatalerror("int 18h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
 		break;
 	case 0x1a:
 		// PC BIOS
@@ -3671,9 +4719,9 @@ void msdos_syscall(unsigned num)
 		case 0x0e: msdos_int_21h_0eh(); break;
 		// 0x0f: open file with fcb
 		// 0x10: close file with fcb
-		// 0x11: search first entry with fcb
-		// 0x12: search next entry with fcb
-		// 0x13: delete file with fcb
+		case 0x11: msdos_int_21h_11h(); break;
+		case 0x12: msdos_int_21h_12h(); break;
+		case 0x13: msdos_int_21h_13h(); break;
 		// 0x14: sequential read with fcb
 		// 0x15: sequential write with fcb
 		// 0x16: create new file with fcb
@@ -3794,6 +4842,21 @@ void msdos_syscall(unsigned num)
 				cpustate->CF = 1;
 			}
 			break;
+		// 0x72: Windows95 beta - LFN FindClose
+		case 0x73:
+			// windows95 fat32 functions
+			switch(REG8(AL)) {
+			// 0x00: drive locking ???
+			// 0x01: drive locking ???
+			// 0x02: get extended dpb
+			case 0x03: msdos_int_21h_7303h(); break;
+			// 0x04: set dpb to use for formatting
+			default:
+//				fatalerror("int 21h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+				REG16(AX) = 0x7200;
+				cpustate->CF = 1;
+			}
+			break;
 		default:
 			fatalerror("int 21h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
 		}
@@ -3807,15 +4870,20 @@ void msdos_syscall(unsigned num)
 		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
 		break;
 	case 0x25:
-		msdos_int_25h(); break;
+		msdos_int_25h();
+		break;
 	case 0x26:
-		msdos_int_26h(); break;
+		msdos_int_26h();
+		break;
 	case 0x27:
-		msdos_int_27h(); break;
+		msdos_int_27h();
+		break;
 	case 0x29:
-		msdos_int_29h(); break;
+		msdos_int_29h();
+		break;
 	case 0x2e:
-		msdos_int_2eh(); break;
+		msdos_int_2eh();
+		break;
 	case 0x2f:
 		// multiplex interrupt
 		cpustate->CF = 0;
@@ -3827,12 +4895,23 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
+//	default:
+//		fatalerror("int %2xh (ah=%2xh al=%2xh)\n", num, REG8(AH), REG8(AL));
+	}
+	
+	// update cursor position
+	if(cursor_moved) {
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
+		mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y;
+		cursor_moved = false;
 	}
 }
 
 // init
 
-int msdos_init(int argc, char *argv[], char *envp[])
+int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 {
 	// init file handler
 	memset(file_handler, 0, sizeof(file_handler));
@@ -3864,6 +4943,27 @@ int msdos_init(int argc, char *argv[], char *envp[])
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xf000;
 	memset(mem + IRET_TOP, 0xcf, IRET_SIZE);
 	
+	// bios data area
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	GetConsoleScreenBufferInfo(hStdout, &csbi);
+	
+	*(UINT8  *)(mem + 0x411) = 0x20;
+	*(UINT16 *)(mem + 0x410) = 0x20;
+	*(UINT16 *)(mem + 0x413) = MEMORY_END / 1024;
+	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
+	*(UINT16 *)(mem + 0x44a) = 80;
+	*(UINT16 *)(mem + 0x44c) = 4096;
+	*(UINT16 *)(mem + 0x44e) = 0;
+	*(UINT8  *)(mem + 0x450) = csbi.dwCursorPosition.X;
+	*(UINT8  *)(mem + 0x451) = csbi.dwCursorPosition.Y;
+	*(UINT8  *)(mem + 0x460) = 7;
+	*(UINT8  *)(mem + 0x461) = 7;
+	*(UINT8  *)(mem + 0x462) = 0;
+	*(UINT16 *)(mem + 0x463) = 0x3d4;
+	*(UINT8  *)(mem + 0x484) = 24;
+	*(UINT8  *)(mem + 0x485) = 19;
+	*(UINT8  *)(mem + 0x487) = 0;	// is this okay?
+	
 	// dos info
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 	dos_info->first_mcb = MEMORY_TOP >> 4;
@@ -3893,21 +4993,26 @@ int msdos_init(int argc, char *argv[], char *envp[])
 	int ofs = 0;
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
-		char tmp[ENV_SIZE];
+		char tmp[ENV_SIZE], name[ENV_SIZE];
 		strcpy(tmp, *p);
 		for(int i = 0;; i++) {
 			if(tmp[i] == '=') {
+				tmp[i] = '\0';
+				sprintf(name, ";%s;", tmp);
+				tmp[i] = '=';
 				break;
 			} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
 				tmp[i] = tmp[i] - 'a' + 'A';
 			}
 		}
-		int len = strlen(tmp);
-		if (ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
-			fatalerror("too many environments\n");
+		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
+			int len = strlen(tmp);
+			if (ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
+				fatalerror("too many environments\n");
+			}
+			memcpy(mem + (seg << 4) + ofs, tmp, len);
+			ofs += len + 1;
 		}
-		memcpy(mem + (seg << 4) + ofs, tmp, len);
-		ofs += len + 1;
 	}
 	seg += (ENV_SIZE >> 4);
 	
@@ -4020,6 +5125,20 @@ void hardware_run()
 	int ops = 0;
 	
 	while(!cpustate->halted) {
+#ifdef SUPPORT_DISASSEMBLER
+		if(dasm) {
+			char buffer[256];
+			UINT64 eip = cpustate->eip;
+			UINT8 *oprom = mem + cpustate->sreg[CS].base + cpustate->eip;
+			
+			if(cpustate->operand_size) {
+				CPU_DISASSEMBLE_CALL(x86_32);
+			} else {
+				CPU_DISASSEMBLE_CALL(x86_16);
+			}
+			fprintf(stderr, "%04x:%04x\t%s\n", cpustate->sreg[CS].selector, cpustate->eip, buffer);
+		}
+#endif
 		cpustate->cycles = 1;
 		CPU_EXECUTE_CALL(i386);
 #ifdef SUPPORT_HARDWARE

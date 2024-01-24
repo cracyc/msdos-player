@@ -69,12 +69,61 @@ typedef union {
 #pragma pack()
 
 /* ----------------------------------------------------------------------------
+	FIFO buffer
+---------------------------------------------------------------------------- */
+
+#define MAX_FIFO	256
+
+class FIFO
+{
+private:
+	int buf[MAX_FIFO];
+	int cnt, rpt, wpt;
+public:
+	FIFO() {
+		cnt = rpt = wpt = 0;
+	}
+	void write(int val) {
+		if(cnt < MAX_FIFO) {
+			buf[wpt++] = val;
+			if(wpt >= MAX_FIFO) {
+				wpt = 0;
+			}
+			cnt++;
+		}
+	}
+	int read() {
+		int val = 0;
+		if(cnt) {
+			val = buf[rpt++];
+			if(rpt >= MAX_FIFO) {
+				rpt = 0;
+			}
+			cnt--;
+		}
+		return val;
+	}
+	int read_not_remove() {
+		int val = 0;
+		if(cnt) {
+			val = buf[rpt];
+		}
+		return val;
+	}
+	int count() {
+		return cnt;
+	}
+};
+
+/* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
 #define VECTOR_TOP	0
 #define VECTOR_SIZE	0x400
-#define WORK_TOP	(VECTOR_TOP + VECTOR_SIZE)
+#define BIOS_TOP	(VECTOR_TOP + VECTOR_SIZE)
+#define BIOS_SIZE	0x100
+#define WORK_TOP	(BIOS_TOP + BIOS_SIZE)
 #define WORK_SIZE	0x300
 #define DPB_TOP		(WORK_TOP + WORK_SIZE)
 #define DPB_SIZE	0x400
@@ -87,7 +136,9 @@ typedef union {
 #define DBCS_TABLE	(DBCS_TOP + 2)
 #define DBCS_SIZE	16
 #define MEMORY_TOP	(DBCS_TOP + DBCS_SIZE)
-#define MEMORY_END	0xffff0
+//#define MEMORY_END	0xffff0
+#define MEMORY_END	0xf8000
+#define TVRAM_TOP	0xf8000
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000
@@ -175,6 +226,47 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
+	UINT8 flag;
+	UINT8 reserved[5];
+	UINT8 attribute;
+} ext_fcb_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	UINT8 drive;
+	UINT8 file_name[8 + 3];
+	UINT16 current_block;
+	UINT16 record_size;
+	UINT32 file_size;
+	UINT16 date;
+	UINT16 time;
+	UINT8 reserved[8];
+	UINT8 cur_record;
+	UINT32 rand_record;
+} fcb_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	UINT8 drive;
+	UINT8 file_name[8 + 3];
+	UINT8 attribute;
+	UINT8 nt_res;
+	UINT8 create_time_ms;
+	UINT16 creation_time;
+	UINT16 creation_date;
+	UINT16 last_access_date;
+	UINT16 cluster_hi;
+	UINT16 last_write_time;
+	UINT16 last_write_date;
+	UINT16 cluster_lo;
+	UINT32 file_size;
+} find_fcb_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
 	UINT8 reserved[21];
 	UINT8 attrib;
 	UINT16 time;
@@ -199,6 +291,22 @@ typedef struct {
 	char full_name[260];
 	char short_name[14];
 } find_lfn_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	UINT16 size_of_structure;
+	UINT16 structure_version;
+	UINT32 sectors_per_cluster;
+	UINT32 bytes_per_sector;
+	UINT32 available_clusters_on_drive;
+	UINT32 total_clusters_on_drive;
+	UINT32 available_sectors_on_drive;
+	UINT32 total_sectors_on_drive;
+	UINT32 available_allocation_units;
+	UINT32 total_allocation_units;
+	UINT8 reserved[8];
+} ext_free_space_t;
 #pragma pack()
 
 #pragma pack(1)
@@ -268,6 +376,8 @@ typedef struct {
 	UINT8 allowable_mask;
 	UINT8 required_mask;
 	char volume_label[MAX_PATH];
+	bool parent_int_10h_feh_called;
+	bool parent_int_10h_ffh_called;
 } process_t;
 
 UINT16 current_psp;
@@ -280,13 +390,12 @@ UINT8 file_buffer[0x100000];
 process_t process[MAX_PROCESS];
 
 void msdos_syscall(unsigned num);
-int msdos_init(int argc, char *argv[], char *envp[]);
+int msdos_init(int argc, char *argv[], char *envp[], int standard_env);
 void msdos_finish();
 
 // console
+
 #define SCR_BUF_SIZE	1200
-#define KEY_BUF_SIZE	16
-#define KEY_BUF_MASK	15
 
 #define SET_RECT(rect, l, t, r, b) { \
 	rect.Left = l; \
@@ -295,24 +404,31 @@ void msdos_finish();
 	rect.Bottom = b; \
 }
 
+HANDLE hStdin;
 HANDLE hStdout;
 CHAR_INFO scr_buf[SCR_BUF_SIZE][80];
+char scr_char[80 * 25];
+WORD scr_attr[80 * 25];
 COORD scr_buf_size;
 COORD scr_buf_pos;
-int key_buf_cnt;
-int key_buf_set;
-int key_buf_get;
-int key_buf[16];
-//int std[3];
+int scr_width, scr_height;
+bool cursor_moved;
+
+FIFO *key_buf_char;
+FIFO *key_buf_scan;
 
 int active_code_page;
 int system_code_page;
+
+UINT32 tvram_base_address = TVRAM_TOP;
+bool int_10h_feh_called = false;
+bool int_10h_ffh_called = false;
 
 /* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
-#define SUPPORT_HARDWARE
+//#define SUPPORT_HARDWARE
 
 void hardware_init();
 void hardware_finish();

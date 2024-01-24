@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/23/2012
+								2/27/2014
 
 ----- What's this
 
@@ -17,7 +17,17 @@ For example compile sample.c with LSI C-86 and execute compiled binary:
 	> msdos lcc sample.c
 	> msdos sample
 
-The emulator can access host's file path and envrionments directly.
+The emulator can access host's file path and envrionment variables directly.
+
+Any softwares (for example DoDiary Version 1.55) invite that the environment
+variable table should be less than 1024 bytes.
+On the Windows OS, there are many variables and the variable table size will
+be more than 1024 bytes and it causes an error.
+
+In this case, please specify the option '-e' and only the minimum variables
+(COMSPEC/INCLUDE/LIB/PATH/PROMPT/TEMP/TMP/TZ) are copied to the table.
+
+	> msdos -e dd.com
 
 
 ----- Supported hardwares
@@ -27,26 +37,69 @@ CPU 80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
 
 ----- Supported system calls
 
+INT 10H		Video Services
+
+	00H	Set Video Mode
+	02H	Set Cursor Position
+	03H	Get Cursor Position and Size
+	05H	Select Active Display Page
+	06H	Scroll Up Window
+	07H	Scroll Down Window
+	08H	Read Character and Attribute at Cursor Position
+	09H	Write Character and Attribute at Cursor Position
+	0AH	Write Character Only at Cursor Position
+	0EH	Teletype Output
+	0FH	Get Current Video Mode
+	130*H	Write String
+	1310H	Read Characters and Standard Attributes
+	1311H	Read Characters and Extended Attributes
+	1320H	Write Characters and Standard Attributes
+	1321H	Write Characters and Extended Attributes
+	8200H	Get/Set Scroll Mode
+	FEH	Get Shadow Buffer
+	FFH	Update Screen from Shadow Buffer
+
+INT 11H		Read Equipment List
+
+INT 12H		Report Memory Size
+
 INT 15H		PC BIOS
+
 	2300H	Get CMOS Data
 	2301H	Set CMOS Data
 	2400H	Disable A20 Gate
 	2401H	Enable A20 Gate
 	2402H	Get A20 Gate Status
 	2403H	A20 Support
+	49H	Get BIOS Type
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
 	C9H	Get CPU Type and Mask Revision
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
-INT 1AH		PC BIOS
+
+INT 16H		Keyboard Services
+
+	00H	Get Keystroke
+	01H	Check for Keystroke
+	02H	Get Shift Flags
+	05H	Stor Keystroke in Keyboard Buffer
+	10H	Get Keystroke
+	11H	Check for Keystroke
+	12H	Get Extended Shift States
+
+INT 1AH		System Timer and Clock Services
+
 	1A00H	Get System Timer
 	1A02H	Get Real Time Clock Time
 	1A04H	Get Real Time Clock Date
 	1A0AH	Read System-Timer Day Counter
+
 INT 20H		Program Terminate
+
 INT 21H		MS-DOS System Call
+
 	00H	Program Terminate
 	01H	Keyboard Input
 	02H	Console Output
@@ -62,6 +115,9 @@ INT 21H		MS-DOS System Call
 	0CH	Character Input with Buffer Flush
 	0DH	Disk Reset
 	0EH	Select Disk
+	11H	Search First Entry with FCB
+	12H	Search Next Entry with FCB
+	13H	Delete File with FCB
 	18H	Null Function for CP/M Compatibility
 	19H	Current Disk
 	1AH	Set Disk Transfer Address
@@ -164,14 +220,24 @@ INT 21H		MS-DOS System Call
 	71A6H	Windows95 - LFN - Get File Information by Handle
 	71A7H	Windows95 - LFN - Convert File Time/DOS Time
 	71A8H	Windows95 - LFN - Generate Short File Name
+	7303H	Windows95 - FAT32 - Get Extended Free Space on Drive
+
 INT 23H		Ctrl-Break Address
+
 INT 24H		Critical Error Handler
+
 INT 25H		Absolute Disk Read
+
 INT 26H		Absolute Disk Write
+
 INT 27H		Terminate and Stay Resident
+
 INT 29H		DOS Fast Character I/O
+
 INT 2EH		Pass Command to Command Interpreter for Execution
+
 INT 2FH		Multiplex Interrupt
+
 	4A01H	Query Free HMA Space (*3)
 	4A02H	Allocate HMA Space (*3)
 	4F00H	BILING - Get Version
