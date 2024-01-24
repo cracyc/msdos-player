@@ -13,7 +13,9 @@
 #include <tchar.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include <conio.h>
+#include <math.h>
 #include <dos.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -455,7 +457,8 @@ FIFO *key_buf_scan;
 int active_code_page;
 int system_code_page;
 
-UINT32 tvram_base_address = TVRAM_TOP;
+UINT32 tvram_top_address = TVRAM_TOP;
+UINT32 tvram_end_address = TVRAM_TOP + 4000;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
 
@@ -466,7 +469,6 @@ bool int_10h_ffh_called = false;
 #define SUPPORT_HARDWARE
 
 void hardware_init();
-void hardware_finish();
 void hardware_run();
 #ifdef SUPPORT_HARDWARE
 void hardware_update();

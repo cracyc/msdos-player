@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/27/2014
+								4/15/2014
 
 ----- What's this
 
@@ -29,10 +29,22 @@ In this case, please specify the option '-e' and only the minimum variables
 
 	> msdos -e dd.com
 
+This archive contains 4 executable binaries:
+
+	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
+	i286_x64	Emulates 80286 and supports only 64bit Windows
+	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
+	i386_x64	Emulates 80386 and supports only 64bit Windows
+
+80286 binaries are much faster than 80386.
+
+NOTE: You can change the cpu model from 80386 to 80486/Pentium/PRO/MMX/2/3/4
+by modifying msdos.cpp line 35-44 and build i386_x86/i386_x64 binaries.
+
 
 ----- Supported hardwares
 
-CPU 80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
+CPU 80286/80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
 
 
 ----- Supported system calls
@@ -258,6 +270,16 @@ INT 2FH		Multiplex Interrupt
 (*2) No ROM Programs
 (*3) ANSI.SYS is installed
 (*4) XMS/HMA/APPEND are not installed
+
+
+----- Thanks
+
+80286 code is based on MAME 0.149.
+80386 code is based on MAME 0.152.
+
+INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
+are based on DOSBox.
+
 
 ----------------------------------------
 TAKEDA, toshiya

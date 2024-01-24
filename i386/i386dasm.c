@@ -8,44 +8,45 @@
 
 enum
 {
-	PARAM_REG = 1,		/* 16 or 32-bit register */
-	PARAM_REG8,			/* 8-bit register */
-	PARAM_REG16,		/* 16-bit register */
-	PARAM_REG32,		/* 32-bit register */
-	PARAM_REG3264,		/* 32-bit or 64-bit register */
-	PARAM_REG2_32,		/* 32-bit register */
-	PARAM_MMX,			/* MMX register */
-	PARAM_XMM,			/* XMM register */
-	PARAM_RM,			/* 16 or 32-bit memory or register */
-	PARAM_RM8,			/* 8-bit memory or register */
-	PARAM_RM16,			/* 16-bit memory or register */
-	PARAM_RM32,			/* 32-bit memory or register */
-	PARAM_RMPTR,		/* 16 or 32-bit memory or register */
-	PARAM_RMPTR8,		/* 8-bit memory or register */
-	PARAM_RMPTR16,		/* 16-bit memory or register */
-	PARAM_RMPTR32,		/* 32-bit memory or register */
-	PARAM_RMXMM,		/* 32 or 64-bit memory or register */
-	PARAM_REGORXMM,		/* 32 or 64-bit register or XMM register */
-	PARAM_M64,			/* 64-bit memory */
-	PARAM_M64PTR,		/* 64-bit memory */
-	PARAM_MMXM,			/* 64-bit memory or MMX register */
-	PARAM_XMMM,			/* 128-bit memory or XMM register */
-	PARAM_I4,			/* 4-bit signed immediate */
-	PARAM_I8,			/* 8-bit signed immediate */
-	PARAM_I16,			/* 16-bit signed immediate */
-	PARAM_UI8,			/* 8-bit unsigned immediate */
-	PARAM_UI16,			/* 16-bit unsigned immediate */
-	PARAM_IMM,			/* 16 or 32-bit immediate */
-	PARAM_IMM64,		/* 16, 32 or 64-bit immediate */
-	PARAM_ADDR,			/* 16:16 or 16:32 address */
-	PARAM_REL,			/* 16 or 32-bit PC-relative displacement */
-	PARAM_REL8,			/* 8-bit PC-relative displacement */
-	PARAM_MEM_OFFS,		/* 16 or 32-bit mem offset */
-	PARAM_SREG,			/* segment register */
-	PARAM_CREG,			/* control register */
-	PARAM_DREG,			/* debug register */
-	PARAM_TREG,			/* test register */
-	PARAM_1,			/* used by shift/rotate instructions */
+	PARAM_REG = 1,      /* 16 or 32-bit register */
+	PARAM_REG8,         /* 8-bit register */
+	PARAM_REG16,        /* 16-bit register */
+	PARAM_REG32,        /* 32-bit register */
+	PARAM_REG3264,      /* 32-bit or 64-bit register */
+	PARAM_REG2_32,      /* 32-bit register */
+	PARAM_MMX,          /* MMX register */
+	PARAM_XMM,          /* XMM register */
+	PARAM_RM,           /* 16 or 32-bit memory or register */
+	PARAM_RM8,          /* 8-bit memory or register */
+	PARAM_RM16,         /* 16-bit memory or register */
+	PARAM_RM32,         /* 32-bit memory or register */
+	PARAM_RMPTR,        /* 16 or 32-bit memory or register */
+	PARAM_RMPTR8,       /* 8-bit memory or register */
+	PARAM_RMPTR16,      /* 16-bit memory or register */
+	PARAM_RMPTR32,      /* 32-bit memory or register */
+	PARAM_RMXMM,        /* 32 or 64-bit memory or register */
+	PARAM_REGORXMM,     /* 32 or 64-bit register or XMM register */
+	PARAM_M64,          /* 64-bit memory */
+	PARAM_M64PTR,       /* 64-bit memory */
+	PARAM_MMXM,         /* 64-bit memory or MMX register */
+	PARAM_XMMM,         /* 128-bit memory or XMM register */
+	PARAM_I4,           /* 4-bit signed immediate */
+	PARAM_I8,           /* 8-bit signed immediate */
+	PARAM_I16,          /* 16-bit signed immediate */
+	PARAM_UI8,          /* 8-bit unsigned immediate */
+	PARAM_UI16,         /* 16-bit unsigned immediate */
+	PARAM_IMM,          /* 16 or 32-bit immediate */
+	PARAM_IMM64,        /* 16, 32 or 64-bit immediate */
+	PARAM_ADDR,         /* 16:16 or 16:32 address */
+	PARAM_REL,          /* 16 or 32-bit PC-relative displacement */
+	PARAM_REL8,         /* 8-bit PC-relative displacement */
+	PARAM_MEM_OFFS,     /* 16 or 32-bit mem offset */
+	PARAM_PREIMP,       /* prefix with implicit register */
+	PARAM_SREG,         /* segment register */
+	PARAM_CREG,         /* control register */
+	PARAM_DREG,         /* debug register */
+	PARAM_TREG,         /* test register */
+	PARAM_1,            /* used by shift/rotate instructions */
 	PARAM_AL,
 	PARAM_CL,
 	PARAM_DL,
@@ -55,14 +56,18 @@ enum
 	PARAM_DH,
 	PARAM_BH,
 	PARAM_DX,
-	PARAM_EAX,			/* EAX or AX */
-	PARAM_ECX,			/* ECX or CX */
-	PARAM_EDX,			/* EDX or DX */
-	PARAM_EBX,			/* EBX or BX */
-	PARAM_ESP,			/* ESP or SP */
-	PARAM_EBP,			/* EBP or BP */
-	PARAM_ESI,			/* ESI or SI */
-	PARAM_EDI,			/* EDI or DI */
+	PARAM_EAX,          /* EAX or AX */
+	PARAM_ECX,          /* ECX or CX */
+	PARAM_EDX,          /* EDX or DX */
+	PARAM_EBX,          /* EBX or BX */
+	PARAM_ESP,          /* ESP or SP */
+	PARAM_EBP,          /* EBP or BP */
+	PARAM_ESI,          /* ESI or SI */
+	PARAM_EDI,          /* EDI or DI */
+	PARAM_XMM0,
+	PARAM_XMM64,            /* 64-bit memory or XMM register */
+	PARAM_XMM32,            /* 32-bit memory or XMM register */
+	PARAM_XMM16,            /* 16-bit memory or XMM register */
 };
 
 enum
@@ -80,15 +85,16 @@ enum
 	SEG_FS,
 	SEG_GS,
 	SEG_SS,
-	ISREX
+	ISREX,
+	THREE_BYTE          /* [prefix] 0f op1 op2 and then mod/rm */
 };
 
-#define FLAGS_MASK			0x0ff
-#define VAR_NAME			0x100
-#define VAR_NAME4			0x200
-#define ALWAYS64			0x400
-#define SPECIAL64			0x800
-#define SPECIAL64_ENT(x)	(SPECIAL64 | ((x) << 24))
+#define FLAGS_MASK          0x0ff
+#define VAR_NAME            0x100
+#define VAR_NAME4           0x200
+#define ALWAYS64            0x400
+#define SPECIAL64           0x800
+#define SPECIAL64_ENT(x)    (SPECIAL64 | ((x) << 24))
 
 struct I386_OPCODE {
 	const char *mnemonic;
@@ -110,971 +116,1810 @@ static const UINT8 *opcode_ptr_base;
 static const I386_OPCODE i386_opcode_table1[256] =
 {
 	// 0x00
-	{"add",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"add",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"add",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"add",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"add",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"add",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"push    es",		0,				0,					0,					0				},
-	{"pop     es",		0,				0,					0,					0				},
-	{"or",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"or",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"or",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"or",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"or",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"or",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"push    cs",		0,				0,					0,					0				},
-	{"two_byte",		TWO_BYTE,		0,					0,					0				},
+	{"add",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"add",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"add",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"add",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"add",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"add",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    es",      0,              0,                  0,                  0               },
+	{"pop     es",      0,              0,                  0,                  0               },
+	{"or",              MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"or",              MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"or",              MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"or",              MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"or",              0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"or",              0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    cs",      0,              0,                  0,                  0               },
+	{"two_byte",        TWO_BYTE,       0,                  0,                  0               },
 	// 0x10
-	{"adc",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"adc",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"adc",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"adc",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"adc",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"adc",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"push    ss",		0,				0,					0,					0				},
-	{"pop     ss",		0,				0,					0,					0				},
-	{"sbb",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"sbb",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"sbb",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"sbb",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"sbb",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"sbb",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"push    ds",		0,				0,					0,					0				},
-	{"pop     ds",		0,				0,					0,					0				},
+	{"adc",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"adc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"adc",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"adc",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"adc",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"adc",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    ss",      0,              0,                  0,                  0               },
+	{"pop     ss",      0,              0,                  0,                  0               },
+	{"sbb",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"sbb",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"sbb",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"sbb",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"sbb",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"sbb",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    ds",      0,              0,                  0,                  0               },
+	{"pop     ds",      0,              0,                  0,                  0               },
 	// 0x20
-	{"and",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"and",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"and",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"and",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"and",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"and",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"seg_es",			SEG_ES,			0,					0,					0				},
-	{"daa",				0,				0,					0,					0				},
-	{"sub",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"sub",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"sub",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"sub",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"sub",				0,				PARAM_AL,			PARAM_I8,			0				},
-	{"sub",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"seg_cs",			SEG_CS,			0,					0,					0				},
-	{"das",				0,				0,					0,					0				},
+	{"and",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"and",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"and",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"and",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"and",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"and",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_es",          SEG_ES,         0,                  0,                  0               },
+	{"daa",             0,              0,                  0,                  0               },
+	{"sub",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"sub",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"sub",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"sub",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"sub",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"sub",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_cs",          SEG_CS,         0,                  0,                  0               },
+	{"das",             0,              0,                  0,                  0               },
 	// 0x30
-	{"xor",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"xor",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"xor",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"xor",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"xor",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"xor",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"seg_ss",			SEG_SS,			0,					0,					0				},
-	{"aaa",				0,				0,					0,					0				},
-	{"cmp",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"cmp",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"cmp",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"cmp",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmp",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"cmp",				0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"seg_ds",			SEG_DS,			0,					0,					0				},
-	{"aas",				0,				0,					0,					0				},
+	{"xor",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"xor",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"xor",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"xor",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"xor",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"xor",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_ss",          SEG_SS,         0,                  0,                  0               },
+	{"aaa",             0,              0,                  0,                  0               },
+	{"cmp",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"cmp",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"cmp",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"cmp",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmp",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"cmp",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_ds",          SEG_DS,         0,                  0,                  0               },
+	{"aas",             0,              0,                  0,                  0               },
 	// 0x40
-	{"inc",				ISREX,			PARAM_EAX,			0,					0				},
-	{"inc",				ISREX,			PARAM_ECX,			0,					0				},
-	{"inc",				ISREX,			PARAM_EDX,			0,					0				},
-	{"inc",				ISREX,			PARAM_EBX,			0,					0				},
-	{"inc",				ISREX,			PARAM_ESP,			0,					0				},
-	{"inc",				ISREX,			PARAM_EBP,			0,					0				},
-	{"inc",				ISREX,			PARAM_ESI,			0,					0				},
-	{"inc",				ISREX,			PARAM_EDI,			0,					0				},
-	{"dec",				ISREX,			PARAM_EAX,			0,					0				},
-	{"dec",				ISREX,			PARAM_ECX,			0,					0				},
-	{"dec",				ISREX,			PARAM_EDX,			0,					0				},
-	{"dec",				ISREX,			PARAM_EBX,			0,					0				},
-	{"dec",				ISREX,			PARAM_ESP,			0,					0				},
-	{"dec",				ISREX,			PARAM_EBP,			0,					0				},
-	{"dec",				ISREX,			PARAM_ESI,			0,					0				},
-	{"dec",				ISREX,			PARAM_EDI,			0,					0				},
+	{"inc",             ISREX,          PARAM_EAX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ECX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EDX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EBX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ESP,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EBP,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ESI,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EDI,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EAX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ECX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EDX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EBX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ESP,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EBP,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ESI,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EDI,          0,                  0               },
 	// 0x50
-	{"push",			ALWAYS64,		PARAM_EAX,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_ECX,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_EDX,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_EBX,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_ESP,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_EBP,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_ESI,			0,					0				},
-	{"push",			ALWAYS64,		PARAM_EDI,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_EAX,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_ECX,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_EDX,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_EBX,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_ESP,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_EBP,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_ESI,			0,					0				},
-	{"pop",				ALWAYS64,		PARAM_EDI,			0,					0				},
+	{"push",            ALWAYS64,       PARAM_EAX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ECX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EDX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EBX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ESP,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EBP,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ESI,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EDI,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EAX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ECX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EDX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EBX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ESP,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EBP,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ESI,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EDI,          0,                  0               },
 	// 0x60
-	{"pusha\0pushad\0<invalid>",VAR_NAME,0,					0,					0				},
-	{"popa\0popad\0<invalid>",	VAR_NAME,0,					0,					0				},
-	{"bound",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"arpl",			MODRM | SPECIAL64_ENT(0),PARAM_RM,	PARAM_REG16,		0				},
-	{"seg_fs",			SEG_FS,			0,					0,					0				},
-	{"seg_gs",			SEG_GS,			0,					0,					0				},
-	{"op_size",			OP_SIZE,		0,					0,					0				},
-	{"addr_size",		ADDR_SIZE,		0,					0,					0				},
-	{"push",			0,				PARAM_IMM,			0,					0				},
-	{"imul",			MODRM,			PARAM_REG,			PARAM_RM,			PARAM_IMM		},
-	{"push",			0,				PARAM_I8,			0,					0				},
-	{"imul",			MODRM,			PARAM_REG,			PARAM_RM,			PARAM_I8		},
-	{"insb",			0,				0,					0,					0				},
-	{"insw\0insd\0insd",VAR_NAME,		0,					0,					0				},
-	{"outsb",			0,				0,					0,					0				},
-	{"outsw\0outsd\0outsd",VAR_NAME,	0,					0,					0				},
+	{"pusha\0pushad\0<invalid>",VAR_NAME,0,                 0,                  0               },
+	{"popa\0popad\0<invalid>",  VAR_NAME,0,                 0,                  0               },
+	{"bound",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"arpl",            MODRM | SPECIAL64_ENT(0),PARAM_RM,  PARAM_REG16,        0               },
+	{"seg_fs",          SEG_FS,         0,                  0,                  0               },
+	{"seg_gs",          SEG_GS,         0,                  0,                  0               },
+	{"op_size",         OP_SIZE,        0,                  0,                  0               },
+	{"addr_size",       ADDR_SIZE,      0,                  0,                  0               },
+	{"push",            0,              PARAM_IMM,          0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           PARAM_IMM       },
+	{"push",            0,              PARAM_I8,           0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           PARAM_I8        },
+	{"insb",            0,              0,                  0,                  0               },
+	{"insw\0insd\0insd",VAR_NAME,       0,                  0,                  0               },
+	{"outsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"outsw\0outsd\0outsd",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
 	// 0x70
-	{"jo",				0,				PARAM_REL8,			0,					0				},
-	{"jno",				0,				PARAM_REL8,			0,					0				},
-	{"jb",				0,				PARAM_REL8,			0,					0				},
-	{"jae",				0,				PARAM_REL8,			0,					0				},
-	{"je",				0,				PARAM_REL8,			0,					0				},
-	{"jne",				0,				PARAM_REL8,			0,					0				},
-	{"jbe",				0,				PARAM_REL8,			0,					0				},
-	{"ja",				0,				PARAM_REL8,			0,					0				},
-	{"js",				0,				PARAM_REL8,			0,					0				},
-	{"jns",				0,				PARAM_REL8,			0,					0				},
-	{"jp",				0,				PARAM_REL8,			0,					0				},
-	{"jnp",				0,				PARAM_REL8,			0,					0				},
-	{"jl",				0,				PARAM_REL8,			0,					0				},
-	{"jge",				0,				PARAM_REL8,			0,					0				},
-	{"jle",				0,				PARAM_REL8,			0,					0				},
-	{"jg",				0,				PARAM_REL8,			0,					0				},
+	{"jo",              0,              PARAM_REL8,         0,                  0               },
+	{"jno",             0,              PARAM_REL8,         0,                  0               },
+	{"jb",              0,              PARAM_REL8,         0,                  0               },
+	{"jae",             0,              PARAM_REL8,         0,                  0               },
+	{"je",              0,              PARAM_REL8,         0,                  0               },
+	{"jne",             0,              PARAM_REL8,         0,                  0               },
+	{"jbe",             0,              PARAM_REL8,         0,                  0               },
+	{"ja",              0,              PARAM_REL8,         0,                  0               },
+	{"js",              0,              PARAM_REL8,         0,                  0               },
+	{"jns",             0,              PARAM_REL8,         0,                  0               },
+	{"jp",              0,              PARAM_REL8,         0,                  0               },
+	{"jnp",             0,              PARAM_REL8,         0,                  0               },
+	{"jl",              0,              PARAM_REL8,         0,                  0               },
+	{"jge",             0,              PARAM_REL8,         0,                  0               },
+	{"jle",             0,              PARAM_REL8,         0,                  0               },
+	{"jg",              0,              PARAM_REL8,         0,                  0               },
 	// 0x80
-	{"group80",			GROUP,			0,					0,					0				},
-	{"group81",			GROUP,			0,					0,					0				},
-	{"group80",			GROUP,			0,					0,					0				},
-	{"group83",			GROUP,			0,					0,					0				},
-	{"test",			MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"test",			MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"xchg",			MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"xchg",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"mov",				MODRM,			PARAM_RM8,			PARAM_REG8,			0				},
-	{"mov",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"mov",				MODRM,			PARAM_REG8,			PARAM_RM8,			0				},
-	{"mov",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"mov",				MODRM,			PARAM_RM,			PARAM_SREG,			0				},
-	{"lea",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"mov",				MODRM,			PARAM_SREG,			PARAM_RM,			0				},
-	{"pop",				MODRM,			PARAM_RM,			0,					0				},
+	{"group80",         GROUP,          0,                  0,                  0               },
+	{"group81",         GROUP,          0,                  0,                  0               },
+	{"group80",         GROUP,          0,                  0,                  0               },
+	{"group83",         GROUP,          0,                  0,                  0               },
+	{"test",            MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"test",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"xchg",            MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"xchg",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"mov",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"mov",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"mov",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RM,           PARAM_SREG,         0               },
+	{"lea",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_SREG,         PARAM_RM,           0               },
+	{"pop",             MODRM,          PARAM_RM,           0,                  0               },
 	// 0x90
-	{"nop",				0,				0,					0,					0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_ECX,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_EDX,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_EBX,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_ESP,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_EBP,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_ESI,			0				},
-	{"xchg",			0,				PARAM_EAX,			PARAM_EDI,			0				},
-	{"cbw\0cwde\0cdqe",	VAR_NAME,		0,					0,					0				},
-	{"cwd\0cdq\0cqo",	VAR_NAME,		0,					0,					0				},
-	{"call",			ALWAYS64,		PARAM_ADDR,			0,					0,				DASMFLAG_STEP_OVER},
-	{"wait",			0,				0,					0,					0				},
-	{"pushf\0pushfd\0pushfq",VAR_NAME,	0,					0,					0				},
-	{"popf\0popfd\0popfq",VAR_NAME,		0,					0,					0				},
-	{"sahf",			0,				0,					0,					0				},
-	{"lahf",			0,				0,					0,					0				},
+	{"nop\0???\0???\0pause",    VAR_NAME4,          0,                  0,                  0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ECX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EDX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EBX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ESP,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EBP,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ESI,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EDI,          0               },
+	{"cbw\0cwde\0cdqe", VAR_NAME,       0,                  0,                  0               },
+	{"cwd\0cdq\0cqo",   VAR_NAME,       0,                  0,                  0               },
+	{"call",            ALWAYS64,       PARAM_ADDR,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"wait",            0,              0,                  0,                  0               },
+	{"pushf\0pushfd\0pushfq",VAR_NAME,  0,                  0,                  0               },
+	{"popf\0popfd\0popfq",VAR_NAME,     0,                  0,                  0               },
+	{"sahf",            0,              0,                  0,                  0               },
+	{"lahf",            0,              0,                  0,                  0               },
 	// 0xa0
-	{"mov",				0,				PARAM_AL,			PARAM_MEM_OFFS,		0				},
-	{"mov",				0,				PARAM_EAX,			PARAM_MEM_OFFS,		0				},
-	{"mov",				0,				PARAM_MEM_OFFS,		PARAM_AL,			0				},
-	{"mov",				0,				PARAM_MEM_OFFS,		PARAM_EAX,			0				},
-	{"movsb",			0,				0,					0,					0				},
-	{"movsw\0movsd\0movsq",VAR_NAME,	0,					0,					0				},
-	{"cmpsb",			0,				0,					0,					0				},
-	{"cmpsw\0cmpsd\0cmpsq",VAR_NAME,	0,					0,					0				},
-	{"test",			0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"test",			0,				PARAM_EAX,			PARAM_IMM,			0				},
-	{"stosb",			0,				0,					0,					0				},
-	{"stosw\0stosd\0stosq",VAR_NAME,	0,					0,					0				},
-	{"lodsb",			0,				0,					0,					0				},
-	{"lodsw\0lodsd\0lodsq",VAR_NAME,	0,					0,					0				},
-	{"scasb",			0,				0,					0,					0				},
-	{"scasw\0scasd\0scasq",VAR_NAME,	0,					0,					0				},
+	{"mov",             0,              PARAM_AL,           PARAM_MEM_OFFS,     0               },
+	{"mov",             0,              PARAM_EAX,          PARAM_MEM_OFFS,     0               },
+	{"mov",             0,              PARAM_MEM_OFFS,     PARAM_AL,           0               },
+	{"mov",             0,              PARAM_MEM_OFFS,     PARAM_EAX,          0               },
+	{"movsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"movsw\0movsd\0movsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"cmpsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"cmpsw\0cmpsd\0cmpsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"test",            0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"test",            0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"stosb",           0,              0,                  0,                  0               },
+	{"stosw\0stosd\0stosq",VAR_NAME,    0,                  0,                  0               },
+	{"lodsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"lodsw\0lodsd\0lodsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"scasb",           0,              0,                  0,                  0               },
+	{"scasw\0scasd\0scasq",VAR_NAME,    0,                  0,                  0               },
 	// 0xb0
-	{"mov",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_CL,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_DL,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_BL,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_AH,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_CH,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_DH,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_BH,			PARAM_UI8,			0				},
-	{"mov",				0,				PARAM_EAX,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_ECX,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_EDX,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_EBX,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_ESP,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_EBP,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_ESI,			PARAM_IMM64,		0				},
-	{"mov",				0,				PARAM_EDI,			PARAM_IMM64,		0				},
+	{"mov",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_CL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_DL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_BL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_AH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_CH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_DH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_BH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_EAX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ECX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EDX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EBX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ESP,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EBP,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ESI,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EDI,          PARAM_IMM64,        0               },
 	// 0xc0
-	{"groupC0",			GROUP,			0,					0,					0				},
-	{"groupC1",			GROUP,			0,					0,					0				},
-	{"ret",				0,				PARAM_I16,			0,					0,				DASMFLAG_STEP_OUT},
-	{"ret",				0,				0,					0,					0,				DASMFLAG_STEP_OUT},
-	{"les",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"lds",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"mov",				MODRM,			PARAM_RMPTR8,		PARAM_UI8,			0				},
-	{"mov",				MODRM,			PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"enter",			0,				PARAM_I16,			PARAM_UI8,			0				},
-	{"leave",			0,				0,					0,					0				},
-	{"retf",			0,				PARAM_I16,			0,					0,				DASMFLAG_STEP_OUT},
-	{"retf",			0,				0,					0,					0,				DASMFLAG_STEP_OUT},
-	{"int 3",			0,				0,					0,					0,				DASMFLAG_STEP_OVER},
-	{"int",				0,				PARAM_UI8,			0,					0,				DASMFLAG_STEP_OVER},
-	{"into",			0,				0,					0,					0				},
-	{"iret",			0,				0,					0,					0,				DASMFLAG_STEP_OUT},
+	{"groupC0",         GROUP,          0,                  0,                  0               },
+	{"groupC1",         GROUP,          0,                  0,                  0               },
+	{"ret",             0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
+	{"ret",             0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
+	{"les",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lds",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"mov",             MODRM,          PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"enter",           0,              PARAM_UI16,         PARAM_UI8,          0               },
+	{"leave",           0,              0,                  0,                  0               },
+	{"retf",            0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
+	{"retf",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
+	{"int 3",           0,              0,                  0,                  0,              DASMFLAG_STEP_OVER},
+	{"int",             0,              PARAM_UI8,          0,                  0,              DASMFLAG_STEP_OVER},
+	{"into",            0,              0,                  0,                  0               },
+	{"iret",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
 	// 0xd0
-	{"groupD0",			GROUP,			0,					0,					0				},
-	{"groupD1",			GROUP,			0,					0,					0				},
-	{"groupD2",			GROUP,			0,					0,					0				},
-	{"groupD3",			GROUP,			0,					0,					0				},
-	{"aam",				0,				PARAM_I8,			0,					0				},
-	{"aad",				0,				PARAM_I8,			0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"xlat",			0,				0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
-	{"escape",			FPU,			0,					0,					0				},
+	{"groupD0",         GROUP,          0,                  0,                  0               },
+	{"groupD1",         GROUP,          0,                  0,                  0               },
+	{"groupD2",         GROUP,          0,                  0,                  0               },
+	{"groupD3",         GROUP,          0,                  0,                  0               },
+	{"aam",             0,              PARAM_UI8,          0,                  0               },
+	{"aad",             0,              PARAM_UI8,          0,                  0               },
+	{"salc",            0,              0,                  0,                  0               }, //AMD docs name it
+	{"xlat",            0,              0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
+	{"escape",          FPU,            0,                  0,                  0               },
 	// 0xe0
-	{"loopne",			0,				PARAM_REL8,			0,					0,				DASMFLAG_STEP_OVER},
-	{"loopz",			0,				PARAM_REL8,			0,					0,				DASMFLAG_STEP_OVER},
-	{"loop",			0,				PARAM_REL8,			0,					0,				DASMFLAG_STEP_OVER},
-	{"jcxz\0jecxz\0jrcxz",VAR_NAME,		PARAM_REL8,			0,					0				},
-	{"in",				0,				PARAM_AL,			PARAM_UI8,			0				},
-	{"in",				0,				PARAM_EAX,			PARAM_UI8,			0				},
-	{"out",				0,				PARAM_UI8,			PARAM_AL,			0				},
-	{"out",				0,				PARAM_UI8,			PARAM_EAX,			0				},
-	{"call",			0,				PARAM_REL,			0,					0,				DASMFLAG_STEP_OVER},
-	{"jmp",				0,				PARAM_REL,			0,					0				},
-	{"jmp",				0,				PARAM_ADDR,			0,					0				},
-	{"jmp",				0,				PARAM_REL8,			0,					0				},
-	{"in",				0,				PARAM_AL,			PARAM_DX,			0				},
-	{"in",				0,				PARAM_EAX,			PARAM_DX,			0				},
-	{"out",				0,				PARAM_DX,			PARAM_AL,			0				},
-	{"out",				0,				PARAM_DX,			PARAM_EAX,			0				},
+	{"loopne",          0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"loopz",           0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"loop",            0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"jcxz\0jecxz\0jrcxz",VAR_NAME,     PARAM_REL8,         0,                  0               },
+	{"in",              0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"in",              0,              PARAM_EAX,          PARAM_UI8,          0               },
+	{"out",             0,              PARAM_UI8,          PARAM_AL,           0               },
+	{"out",             0,              PARAM_UI8,          PARAM_EAX,          0               },
+	{"call",            0,              PARAM_REL,          0,                  0,              DASMFLAG_STEP_OVER},
+	{"jmp",             0,              PARAM_REL,          0,                  0               },
+	{"jmp",             0,              PARAM_ADDR,         0,                  0               },
+	{"jmp",             0,              PARAM_REL8,         0,                  0               },
+	{"in",              0,              PARAM_AL,           PARAM_DX,           0               },
+	{"in",              0,              PARAM_EAX,          PARAM_DX,           0               },
+	{"out",             0,              PARAM_DX,           PARAM_AL,           0               },
+	{"out",             0,              PARAM_DX,           PARAM_EAX,          0               },
 	// 0xf0
-	{"lock",			0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"repne",			PREFIX,			0,					0,					0				},
-	{"rep",				PREFIX,			0,					0,					0				},
-	{"hlt",				0,				0,					0,					0				},
-	{"cmc",				0,				0,					0,					0				},
-	{"groupF6",			GROUP,			0,					0,					0				},
-	{"groupF7",			GROUP,			0,					0,					0				},
-	{"clc",				0,				0,					0,					0				},
-	{"stc",				0,				0,					0,					0				},
-	{"cli",				0,				0,					0,					0				},
-	{"sti",				0,				0,					0,					0				},
-	{"cld",				0,				0,					0,					0				},
-	{"std",				0,				0,					0,					0				},
-	{"groupFE",			GROUP,			0,					0,					0				},
-	{"groupFF",			GROUP,			0,					0,					0				}
+	{"lock",            0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"repne",           PREFIX,         0,                  0,                  0               },
+	{"rep",             PREFIX,         0,                  0,                  0               },
+	{"hlt",             0,              0,                  0,                  0               },
+	{"cmc",             0,              0,                  0,                  0               },
+	{"groupF6",         GROUP,          0,                  0,                  0               },
+	{"groupF7",         GROUP,          0,                  0,                  0               },
+	{"clc",             0,              0,                  0,                  0               },
+	{"stc",             0,              0,                  0,                  0               },
+	{"cli",             0,              0,                  0,                  0               },
+	{"sti",             0,              0,                  0,                  0               },
+	{"cld",             0,              0,                  0,                  0               },
+	{"std",             0,              0,                  0,                  0               },
+	{"groupFE",         GROUP,          0,                  0,                  0               },
+	{"groupFF",         GROUP,          0,                  0,                  0               }
 };
 
 static const I386_OPCODE x64_opcode_alt[] =
 {
-	{"movsxd",			MODRM | ALWAYS64,PARAM_REG,			PARAM_RMPTR32,		0				},
+	{"movsxd",          MODRM | ALWAYS64,PARAM_REG,         PARAM_RMPTR32,      0               },
 };
 
 static const I386_OPCODE i386_opcode_table2[256] =
 {
 	// 0x00
-	{"group0F00",		GROUP,			0,					0,					0				},
-	{"group0F01",		GROUP,			0,					0,					0				},
-	{"lar",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"lsl",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"syscall",			0,				0,					0,					0				},
-	{"clts",			0,				0,					0,					0				},
-	{"sysret",			0,				0,					0,					0				},
-	{"invd",			0,				0,					0,					0				},
-	{"wbinvd",			0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"ud2",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
+	{"group0F00",       GROUP,          0,                  0,                  0               },
+	{"group0F01",       GROUP,          0,                  0,                  0               },
+	{"lar",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lsl",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"syscall",         0,              0,                  0,                  0               },
+	{"clts",            0,              0,                  0,                  0               },
+	{"sysret",          0,              0,                  0,                  0               },
+	{"invd",            0,              0,                  0,                  0               },
+	{"wbinvd",          0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"ud2",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"group0F0D",           GROUP,              0,                  0,                  0               }, //AMD only
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x10
 	{"movups\0"
-	 "movupd\0"
-	 "movsd\0"
-	 "movss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"movupd\0"
+		"movsd\0"
+		"movss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movups\0"
-	 "movupd\0"
-	 "movsd\0"
-	 "movss",			MODRM|VAR_NAME4,PARAM_XMMM,			PARAM_XMM,			0				},
+		"movupd\0"
+		"movsd\0"
+		"movss",            MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"movlps\0"
-	 "movlpd\0"
-	 "movddup\0"
-	 "movsldup",		MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"movlpd\0"
+		"movddup\0"
+		"movsldup",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movlps\0"
-	 "movlpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMMM,			PARAM_XMM,			0				},
+		"movlpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"unpcklps\0"
-	 "unpcklpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"unpcklpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"unpckhps\0"
-	 "unpckhpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"unpckhpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movhps\0"
-	 "movhpd\0"
-	 "???\0"
-	 "movshdup",		MODRM|VAR_NAME4,PARAM_XMMM,			PARAM_XMM,			0				},
+		"movhpd\0"
+		"???\0"
+		"movshdup",     MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"movhps\0"
-	 "movhpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
-	{"group0F18",		GROUP,			0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
+		"movhpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"group0F18",       GROUP,          0,                  0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
 	// 0x20
-	{"mov",				MODRM,			PARAM_REG2_32,		PARAM_CREG,			0				},
-	{"mov",				MODRM,			PARAM_REG2_32,		PARAM_DREG,			0				},
-	{"mov",				MODRM,			PARAM_CREG,			PARAM_REG2_32,		0				},
-	{"mov",				MODRM,			PARAM_DREG,			PARAM_REG2_32,		0				},
-	{"mov",				MODRM,			PARAM_REG2_32,		PARAM_TREG,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"mov",				MODRM,			PARAM_TREG,			PARAM_REG2_32,		0				},
-	{"???",				0,				0,					0,					0				},
+	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_CREG,         0               },
+	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_DREG,         0               },
+	{"mov",             MODRM,          PARAM_CREG,         PARAM_REG2_32,      0               },
+	{"mov",             MODRM,          PARAM_DREG,         PARAM_REG2_32,      0               },
+	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_TREG,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"mov",             MODRM,          PARAM_TREG,         PARAM_REG2_32,      0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"movaps\0"
-	 "movapd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"movapd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movaps\0"
-	 "movapd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMMM,			PARAM_XMM,			0				},
+		"movapd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"cvtpi2ps\0"
-	 "cvtpi2pd\0"
-	 "cvtsi2sd\0"
-	 "cvtsi2ss",		MODRM|VAR_NAME4,PARAM_XMM,			PARAM_RMXMM,		0				},
+		"cvtpi2pd\0"
+		"cvtsi2sd\0"
+		"cvtsi2ss",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RMXMM,        0               },
 	{"movntps\0"
-	 "movntpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMMM,			PARAM_XMM,			0				},
+		"movntpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"cvttps2pi\0"
-	 "cvttpd2pi\0"
-	 "cvttsd2si\0"
-	 "cvttss2si",		MODRM|VAR_NAME4,PARAM_REGORXMM,		PARAM_XMMM,			0				},
+		"cvttpd2pi\0"
+		"cvttsd2si\0"
+		"cvttss2si",        MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
 	{"cvtps2pi\0"
-	 "cvtpd2pi\0"
-	 "cvtsd2si\0"
-	 "cvtss2si",		MODRM|VAR_NAME4,PARAM_REGORXMM,		PARAM_XMMM,			0				},
+		"cvtpd2pi\0"
+		"cvtsd2si\0"
+		"cvtss2si",     MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
 	{"ucomiss\0"
-	 "ucomisd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"ucomisd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"comiss\0"
-	 "comisd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"comisd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0x30
-	{"wrmsr",			0,				0,					0,					0				},
-	{"rdtsc",			0,				0,					0,					0				},
-	{"rdmsr",			0,				0,					0,					0				},
-	{"rdpmc",			0,				0,					0,					0				},
-	{"sysenter",		0,				0,					0,					0				},
-	{"sysexit",			0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
+	{"wrmsr",           0,              0,                  0,                  0               },
+	{"rdtsc",           0,              0,                  0,                  0               },
+	{"rdmsr",           0,              0,                  0,                  0               },
+	{"rdpmc",           0,              0,                  0,                  0               },
+	{"sysenter",        0,              0,                  0,                  0               },
+	{"sysexit",         0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"three_byte",          THREE_BYTE,         0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"three_byte",          THREE_BYTE,         0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x40
-	{"cmovo",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovno",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovb",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovae",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmove",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovne",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovbe",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmova",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovs",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovns",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovpe",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovpo",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovl",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovge",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovle",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"cmovg",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
+	{"cmovo",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovno",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovb",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovae",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmove",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovne",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovbe",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmova",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovs",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovns",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovpe",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovpo",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovl",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovge",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovle",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovg",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	// 0x50
 	{"movmskps\0"
-	 "movmskpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_REG3264,		PARAM_XMMM,			0				},
+		"movmskpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_REG3264,      PARAM_XMMM,         0               },
 	{"sqrtps\0"
-	 "sqrtpd\0"
-	 "sqrtsd\0"
-	 "sqrtss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"sqrtpd\0"
+		"sqrtsd\0"
+		"sqrtss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"rsqrtps\0"
-	 "???\0"
-	 "???\0"
-	 "rsqrtss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"???\0"
+		"???\0"
+		"rsqrtss",          MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"rcpps\0"
-	 "???\0"
-	 "???\0"
-	 "rcpss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"???\0"
+		"???\0"
+		"rcpss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"andps\0"
-	 "andpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"andpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"andnps\0"
-	 "andnpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"andnpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"orps\0"
-	 "orpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"orpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"xorps\0"
-	 "xorpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"xorpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"addps\0"
-	 "addpd\0"
-	 "addsd\0"
-	 "addss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"addpd\0"
+		"addsd\0"
+		"addss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"mulps\0"
-	 "mulpd\0"
-	 "mulsd\0"
-	 "mulss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"mulpd\0"
+		"mulsd\0"
+		"mulss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"cvtps2pd\0"
-	 "cvtpd2ps\0"
-	 "cvtsd2ss\0"
-	 "cvtss2sd",		MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"cvtpd2ps\0"
+		"cvtsd2ss\0"
+		"cvtss2sd",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"cvtdq2ps\0"
-	 "cvtps2dq\0"
-	 "???\0"
-	 "cvttps2dq",		MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"cvtps2dq\0"
+		"???\0"
+		"cvttps2dq",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"subps\0"
-	 "subpd\0"
-	 "subsd\0"
-	 "subss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"subpd\0"
+		"subsd\0"
+		"subss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"minps\0"
-	 "minpd\0"
-	 "minsd\0"
-	 "minss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"minpd\0"
+		"minsd\0"
+		"minss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"divps\0"
-	 "divpd\0"
-	 "divsd\0"
-	 "divss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"divpd\0"
+		"divsd\0"
+		"divss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"maxps\0"
-	 "maxpd\0"
-	 "maxsd\0"
-	 "maxss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
+		"maxpd\0"
+		"maxsd\0"
+		"maxss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0x60
-	{"punpcklbw",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpcklwd",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpckldq",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"packsswb",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pcmpgtb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pcmpgtw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pcmpgtd",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"packuswb",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpckhbw",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpckhwd",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpckhdq",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"packssdw",		MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"punpcklqdq",		MODRM,			PARAM_XMM,			PARAM_XMMM,			0				},
-	{"punpckhqdq",		MODRM,			PARAM_XMM,			PARAM_XMMM,			0				},
-	{"movd",			MODRM,			PARAM_MMX,			PARAM_RM,			0				},
+	{"punpcklbw",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpcklwd",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckldq",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packsswb",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packuswb",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhbw",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhwd",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhdq",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packssdw",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+		"punpcklqdq\0"
+		"???\0"
+		"???\0",        MODRM|VAR_NAME4,            PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"punpckhqdq\0"
+		"???\0"
+		"???\0",        MODRM|VAR_NAME4,            PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movd",            MODRM,          PARAM_MMX,          PARAM_RM,           0               },
 	{"movq\0"
-	 "movdqa\0"
-	 "???\0"
-	 "movdqu",			MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			0				},
+		"movdqa\0"
+		"???\0"
+		"movdqu",           MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	// 0x70
 	{"pshufw\0"
-	 "pshufd\0"
-	 "pshuflw\0"
-	 "pshufhw",			MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			PARAM_I8		},
-	{"group0F71",		GROUP,			0,					0,					0				},
-	{"group0F72",		GROUP,			0,					0,					0				},
-	{"group0F73",		GROUP,			0,					0,					0				},
-	{"pcmpeqb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pcmpeqw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pcmpeqd",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"emms",			0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
+		"pshufd\0"
+		"pshuflw\0"
+		"pshufhw",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
+	{"group0F71",       GROUP,          0,                  0,                  0               },
+	{"group0F72",       GROUP,          0,                  0,                  0               },
+	{"group0F73",       GROUP,          0,                  0,                  0               },
+	{"pcmpeqb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpeqw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpeqd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"emms",            0,              0,                  0,                  0               },
+	{"vmread",          MODRM,              PARAM_RM,               PARAM_REG,              0               },
+	{"vmwrite",         MODRM,              PARAM_RM,               PARAM_REG,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-	 "haddpd\0"
-	 "haddps\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			0				},
+		"haddpd\0"
+		"haddps\0"
+		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"???\0"
-	 "hsubpd\0"
-	 "hsubps\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			0				},
+		"hsubpd\0"
+		"hsubps\0"
+		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"movd\0"
-	 "movd\0"
-	 "???\0"
-	 "movq",			MODRM|VAR_NAME4,PARAM_RM,			PARAM_MMX,			0				},
+		"movd\0"
+		"???\0"
+		"movq",         MODRM|VAR_NAME4,PARAM_RM,           PARAM_MMX,          0               },
 	{"movq\0"
-	 "movdqa\0"
-	 "???\0"
-	 "movdqu",			MODRM|VAR_NAME4,PARAM_MMXM,			PARAM_MMX,			0				},
+		"movdqa\0"
+		"???\0"
+		"movdqu",           MODRM|VAR_NAME4,PARAM_MMXM,         PARAM_MMX,          0               },
 	// 0x80
-	{"jo",				0,				PARAM_REL,			0,					0				},
-	{"jno",				0,				PARAM_REL,			0,					0				},
-	{"jb",				0,				PARAM_REL,			0,					0				},
-	{"jae",				0,				PARAM_REL,			0,					0				},
-	{"je",				0,				PARAM_REL,			0,					0				},
-	{"jne",				0,				PARAM_REL,			0,					0				},
-	{"jbe",				0,				PARAM_REL,			0,					0				},
-	{"ja",				0,				PARAM_REL,			0,					0				},
-	{"js",				0,				PARAM_REL,			0,					0				},
-	{"jns",				0,				PARAM_REL,			0,					0				},
-	{"jp",				0,				PARAM_REL,			0,					0				},
-	{"jnp",				0,				PARAM_REL,			0,					0				},
-	{"jl",				0,				PARAM_REL,			0,					0				},
-	{"jge",				0,				PARAM_REL,			0,					0				},
-	{"jle",				0,				PARAM_REL,			0,					0				},
-	{"jg",				0,				PARAM_REL,			0,					0				},
+	{"jo",              0,              PARAM_REL,          0,                  0               },
+	{"jno",             0,              PARAM_REL,          0,                  0               },
+	{"jb",              0,              PARAM_REL,          0,                  0               },
+	{"jae",             0,              PARAM_REL,          0,                  0               },
+	{"je",              0,              PARAM_REL,          0,                  0               },
+	{"jne",             0,              PARAM_REL,          0,                  0               },
+	{"jbe",             0,              PARAM_REL,          0,                  0               },
+	{"ja",              0,              PARAM_REL,          0,                  0               },
+	{"js",              0,              PARAM_REL,          0,                  0               },
+	{"jns",             0,              PARAM_REL,          0,                  0               },
+	{"jp",              0,              PARAM_REL,          0,                  0               },
+	{"jnp",             0,              PARAM_REL,          0,                  0               },
+	{"jl",              0,              PARAM_REL,          0,                  0               },
+	{"jge",             0,              PARAM_REL,          0,                  0               },
+	{"jle",             0,              PARAM_REL,          0,                  0               },
+	{"jg",              0,              PARAM_REL,          0,                  0               },
 	// 0x90
-	{"seto",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setno",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setb",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setae",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"sete",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setne",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setbe",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"seta",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"sets",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setns",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setp",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setnp",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setl",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setge",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setle",			MODRM,			PARAM_RMPTR8,		0,					0				},
-	{"setg",			MODRM,			PARAM_RMPTR8,		0,					0				},
+	{"seto",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setno",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setb",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setae",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"sete",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setne",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setbe",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"seta",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"sets",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setns",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setp",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setnp",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setl",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setge",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setle",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setg",            MODRM,          PARAM_RMPTR8,       0,                  0               },
 	// 0xa0
-	{"push    fs",		0,				0,					0,					0				},
-	{"pop     fs",		0,				0,					0,					0				},
-	{"cpuid",			0,				0,					0,					0				},
-	{"bt",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"shld",			MODRM,			PARAM_RM,			PARAM_REG,			PARAM_I8		},
-	{"shld",			MODRM,			PARAM_RM,			PARAM_REG,			PARAM_CL		},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"push    gs",		0,				0,					0,					0				},
-	{"pop     gs",		0,				0,					0,					0				},
-	{"rsm",				0,				0,					0,					0				},
-	{"bts",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"shrd",			MODRM,			PARAM_RM,			PARAM_REG,			PARAM_I8		},
-	{"shrd",			MODRM,			PARAM_RM,			PARAM_REG,			PARAM_CL		},
-	{"group0FAE",		GROUP,			0,					0,					0				},
-	{"imul",			MODRM,			PARAM_REG,			PARAM_RM,			0				},
+	{"push    fs",      0,              0,                  0,                  0               },
+	{"pop     fs",      0,              0,                  0,                  0               },
+	{"cpuid",           0,              0,                  0,                  0               },
+	{"bt",              MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"shld",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
+	{"shld",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"push    gs",      0,              0,                  0,                  0               },
+	{"pop     gs",      0,              0,                  0,                  0               },
+	{"rsm",             0,              0,                  0,                  0               },
+	{"bts",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
+	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
+	{"group0FAE",       GROUP,          0,                  0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	// 0xb0
-	{"cmpxchg",			MODRM,			PARAM_RM8,			PARAM_REG,			0				},
-	{"cmpxchg",			MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"lss",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"btr",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"lfs",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"lgs",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"movzx",			MODRM,			PARAM_REG,			PARAM_RMPTR8,		0				},
-	{"movzx",			MODRM,			PARAM_REG,			PARAM_RMPTR16,		0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"group0FBA",		GROUP,			0,					0,					0				},
-	{"btc",				MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"bsf",				MODRM,			PARAM_REG,			PARAM_RM,			0				},
-	{"bsr",				MODRM,			PARAM_REG,			PARAM_RM,			0,				DASMFLAG_STEP_OVER},
-	{"movsx",			MODRM,			PARAM_REG,			PARAM_RMPTR8,		0				},
-	{"movsx",			MODRM,			PARAM_REG,			PARAM_RMPTR16,		0				},
-	// 0xc0
-	{"xadd",			MODRM,			PARAM_RM8,			PARAM_REG,			0				},
-	{"xadd",			MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"cmpps\0"
-	 "cmppd\0"
-	 "cmpsd\0"
-	 "cmpss",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
-	{"movnti",			MODRM,			PARAM_RM,			PARAM_REG,			0				},
-	{"pinsrw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			PARAM_I8		},
-	{"pextrw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			PARAM_I8		},
-	{"shufps\0"
-	 "shufpd\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			PARAM_I8		},
-	{"cmpxchg8b",		MODRM,			PARAM_M64PTR,		0,					0				},
-	{"bswap",			0,				PARAM_EAX,			0,					0				},
-	{"bswap",			0,				PARAM_ECX,			0,					0				},
-	{"bswap",			0,				PARAM_EDX,			0,					0				},
-	{"bswap",			0,				PARAM_EBX,			0,					0				},
-	{"bswap",			0,				PARAM_ESP,			0,					0				},
-	{"bswap",			0,				PARAM_EBP,			0,					0				},
-	{"bswap",			0,				PARAM_ESI,			0,					0				},
-	{"bswap",			0,				PARAM_EDI,			0,					0				},
-	// 0xd0
-	{"addsubpd\0"
-	 "???\0"
-	 "addsubps\0"
-	 "???\0",			MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
-	{"psrlw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psrld",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psrlq",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddq",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmullw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"movq\0"
-	 "???\0"
-	 "movdq2q\0"
-	 "movq2dq",			MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmovmskb",		MODRM,			PARAM_REG3264,		PARAM_MMXM,			0				},
-	{"psubusb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubusw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pminub",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pand",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddub",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"padduw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmaxub",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pandn",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	// 0xe0
-	{"pavgb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psraw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psrad",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pavgw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmulhuw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmulhw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
+	{"cmpxchg",         MODRM,          PARAM_RM8,          PARAM_REG,          0               },
+	{"cmpxchg",         MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"lss",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"btr",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"lfs",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lgs",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
+	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
 	{"???\0"
-	 "cvttpd2dq\0"
-	 "cvtpd2dq\0"
-	 "cvtdq2pd",		MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
-	{"movntq",			MODRM,			PARAM_M64,			PARAM_MMX,			0				},
-	{"psubsb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubsw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pminsw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"por",				MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddsb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddsw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmaxsw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pxor",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
+		"???\0"
+		"???\0"
+		"popcnt",           MODRM|VAR_NAME4,        PARAM_REG,              PARAM_RM16,             0               },
+	{"ud2",             0,              0,                  0,                  0               },
+	{"group0FBA",       GROUP,          0,                  0,                  0               },
+	{"btc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"bsf\0"
+		"???\0"
+		"???\0"
+		"tzcnt",            MODRM|VAR_NAME4,    PARAM_REG,          PARAM_RM,           0               },
+	{"bsr\0"
+		"???\0"
+		"???\0"
+		"lzcnt",            MODRM|VAR_NAME4,    PARAM_REG,          PARAM_RM,           0,              DASMFLAG_STEP_OVER},
+	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
+	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
+	// 0xc0
+	{"xadd",            MODRM,          PARAM_RM8,          PARAM_REG,          0               },
+	{"xadd",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"cmpps\0"
+		"cmppd\0"
+		"cmpsd\0"
+		"cmpss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movnti",          MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"pinsrw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
+	{"pextrw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
+	{"shufps\0"
+		"shufpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"group0FC7",           GROUP,          0,          0,                  0               },
+	{"bswap",           0,              PARAM_EAX,          0,                  0               },
+	{"bswap",           0,              PARAM_ECX,          0,                  0               },
+	{"bswap",           0,              PARAM_EDX,          0,                  0               },
+	{"bswap",           0,              PARAM_EBX,          0,                  0               },
+	{"bswap",           0,              PARAM_ESP,          0,                  0               },
+	{"bswap",           0,              PARAM_EBP,          0,                  0               },
+	{"bswap",           0,              PARAM_ESI,          0,                  0               },
+	{"bswap",           0,              PARAM_EDI,          0,                  0               },
+	// 0xd0
+	{"???\0"
+		"addsubpd\0"
+		"addsubps\0"
+		"???\0",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psrlw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrlq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmullw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+		"movq\0"
+		"movdq2q\0"
+		"movq2dq",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmovmskb",        MODRM,          PARAM_REG3264,      PARAM_MMXM,         0               },
+	{"psubusb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubusw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pminub",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pand",            MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddusb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddusw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaxub",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pandn",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	// 0xe0
+	{"pavgb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psraw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrad",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pavgw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmulhuw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmulhw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+		"cvttpd2dq\0"
+		"cvtpd2dq\0"
+		"cvtdq2pd",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movntq\0"
+		"movntdq\0"
+		"???\0"
+		"???\0",            MODRM|VAR_NAME4,    PARAM_M64,          PARAM_MMX,          0               },
+	{"psubsb",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pminsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"por",             MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddsb",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaxsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pxor",            MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	// 0xf0
 	{"???\0"
-	 "???\0"
-	 "lddqu\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_XMM,			PARAM_XMMM,			0				},
-	{"psllw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pslld",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psllq",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmuludq",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"pmaddwd",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psadbw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
+		"???\0"
+		"lddqu\0"
+		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psllw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pslld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psllq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmuludq",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaddwd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psadbw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"maskmovq\0"
-	 "maskmovdqu\0"
-	 "???\0"
-	 "???",				MODRM|VAR_NAME4,PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubd",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"psubq",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddb",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddw",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"paddd",			MODRM,			PARAM_MMX,			PARAM_MMXM,			0				},
-	{"???",				0,				0,					0,					0				}
+		"maskmovdqu\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubd",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddd",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???",             0,              0,                  0,                  0               }
+};
+
+static const I386_OPCODE i386_opcode_table0F38[256] =
+{
+	// 0x00
+	{"pshufb\0"
+		"pshufb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phaddw\0"
+		"phaddw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phaddd\0"
+		"phadd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phaddsw\0"
+		"phaddsw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"pmaddubsw\0"
+		"pmaddubsw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phsubw\0"
+		"phsubw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phsubd\0"
+		"phsubd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"phsubsw\0"
+		"phsubsw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psignb\0"
+		"psignb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psignw\0"
+		"psignw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psignd\0"
+		"psignd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"pmulhrsw\0"
+		"pmulhrsw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x10
+	{"???\0"
+		"pblendvb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"blendvps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
+	{"???\0"
+		"blendvpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"ptest\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"pabsb\0"
+		"pabsb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"pabsw\0"
+		"pabsw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"pabsd\0"
+		"pabsd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x20
+	{"???\0"
+		"pmovsxbw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???\0"
+		"pmovsxbd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	{"???\0"
+		"pmovsxbq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM16,            0               },
+	{"???\0"
+		"pmovsxwd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???\0"
+		"pmovsxwq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	{"???\0"
+		"pmovsxdq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"pmuldq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pcmpeqq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"movntdqa\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"packusdw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x30
+	{"???\0"
+		"pmovzxbw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???\0"
+		"pmovzxbd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	{"???\0"
+		"pmovzxbq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM16,            0               },
+	{"???\0"
+		"pmovzxwd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???\0"
+		"pmovzxwq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	{"???\0"
+		"pmovzxdq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"pcmpgtq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pminsb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pminsd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pminuw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pminud\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pmaxsb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pmaxsd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pmaxuw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"pmaxud\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	// 0x40
+	{"???\0"
+		"pmulld\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"phminposuw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x50
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x60
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x70
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x80
+	{"???\0"
+		"invept\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
+	{"???\0"
+		"invvpid\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
+	{"???\0"
+		"invpcid\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x90
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xa0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xb0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xc0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xd0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"aesimc\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"aesenc\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"aesenclast\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"aesdec\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+		"aesdeclast\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	// 0xe0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xf0
+	{"movbe\0"
+		"???\0"
+		"crc32\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_RMPTR,            0               }, // not quite correct
+	{"movbe\0"
+		"???\0"
+		"crc32\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_RMPTR,            PARAM_REG32,            0               }, // not quite correct
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+};
+
+static const I386_OPCODE i386_opcode_table0F3A[256] =
+{
+	// 0x00
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"roundps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"roundpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"roundss\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"roundsd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"blendps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"blendpd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"pblendw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"palignr\0"
+		"palignr\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	// 0x10
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"pextrb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_RM8,          PARAM_XMM,          PARAM_UI8           },
+	{"???\0"
+		"pextrw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_RM16,         PARAM_XMM,          PARAM_UI8           },
+	{"???\0"
+		"pextrd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_RM8,          PARAM_XMM,          PARAM_UI8           },
+	{"???\0"
+		"extractps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_RM32,         PARAM_XMM,          PARAM_UI8           },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x20
+	{"???\0"
+		"pinsrb\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM8,          PARAM_UI8           },
+	{"???\0"
+		"insertps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM8,          PARAM_UI8           },
+	{"???\0"
+		"pinsrd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM32,         PARAM_UI8           },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x30
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x40
+	{"???\0"
+		"dpps\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"dppd\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"mpsadbw\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"pclmulqdq\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x50
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x60
+	{"???\0"
+		"pcmestrm\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"pcmestri\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"pcmistrm\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???\0"
+		"pcmistri\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x70
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x80
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0x90
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xa0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xb0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xc0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xd0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???\0"
+		"aeskeygenassist\0"
+		"???\0"
+		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	// 0xe0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	// 0xf0
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,          0,              0               },
 };
 
 static const I386_OPCODE group80_table[8] =
 {
-	{"add",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"or",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"adc",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"sbb",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"and",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"sub",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"xor",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"cmp",				0,				PARAM_RMPTR8,		PARAM_I8,			0				}
+	{"add",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"or",              0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"adc",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"sbb",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"and",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"sub",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"xor",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"cmp",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               }
 };
 
 static const I386_OPCODE group81_table[8] =
 {
-	{"add",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"or",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"adc",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"sbb",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"and",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"sub",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"xor",				0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"cmp",				0,				PARAM_RMPTR,		PARAM_IMM,			0				}
+	{"add",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"or",              0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"adc",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"sbb",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"and",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"sub",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"xor",             0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"cmp",             0,              PARAM_RMPTR,        PARAM_IMM,          0               }
 };
 
 static const I386_OPCODE group83_table[8] =
 {
-	{"add",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"or",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"adc",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"sbb",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"and",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"sub",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"xor",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"cmp",				0,				PARAM_RMPTR,		PARAM_I8,			0				}
+	{"add",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"or",              0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"adc",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"sbb",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"and",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"sub",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"xor",             0,              PARAM_RMPTR,        PARAM_I8,           0               },
+	{"cmp",             0,              PARAM_RMPTR,        PARAM_I8,           0               }
 };
 
 static const I386_OPCODE groupC0_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"ror",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"rcl",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"rcr",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"shl",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"shr",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"sal",				0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"sar",				0,				PARAM_RMPTR8,		PARAM_I8,			0				}
+	{"rol",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"ror",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"rcl",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"rcr",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"shl",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"shr",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"sal",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"sar",             0,              PARAM_RMPTR8,       PARAM_UI8,          0               }
 };
 
 static const I386_OPCODE groupC1_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"ror",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"rcl",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"rcr",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"shl",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"shr",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"sal",				0,				PARAM_RMPTR,		PARAM_I8,			0				},
-	{"sar",				0,				PARAM_RMPTR,		PARAM_I8,			0				}
+	{"rol",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"ror",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"rcl",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"rcr",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"shl",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"shr",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"sal",             0,              PARAM_RMPTR,        PARAM_UI8,          0               },
+	{"sar",             0,              PARAM_RMPTR,        PARAM_UI8,          0               }
 };
 
 static const I386_OPCODE groupD0_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"ror",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"rcl",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"rcr",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"shl",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"shr",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"sal",				0,				PARAM_RMPTR8,		PARAM_1,			0				},
-	{"sar",				0,				PARAM_RMPTR8,		PARAM_1,			0				}
+	{"rol",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"ror",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"rcl",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"rcr",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"shl",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"shr",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"sal",             0,              PARAM_RMPTR8,       PARAM_1,            0               },
+	{"sar",             0,              PARAM_RMPTR8,       PARAM_1,            0               }
 };
 
 static const I386_OPCODE groupD1_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"ror",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"rcl",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"rcr",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"shl",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"shr",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"sal",				0,				PARAM_RMPTR,		PARAM_1,			0				},
-	{"sar",				0,				PARAM_RMPTR,		PARAM_1,			0				}
+	{"rol",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"ror",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"rcl",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"rcr",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"shl",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"shr",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"sal",             0,              PARAM_RMPTR,        PARAM_1,            0               },
+	{"sar",             0,              PARAM_RMPTR,        PARAM_1,            0               }
 };
 
 static const I386_OPCODE groupD2_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"ror",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"rcl",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"rcr",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"shl",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"shr",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"sal",				0,				PARAM_RMPTR8,		PARAM_CL,			0				},
-	{"sar",				0,				PARAM_RMPTR8,		PARAM_CL,			0				}
+	{"rol",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"ror",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"rcl",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"rcr",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"shl",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"shr",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"sal",             0,              PARAM_RMPTR8,       PARAM_CL,           0               },
+	{"sar",             0,              PARAM_RMPTR8,       PARAM_CL,           0               }
 };
 
 static const I386_OPCODE groupD3_table[8] =
 {
-	{"rol",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"ror",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"rcl",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"rcr",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"shl",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"shr",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"sal",				0,				PARAM_RMPTR,		PARAM_CL,			0				},
-	{"sar",				0,				PARAM_RMPTR,		PARAM_CL,			0				}
+	{"rol",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"ror",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"rcl",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"rcr",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"shl",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"shr",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"sal",             0,              PARAM_RMPTR,        PARAM_CL,           0               },
+	{"sar",             0,              PARAM_RMPTR,        PARAM_CL,           0               }
 };
 
 static const I386_OPCODE groupF6_table[8] =
 {
-	{"test",			0,				PARAM_RMPTR8,		PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"not",				0,				PARAM_RMPTR8,		0,					0				},
-	{"neg",				0,				PARAM_RMPTR8,		0,					0				},
-	{"mul",				0,				PARAM_RMPTR8,		0,					0				},
-	{"imul",			0,				PARAM_RMPTR8,		0,					0				},
-	{"div",				0,				PARAM_RMPTR8,		0,					0				},
-	{"idiv",			0,				PARAM_RMPTR8,		0,					0				}
+	{"test",            0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"test",            0,              PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"not",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"neg",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"mul",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"imul",            0,              PARAM_RMPTR8,       0,                  0               },
+	{"div",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"idiv",            0,              PARAM_RMPTR8,       0,                  0               }
 };
 
 static const I386_OPCODE groupF7_table[8] =
 {
-	{"test",			0,				PARAM_RMPTR,		PARAM_IMM,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"not",				0,				PARAM_RMPTR,		0,					0				},
-	{"neg",				0,				PARAM_RMPTR,		0,					0				},
-	{"mul",				0,				PARAM_RMPTR,		0,					0				},
-	{"imul",			0,				PARAM_RMPTR,		0,					0				},
-	{"div",				0,				PARAM_RMPTR,		0,					0				},
-	{"idiv",			0,				PARAM_RMPTR,		0,					0				}
+	{"test",            0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"test",            0,              PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"not",             0,              PARAM_RMPTR,        0,                  0               },
+	{"neg",             0,              PARAM_RMPTR,        0,                  0               },
+	{"mul",             0,              PARAM_RMPTR,        0,                  0               },
+	{"imul",            0,              PARAM_RMPTR,        0,                  0               },
+	{"div",             0,              PARAM_RMPTR,        0,                  0               },
+	{"idiv",            0,              PARAM_RMPTR,        0,                  0               }
 };
 
 static const I386_OPCODE groupFE_table[8] =
 {
-	{"inc",				0,				PARAM_RMPTR8,		0,					0				},
-	{"dec",				0,				PARAM_RMPTR8,		0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				}
+	{"inc",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"dec",             0,              PARAM_RMPTR8,       0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE groupFF_table[8] =
 {
-	{"inc",				0,				PARAM_RMPTR,		0,					0				},
-	{"dec",				0,				PARAM_RMPTR,		0,					0				},
-	{"call",			ALWAYS64,		PARAM_RMPTR,		0,					0,				DASMFLAG_STEP_OVER},
-	{"call    far ptr ",0,				PARAM_RM,			0,					0,				DASMFLAG_STEP_OVER},
-	{"jmp",				ALWAYS64,		PARAM_RMPTR,		0,					0				},
-	{"jmp     far ptr ",0,				PARAM_RM,			0,					0				},
-	{"push",			0,				PARAM_RMPTR,		0,					0				},
-	{"???",				0,				0,					0,					0				}
+	{"inc",             0,              PARAM_RMPTR,        0,                  0               },
+	{"dec",             0,              PARAM_RMPTR,        0,                  0               },
+	{"call",            ALWAYS64,       PARAM_RMPTR,        0,                  0,              DASMFLAG_STEP_OVER},
+	{"call    far ptr ",0,              PARAM_RM,           0,                  0,              DASMFLAG_STEP_OVER},
+	{"jmp",             ALWAYS64,       PARAM_RMPTR,        0,                  0               },
+	{"jmp     far ptr ",0,              PARAM_RM,           0,                  0               },
+	{"push",            0,              PARAM_RMPTR,        0,                  0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0F00_table[8] =
 {
-	{"sldt",			0,				PARAM_RM,			0,					0				},
-	{"str",				0,				PARAM_RM,			0,					0				},
-	{"lldt",			0,				PARAM_RM,			0,					0				},
-	{"ltr",				0,				PARAM_RM,			0,					0				},
-	{"verr",			0,				PARAM_RM,			0,					0				},
-	{"verw",			0,				PARAM_RM,			0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				}
+	{"sldt",            0,              PARAM_RM,           0,                  0               },
+	{"str",             0,              PARAM_RM,           0,                  0               },
+	{"lldt",            0,              PARAM_RM,           0,                  0               },
+	{"ltr",             0,              PARAM_RM,           0,                  0               },
+	{"verr",            0,              PARAM_RM,           0,                  0               },
+	{"verw",            0,              PARAM_RM,           0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0F01_table[8] =
 {
-	{"sgdt",			0,				PARAM_RM,			0,					0				},
-	{"sidt",			0,				PARAM_RM,			0,					0				},
-	{"lgdt",			0,				PARAM_RM,			0,					0				},
-	{"lidt",			0,				PARAM_RM,			0,					0				},
-	{"smsw",			0,				PARAM_RM,			0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"lmsw",			0,				PARAM_RM,			0,					0				},
-	{"invlpg",			0,				PARAM_RM,			0,					0				}
+	{"sgdt",            0,              PARAM_RM,           0,                  0               },
+	{"sidt",            0,              PARAM_RM,           0,                  0               },
+	{"lgdt",            0,              PARAM_RM,           0,                  0               },
+	{"lidt",            0,              PARAM_RM,           0,                  0               },
+	{"smsw",            0,              PARAM_RM,           0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"lmsw",            0,              PARAM_RM,           0,                  0               },
+	{"invlpg",          0,              PARAM_RM,           0,                  0               }
+};
+
+static const I386_OPCODE group0F0D_table[8] =
+{
+	{"prefetch",        0,              PARAM_RM8,          0,                  0               },
+	{"prefetchw",       0,              PARAM_RM8,          0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0F18_table[8] =
 {
-	{"prefetchnta",		0,				PARAM_RM8,			0,					0				},
-	{"prefetch0",		0,				PARAM_RM8,			0,					0				},
-	{"prefetch1",		0,				PARAM_RM8,			0,					0				},
-	{"prefetch2",		0,				PARAM_RM8,			0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				}
+	{"prefetchnta",     0,              PARAM_RM8,          0,                  0               },
+	{"prefetch0",       0,              PARAM_RM8,          0,                  0               },
+	{"prefetch1",       0,              PARAM_RM8,          0,                  0               },
+	{"prefetch2",       0,              PARAM_RM8,          0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0F71_table[8] =
 {
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"psrlw",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"psraw",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"psllw",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				}
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psrlw",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psraw",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psllw",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0F72_table[8] =
 {
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"psrld",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"psrldq",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"pslld",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"pslldq",			0,				PARAM_MMX,			PARAM_I8,			0				},
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psrld",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"psrldq",          0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"pslld",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"pslldq",          0,              PARAM_MMX,          PARAM_UI8,          0               },
 };
 
 static const I386_OPCODE group0F73_table[8] =
 {
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"psrlq",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"psraq",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				},
-	{"psllq",			0,				PARAM_MMX,			PARAM_I8,			0				},
-	{"???",				0,				0,					0,					0				}
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psrlq",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psraq",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"psllq",           0,              PARAM_MMX,          PARAM_UI8,          0               },
+	{"???",             0,              0,                  0,                  0               }
 };
 
 static const I386_OPCODE group0FAE_table[8] =
 {
-	{"fxsave",			0,				PARAM_RM,			0,					0				},
-	{"fxrstor",			0,				PARAM_RM,			0,					0				},
-	{"ldmxcsr",			0,				PARAM_RM,			0,					0				},
-	{"stmxscr",			0,				PARAM_RM,			0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"lfence",			0,				0,					0,					0				},
-	{"mfence",			0,				0,					0,					0				},
-	{"sfence",			0,				0,					0,					0				}
+	{"fxsave",          0,              PARAM_RM,           0,                  0               },
+	{"fxrstor",         0,              PARAM_RM,           0,                  0               },
+	{"ldmxcsr",         0,              PARAM_RM,           0,                  0               },
+	{"stmxscr",         0,              PARAM_RM,           0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"lfence",          0,              0,                  0,                  0               },
+	{"mfence",          0,              0,                  0,                  0               },
+	{"sfence",          0,              0,                  0,                  0               }
 };
 
 
 static const I386_OPCODE group0FBA_table[8] =
 {
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"???",				0,				0,					0,					0				},
-	{"bt",				0,				PARAM_RM,			PARAM_I8,			0				},
-	{"bts",				0,				PARAM_RM,			PARAM_I8,			0				},
-	{"btr",				0,				PARAM_RM,			PARAM_I8,			0				},
-	{"btc",				0,				PARAM_RM,			PARAM_I8,			0				}
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"bt",              0,              PARAM_RM,           PARAM_UI8,          0               },
+	{"bts",             0,              PARAM_RM,           PARAM_UI8,          0               },
+	{"btr",             0,              PARAM_RM,           PARAM_UI8,          0               },
+	{"btc",             0,              PARAM_RM,           PARAM_UI8,          0               }
+};
+
+static const I386_OPCODE group0FC7_table[8] =
+{
+	{"???",             0,              0,                  0,                  0               },
+	{"cmpxchg8b",           MODRM,              PARAM_M64PTR,               0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"vmptrld\0"
+		"vmclear\0"
+		"???\0"
+		"vmxon",            MODRM|VAR_NAME4,        PARAM_M64PTR,               0,                  0               },
+	{"vmptrtst",            MODRM,              PARAM_M64PTR,               0,                  0               }
 };
 
 static const GROUP_OP group_op_table[] =
 {
-	{ "group80",			group80_table			},
-	{ "group81",			group81_table			},
-	{ "group83",			group83_table			},
-	{ "groupC0",			groupC0_table			},
-	{ "groupC1",			groupC1_table			},
-	{ "groupD0",			groupD0_table			},
-	{ "groupD1",			groupD1_table			},
-	{ "groupD2",			groupD2_table			},
-	{ "groupD3",			groupD3_table			},
-	{ "groupF6",			groupF6_table			},
-	{ "groupF7",			groupF7_table			},
-	{ "groupFE",			groupFE_table			},
-	{ "groupFF",			groupFF_table			},
-	{ "group0F00",			group0F00_table			},
-	{ "group0F01",			group0F01_table			},
-	{ "group0F18",			group0F18_table			},
-	{ "group0F71",			group0F71_table			},
-	{ "group0F72",			group0F72_table			},
-	{ "group0F73",			group0F73_table			},
-	{ "group0FAE",			group0FAE_table			},
-	{ "group0FBA",			group0FBA_table			}
+	{ "group80",            group80_table           },
+	{ "group81",            group81_table           },
+	{ "group83",            group83_table           },
+	{ "groupC0",            groupC0_table           },
+	{ "groupC1",            groupC1_table           },
+	{ "groupD0",            groupD0_table           },
+	{ "groupD1",            groupD1_table           },
+	{ "groupD2",            groupD2_table           },
+	{ "groupD3",            groupD3_table           },
+	{ "groupF6",            groupF6_table           },
+	{ "groupF7",            groupF7_table           },
+	{ "groupFE",            groupFE_table           },
+	{ "groupFF",            groupFF_table           },
+	{ "group0F00",          group0F00_table         },
+	{ "group0F01",          group0F01_table         },
+	{ "group0F0D",          group0F0D_table         },
+	{ "group0F18",          group0F18_table         },
+	{ "group0F71",          group0F71_table         },
+	{ "group0F72",          group0F72_table         },
+	{ "group0F73",          group0F73_table         },
+	{ "group0FAE",          group0FAE_table         },
+	{ "group0FBA",          group0FBA_table         },
+	{ "group0FC7",          group0FC7_table         }
 };
 
 
@@ -1104,10 +1949,10 @@ static UINT8 rex, regex, sibex, rmex;
 static UINT8 pre0f;
 static UINT8 curmode;
 
-#define MODRM_REG1	((modrm >> 3) & 0x7)
-#define MODRM_REG2	(modrm & 0x7)
+#define MODRM_REG1  ((modrm >> 3) & 0x7)
+#define MODRM_REG2  (modrm & 0x7)
 
-INLINE UINT8 FETCH(void)
+INLINE UINT8 _FETCH(void)
 {
 	if ((opcode_ptr - opcode_ptr_base) + 1 > max_length)
 		return 0xff;
@@ -1115,7 +1960,7 @@ INLINE UINT8 FETCH(void)
 	return *opcode_ptr++;
 }
 
-INLINE UINT16 FETCH16(void)
+INLINE UINT16 _FETCH16(void)
 {
 	UINT16 d;
 	if ((opcode_ptr - opcode_ptr_base) + 2 > max_length)
@@ -1126,7 +1971,7 @@ INLINE UINT16 FETCH16(void)
 	return d;
 }
 
-INLINE UINT32 FETCH32(void)
+INLINE UINT32 _FETCH32(void)
 {
 	UINT32 d;
 	if ((opcode_ptr - opcode_ptr_base) + 4 > max_length)
@@ -1137,7 +1982,7 @@ INLINE UINT32 FETCH32(void)
 	return d;
 }
 
-INLINE UINT8 FETCHD(void)
+INLINE UINT8 _FETCHD(void)
 {
 	if ((opcode_ptr - opcode_ptr_base) + 1 > max_length)
 		return 0xff;
@@ -1145,7 +1990,7 @@ INLINE UINT8 FETCHD(void)
 	return *opcode_ptr++;
 }
 
-INLINE UINT16 FETCHD16(void)
+INLINE UINT16 _FETCHD16(void)
 {
 	UINT16 d;
 	if ((opcode_ptr - opcode_ptr_base) + 2 > max_length)
@@ -1156,7 +2001,7 @@ INLINE UINT16 FETCHD16(void)
 	return d;
 }
 
-INLINE UINT32 FETCHD32(void)
+INLINE UINT32 _FETCHD32(void)
 {
 	UINT32 d;
 	if ((opcode_ptr - opcode_ptr_base) + 4 > max_length)
@@ -1213,14 +2058,14 @@ static char* handle_sib_byte( char* s, UINT8 mod )
 {
 	UINT32 i32;
 	UINT8 scale, i, base;
-	UINT8 sib = FETCHD();
+	UINT8 sib = _FETCHD();
 
 	scale = (sib >> 6) & 0x3;
 	i = ((sib >> 3) & 0x7) | sibex;
 	base = (sib & 0x7) | rmex;
 
 	if (base == 5 && mod == 0) {
-		i32 = FETCH32();
+		i32 = _FETCH32();
 		s += sprintf( s, "%s", hexstring(i32, 0) );
 	} else if (base != 5 || mod != 3)
 		s += sprintf( s, "%s", i386_reg[address_size][base] );
@@ -1240,7 +2085,7 @@ static void handle_modrm(char* s)
 	INT32 disp32;
 	UINT8 mod, rm;
 
-	modrm = FETCHD();
+	modrm = _FETCHD();
 	mod = (modrm >> 6) & 0x3;
 	rm = (modrm & 0x7) | rmex;
 
@@ -1262,16 +2107,16 @@ static void handle_modrm(char* s)
 		if ((rm & 7) == 4)
 			s = handle_sib_byte( s, mod );
 		else if ((rm & 7) == 5 && mod == 0) {
-			disp32 = FETCHD32();
+			disp32 = _FETCHD32();
 			s += sprintf( s, "rip%s", shexstring(disp32, 0, TRUE) );
 		} else
 			s += sprintf( s, "%s", i386_reg[2][rm]);
 		if( mod == 1 ) {
-			disp8 = FETCHD();
+			disp8 = _FETCHD();
 			if (disp8 != 0)
 				s += sprintf( s, "%s", shexstring((INT32)disp8, 0, TRUE) );
 		} else if( mod == 2 ) {
-			disp32 = FETCHD32();
+			disp32 = _FETCHD32();
 			if (disp32 != 0)
 				s += sprintf( s, "%s", shexstring(disp32, 0, TRUE) );
 		}
@@ -1279,7 +2124,7 @@ static void handle_modrm(char* s)
 		if ((rm & 7) == 4)
 			s = handle_sib_byte( s, mod );
 		else if ((rm & 7) == 5 && mod == 0) {
-			disp32 = FETCHD32();
+			disp32 = _FETCHD32();
 			if (curmode == 64)
 				s += sprintf( s, "eip%s", shexstring(disp32, 0, TRUE) );
 			else
@@ -1287,11 +2132,11 @@ static void handle_modrm(char* s)
 		} else
 			s += sprintf( s, "%s", i386_reg[1][rm]);
 		if( mod == 1 ) {
-			disp8 = FETCHD();
+			disp8 = _FETCHD();
 			if (disp8 != 0)
 				s += sprintf( s, "%s", shexstring((INT32)disp8, 0, TRUE) );
 		} else if( mod == 2 ) {
-			disp32 = FETCHD32();
+			disp32 = _FETCHD32();
 			if (disp32 != 0)
 				s += sprintf( s, "%s", shexstring(disp32, 0, TRUE) );
 		}
@@ -1306,7 +2151,7 @@ static void handle_modrm(char* s)
 			case 5: s += sprintf( s, "di" ); break;
 			case 6:
 				if( mod == 0 ) {
-					disp16 = FETCHD16();
+					disp16 = _FETCHD16();
 					s += sprintf( s, "%s", hexstring((unsigned) (UINT16) disp16, 0) );
 				} else {
 					s += sprintf( s, "bp" );
@@ -1315,11 +2160,11 @@ static void handle_modrm(char* s)
 			case 7: s += sprintf( s, "bx" ); break;
 		}
 		if( mod == 1 ) {
-			disp8 = FETCHD();
+			disp8 = _FETCHD();
 			if (disp8 != 0)
 				s += sprintf( s, "%s", shexstring((INT32)disp8, 0, TRUE) );
 		} else if( mod == 2 ) {
-			disp16 = FETCHD16();
+			disp16 = _FETCHD16();
 			if (disp16 != 0)
 				s += sprintf( s, "%s", shexstring((INT32)disp16, 0, TRUE) );
 		}
@@ -1477,63 +2322,63 @@ static char* handle_param(char* s, UINT32 param)
 			break;
 
 		case PARAM_I4:
-			i8 = FETCHD();
+			i8 = _FETCHD();
 			s += sprintf( s, "%d", i8 & 0x0f );
 			break;
 
 		case PARAM_I8:
-			i8 = FETCHD();
+			i8 = _FETCHD();
 			s += sprintf( s, "%s", shexstring((INT8)i8, 0, FALSE) );
 			break;
 
 		case PARAM_I16:
-			i16 = FETCHD16();
+			i16 = _FETCHD16();
 			s += sprintf( s, "%s", shexstring((INT16)i16, 0, FALSE) );
 			break;
 
 		case PARAM_UI8:
-			i8 = FETCHD();
+			i8 = _FETCHD();
 			s += sprintf( s, "%s", shexstring((UINT8)i8, 0, FALSE) );
 			break;
 
 		case PARAM_UI16:
-			i16 = FETCHD16();
+			i16 = _FETCHD16();
 			s += sprintf( s, "%s", shexstring((UINT16)i16, 0, FALSE) );
 			break;
 
 		case PARAM_IMM64:
 			if (operand_size == 2) {
-				UINT32 lo32 = FETCHD32();
-				i32 = FETCHD32();
+				UINT32 lo32 = _FETCHD32();
+				i32 = _FETCHD32();
 				s += sprintf( s, "%s", hexstring64(lo32, i32) );
 			} else if( operand_size ) {
-				i32 = FETCHD32();
+				i32 = _FETCHD32();
 				s += sprintf( s, "%s", hexstring(i32, 0) );
 			} else {
-				i16 = FETCHD16();
+				i16 = _FETCHD16();
 				s += sprintf( s, "%s", hexstring(i16, 0) );
 			}
 			break;
 
 		case PARAM_IMM:
 			if( operand_size ) {
-				i32 = FETCHD32();
+				i32 = _FETCHD32();
 				s += sprintf( s, "%s", hexstring(i32, 0) );
 			} else {
-				i16 = FETCHD16();
+				i16 = _FETCHD16();
 				s += sprintf( s, "%s", hexstring(i16, 0) );
 			}
 			break;
 
 		case PARAM_ADDR:
 			if( operand_size ) {
-				addr = FETCHD32();
-				ptr = FETCHD16();
+				addr = _FETCHD32();
+				ptr = _FETCHD16();
 				s += sprintf( s, "%s:", hexstring(ptr, 4) );
 				s += sprintf( s, "%s", hexstring(addr, 0) );
 			} else {
-				addr = FETCHD16();
-				ptr = FETCHD16();
+				addr = _FETCHD16();
+				ptr = _FETCHD16();
 				s += sprintf( s, "%s:", hexstring(ptr, 4) );
 				s += sprintf( s, "%s", hexstring(addr, 0) );
 			}
@@ -1541,17 +2386,17 @@ static char* handle_param(char* s, UINT32 param)
 
 		case PARAM_REL:
 			if( operand_size ) {
-				d32 = FETCHD32();
+				d32 = _FETCHD32();
 				s += sprintf( s, "%s", hexstringpc(pc + d32) );
 			} else {
 				/* make sure to keep the relative offset within the segment */
-				d16 = FETCHD16();
+				d16 = _FETCHD16();
 				s += sprintf( s, "%s", hexstringpc((pc & 0xFFFF0000) | ((pc + d16) & 0x0000FFFF)) );
 			}
 			break;
 
 		case PARAM_REL8:
-			d8 = FETCHD();
+			d8 = _FETCHD();
 			s += sprintf( s, "%s", hexstringpc(pc + d8) );
 			break;
 
@@ -1567,11 +2412,23 @@ static char* handle_param(char* s, UINT32 param)
 			}
 
 			if( address_size ) {
-				i32 = FETCHD32();
+				i32 = _FETCHD32();
 				s += sprintf( s, "[%s]", hexstring(i32, 0) );
 			} else {
-				i16 = FETCHD16();
+				i16 = _FETCHD16();
 				s += sprintf( s, "[%s]", hexstring(i16, 0) );
+			}
+			break;
+
+		case PARAM_PREIMP:
+			switch(segment)
+			{
+				case SEG_CS: s += sprintf( s, "cs:" ); break;
+				case SEG_DS: s += sprintf( s, "ds:" ); break;
+				case SEG_ES: s += sprintf( s, "es:" ); break;
+				case SEG_FS: s += sprintf( s, "fs:" ); break;
+				case SEG_GS: s += sprintf( s, "gs:" ); break;
+				case SEG_SS: s += sprintf( s, "ss:" ); break;
 			}
 			break;
 
@@ -1599,6 +2456,10 @@ static char* handle_param(char* s, UINT32 param)
 			s += sprintf( s, "dx" );
 			break;
 
+		case PARAM_XMM0:
+			s += sprintf( s, "xmm0" );
+			break;
+
 		case PARAM_AL: s += sprintf( s, "al" ); break;
 		case PARAM_CL: s += sprintf( s, "cl" ); break;
 		case PARAM_DL: s += sprintf( s, "dl" ); break;
@@ -1624,11 +2485,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 {
 	switch (op1 & 0x7)
 	{
-		case 0:		// Group D8
+		case 0:     // Group D8
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1660,11 +2521,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 1:		// Group D9
+		case 1:     // Group D9
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1724,11 +2585,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 2:		// Group DA
+		case 2:     // Group DA
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1768,11 +2629,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 3:		// Group DB
+		case 3:     // Group DB
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1818,11 +2679,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 4:		// Group DC
+		case 4:     // Group DC
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1865,11 +2726,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 5:		// Group DD
+		case 5:     // Group DD
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1909,11 +2770,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 6:		// Group DE
+		case 6:     // Group DE
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -1958,11 +2819,11 @@ static void handle_fpu(char *s, UINT8 op1, UINT8 op2)
 			break;
 		}
 
-		case 7:		// Group DF
+		case 7:     // Group DF
 		{
 			if (op2 < 0xc0)
 			{
-				pc--;		// adjust fetch pointer, so modrm byte read again
+				pc--;       // adjust fetch pointer, so modrm byte read again
 				opcode_ptr--;
 				handle_modrm( modrm_string );
 				switch ((op2 >> 3) & 0x7)
@@ -2015,7 +2876,7 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				regex = (op1 << 1) & 8;
 				sibex = (op1 << 2) & 8;
 				rmex = (op1 << 3) & 8;
-				op2 = FETCH();
+				op2 = _FETCH();
 				decode_opcode( s, &i386_opcode_table1[op2], op1 );
 				return;
 			}
@@ -2028,7 +2889,7 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				operand_size ^= 1;
 				operand_prefix = 1;
 			}
-			op2 = FETCH();
+			op2 = _FETCH();
 			decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
@@ -2042,15 +2903,23 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 					address_size ^= 3;
 				address_prefix = 1;
 			}
-			op2 = FETCH();
+			op2 = _FETCH();
 			decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case TWO_BYTE:
 			if (&opcode_ptr[-2] >= opcode_ptr_base)
 				pre0f = opcode_ptr[-2];
-			op2 = FETCHD();
+			op2 = _FETCHD();
 			decode_opcode( s, &i386_opcode_table2[op2], op1 );
+			return;
+
+		case THREE_BYTE:
+			op2 = _FETCHD();
+			if (opcode_ptr[-2] == 0x38)
+				decode_opcode( s, &i386_opcode_table0F38[op2], op1 );
+			else
+				decode_opcode( s, &i386_opcode_table0F3A[op2], op1 );
 			return;
 
 		case SEG_CS:
@@ -2061,14 +2930,16 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 		case SEG_SS:
 			rex = regex = sibex = rmex = 0;
 			segment = op->flags;
-			op2 = FETCH();
+			op2 = _FETCH();
 			decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case PREFIX:
-			op2 = FETCH();
-			if (op2 != 0x0f)
+			op2 = _FETCH();
+			if ((op2 != 0x0f) && (op2 != 0x90))
 				s += sprintf( s, "%-7s ", op->mnemonic );
+			if ((op2 == 0x90) && !pre0f)
+				pre0f = op1;
 			decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
@@ -2083,7 +2954,7 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 			goto handle_unknown;
 
 		case FPU:
-			op2 = FETCHD();
+			op2 = _FETCHD();
 			handle_fpu( s, op1, op2);
 			return;
 
@@ -2143,7 +3014,7 @@ int i386_dasm_one_ex(char *buffer, UINT64 eip, const UINT8 *oprom, int mode)
 		case 1: /* 8086/8088/80186/80188 */
 			address_size = 0;
 			operand_size = 0;
-			max_length = 8;	/* maximum without redundant prefixes - not enforced by chip */
+			max_length = 8; /* maximum without redundant prefixes - not enforced by chip */
 			break;
 		case 2: /* 80286 */
 			address_size = 0;
@@ -2175,7 +3046,7 @@ int i386_dasm_one_ex(char *buffer, UINT64 eip, const UINT8 *oprom, int mode)
 	address_prefix = 0;
 	operand_prefix = 0;
 
-	op = FETCH();
+	op = _FETCH();
 
 	decode_opcode( buffer, &i386_opcode_table1[op], op );
 	return (pc-eip) | dasm_flags | DASMFLAG_SUPPORTED;
