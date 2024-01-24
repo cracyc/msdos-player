@@ -2667,8 +2667,8 @@ static void i386_protected_mode_iret(int operand32)
 
 #include "cycles.h"
 
-static UINT8 *cycle_table_rm[X86_NUM_CPUS];
-static UINT8 *cycle_table_pm[X86_NUM_CPUS];
+static UINT8 cycle_table_rm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
+static UINT8 cycle_table_pm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
 
 #define CYCLES_NUM(x)   (m_cycles -= (x))
 
@@ -2715,8 +2715,8 @@ static void build_cycle_table()
 	int i, j;
 	for (j=0; j < X86_NUM_CPUS; j++)
 	{
-		cycle_table_rm[j] = (UINT8 *)malloc(sizeof(UINT8) * CYCLES_NUM_OPCODES);
-		cycle_table_pm[j] = (UINT8 *)malloc(sizeof(UINT8) * CYCLES_NUM_OPCODES);
+//		cycle_table_rm[j] = (UINT8 *)malloc(sizeof(UINT8) * CYCLES_NUM_OPCODES);
+//		cycle_table_pm[j] = (UINT8 *)malloc(sizeof(UINT8) * CYCLES_NUM_OPCODES);
 
 		for (i=0; i < sizeof(x86_cycle_table)/sizeof(X86_CYCLE_TABLE); i++)
 		{
