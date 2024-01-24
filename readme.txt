@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/23/2012
+								12/23/2012
 
 ----- What's this
 
@@ -28,6 +28,8 @@ CPU 80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
 ----- Supported system calls
 
 INT 15H		PC BIOS
+	2300H	Get CMOS Data
+	2301H	Set CMOS Data
 	2400H	Disable A20 Gate
 	2401H	Enable A20 Gate
 	2402H	Get A20 Gate Status
@@ -35,6 +37,14 @@ INT 15H		PC BIOS
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
+	C9H	Get CPU Type and Mask Revision
+	CA00H	Read CMOS Memory
+	CA01H	Write CMOS Memory
+INT 1AH		PC BIOS
+	1A00H	Get System Timer
+	1A02H	Get Real Time Clock Time
+	1A04H	Get Real Time Clock Date
+	1A0AH	Read System-Timer Day Counter
 INT 20H		Program Terminate
 INT 21H		MS-DOS System Call
 	00H	Program Terminate
@@ -55,7 +65,12 @@ INT 21H		MS-DOS System Call
 	18H	Null Function for CP/M Compatibility
 	19H	Current Disk
 	1AH	Set Disk Transfer Address
+	1BH	Get Allocation Information for Default Drive
+	1CH	Get Allocation Information for Specified Drive
+	1DH	Null Function for CP/M Compatibility
+	1EH	Null Function for CP/M Compatibility
 	1FH	Get Drive Parameter Block for Default Drive
+	20H	Null Function for CP/M Compatibility
 	25H	Set Vector
 	26H	Create New Program Segment Prefix
 	29H	Parse File Name
@@ -113,16 +128,24 @@ INT 21H		MS-DOS System Call
 	56H	Rename File
 	5700H	Get Time and Date Stamps
 	5701H	Set Time and Date Stamps
+	5800H	Get Memory Allocation Strategy
 	5AH	Create Unique File
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
 	60H	Canonicalize Filename Or Path
+	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
 	6300H	Get DBCS Vector
 	6507H	Get DBCS Vector
 	6520H	Character Capitalization
 	6521H	String Capitalization
 	6522H	ASCIIZ Capitalization
+	6601H	Get Global Code Page Table
+	6602H	Get Global Code Page Table
+	67H	Set Handle Count
+	68H	Commit File
+	6AH	Commit File
+	6BH	Null Function
 	6CH	Extended Open/Create
 	710DH	Windows95 - Reset Drive
 	7139H	Windows95 - LFN - Create Subdirectory
@@ -144,25 +167,19 @@ INT 21H		MS-DOS System Call
 INT 23H		Ctrl-Break Address
 INT 24H		Critical Error Handler
 INT 25H		Absolute Disk Read
+INT 26H		Absolute Disk Write
 INT 27H		Terminate and Stay Resident
 INT 29H		DOS Fast Character I/O
 INT 2EH		Pass Command to Command Interpreter for Execution
 INT 2FH		Multiplex Interrupt
-	1600H	MS Windows - Windows Enhanced Mode Installation Check (*2)
-	4300H	Extended Memory Specification - Installation Check (*4)
-	4680H	MS Windows - Windows 3.0 Installation Check (*3)
-	4A01H	Query Free HMA Space (*4)
-	4A02H	Allocate HMA Space (*4)
-	4B01H	Task Switcher - Build Callout Chain (*4)
-	4B02H	Task Switcher - Installation Check (*4)
+	4A01H	Query Free HMA Space (*3)
+	4A02H	Allocate HMA Space (*3)
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
-	B700H	APPEND - Installation Check (*4)
 
 (*1) MS-DOS Version: 7.00
-(*2) Windows 95 is installed
-(*3) Windows 3.0 is NOT installed
-(*4) NOT supported
+(*2) No ROM Programs
+(*3) HMA is not supported
 
 ----------------------------------------
 TAKEDA, toshiya

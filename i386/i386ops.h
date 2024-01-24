@@ -1,9 +1,9 @@
-typedef struct {
+struct X86_OPCODE {
 	UINT8 opcode;
 	UINT32 flags;
 	void (*handler16)(i386_state *cpustate);
 	void (*handler32)(i386_state *cpustate);
-} X86_OPCODE;
+};
 
 #define OP_I386			0x1
 #define OP_FPU			0x2
@@ -238,7 +238,7 @@ static const X86_OPCODE x86_opcode_table[] =
 	{ 0xD4,		OP_I386,					I386OP(aam),					I386OP(aam),				},
 	{ 0xD5,		OP_I386,					I386OP(aad),					I386OP(aad),				},
 	{ 0xD6,		OP_I386,					I386OP(setalc),					I386OP(setalc),				},
-	{ 0xD7,		OP_I386,					I386OP(xlat16),					I386OP(xlat32),				},
+	{ 0xD7,		OP_I386,					I386OP(xlat),					I386OP(xlat),				},
 	{ 0xD8,		OP_I386,					I386OP(escape),					I386OP(escape),				},
 	{ 0xD9,		OP_I386,					I386OP(escape),					I386OP(escape),				},
 	{ 0xDA,		OP_I386,					I386OP(escape),					I386OP(escape),				},
@@ -375,7 +375,7 @@ static const X86_OPCODE x86_opcode_table[] =
 	{ 0xBF,		OP_2BYTE|OP_I386,			I386OP(invalid),				I386OP(movsx_r32_rm16),		},
 	{ 0xC0,		OP_2BYTE|OP_I486,			I486OP(xadd_rm8_r8),			I486OP(xadd_rm8_r8),		},
 	{ 0xC1,		OP_2BYTE|OP_I486,			I486OP(xadd_rm16_r16),			I486OP(xadd_rm32_r32),		},
-	{ 0xC6,		OP_2BYTE|OP_SSE,			SSEOP(shufps),					SSEOP(shufps),				},
+	{ 0xc6,		OP_2BYTE|OP_SSE,			SSEOP(shufps),					SSEOP(shufps),				},
 	{ 0xC7,		OP_2BYTE|OP_PENTIUM,		PENTIUMOP(cmpxchg8b_m64),		PENTIUMOP(cmpxchg8b_m64),	},
 	{ 0xC8,		OP_2BYTE|OP_I486,			I486OP(bswap_eax),				I486OP(bswap_eax),			},
 	{ 0xC9,		OP_2BYTE|OP_I486,			I486OP(bswap_ecx),				I486OP(bswap_ecx),			},

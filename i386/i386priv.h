@@ -7,6 +7,8 @@
 #include "../softfloat/milieu.h"
 #include "../softfloat/softfloat.h"
 
+//#define DEBUG_MISSING_OPCODE
+
 #define I386OP(XX)		i386_##XX
 #define I486OP(XX)		i486_##XX
 #define PENTIUMOP(XX)	pentium_##XX
@@ -15,9 +17,9 @@
 
 extern int i386_dasm_one(char *buffer, UINT32 pc, const UINT8 *oprom, int mode);
 
-typedef enum { ES, CS, SS, DS, FS, GS } SREGS;
+enum SREGS { ES, CS, SS, DS, FS, GS };
 
-typedef enum
+enum BREGS
 {
 	AL = NATIVE_ENDIAN_VALUE_LE_BE(0,3),
 	AH = NATIVE_ENDIAN_VALUE_LE_BE(1,2),
@@ -27,9 +29,9 @@ typedef enum
 	DH = NATIVE_ENDIAN_VALUE_LE_BE(9,10),
 	BL = NATIVE_ENDIAN_VALUE_LE_BE(12,15),
 	BH = NATIVE_ENDIAN_VALUE_LE_BE(13,14)
-} BREGS;
+};
 
-typedef enum
+enum WREGS
 {
 	AX = NATIVE_ENDIAN_VALUE_LE_BE(0,1),
 	CX = NATIVE_ENDIAN_VALUE_LE_BE(2,3),
@@ -39,9 +41,9 @@ typedef enum
 	BP = NATIVE_ENDIAN_VALUE_LE_BE(10,11),
 	SI = NATIVE_ENDIAN_VALUE_LE_BE(12,13),
 	DI = NATIVE_ENDIAN_VALUE_LE_BE(14,15)
-} WREGS;
+};
 
-typedef enum { EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI } DREGS;
+enum DREGS { EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI };
 
 enum
 {
@@ -195,16 +197,16 @@ enum
 #define MXCSR_RC  (3<<13) // Rounding Control
 #define MXCSR_FZ  (1<<15) // Flush to Zero
 
-typedef struct {
+struct I386_SREG {
 	UINT16 selector;
 	UINT16 flags;
 	UINT32 base;
 	UINT32 limit;
 	int d;		// Operand size
 	bool valid;
-} I386_SREG;
+};
 
-typedef struct
+struct I386_CALL_GATE
 {
 	UINT16 segment;
 	UINT16 selector;
@@ -213,43 +215,42 @@ typedef struct
 	UINT8 dpl;
 	UINT8 dword_count;
 	UINT8 present;
-} I386_CALL_GATE;
+};
 
-typedef struct {
+struct I386_SYS_TABLE {
 	UINT32 base;
 	UINT16 limit;
-} I386_SYS_TABLE;
+};
 
-typedef struct {
+struct I386_SEG_DESC {
 	UINT16 segment;
 	UINT16 flags;
 	UINT32 base;
 	UINT32 limit;
-} I386_SEG_DESC;
+};
 
-typedef union {
+union I386_GPR {
 	UINT32 d[8];
 	UINT16 w[16];
 	UINT8 b[32];
-} I386_GPR;
+};
 
-typedef union {
+union X87_REG {
 	UINT64 i;
 	double f;
-} X87_REG;
+};
 
 typedef UINT64 MMX_REG;
 
-typedef union {
+union XMM_REG {
 	UINT32 d[4];
 	UINT16 w[8];
 	UINT8 b[16];
 	UINT64 q[2];
 	float f[4];
-} XMM_REG;
+};
 
-typedef struct _i386_state i386_state;
-struct _i386_state
+struct i386_state
 {
 	I386_GPR reg;
 	I386_SREG sreg[6];
@@ -419,7 +420,7 @@ static int i386_limit_check(i386_state *cpustate, int seg, UINT32 offset);
 
 /***********************************************************************************/
 
-typedef struct {
+struct MODRM_TABLE {
 	struct {
 		int b;
 		int w;
@@ -430,7 +431,7 @@ typedef struct {
 		int w;
 		int d;
 	} rm;
-} MODRM_TABLE;
+};
 
 extern MODRM_TABLE i386_MODRM_table[256];
 
@@ -1242,7 +1243,7 @@ INLINE UINT16 READPORT16(i386_state *cpustate, offs_t port)
 	else
 	{
 		check_ioperm(cpustate, port, 3);
-		return /*cpustate->io->read_word*/read_io_word(port);
+		return /*cpustate->io->*/read_io_word(port);
 	}
 }
 

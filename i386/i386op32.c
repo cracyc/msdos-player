@@ -2775,7 +2775,7 @@ static void I386OP(groupFF_32)(i386_state *cpustate)		// Opcode 0xff
 
 				if( modrm >= 0xc0 )
 				{
-					fatalerror("i386: groupFF_32 /%d: NYI", (modrm >> 3) & 0x7);
+					fatalerror("i386: groupFF_32 /%d: NYI\n", (modrm >> 3) & 0x7);
 				}
 				else
 				{
@@ -2822,7 +2822,7 @@ static void I386OP(groupFF_32)(i386_state *cpustate)		// Opcode 0xff
 
 				if( modrm >= 0xc0 )
 				{
-					fatalerror("i386: groupFF_32 /%d: NYI", (modrm >> 3) & 0x7);
+					fatalerror("i386: groupFF_32 /%d: NYI\n", (modrm >> 3) & 0x7);
 				}
 				else
 				{
@@ -2859,7 +2859,7 @@ static void I386OP(groupFF_32)(i386_state *cpustate)		// Opcode 0xff
 			}
 			break;
 		default:
-			fatalerror("i386: groupFF_32 /%d unimplemented at %08X", (modrm >> 3) & 0x7, cpustate->pc-2);
+			fatalerror("i386: groupFF_32 /%d unimplemented at %08X\n", (modrm >> 3) & 0x7, cpustate->pc-2);
 			break;
 	}
 }
@@ -3051,7 +3051,7 @@ static void I386OP(group0F00_32)(i386_state *cpustate)			// Opcode 0x0f 00
 			break;
 
 		default:
-			fatalerror("i386: group0F00_32 /%d unimplemented", (modrm >> 3) & 0x7);
+			fatalerror("i386: group0F00_32 /%d unimplemented\n", (modrm >> 3) & 0x7);
 			break;
 	}
 }
@@ -3155,7 +3155,7 @@ static void I386OP(group0F01_32)(i386_state *cpustate)		// Opcode 0x0f 01
 				break;
 			}
 		default:
-			fatalerror("i386: unimplemented opcode 0x0f 01 /%d at %08X", (modrm >> 3) & 0x7, cpustate->eip - 2);
+			fatalerror("i386: unimplemented opcode 0x0f 01 /%d at %08X\n", (modrm >> 3) & 0x7, cpustate->eip - 2);
 			break;
 	}
 }
@@ -3275,7 +3275,7 @@ static void I386OP(group0FBA_32)(i386_state *cpustate)		// Opcode 0x0f ba
 			}
 			break;
 		default:
-			fatalerror("i386: group0FBA_32 /%d unknown", (modrm >> 3) & 0x7);
+			fatalerror("i386: group0FBA_32 /%d unknown\n", (modrm >> 3) & 0x7);
 			break;
 	}
 }
@@ -3475,25 +3475,13 @@ static void I386OP(retf_i32)(i386_state *cpustate)			// Opcode 0xca
 	CYCLES(cpustate,CYCLES_RET_IMM_INTERSEG);
 }
 
-static void I386OP(xlat32)(i386_state *cpustate)			// Opcode 0xd7
-{
-	UINT32 ea;
-	if( cpustate->segment_prefix ) {
-		ea = i386_translate(cpustate, cpustate->segment_override, REG32(EBX) + REG8(AL), 0 );
-	} else {
-		ea = i386_translate(cpustate, DS, REG32(EBX) + REG8(AL), 0 );
-	}
-	REG8(AL) = READ8(cpustate,ea);
-	CYCLES(cpustate,CYCLES_XLAT);
-}
-
 static void I386OP(load_far_pointer32)(i386_state *cpustate, int s)
 {
 	UINT8 modrm = FETCH(cpustate);
 	UINT16 selector;
 
 	if( modrm >= 0xc0 ) {
-		fatalerror("i386: load_far_pointer32 NYI");
+		fatalerror("i386: load_far_pointer32 NYI\n");
 	} else {
 		UINT32 ea = GetEA(cpustate,modrm,0);
 		STORE_REG32(modrm, READ32(cpustate,ea + 0));

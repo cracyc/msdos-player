@@ -7,6 +7,14 @@
 
 #include "msdos.h"
 
+#ifdef _MSC_VER
+#pragma warning( disable : 4018 )
+#pragma warning( disable : 4065 )
+#pragma warning( disable : 4146 )
+#pragma warning( disable : 4244 )
+#pragma warning( disable : 4267 )
+#endif
+
 #define fatalerror(...) { \
 	fprintf(stderr, __VA_ARGS__); \
 	exit(1); \
@@ -85,8 +93,7 @@ UINT8 read_byte(offs_t byteaddress)
 {
 	if(byteaddress < MAX_MEM) {
 		return mem[byteaddress];
-	}
-	else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
+	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 		return read_byte(byteaddress & 0xfffff);
 	}
 	return 0;
@@ -96,8 +103,7 @@ UINT16 read_word(offs_t byteaddress)
 {
 	if(byteaddress < MAX_MEM - 1) {
 		return *(UINT16 *)(mem + byteaddress);
-	}
-	else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
+	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 		return read_word(byteaddress & 0xfffff);
 	}
 	return 0;
@@ -107,8 +113,7 @@ UINT32 read_dword(offs_t byteaddress)
 {
 	if(byteaddress < MAX_MEM - 3) {
 		return *(UINT32 *)(mem + byteaddress);
-	}
-	else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
+	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 		return read_dword(byteaddress & 0xfffff);
 	}
 	return 0;
@@ -179,6 +184,7 @@ const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
 #include "i386/i386.c"
 
 i386_state *cpustate;
+int cpu_type, cpu_step;
 
 void i386_jmp_far(UINT16 selector, UINT32 address)
 {
@@ -201,16 +207,11 @@ int main(int argc, char *argv[], char *envp[])
 {
 	if(argc < 2) {
 #ifdef _WIN64
-		printf("MS-DOS Player for Win32-x64 console\n\n");
+		fprintf(stderr, "MS-DOS Player for Win32-x64 console\n\n");
 #else
-		printf("MS-DOS Player for Win32 console\n\n");
+		fprintf(stderr, "MS-DOS Player for Win32 console\n\n");
 #endif
-		printf("Usage: MSDOS (command file) [opions]\n");
-		return(EXIT_FAILURE);
-	}
-	
-	hardware_init();
-	if(msdos_init(argc - 1, argv + 1, envp)) {
+		fprintf(stderr, "Usage: MSDOS (command file) [opions]\n");
 		return(EXIT_FAILURE);
 	}
 	
@@ -228,13 +229,20 @@ int main(int argc, char *argv[], char *envp[])
 	scr_buf_pos.X = scr_buf_pos.Y = 0;
 	key_buf_cnt = key_buf_set = key_buf_get = 0;
 	
-	timeBeginPeriod(1);
-	hardware_run();
-	timeEndPeriod(1);
+	hardware_init();
+	if(msdos_init(argc - 1, argv + 1, envp)) {
+		retval = EXIT_FAILURE;
+	} else {
+		timeBeginPeriod(1);
+		hardware_run();
+		msdos_finish();
+		timeEndPeriod(1);
+	}
+	hardware_finish();
 	
 	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 	
-	return(msdos_finish());
+	return(retval);
 }
 
 /* ----------------------------------------------------------------------------
@@ -269,13 +277,13 @@ process_t *msdos_process_info_get(UINT16 psp_seg)
 
 // dbcs
 
-void msdos_dbcs_table_update(int page)
+void msdos_dbcs_table_update()
 {
 	UINT8 dbcs_data[DBCS_SIZE];
 	memset(dbcs_data, 0, sizeof(dbcs_data));
 	
 	CPINFO info;
-	GetCPInfo(page, &info);
+	GetCPInfo(active_code_page, &info);
 	
 	if(info.MaxCharSize != 1) {
 		for(int i = 0;; i += 2) {
@@ -292,13 +300,19 @@ void msdos_dbcs_table_update(int page)
 		dbcs_data[0] = 2;	// ???
 	}
 	memcpy(mem + DBCS_TOP, dbcs_data, sizeof(dbcs_data));
-	
-	code_page = page;
 }
 
 void msdos_dbcs_table_init()
 {
-	msdos_dbcs_table_update(_getmbcp());
+	system_code_page = active_code_page = _getmbcp();
+	msdos_dbcs_table_update();
+}
+
+void msdos_dbcs_table_finish()
+{
+	if(active_code_page != system_code_page) {
+		_setmbcp(system_code_page);
+	}
 }
 
 int msdos_lead_byte_check(UINT8 code)
@@ -1440,6 +1454,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	process->dta.w.l = 0x80;
 	process->dta.w.h = psp_seg;
 	process->switchar = '/';
+	process->max_files = 20;
 	process->find_handle = INVALID_HANDLE_VALUE;
 	
 	current_psp = psp_seg;
@@ -1533,8 +1548,32 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 		if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
 			dpb->bytes_per_sector = (UINT16)geo.BytesPerSector;
 			dpb->highest_sector_num = (UINT8)(geo.SectorsPerTrack - 1);
-			dpb->highest_cluster_num = (UINT16)(geo.TracksPerCylinder * geo.Cylinders.QuadPart) + 1;
-			dpb->media_type = geo.MediaType;
+			dpb->highest_cluster_num = (UINT16)(geo.TracksPerCylinder * geo.Cylinders.QuadPart + 1);
+			switch(geo.MediaType) {
+			case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
+				dpb->media_type = 0xff;
+				break;
+			case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
+				dpb->media_type = 0xfe;
+				break;
+			case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
+				dpb->media_type = 0xfd;
+				break;
+			case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
+				dpb->media_type = 0xfc;
+				break;
+			case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
+			case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
+				dpb->media_type = 0xf9;
+				break;
+			case FixedMedia:	// hard disk
+			case RemovableMedia:
+				dpb->media_type = 0xf8;
+				break;
+			default:
+				dpb->media_type = 0xf0;
+				break;
+			}
 			res = 1;
 		}
 		dpb->drive_num = drive_num;
@@ -1548,6 +1587,24 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 }
 
 // pc bios
+
+inline void pcbios_int_15h_23h()
+{
+	switch(REG8(AL)) {
+	case 0:
+		REG8(CL) = cmos[0x2d];
+		REG8(CH) = cmos[0x2e];
+		break;
+	case 1:
+		cmos[0x2d] = REG8(CL);
+		cmos[0x2e] = REG8(CH);
+		break;
+	default:
+		REG8(AH) = 0x86;
+		cpustate->CF = 1;
+		break;
+	}
+}
 
 inline void pcbios_int_15h_24h()
 {
@@ -1590,7 +1647,7 @@ inline void pcbios_int_15h_87h()
 
 inline void pcbios_int_15h_88h()
 {
-	REG16(AX) = ((MAX_MEM - 0x100000) >> 10);
+	REG16(AX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
 }
 
 inline void pcbios_int_15h_89h()
@@ -1624,6 +1681,99 @@ inline void pcbios_int_15h_89h()
 	REG8(AH) = 0x86;
 	cpustate->CF = 1;
 #endif
+}
+
+inline void pcbios_int_15h_c9h()
+{
+	REG8(AH) = 0x00;
+	REG8(CH) = cpu_type;
+	REG8(CL) = cpu_step;
+}
+
+inline void pcbios_int_15h_cah()
+{
+	switch(REG8(AL)) {
+	case 0:
+		if(REG8(BL) > 0x3f) {
+			REG8(AH) = 0x03;
+			cpustate->CF = 1;
+		} else if(REG8(BL) < 0x0e) {
+			REG8(AH) = 0x04;
+			cpustate->CF = 1;
+		} else {
+			REG8(CL) = cmos[REG8(BL)];
+		}
+		break;
+	case 1:
+		if(REG8(BL) > 0x3f) {
+			REG8(AH) = 0x03;
+			cpustate->CF = 1;
+		} else if(REG8(BL) < 0x0e) {
+			REG8(AH) = 0x04;
+			cpustate->CF = 1;
+		} else {
+			cmos[REG8(BL)] = REG8(CL);
+		}
+		break;
+	default:
+		REG8(AH) = 0x86;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_1ah_00h()
+{
+	static WORD prev_day = 0;
+	SYSTEMTIME time;
+	
+	GetLocalTime(&time);
+	unsigned __int64 msec = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
+	unsigned __int64 tick = msec * 0x1800b0 / 24 / 60 / 60 / 1000;
+	REG16(CX) = (tick >> 16) & 0xffff;
+	REG16(DX) = (tick      ) & 0xffff;
+	REG8(AL) = (prev_day != 0 && prev_day != time.wDay) ? 1 : 0;
+	prev_day = time.wDay;
+}
+
+inline int to_bcd(int t)
+{
+	int u = (t % 100) / 10;
+	return (u << 4) | (t % 10);
+}
+
+inline void pcbios_int_1ah_02h()
+{
+	SYSTEMTIME time;
+	
+	GetLocalTime(&time);
+	REG8(CH) = to_bcd(time.wHour);
+	REG8(CL) = to_bcd(time.wMinute);
+	REG8(DH) = to_bcd(time.wSecond);
+	REG8(DL) = 0x00;
+}
+
+inline void pcbios_int_1ah_04h()
+{
+	SYSTEMTIME time;
+	
+	GetLocalTime(&time);
+	REG8(CH) = to_bcd((int)((time.wYear - 1) / 100) + 1);
+	REG8(CL) = to_bcd(time.wYear);
+	REG8(DH) = to_bcd(time.wMonth);
+	REG8(DL) = to_bcd(time.wDay);
+}
+
+inline void pcbios_int_1ah_0ah()
+{
+	SYSTEMTIME time;
+	FILETIME file_time;
+	WORD dos_date, dos_time;
+	
+	GetLocalTime(&time);
+	SystemTimeToFileTime(&time, &file_time);
+	FileTimeToDosDateTime(&file_time, &dos_date, &dos_time);
+	REG16(CX) = dos_date;
 }
 
 // msdos system call
@@ -1783,7 +1933,9 @@ inline void msdos_int_21h_0dh()
 
 inline void msdos_int_21h_0eh()
 {
-	_chdrive(REG8(DL) + 1);
+	if(REG8(DL) < 26) {
+		_chdrive(REG8(DL) + 1);
+	}
 	REG8(AL) = 26; // zdrive
 }
 
@@ -1805,6 +1957,52 @@ inline void msdos_int_21h_1ah()
 	process->dta.w.h = cpustate->sreg[DS].selector;
 }
 
+inline void msdos_int_21h_1bh()
+{
+	int drive_num = _getdrive() - 1;
+	UINT16 seg, ofs;
+	
+	if(msdos_drive_param_block_update(drive_num, &seg, &ofs, 1)) {
+		dpb_t *dpb = (dpb_t *)(mem + (seg << 4) + ofs);
+		REG8(AL) = dpb->highest_sector_num + 1;
+		REG16(CX) = dpb->bytes_per_sector;
+		REG16(DX) = dpb->highest_cluster_num - 1;
+		*(UINT8 *)(mem + cpustate->sreg[DS].base + REG16(BX)) = dpb->media_type;
+	} else {
+		REG8(AL) = 0xff;
+		cpustate->CF = 1;
+	}
+
+}
+
+inline void msdos_int_21h_1ch()
+{
+	int drive_num = REG8(DL) ? (REG8(DL) - 1) : (_getdrive() - 1);
+	UINT16 seg, ofs;
+	
+	if(msdos_drive_param_block_update(drive_num, &seg, &ofs, 1)) {
+		dpb_t *dpb = (dpb_t *)(mem + (seg << 4) + ofs);
+		REG8(AL) = dpb->highest_sector_num + 1;
+		REG16(CX) = dpb->bytes_per_sector;
+		REG16(DX) = dpb->highest_cluster_num - 1;
+		*(UINT8 *)(mem + cpustate->sreg[DS].base + REG16(BX)) = dpb->media_type;
+	} else {
+		REG8(AL) = 0xff;
+		cpustate->CF = 1;
+	}
+
+}
+
+inline void msdos_int_21h_1dh()
+{
+	REG8(AL) = 0;
+}
+
+inline void msdos_int_21h_1eh()
+{
+	REG8(AL) = 0;
+}
+
 inline void msdos_int_21h_1fh()
 {
 	int drive_num = _getdrive() - 1;
@@ -1819,6 +2017,11 @@ inline void msdos_int_21h_1fh()
 		REG8(AL) = 0xff;
 		cpustate->CF = 1;
 	}
+}
+
+inline void msdos_int_21h_20h()
+{
+	REG8(AL) = 0;
 }
 
 inline void msdos_int_21h_25h()
@@ -2163,7 +2366,9 @@ inline void msdos_int_21h_3dh()
 
 inline void msdos_int_21h_3eh()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		_close(REG16(BX));
 		msdos_file_handler_close(REG16(BX), current_psp);
 	} else {
@@ -2174,7 +2379,9 @@ inline void msdos_int_21h_3eh()
 
 inline void msdos_int_21h_3fh()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(file_mode[file_handler[REG16(BX)].mode].in) {
 			if(file_handler[REG16(BX)].atty) {
 				// BX is stdin or is redirected to stdin
@@ -2224,7 +2431,9 @@ inline void msdos_int_21h_3fh()
 
 inline void msdos_int_21h_40h()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(file_mode[file_handler[REG16(BX)].mode].out) {
 			if(REG16(CX)) {
 				if(file_handler[REG16(BX)].atty) {
@@ -2267,7 +2476,9 @@ inline void msdos_int_21h_41h(int lfn)
 
 inline void msdos_int_21h_42h()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(REG8(AL) < 0x03) {
 			static int ptrname[] = { SEEK_SET, SEEK_CUR, SEEK_END };
 			_lseek(REG16(BX), (REG16(CX) << 16) | REG16(DX), ptrname[REG8(AL)]);
@@ -2348,31 +2559,39 @@ inline void msdos_int_21h_44h()
 		cpustate->CF = 1;
 		break;
 	case 0x06: // get read status
-		if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
-			if(file_mode[file_handler[REG16(BX)].mode].in) {
-				if(file_handler[REG16(BX)].atty) {
-					REG8(AL) = msdos_kbhit() ? 0xff : 0x00;
+		{
+			process_t *process = msdos_process_info_get(current_psp);
+			
+			if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
+				if(file_mode[file_handler[REG16(BX)].mode].in) {
+					if(file_handler[REG16(BX)].atty) {
+						REG8(AL) = msdos_kbhit() ? 0xff : 0x00;
+					} else {
+						REG8(AL) = eof(REG16(BX)) ? 0x00 : 0xff;
+					}
 				} else {
-					REG8(AL) = eof(REG16(BX)) ? 0x00 : 0xff;
+					REG8(AL) = 0x00;
 				}
 			} else {
-				REG8(AL) = 0x00;
+				REG16(AX) = 0x06;
+				cpustate->CF = 1;
 			}
-		} else {
-			REG16(AX) = 0x06;
-			cpustate->CF = 1;
 		}
 		break;
 	case 0x07: // get write status
-		if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
-			if(file_mode[file_handler[REG16(BX)].mode].out) {
-				REG8(AL) = 0xff;
+		{
+			process_t *process = msdos_process_info_get(current_psp);
+			
+			if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
+				if(file_mode[file_handler[REG16(BX)].mode].out) {
+					REG8(AL) = 0xff;
+				} else {
+					REG8(AL) = 0x00;
+				}
 			} else {
-				REG8(AL) = 0x00;
+				REG16(AX) = 0x06;
+				cpustate->CF = 1;
 			}
-		} else {
-			REG16(AX) = 0x06;
-			cpustate->CF = 1;
 		}
 		break;
 	case 0x08: // check removable drive
@@ -2440,7 +2659,9 @@ inline void msdos_int_21h_44h()
 
 inline void msdos_int_21h_45h()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		int fd = _dup(REG16(BX));
 		if(fd != -1) {
 			REG16(AX) = fd;
@@ -2457,7 +2678,9 @@ inline void msdos_int_21h_45h()
 
 inline void msdos_int_21h_46h()
 {
-	if(REG16(BX) < MAX_FILES && REG16(CX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && REG16(CX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(_dup2(REG16(BX), REG16(CX)) != -1) {
 			msdos_file_handler_dup(REG16(CX), REG16(BX), current_psp);
 		} else {
@@ -2699,6 +2922,19 @@ inline void msdos_int_21h_57h()
 	}
 }
 
+inline void msdos_int_21h_58h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG16(AX) = 0x00;
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_21h_5ah()
 {
 	char *path = (char *)(mem + cpustate->sreg[DS].base + REG16(DX));
@@ -2752,7 +2988,9 @@ inline void msdos_int_21h_5bh()
 
 inline void msdos_int_21h_5ch()
 {
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(REG8(AL) == 0 || REG8(AL) == 1) {
 			static int modes[2] = {_LK_LOCK, _LK_UNLCK};
 			UINT32 pos = _tell(REG16(BX));
@@ -2785,6 +3023,11 @@ inline void msdos_int_21h_60h(int lfn)
 	} else {
 		strcpy((char *)(mem + cpustate->sreg[ES].base + REG16(DI)), msdos_short_full_path((char *)(mem + cpustate->sreg[DS].base + REG16(SI))));
 	}
+}
+
+inline void msdos_int_21h_61h()
+{
+	REG8(AL) = 0;
 }
 
 inline void msdos_int_21h_62h()
@@ -2838,6 +3081,67 @@ inline void msdos_int_21h_65h()
 		cpustate->CF = 1;
 		break;
 	}
+}
+
+inline void msdos_int_21h_66h()
+{
+	switch(REG8(AL)) {
+	case 0x01:
+		REG16(BX) = active_code_page;
+		REG16(DX) = system_code_page;
+		break;
+	case 0x02:
+		if(active_code_page == REG16(BX)) {
+			REG16(AX) = 0xeb41;
+		} else if(_setmbcp(REG16(BX)) == 0) {
+			active_code_page = REG16(BX);
+			msdos_dbcs_table_update();
+			REG16(AX) = 0xeb41;
+		} else {
+			REG16(AX) = 0x25;
+			cpustate->CF = 1;
+		}
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_21h_67h()
+{
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) <= MAX_FILES) {
+		process->max_files = max(REG16(BX), 20);
+	} else {
+		REG16(AX) = 0x08;
+		cpustate->CF = 1;
+	}
+}
+
+inline void msdos_int_21h_68h()
+{
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
+		// fflush(_fdopen(REG16(BX), ""));
+	} else {
+		REG16(AX) = 0x06;
+		cpustate->CF = 1;
+	}
+}
+
+inline void msdos_int_21h_6ah()
+{
+	REG8(AH) = 0x68;
+	msdos_int_21h_68h();
+}
+
+inline void msdos_int_21h_6bh()
+{
+	REG8(AL) = 0;
 }
 
 inline void msdos_int_21h_6ch(int lfn)
@@ -3044,11 +3348,12 @@ inline void msdos_int_21h_71a1h()
 
 inline void msdos_int_21h_71a6h()
 {
+	process_t *process = msdos_process_info_get(current_psp);
 	UINT8 *buffer = (UINT8 *)(mem + cpustate->sreg[DS].base + REG16(DX));
 	struct _stat64 status;
 	DWORD serial_number = 0;
 	
-	if(REG16(BX) < MAX_FILES && file_handler[REG16(BX)].valid) {
+	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
 		if(_fstat64(REG16(BX), &status) == 0) {
 			if(file_handler[REG16(BX)].path[1] == ':') {
 				// NOTE: we need to consider the network file path "\\host\share\"
@@ -3130,6 +3435,7 @@ inline void msdos_int_21h_71a8h()
 inline void msdos_int_25h()
 {
 	UINT16 seg, ofs;
+	DWORD dwSize;
 	
 	I386OP(pushf)(cpustate);
 	
@@ -3144,23 +3450,23 @@ inline void msdos_int_25h()
 		char dev[64];
 		sprintf(dev, "\\\\.\\%c:", 'A' + REG8(AL));
 		
-		HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+		HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
 		if(hFile == INVALID_HANDLE_VALUE) {
 			REG8(AL) = 0x02; // drive not ready
 			cpustate->CF = 1;
 		} else {
-			if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+				REG8(AL) = 0x02; // drive not ready
+				cpustate->CF = 1;
+			} else if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
 				REG8(AL) = 0x08; // sector not found
 				cpustate->CF = 1;
-			} else {
-				DWORD dwSize;
-				if(ReadFile(hFile, mem + cpustate->sreg[DS].base + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
-					REG8(AL) = 0x0b; // read error
-					cpustate->CF = 1;
-				}
+			} else if(ReadFile(hFile, mem + cpustate->sreg[DS].base + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
+				REG8(AL) = 0x0b; // read error
+				cpustate->CF = 1;
 			}
+			CloseHandle(hFile);
 		}
-		CloseHandle(hFile);
 	}
 }
 
@@ -3168,6 +3474,7 @@ inline void msdos_int_26h()
 {
 	// this operation may cause serious damage for drives, so always returns error...
 	UINT16 seg, ofs;
+	DWORD dwSize;
 	
 	I386OP(pushf)(cpustate);
 	
@@ -3178,32 +3485,33 @@ inline void msdos_int_26h()
 		REG8(AL) = 0x02; // drive not ready
 		cpustate->CF = 1;
 	} else {
-#if 1
-		REG8(AL) = 0x0a; // write error
-		cpustate->CF = 1;
-#else
 		dpb_t *dpb = (dpb_t *)(mem + (seg << 4) + ofs);
 		char dev[64];
 		sprintf(dev, "\\\\.\\%c:", 'A' + REG8(AL));
 		
-		HANDLE hFile = CreateFile(dev, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		if(hFile == INVALID_HANDLE_VALUE) {
+		if(dpb->media_type == 0xf8) {
+			// this drive is not a floppy
 			REG8(AL) = 0x02; // drive not ready
 			cpustate->CF = 1;
 		} else {
-			if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-				REG8(AL) = 0x08; // sector not found
+			HANDLE hFile = CreateFile(dev, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+			if(hFile == INVALID_HANDLE_VALUE) {
+				REG8(AL) = 0x02; // drive not ready
 				cpustate->CF = 1;
 			} else {
-				DWORD dwSize;
-				if(WriteFile(hFile, mem + cpustate->sreg[DS].base + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
+				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+					REG8(AL) = 0x02; // drive not ready
+					cpustate->CF = 1;
+				} else if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+					REG8(AL) = 0x08; // sector not found
+					cpustate->CF = 1;
+				} else if(WriteFile(hFile, mem + cpustate->sreg[DS].base + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
 					REG8(AL) = 0x0a; // write error
 					cpustate->CF = 1;
 				}
+				CloseHandle(hFile);
 			}
 		}
-		CloseHandle(hFile);
-#endif
 	}
 }
 
@@ -3253,76 +3561,16 @@ inline void msdos_int_2eh()
 	REG8(AL) = 0;
 }
 
-inline void msdos_int_2fh_16h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// windows 95 is installed
-		REG8(AL) = 4;
-		REG8(AH) = 0;
-		break;
-	default:
-		REG16(AX) = 0x01;
-		cpustate->CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_43h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// xms is not installed
-		REG8(AL) = 0;
-		break;
-	default:
-		REG16(AX) = 0x01;
-		cpustate->CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_46h()
-{
-	switch(REG8(AL)) {
-	case 0x80:
-		// windows 3.0 is not installed
-		REG16(AX) = 0x80;
-		break;
-	default:
-		REG16(AX) = 0x01;
-		cpustate->CF = 1;
-		break;
-	}
-}
-
 inline void msdos_int_2fh_4ah()
 {
 	switch(REG8(AL)) {
 	case 0x01:
+	case 0x02:
 		// hma is not installed
 		REG16(BX) = 0;
-	case 0x02:
 		cpustate->sreg[ES].selector = 0xffff;
 		i386_load_segment_descriptor(cpustate, ES);
 		REG16(DI) = 0xffff;
-		break;
-	default:
-		REG16(AX) = 0x01;
-		cpustate->CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_4bh()
-{
-	switch(REG8(AL)) {
-	case 0x01:
-	case 0x02:
-		// task switcher is not installed
-		cpustate->sreg[ES].selector = 0;
-		i386_load_segment_descriptor(cpustate, ES);
-		REG16(DI) = 0;
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -3341,21 +3589,7 @@ inline void msdos_int_2fh_4fh()
 		break;
 	case 0x01:
 		REG16(AX) = 0;
-		REG16(BX) = code_page;
-		break;
-	default:
-		REG16(AX) = 0x01;
-		cpustate->CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_b7h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// append is not installed
-		REG8(AL) = 0;
+		REG16(BX) = active_code_page;
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -3384,12 +3618,33 @@ void msdos_syscall(unsigned num)
 		// PC BIOS
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
+		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
+		case 0xc9: pcbios_int_15h_c9h(); break;
+		case 0xca: pcbios_int_15h_cah(); break;
 		default:
 			fatalerror("int 15h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			break;
+		}
+		break;
+	case 0x1a:
+		// PC BIOS
+		cpustate->CF = 0;
+		switch(REG8(AH)) {
+		case 0x00: pcbios_int_1ah_00h(); break;
+		case 0x01: break;
+		case 0x02: pcbios_int_1ah_02h(); break;
+		case 0x03: break;
+		case 0x04: pcbios_int_1ah_04h(); break;
+		case 0x05: break;
+		case 0x0a: pcbios_int_1ah_0ah(); break;
+		case 0x0b: break;
+		default:
+			fatalerror("int 1ah (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			break;
 		}
 		break;
 	case 0x20:
@@ -3426,12 +3681,12 @@ void msdos_syscall(unsigned num)
 		case 0x18: msdos_int_21h_18h(); break;
 		case 0x19: msdos_int_21h_19h(); break;
 		case 0x1a: msdos_int_21h_1ah(); break;
-		// 0x1b: get fat table address
-		// 0x1c: get fat table for drive
-		// 0x1d:
-		// 0x1e:
+		case 0x1b: msdos_int_21h_1bh(); break;
+		case 0x1c: msdos_int_21h_1ch(); break;
+		case 0x1d: msdos_int_21h_1dh(); break;
+		case 0x1e: msdos_int_21h_1eh(); break;
 		case 0x1f: msdos_int_21h_1fh(); break;
-		// 0x20:
+		case 0x20: msdos_int_21h_20h(); break;
 		// 0x21: random read with fcb
 		// 0x22: randome write with fcb
 		// 0x23: get file size with fcb
@@ -3451,9 +3706,11 @@ void msdos_syscall(unsigned num)
 		case 0x31: msdos_int_21h_31h(); break;
 		case 0x32: msdos_int_21h_32h(); break;
 		case 0x33: msdos_int_21h_33h(); break;
+		// 0x34: get address of indos flag
 		case 0x35: msdos_int_21h_35h(); break;
 		case 0x36: msdos_int_21h_36h(); break;
 		case 0x37: msdos_int_21h_37h(); break;
+		// 0x38: get country-specific information
 		case 0x39: msdos_int_21h_39h(0); break;
 		case 0x3a: msdos_int_21h_3ah(0); break;
 		case 0x3b: msdos_int_21h_3bh(0); break;
@@ -3480,20 +3737,35 @@ void msdos_syscall(unsigned num)
 		case 0x50: msdos_int_21h_50h(); break;
 		case 0x51: msdos_int_21h_51h(); break;
 		case 0x52: msdos_int_21h_52h(); break;
+		// 0x53: translate bios parameter block to drive param bock
 		case 0x54: msdos_int_21h_54h(); break;
 		case 0x55: msdos_int_21h_55h(); break;
 		case 0x56: msdos_int_21h_56h(0); break;
 		case 0x57: msdos_int_21h_57h(); break;
+		case 0x58: msdos_int_21h_58h(); break;
+		// 0x59: get extended error information
 		case 0x5a: msdos_int_21h_5ah(); break;
 		case 0x5b: msdos_int_21h_5bh(); break;
 		case 0x5c: msdos_int_21h_5ch(); break;
 		// 0x5e: ms-network
 		// 0x5f: ms-network
 		case 0x60: msdos_int_21h_60h(0); break;
+		case 0x61: msdos_int_21h_61h(); break;
 		case 0x62: msdos_int_21h_62h(); break;
 		case 0x63: msdos_int_21h_63h(); break;
+		// 0x64: set device driver lockahead flag
 		case 0x65: msdos_int_21h_65h(); break;
+		case 0x66: msdos_int_21h_66h(); break;
+		case 0x67: msdos_int_21h_67h(); break;
+		case 0x68: msdos_int_21h_68h(); break;
+		// 0x69 get/set disk serial number
+		case 0x6a: msdos_int_21h_6ah(); break;
+		case 0x6b: msdos_int_21h_6bh(); break;
 		case 0x6c: msdos_int_21h_6ch(0); break;
+		// 0x6d: find first rom program
+		// 0x6e: find next rom program
+		// 0x6f: get/set rom scan start address
+		// 0x70: windows95 get/set internationalization information
 		case 0x71:
 			// windows95 long filename functions
 			switch(REG8(AL)) {
@@ -3548,15 +3820,11 @@ void msdos_syscall(unsigned num)
 		// multiplex interrupt
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
-		case 0x16: msdos_int_2fh_16h(); break;
-		case 0x43: msdos_int_2fh_43h(); break;
-		case 0x46: msdos_int_2fh_46h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
-		case 0x4b: msdos_int_2fh_4bh(); break;
 		case 0x4f: msdos_int_2fh_4fh(); break;
-		case 0xb7: msdos_int_2fh_b7h(); break;
 		default:
-			fatalerror("int 2fh (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//			fatalerror("int 2fh (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			break;
 		}
 		break;
 	}
@@ -3694,6 +3962,7 @@ int msdos_init(int argc, char *argv[], char *envp[])
 	if(msdos_process_exec(argv[0], param, 0)) {
 		fatalerror("'%s' not found\n", argv[0]);
 	}
+	retval = 0;
 	return(0);
 }
 
@@ -3709,7 +3978,7 @@ int msdos_init(int argc, char *argv[], char *envp[])
 	} \
 }
 
-int msdos_finish()
+void msdos_finish()
 {
 	for(int i = 0; i < MAX_FILES; i++) {
 		if(file_handler[i].valid) {
@@ -3720,8 +3989,7 @@ int msdos_finish()
 	remove_std_file("stdaux.txt");
 	remove_std_file("stdprn.txt");
 #endif
-	
-	return(retval);
+	msdos_dbcs_table_finish();
 }
 
 /* ----------------------------------------------------------------------------
@@ -3732,6 +4000,8 @@ void hardware_init()
 {
 	cpustate = (i386_state *)CPU_INIT_CALL(CPU_MODEL);
 	CPU_RESET_CALL(CPU_MODEL);
+	cpu_type = (REG32(EDX) >> 8) & 0x0f;
+	cpu_step = (REG32(EDX) >> 0) & 0x0f;
 	i386_set_a20_line(cpustate, 0);
 #ifdef SUPPORT_HARDWARE
 	pic_init();
@@ -3740,30 +4010,35 @@ void hardware_init()
 #endif
 }
 
+void hardware_finish()
+{
+	free(cpustate);
+}
+
 void hardware_run()
 {
-	ops = 0;
+	int ops = 0;
 	
 	while(!cpustate->halted) {
 		cpustate->cycles = 1;
-		CPU_EXECUTE_CALL( i386 );
+		CPU_EXECUTE_CALL(i386);
 #ifdef SUPPORT_HARDWARE
-		if(++ops >= 1024) {
+		if(++ops == 1024) {
 			hardware_update();
+			ops = 0;
 		}
 #endif
 	}
 }
 
+#ifdef SUPPORT_HARDWARE
 void hardware_update()
 {
-#ifdef SUPPORT_HARDWARE
 	if(pit_active) {
 		pit_run();
 	}
-#endif
-	ops = 0;
 }
+#endif
 
 // pic
 

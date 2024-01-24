@@ -694,7 +694,7 @@ static void I386OP(mov_cr_r32)(i386_state *cpustate)		// Opcode 0x0f 22
 		case 3: CYCLES(cpustate,CYCLES_MOV_REG_CR3); break;
 		case 4: CYCLES(cpustate,1); break; // TODO
 		default:
-			fatalerror("i386: mov_cr_r32 CR%d !", cr);
+			fatalerror("i386: mov_cr_r32 CR%d!\n", cr);
 			break;
 	}
 }
@@ -718,7 +718,7 @@ static void I386OP(mov_dr_r32)(i386_state *cpustate)		// Opcode 0x0f 23
 			CYCLES(cpustate,CYCLES_MOV_DR6_7_REG);
 			break;
 		default:
-			fatalerror("i386: mov_dr_r32 DR%d !", dr);
+			fatalerror("i386: mov_dr_r32 DR%d!\n", dr);
 			break;
 	}
 }
@@ -936,7 +936,7 @@ static void I386OP(out_al_dx)(i386_state *cpustate)			// Opcode 0xee
 }
 
 
-static void I386OP(arpl)(i386_state *cpustate)				// Opcode 0x63
+static void I386OP(arpl)(i386_state *cpustate)           // Opcode 0x63
 {
 	UINT16 src, dst;
 	UINT8 modrm = FETCH(cpustate);
@@ -1088,44 +1088,44 @@ static void I386OP(repeat)(i386_state *cpustate, int invert_flag)
 	repeated_pc = cpustate->pc;
 	opcode = FETCH(cpustate);
 	switch(opcode) {
-	case 0x0f:
+		case 0x0f:
 		if (invert_flag == 0)
 			I386OP(decode_three_bytef3)(cpustate); // sse f3 0f
 		else
 			I386OP(decode_three_bytef2)(cpustate); // sse f2 0f
 		return;
 		break;
-	case 0x26:
-		cpustate->segment_override=ES;
+		case 0x26:
+	    cpustate->segment_override=ES;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x2e:
-		cpustate->segment_override=CS;
+		case 0x2e:
+	    cpustate->segment_override=CS;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x36:
-		cpustate->segment_override=SS;
+		case 0x36:
+	    cpustate->segment_override=SS;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x3e:
-		cpustate->segment_override=DS;
+		case 0x3e:
+	    cpustate->segment_override=DS;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x64:
-		cpustate->segment_override=FS;
+		case 0x64:
+	    cpustate->segment_override=FS;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x65:
-		cpustate->segment_override=GS;
+		case 0x65:
+	    cpustate->segment_override=GS;
 		cpustate->segment_prefix=1;
 		break;
-	case 0x66:
+		case 0x66:
 		cpustate->operand_size ^= 1;
 		break;
-	case 0x67:
+		case 0x67:
 		cpustate->address_size ^= 1;
 		break;
-	default:
+        default:
 		prefix_flag=0;
 	}
 	} while (prefix_flag);
@@ -1201,7 +1201,7 @@ static void I386OP(repeat)(i386_state *cpustate, int invert_flag)
 			break;
 
 		default:
-			fatalerror("i386: Invalid REP/opcode %02X combination",opcode);
+			fatalerror("i386: Invalid REP/opcode %02X combination\n",opcode);
 			break;
 	}
 
@@ -1243,8 +1243,8 @@ static void I386OP(repeat)(i386_state *cpustate, int invert_flag)
 
 outofcycles:
 	/* if we run out of cycles to execute, and we are still in the repeat, we need
-	 * to exit this instruction in such a way to go right back into it when we have
-	 * time to execute cycles */
+     * to exit this instruction in such a way to go right back into it when we have
+     * time to execute cycles */
 	if(flag && (invert_flag ? *flag : !*flag))
 		return;
 	cpustate->eip = cpustate->prev_eip;
@@ -2204,7 +2204,7 @@ static void I386OP(groupFE_8)(i386_state *cpustate)			// Opcode 0xfe
 			}
 			break;
 		default:
-			fatalerror("i386: groupFE_8 /%d unimplemented", (modrm >> 3) & 0x7);
+			fatalerror("i386: groupFE_8 /%d unimplemented\n", (modrm >> 3) & 0x7);
 			break;
 	}
 }
@@ -2401,17 +2401,17 @@ static void I386OP(aaa)(i386_state *cpustate)				// Opcode 0x37
 static void I386OP(aas)(i386_state *cpustate)				// Opcode 0x3f
 {
 	if (cpustate->AF || ((REG8(AL) & 0xf) > 9))
-	{
+    {
 		REG16(AX) -= 6;
 		REG8(AH) -= 1;
 		cpustate->AF = 1;
 		cpustate->CF = 1;
-	}
+    }
 	else
 	{
 		cpustate->AF = 0;
 		cpustate->CF = 0;
-	}
+    }
 	REG8(AL) &= 0x0f;
 	CYCLES(cpustate,CYCLES_AAS);
 }
@@ -2489,4 +2489,30 @@ static void I386OP(invalid)(i386_state *cpustate)
 	/* for ISH.COM */
 //	report_invalid_opcode(cpustate);
 //	i386_trap(cpustate, 6, 0, 0);
+}
+
+static void I386OP(xlat)(i386_state *cpustate)			// Opcode 0xd7
+{
+	UINT32 ea;
+	if( cpustate->segment_prefix ) {
+		if(!cpustate->address_size)
+		{
+			ea = i386_translate(cpustate, cpustate->segment_override, REG16(BX) + REG8(AL), 0 );
+		}
+		else
+		{
+			ea = i386_translate(cpustate, cpustate->segment_override, REG32(EBX) + REG8(AL), 0 );
+		}
+	} else {
+		if(!cpustate->address_size)
+		{
+			ea = i386_translate(cpustate, DS, REG16(BX) + REG8(AL), 0 );
+		}
+		else
+		{
+			ea = i386_translate(cpustate, DS, REG32(EBX) + REG8(AL), 0 );
+		}
+	}
+	REG8(AL) = READ8(cpustate,ea);
+	CYCLES(cpustate,CYCLES_XLAT);
 }

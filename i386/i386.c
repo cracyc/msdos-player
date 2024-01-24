@@ -15,8 +15,12 @@
         Intel Pentium 4
 */
 
+//#include "emu.h"
+//#include "debugger.h"
 #include "i386priv.h"
 //#include "i386.h"
+
+//#include "debug/debugcpu.h"
 
 /* seems to be defined on mingw-gcc */
 #undef i386
@@ -287,7 +291,7 @@ static void modrm_to_EA(i386_state *cpustate,UINT8 mod_rm, UINT32* out_ea, UINT8
 	UINT8 segment;
 
 	if( mod_rm >= 0xc0 )
-		fatalerror("i386: Called modrm_to_EA with modrm value %02X !",mod_rm);
+		fatalerror("i386: Called modrm_to_EA with modrm value %02X!\n",mod_rm);
 
 	if( cpustate->address_size ) {
 		switch( rm )
@@ -580,25 +584,25 @@ static void i386_sreg_load(i386_state *cpustate, UINT16 selector, UINT8 reg, boo
 static void i386_trap(i386_state *cpustate,int irq, int irq_gate, int trap_level)
 {
 	/*  I386 Interrupts/Traps/Faults:
-	 *
-	 *  0x00    Divide by zero
-	 *  0x01    Debug exception
-	 *  0x02    NMI
-	 *  0x03    Int3
-	 *  0x04    Overflow
-	 *  0x05    Array bounds check
-	 *  0x06    Illegal Opcode
-	 *  0x07    FPU not available
-	 *  0x08    Double fault
-	 *  0x09    Coprocessor segment overrun
-	 *  0x0a    Invalid task state
-	 *  0x0b    Segment not present
-	 *  0x0c    Stack exception
-	 *  0x0d    General Protection Fault
-	 *  0x0e    Page fault
-	 *  0x0f    Reserved
-	 *  0x10    Coprocessor error
-	 */
+     *
+     *  0x00    Divide by zero
+     *  0x01    Debug exception
+     *  0x02    NMI
+     *  0x03    Int3
+     *  0x04    Overflow
+     *  0x05    Array bounds check
+     *  0x06    Illegal Opcode
+     *  0x07    FPU not available
+     *  0x08    Double fault
+     *  0x09    Coprocessor segment overrun
+     *  0x0a    Invalid task state
+     *  0x0b    Segment not present
+     *  0x0c    Stack exception
+     *  0x0d    General Protection Fault
+     *  0x0e    Page fault
+     *  0x0f    Reserved
+     *  0x10    Coprocessor error
+     */
 	UINT32 v1, v2;
 	UINT32 offset, oldflags = get_flags(cpustate);
 	UINT16 segment;
@@ -721,7 +725,7 @@ static void i386_trap(i386_state *cpustate,int irq, int irq_gate, int trap_level
 			i386_load_protected_mode_segment(cpustate,&desc,NULL);
 			CPL = cpustate->CPL;  // current privilege level
 			DPL = (desc.flags >> 5) & 0x03;  // descriptor privilege level
-//			RPL = segment & 0x03;  // requested privilege level
+//          RPL = segment & 0x03;  // requested privilege level
 
 			if((segment & ~0x03) == 0)
 			{
@@ -1086,7 +1090,7 @@ static void i286_task_switch(i386_state *cpustate, UINT16 selector, UINT8 nested
 	}
 
 	/* For nested tasks, we write the outgoing task's selector to the back-link field of the new TSS,
-	   and set the NT flag in the EFLAGS register */
+       and set the NT flag in the EFLAGS register */
 	if(nested != 0)
 	{
 		WRITE16(cpustate,tss+0,old_task);
@@ -1095,7 +1099,7 @@ static void i286_task_switch(i386_state *cpustate, UINT16 selector, UINT8 nested
 	CHANGE_PC(cpustate,cpustate->eip);
 
 	cpustate->CPL = cpustate->sreg[CS].selector & 0x03;
-//	printf("286 Task Switch from selector %04x to %04x\n",old_task,selector);
+//  printf("286 Task Switch from selector %04x to %04x\n",old_task,selector);
 }
 
 static void i386_task_switch(i386_state *cpustate, UINT16 selector, UINT8 nested)
@@ -1201,7 +1205,7 @@ static void i386_task_switch(i386_state *cpustate, UINT16 selector, UINT8 nested
 	}
 
 	/* For nested tasks, we write the outgoing task's selector to the back-link field of the new TSS,
-	   and set the NT flag in the EFLAGS register */
+       and set the NT flag in the EFLAGS register */
 	if(nested != 0)
 	{
 		WRITE32(cpustate,tss+0,old_task);
@@ -1210,7 +1214,7 @@ static void i386_task_switch(i386_state *cpustate, UINT16 selector, UINT8 nested
 	CHANGE_PC(cpustate,cpustate->eip);
 
 	cpustate->CPL = cpustate->sreg[CS].selector & 0x03;
-//	printf("386 Task Switch from selector %04x to %04x\n",old_task,selector);
+//  printf("386 Task Switch from selector %04x to %04x\n",old_task,selector);
 }
 
 static void i386_check_irq_line(i386_state *cpustate)
@@ -2596,10 +2600,10 @@ static void i386_protected_mode_iret(i386_state* cpustate, int operand32)
 					FAULT(FAULT_GP,0)
 				}
 
-//				if(operand32 == 0)
-//					REG16(SP) += 10;
-//				else
-//					REG32(ESP) += 20;
+//              if(operand32 == 0)
+//                  REG16(SP) += 10;
+//              else
+//                  REG32(ESP) += 20;
 
 				// IOPL can only change if CPL is zero
 				if(CPL != 0)
@@ -2717,7 +2721,7 @@ static void report_invalid_opcode(i386_state *cpustate)
 static void report_unimplemented_opcode(i386_state *cpustate)
 {
 #ifndef DEBUG_MISSING_OPCODE
-	fatalerror("i386: Unimplemented opcode %02X at %08X", cpustate->opcode, cpustate->pc - 1 );
+	fatalerror("i386: Unimplemented opcode %02X at %08X\n", cpustate->opcode, cpustate->pc - 1 );
 #else
 	astring errmsg;
 	errmsg.cat("i386: Unimplemented opcode ");
@@ -3016,8 +3020,6 @@ static CPU_EXECUTE( i386 )
 	cpustate->tsc += (cycles - cpustate->cycles);
 }
 
-/*************************************************************************/
-
 /*****************************************************************************/
 /* Intel 486 */
 
@@ -3034,7 +3036,7 @@ static CPU_RESET( i486 )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3083,7 +3085,7 @@ static CPU_RESET( pentium )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3148,7 +3150,7 @@ static CPU_RESET( mediagx )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3206,7 +3208,7 @@ static CPU_RESET( pentium_pro )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3265,7 +3267,7 @@ static CPU_RESET( pentium_mmx )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3324,7 +3326,7 @@ static CPU_RESET( pentium2 )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3383,7 +3385,7 @@ static CPU_RESET( pentium3 )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3442,7 +3444,7 @@ static CPU_RESET( pentium4 )
 	cpustate->sreg[CS].selector = 0xf000;
 	cpustate->sreg[CS].base		= 0xffff0000;
 	cpustate->sreg[CS].limit	= 0xffff;
-	cpustate->sreg[CS].flags	= 0x009b;
+	cpustate->sreg[CS].flags    = 0x009b;
 
 	cpustate->sreg[DS].base = cpustate->sreg[ES].base = cpustate->sreg[FS].base = cpustate->sreg[GS].base = cpustate->sreg[SS].base = 0x00000000;
 	cpustate->sreg[DS].limit = cpustate->sreg[ES].limit = cpustate->sreg[FS].limit = cpustate->sreg[GS].limit = cpustate->sreg[SS].limit = 0xffff;
@@ -3488,3 +3490,4 @@ static CPU_RESET( pentium4 )
 
 	CHANGE_PC(cpustate,cpustate->eip);
 }
+

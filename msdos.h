@@ -93,7 +93,7 @@ typedef union {
 #define ENV_SIZE	0x2000
 #define PSP_SIZE	0x100
 
-#define MAX_FILES	20
+#define MAX_FILES	128
 #define MAX_PROCESS	16
 
 #define DUP_STDIN	29
@@ -263,6 +263,7 @@ typedef struct {
 	PAIR32 dta;
 	UINT8 switchar;
 	UINT8 verify;
+	int max_files;
 	HANDLE find_handle;
 	UINT8 allowable_mask;
 	UINT8 required_mask;
@@ -280,7 +281,7 @@ process_t process[MAX_PROCESS];
 
 void msdos_syscall(unsigned num);
 int msdos_init(int argc, char *argv[], char *envp[]);
-int msdos_finish();
+void msdos_finish();
 
 // console
 #define SCR_BUF_SIZE	1200
@@ -304,7 +305,8 @@ int key_buf_get;
 int key_buf[16];
 //int std[3];
 
-int code_page;
+int active_code_page;
+int system_code_page;
 
 /* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
@@ -313,10 +315,11 @@ int code_page;
 #define SUPPORT_HARDWARE
 
 void hardware_init();
+void hardware_finish();
 void hardware_run();
+#ifdef SUPPORT_HARDWARE
 void hardware_update();
-
-int ops;
+#endif
 
 // memory
 
