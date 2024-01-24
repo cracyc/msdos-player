@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								4/15/2014
+								11/19/2014
 
 ----- What's this
 
@@ -156,6 +156,7 @@ INT 21H		MS-DOS System Call
 	3301H	Set Ctrl-Break
 	3305H	Get Boot Drive
 	3306H	Get MS-DOS Version (*1)
+	3307H	Windows95 - Set/Clear DOS_FLAG
 	35H	Get Vector
 	36H	Get Disk Free Space
 	3700H	Set Switch Character
@@ -195,8 +196,12 @@ INT 21H		MS-DOS System Call
 	54H	Get Verify State
 	55H	Create Child Program Segment Prefix
 	56H	Rename File
-	5700H	Get Time and Date Stamps
-	5701H	Set Time and Date Stamps
+	5700H	Get Last Written Date and Time
+	5701H	Set Last Written Date and Time
+	5704H	Windows95 - Get Last Access Date and Time
+	5705H	Windows95 - Set Last Access Date and Time
+	5706H	Windows95 - Get Creation Date and Time
+	5707H	Windows95 - Set Creation Date and Time
 	5800H	Get Memory Allocation Strategy
 	59H	Get Extended Error Information
 	5AH	Create Unique File

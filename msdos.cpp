@@ -3320,6 +3320,13 @@ inline void msdos_int_21h_33h()
 		REG8(DL) = 0;
 		REG8(DH) = 0x10; // in HMA
 		break;
+	case 0x07:
+		if(REG8(DL) == 0) {
+			((dos_info_t *)(mem + DOS_INFO_TOP))->dos_flag &= ~0x20;
+		} else if(REG8(DL) == 1) {
+			((dos_info_t *)(mem + DOS_INFO_TOP))->dos_flag |= 0x20;
+		}
+		break;
 	default:
 		REG16(AX) = 0x01;
 		m_CF = 1;
@@ -3978,21 +3985,74 @@ inline void msdos_int_21h_56h(int lfn)
 inline void msdos_int_21h_57h()
 {
 	FILETIME time, local;
+	HANDLE handle;
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		if(GetFileTime((HANDLE)_get_osfhandle(REG16(BX)), NULL, NULL, &time)) {
-			FileTimeToLocalFileTime(&time, &local);
-			FileTimeToDosDateTime(&local, &REG16(DX), &REG16(CX));
-		} else {
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
 			REG16(AX) = (UINT16)GetLastError();
 			m_CF = 1;
+		} if(!GetFileTime(handle, NULL, NULL, &time)) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else {
+			FileTimeToLocalFileTime(&time, &local);
+			FileTimeToDosDateTime(&local, &REG16(DX), &REG16(CX));
 		}
 		break;
 	case 0x01:
 		DosDateTimeToFileTime(REG16(DX), REG16(CX), &local);
 		LocalFileTimeToFileTime(&local, &time);
-		if(!SetFileTime((HANDLE)_get_osfhandle(REG16(BX)), NULL, NULL, &time)) {
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else if(!SetFileTime(handle, NULL, NULL, &time)) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		}
+		break;
+	case 0x04:
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} if(!GetFileTime(handle, NULL, &time, NULL)) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else {
+			FileTimeToLocalFileTime(&time, &local);
+			FileTimeToDosDateTime(&local, &REG16(DX), &REG16(CX));
+		}
+		break;
+	case 0x05:
+		DosDateTimeToFileTime(REG16(DX), REG16(CX), &local);
+		LocalFileTimeToFileTime(&local, &time);
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else if(!SetFileTime(handle, NULL, &time, NULL)) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		}
+		break;
+	case 0x06:
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} if(!GetFileTime(handle, &time, NULL, NULL)) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else {
+			FileTimeToLocalFileTime(&time, &local);
+			FileTimeToDosDateTime(&local, &REG16(DX), &REG16(CX));
+		}
+		break;
+	case 0x07:
+		DosDateTimeToFileTime(REG16(DX), REG16(CX), &local);
+		LocalFileTimeToFileTime(&local, &time);
+		if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+			REG16(AX) = (UINT16)GetLastError();
+			m_CF = 1;
+		} else if(!SetFileTime(handle, &time, NULL, NULL)) {
 			REG16(AX) = (UINT16)GetLastError();
 			m_CF = 1;
 		}
@@ -4689,6 +4749,9 @@ inline void msdos_int_26h()
 		
 		if(dpb->media_type == 0xf8) {
 			// this drive is not a floppy
+//			if(!(((dos_info_t *)(mem + DOS_INFO_TOP))->dos_flag & 0x40)) {
+//				fatalerror("This application tried the absolute disk write to drive %c:\n", 'A' + REG8(AL));
+//			}
 			REG8(AL) = 0x02; // drive not ready
 			m_CF = 1;
 		} else {

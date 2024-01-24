@@ -380,6 +380,8 @@ typedef struct {
 	UINT8 boot_drive;	// +67
 	UINT8 i386_or_later;	// +68
 	UINT16 ext_mem_size;	// +69
+	UINT8 reserved_5[25];
+	UINT8 dos_flag;		// +96
 } dos_info_t;
 #pragma pack()
 
@@ -398,7 +400,8 @@ static const struct {
 	int in;
 	int out;
 } file_mode[] = {
-	{ _O_RDONLY | _O_BINARY, 1, 0 },
+//	{ _O_RDONLY | _O_BINARY, 1, 0 },
+	{ _O_RDWR   | _O_BINARY, 1, 0 }, // for bupdate.exe
 	{ _O_WRONLY | _O_BINARY, 0, 1 },
 	{ _O_RDWR   | _O_BINARY, 1, 1 },
 };
