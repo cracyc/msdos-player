@@ -15,6 +15,10 @@
 #pragma warning( disable : 4267 )
 #endif
 
+#define my_strchr(str, chr) (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr))
+#define my_strtok(tok, del) (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del))
+#define my_strupr(str) (char *)_mbsupr((unsigned char *)(str))
+
 #define fatalerror(...) { \
 	fprintf(stderr, __VA_ARGS__); \
 	exit(1); \
@@ -466,22 +470,6 @@ int msdos_lead_byte_check(UINT8 code)
 	return(0);
 }
 
-char *msdos_strupr(char *str)
-{
-	char *src = str;
-	
-	while(*src != 0) {
-		if(msdos_lead_byte_check(*src)) {
-			src += 2;
-		} else if(*src >= 'a' && *src <= 'z') {
-			*src++ -= 0x20;
-		} else {
-			src++;
-		}
-	}
-	return(str);
-}
-
 // file control
 
 char *msdos_trimmed_path(char *path, int lfn)
@@ -507,6 +495,39 @@ char *msdos_trimmed_path(char *path, int lfn)
 		*dst = '\0';
 	}
 	return(tmp);
+}
+
+bool match(char *text, char *pattern)
+{
+	//http://www.prefield.com/algorithm/string/wildcard.html
+	switch (*pattern) {
+	case '\0':
+		return !*text;
+	case '*':
+		return match(text, pattern + 1) || *text && match(text + 1, pattern);
+	case '?':
+		return *text && match(text + 1, pattern + 1);
+	default:
+		return (*text == *pattern) && match(text + 1, pattern + 1);
+	}
+}
+
+bool msdos_match_volume_label(char *path, char *volume)
+{
+	char *p;
+	
+	if((p = my_strchr(path, ':')) != NULL) {
+		return msdos_match_volume_label(p + 1, volume);
+	} else if((p = my_strchr(path, '\\')) != NULL) {
+		return msdos_match_volume_label(p + 1, volume);
+	} else if((p = my_strchr(path, '.')) != NULL) {
+		*p = '\0';
+		bool result = match(volume, path);
+		*p = '.';
+		return result;
+	} else {
+		return match(volume, path);
+	}
 }
 
 char *msdos_fcb_path(fcb_t *fcb)
@@ -538,7 +559,7 @@ char *msdos_fcb_path(fcb_t *fcb)
 
 void msdos_set_fcb_path(fcb_t *fcb, char *path)
 {
-	char *ext = strstr(path, ".");
+	char *ext = my_strchr(path, '.');
 	
 	memset(fcb->file_name, 0x20, 8 + 3);
 	if(ext != NULL && path[0] != '.') {
@@ -553,7 +574,7 @@ char *msdos_short_path(char *path)
 	static char tmp[MAX_PATH];
 	
 	GetShortPathName(path, tmp, MAX_PATH);
-	msdos_strupr(tmp);
+	my_strupr(tmp);
 	return(tmp);
 }
 
@@ -564,7 +585,7 @@ char *msdos_short_full_path(char *path)
 	
 	GetFullPathName(path, MAX_PATH, full, &name);
 	GetShortPathName(full, tmp, MAX_PATH);
-	msdos_strupr(tmp);
+	my_strupr(tmp);
 	return(tmp);
 }
 
@@ -576,7 +597,7 @@ char *msdos_short_full_dir(char *path)
 	GetFullPathName(path, MAX_PATH, full, &name);
 	name[-1] = '\0';
 	GetShortPathName(full, tmp, MAX_PATH);
-	msdos_strupr(tmp);
+	my_strupr(tmp);
 	return(tmp);
 }
 
@@ -660,7 +681,7 @@ char *msdos_short_volume_label(char *label)
 	} else {
 		*dst_n = '\0';
 	}
-	msdos_strupr(tmp);
+	my_strupr(tmp);
 	return(tmp);
 }
 
@@ -1362,7 +1383,7 @@ char *msdos_env_get(int env_seg, const char *name)
 			break;
 		}
 		int len = strlen(src);
-		char *n = strtok(src, "=");
+		char *n = my_strtok(src, "=");
 		char *v = src + strlen(n) + 1;
 		
 		if(_stricmp(name, n) == 0) {
@@ -1388,7 +1409,7 @@ void msdos_env_set(int env_seg, char *name, char *value)
 			break;
 		}
 		int len = strlen(src);
-		char *n = strtok(src, "=");
+		char *n = my_strtok(src, "=");
 		char *v = src + strlen(n) + 1;
 		char tmp[1024];
 		
@@ -1479,7 +1500,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 					if(opt[j] == ' ') {
 						continue;
 					}
-					char *token = strtok(opt + j, " ");
+					char *token = my_strtok(opt + j, " ");
 					strcpy(command, token);
 					char tmp[MAX_PATH];
 					strcpy(tmp, token + strlen(token) + 1);
@@ -1508,7 +1529,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				if(env != NULL) {
 					char env_path[1024];
 					strcpy(env_path, env);
-					char *token = strtok(env_path, ";");
+					char *token = my_strtok(env_path, ";");
 					
 					while(token != NULL) {
 						sprintf(path, "%s\\%s", token, command);
@@ -1523,7 +1544,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 						if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
 							break;
 						}
-						token = strtok(NULL, ";");
+						token = my_strtok(NULL, ";");
 					}
 				}
 			}
@@ -2254,6 +2275,12 @@ inline void pcbios_int_15h_49h()
 	REG8(BL) = 0;	// DOS/V;
 }
 
+inline void pcbios_int_15h_86h()
+{
+	UINT32 usec = (REG16(CX) << 16) | REG16(DX);
+	Sleep(usec / 1000);
+}
+
 inline void pcbios_int_15h_87h()
 {
 #if 1
@@ -2611,7 +2638,7 @@ inline void msdos_int_21h_09h()
 	char tmp[0x10000];
 	memcpy(tmp, mem + cpustate->sreg[DS].base + REG16(DX), sizeof(tmp));
 	tmp[sizeof(tmp) - 1] = '\0';
-	int len = strlen(strtok(tmp, "$"));
+	int len = strlen(my_strtok(tmp, "$"));
 	
 	if(file_handler[1].valid && !file_handler[1].atty) {
 		// stdout is redirected to file
@@ -2725,6 +2752,9 @@ inline void msdos_int_21h_11h()
 	strcpy(process->volume_label, msdos_volume_label(path));
 	process->allowable_mask = (ext_fcb->flag == 0xff) ? ext_fcb->attribute : 0x20;
 	
+	if((process->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
+		process->allowable_mask &= ~8;
+	}
 	if((process->find_handle = FindFirstFile(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, process->allowable_mask, 0)) {
 			if(!FindNextFile(process->find_handle, &fd)) {
@@ -2965,7 +2995,7 @@ inline void msdos_int_21h_29h()
 	
 	if(REG8(AL) & 1) {
 		ofs += strspn((char *)&mem[ofs], spc_chars);
-		if(strchr(sep_chars, mem[ofs]) && mem[ofs] != '\0') {
+		if(my_strchr(sep_chars, mem[ofs]) && mem[ofs] != '\0') {
 			ofs++;
 		}
 	}
@@ -2973,7 +3003,7 @@ inline void msdos_int_21h_29h()
 	
 	if(mem[ofs + 1] == ':') {
 		UINT8 c = mem[ofs];
-		if(c <= 0x20 || strchr(end_chars, c) || strchr(sep_chars, c)) {
+		if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 			; // invalid drive letter
 		} else {
 			if(c >= 'a' && c <= 'z') {
@@ -2988,7 +3018,7 @@ inline void msdos_int_21h_29h()
 	memset(ext, 0x20, sizeof(ext));
 	for(int i = 0; i < MAX_PATH; i++) {
 		UINT8 c = mem[ofs];
-		if(c <= 0x20 || strchr(end_chars, c) || strchr(sep_chars, c)) {
+		if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 			break;
 		} else if(c >= 'a' && c <= 'z') {
 			c -= 0x20;
@@ -3000,7 +3030,7 @@ inline void msdos_int_21h_29h()
 		ofs++;
 		for(int i = 0; i < MAX_PATH; i++) {
 			UINT8 c = mem[ofs];
-			if(c <= 0x20 || strchr(end_chars, c) || strchr(sep_chars, c)) {
+			if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 				break;
 			} else if(c >= 'a' && c <= 'z') {
 				c -= 0x20;
@@ -3107,9 +3137,9 @@ inline void msdos_int_21h_30h()
 	} else {
 		REG8(BH) = 0xff;	// OEM = Microsoft
 	}
-	// MS-DOS version (7.00)
+	// MS-DOS version (7.10)
 	REG8(AL) = 7;
-	REG8(AH) = 0;
+	REG8(AH) = 10;
 }
 
 inline void msdos_int_21h_31h()
@@ -3242,8 +3272,13 @@ inline void msdos_int_21h_3ch()
 {
 	char *path = msdos_local_file_path((char *)(mem + cpustate->sreg[DS].base + REG16(DX)), 0);
 	int attr = GetFileAttributes(path);
-	int fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+	int fd = -1;
 	
+	if(_stricmp(path, "CON") == 0) {
+		fd = _open(path, _O_WRONLY | _O_BINARY);
+	} else {
+		fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+	}
 	if(fd != -1) {
 		if(attr == -1) {
 			attr = msdos_file_attribute_create(REG16(CX)) & ~FILE_ATTRIBUTE_READONLY;
@@ -3697,6 +3732,9 @@ inline void msdos_int_21h_4eh()
 	strcpy(process->volume_label, msdos_volume_label(path));
 	process->allowable_mask = REG8(CL);
 	
+	if((process->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
+		process->allowable_mask &= ~8;
+	}
 	if((process->find_handle = FindFirstFile(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, process->allowable_mask, 0)) {
 			if(!FindNextFile(process->find_handle, &fd)) {
@@ -3853,6 +3891,49 @@ inline void msdos_int_21h_58h()
 	}
 }
 
+inline void msdos_int_21h_59h()
+{
+	REG16(AX) = error_code;
+	switch(error_code) {
+	case  4: // Too many open files
+	case  8: // Insufficient memory
+		REG8(BH) = 1; // Out of resource
+		break;
+	case  5: // Access denied
+		REG8(BH) = 3; // Authorization
+		break;
+	case  7: // Memory control block destroyed
+		REG8(BH) = 4; // Internal
+		break;
+	case  2: // File not found
+	case  3: // Path not found
+	case 15: // Invaid drive specified
+	case 18: // No more files
+		REG8(BH) = 8; // Not found
+		break;
+	case 32: // Sharing violation
+	case 33: // Lock violation
+		REG8(BH) = 10; // Locked
+		break;
+//	case 16: // Removal of current directory attempted
+	case 19: // Attempted write on protected disk
+	case 21: // Drive not ready
+//	case 29: // Write failure
+//	case 30: // Read failure
+//	case 82: // Cannot create subdirectory
+		REG8(BH) = 11; // Media
+		break;
+	case 80: // File already exists
+		REG8(BH) = 12; // Already exist
+		break;
+	default:
+		REG8(BH) = 13; // Unknown
+		break;
+	}
+	REG8(BL) = 1; // Retry
+	REG8(CH) = 1; // Unknown
+}
+
 inline void msdos_int_21h_5ah()
 {
 	char *path = (char *)(mem + cpustate->sreg[DS].base + REG16(DX));
@@ -3982,17 +4063,17 @@ inline void msdos_int_21h_65h()
 		break;
 	case 0x20:
 		sprintf(tmp, "%c", REG8(DL));
-		msdos_strupr(tmp);
+		my_strupr(tmp);
 		REG8(DL) = tmp[0];
 		break;
 	case 0x21:
 		memset(tmp, 0, sizeof(tmp));
 		memcpy(tmp, mem + cpustate->sreg[DS].base + REG16(DX), REG16(CX));
-		msdos_strupr(tmp);
+		my_strupr(tmp);
 		memcpy(mem + cpustate->sreg[DS].base + REG16(DX), tmp, REG16(CX));
 		break;
 	case 0x22:
-		msdos_strupr((char *)(mem + cpustate->sreg[DS].base + REG16(DX)));
+		my_strupr((char *)(mem + cpustate->sreg[DS].base + REG16(DX)));
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -4051,6 +4132,40 @@ inline void msdos_int_21h_68h()
 	}
 }
 
+inline void msdos_int_21h_69h()
+{
+	drive_info_t *info = (drive_info_t *)(mem + cpustate->sreg[DS].base + REG16(DX));
+	char path[] = "A:\\";
+	char volume_label[MAX_PATH];
+	DWORD serial_number = 0;
+	char file_system[MAX_PATH];
+	
+	if(REG8(BL) == 0) {
+		path[0] = 'A' + _getdrive() - 1;
+	} else {
+		path[0] = 'A' + REG8(BL) - 1;
+	}
+	
+	switch(REG8(AL)) {
+	case 0x00:
+		if(GetVolumeInformation(path, volume_label, MAX_PATH, &serial_number, NULL, NULL, file_system, MAX_PATH)) {
+			info->info_level = 0;
+			info->serial_number = serial_number;
+			memset(info->volume_label, 0x20, 11);
+			memcpy(info->volume_label, volume_label, min(strlen(volume_label), 11));
+			memset(info->file_system, 0x20, 8);
+			memcpy(info->file_system, file_system, min(strlen(file_system), 8));
+		} else {
+			REG16(AX) = errno;
+			cpustate->CF = 1;
+		}
+		break;
+	case 0x01:
+		REG16(AX) = 0x03;
+		cpustate->CF = 1;
+	}
+}
+
 inline void msdos_int_21h_6ah()
 {
 	REG8(AH) = 0x68;
@@ -4083,8 +4198,13 @@ inline void msdos_int_21h_6ch(int lfn)
 				}
 			} else if(REG8(DL) & 2) {
 				int attr = GetFileAttributes(path);
-				int fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+				int fd = -1;
 				
+				if(_stricmp(path, "CON") == 0) {
+					fd = _open(path, file_mode[mode].mode);
+				} else {
+					fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+				}
 				if(fd != -1) {
 					if(attr == -1) {
 						attr = msdos_file_attribute_create(REG16(CX)) & ~FILE_ATTRIBUTE_READONLY;
@@ -4146,6 +4266,9 @@ inline void msdos_int_21h_714eh()
 	process->allowable_mask = REG8(CL);
 	process->required_mask = REG8(CH);
 	
+	if((process->allowable_mask & 8) && !msdos_match_volume_label(path, process->volume_label) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
+		process->allowable_mask &= ~8;
+	}
 	if((process->find_handle = FindFirstFile(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, process->allowable_mask, process->required_mask)) {
 			if(!FindNextFile(process->find_handle, &fd)) {
@@ -4353,20 +4476,20 @@ inline void msdos_int_21h_71a8h()
 inline void msdos_int_21h_7303h()
 {
 	char *path = (char *)(mem + cpustate->sreg[DS].base + REG16(DX));
-	ext_free_space_t *space = (ext_free_space_t *)(mem + cpustate->sreg[ES].base + REG16(DI));
+	ext_space_info_t *info = (ext_space_info_t *)(mem + cpustate->sreg[ES].base + REG16(DI));
 	DWORD sectors_per_cluster, bytes_per_sector, free_clusters, total_clusters;
 	
 	if(GetDiskFreeSpace(path, &sectors_per_cluster, &bytes_per_sector, &free_clusters, &total_clusters)) {
-		space->size_of_structure = sizeof(ext_free_space_t);
-		space->structure_version = 0;
-		space->sectors_per_cluster = sectors_per_cluster;
-		space->bytes_per_sector = bytes_per_sector;
-		space->available_clusters_on_drive = free_clusters;
-		space->total_clusters_on_drive = total_clusters;
-		space->available_sectors_on_drive = sectors_per_cluster * free_clusters;
-		space->total_sectors_on_drive = sectors_per_cluster * total_clusters;
-		space->available_allocation_units = free_clusters;	// ???
-		space->total_allocation_units = total_clusters;		// ???
+		info->size_of_structure = sizeof(ext_space_info_t);
+		info->structure_version = 0;
+		info->sectors_per_cluster = sectors_per_cluster;
+		info->bytes_per_sector = bytes_per_sector;
+		info->available_clusters_on_drive = free_clusters;
+		info->total_clusters_on_drive = total_clusters;
+		info->available_sectors_on_drive = sectors_per_cluster * free_clusters;
+		info->total_sectors_on_drive = sectors_per_cluster * total_clusters;
+		info->available_allocation_units = free_clusters;	// ???
+		info->total_allocation_units = total_clusters;		// ???
 	} else {
 		REG16(AX) = errno;
 		cpustate->CF = 1;
@@ -4478,7 +4601,7 @@ inline void msdos_int_2eh()
 	char tmp[MAX_PATH], command[MAX_PATH], opt[MAX_PATH];
 	memset(tmp, 0, sizeof(tmp));
 	strcpy(tmp, (char *)(mem + cpustate->sreg[DS].base + REG16(SI)));
-	char *token = strtok(tmp, " ");
+	char *token = my_strtok(tmp, " ");
 	strcpy(command, token);
 	strcpy(opt, token + strlen(token) + 1);
 	
@@ -4500,6 +4623,20 @@ inline void msdos_int_2eh()
 	
 	msdos_process_exec(command, param, 0);
 	REG8(AL) = 0;
+}
+
+inline void msdos_int_2fh_43h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// xms is not installed
+		REG8(AL) = 0;
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
 }
 
 inline void msdos_int_2fh_4ah()
@@ -4539,6 +4676,61 @@ inline void msdos_int_2fh_4fh()
 	}
 }
 
+inline void msdos_int_2fh_aeh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0;
+		break;
+	case 0x01:
+		{
+			char command[MAX_PATH];
+			memset(command, 0, sizeof(command));
+			memcpy(command, mem + cpustate->sreg[DS].base + REG16(SI) + 1, mem[cpustate->sreg[DS].base + REG16(SI)]);
+			
+			param_block_t *param = (param_block_t *)(mem + WORK_TOP);
+			param->env_seg = 0;
+			param->cmd_line.w.l = 44;
+			param->cmd_line.w.h = (WORK_TOP >> 4);
+			param->fcb1.w.l = 24;
+			param->fcb1.w.h = (WORK_TOP >> 4);
+			param->fcb2.w.l = 24;
+			param->fcb2.w.h = (WORK_TOP >> 4);
+			
+			memset(mem + WORK_TOP + 24, 0x20, 20);
+			
+			cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 44);
+			cmd_line->len = mem[cpustate->sreg[DS].base + REG16(BX) + 1];
+			memcpy(cmd_line->cmd, mem + cpustate->sreg[DS].base + REG16(BX) + 2, cmd_line->len);
+			cmd_line->cmd[cmd_line->len] = 0x0d;
+			
+			if(msdos_process_exec(command, param, 0)) {
+				REG16(AX) = 0x02;
+				cpustate->CF = 1;
+			}
+		}
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_b7h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// append is not installed
+		REG8(AL) = 0;
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
 void msdos_syscall(unsigned num)
 {
 	switch(num) {
@@ -4556,7 +4748,7 @@ void msdos_syscall(unsigned num)
 //		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
 		break;
 	case 0x10:
-		// PC BIOS
+		// PC BIOS - Video
 		if(scr_width != 80 || scr_height != 25) {
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
 			SMALL_RECT rect;
@@ -4600,37 +4792,44 @@ void msdos_syscall(unsigned num)
 		case 0x0a: pcbios_int_10h_0ah(); break;
 		case 0x0b: break;
 		case 0x0c: break;
-//		case 0x0d: break;
+		case 0x0d: break;
 		case 0x0e: pcbios_int_10h_0eh(); break;
 		case 0x0f: pcbios_int_10h_0fh(); break;
 		case 0x10: break;
-//		case 0x11: break;
-		case 0x12: break;
+		case 0x11: break;
+		case 0x12: REG8(AL) = 0x00; break;
 		case 0x13: pcbios_int_10h_13h(); break;
+		case 0x18: REG8(AL) = 0x86; break;
+		case 0x1a: REG8(AL) = 0x00; break;
+		case 0x1c: REG8(AL) = 0x00; break;
 		case 0x1d: pcbios_int_10h_1dh(); break;
 		case 0x82: pcbios_int_10h_82h(); break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
-			fatalerror("int 10h (ah=%2xh al=%2xh bl=%2xh)\n", REG8(AH), REG8(AL), REG8(BL));
+			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			break;
 		}
 		break;
 	case 0x11:
-		// PC BIOS
+		// PC BIOS - Get Equipment List
 		REG16(AX) = 0x20;
 		break;
 	case 0x12:
-		// PC BIOS
+		// PC BIOS - Get Memory Size
 		REG16(AX) = MEMORY_END / 1024;
 		break;
 	case 0x13:
-		// PC BIOS
-		fatalerror("int 13h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		// PC BIOS - Disk
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0xff;
+		cpustate->CF = 1;
 		break;
 	case 0x14:
-		// PC BIOS
-		fatalerror("int 14h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		// PC BIOS - Serial I/O
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0xff;
+		cpustate->CF = 1;
 		break;
 	case 0x15:
 		// PC BIOS
@@ -4639,20 +4838,21 @@ void msdos_syscall(unsigned num)
 		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
 		case 0x49: pcbios_int_15h_49h(); break;
+		case 0x86: pcbios_int_15h_86h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
 		case 0xc9: pcbios_int_15h_c9h(); break;
 		case 0xca: pcbios_int_15h_cah(); break;
 		default:
-//			fatalerror("int 15h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			REG8(AH)=0x86;
 			cpustate->CF = 1;
 			break;
 		}
 		break;
 	case 0x16:
-		// PC BIOS
+		// PC BIOS - Keyboard
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
 		case 0x00: pcbios_int_16h_00h(); break;
@@ -4666,20 +4866,16 @@ void msdos_syscall(unsigned num)
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
 		default:
-			fatalerror("int 16h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			break;
 		}
 		break;
 	case 0x17:
-		// PC BIOS
-		fatalerror("int 17h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
-		break;
-	case 0x18:
-		// PC BIOS
-		fatalerror("int 18h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+		// PC BIOS - Printer
+		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 		break;
 	case 0x1a:
-		// PC BIOS
+		// PC BIOS - Timer
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
 		case 0x00: pcbios_int_1ah_00h(); break;
@@ -4691,7 +4887,7 @@ void msdos_syscall(unsigned num)
 		case 0x0a: pcbios_int_1ah_0ah(); break;
 		case 0x0b: break;
 		default:
-			fatalerror("int 1ah (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			break;
 		}
 		break;
@@ -4791,7 +4987,7 @@ void msdos_syscall(unsigned num)
 		case 0x56: msdos_int_21h_56h(0); break;
 		case 0x57: msdos_int_21h_57h(); break;
 		case 0x58: msdos_int_21h_58h(); break;
-		// 0x59: get extended error information
+		case 0x59: msdos_int_21h_59h(); break;
 		case 0x5a: msdos_int_21h_5ah(); break;
 		case 0x5b: msdos_int_21h_5bh(); break;
 		case 0x5c: msdos_int_21h_5ch(); break;
@@ -4806,7 +5002,7 @@ void msdos_syscall(unsigned num)
 		case 0x66: msdos_int_21h_66h(); break;
 		case 0x67: msdos_int_21h_67h(); break;
 		case 0x68: msdos_int_21h_68h(); break;
-		// 0x69 get/set disk serial number
+		case 0x69: msdos_int_21h_69h(); break;
 		case 0x6a: msdos_int_21h_6ah(); break;
 		case 0x6b: msdos_int_21h_6bh(); break;
 		case 0x6c: msdos_int_21h_6ch(0); break;
@@ -4837,9 +5033,10 @@ void msdos_syscall(unsigned num)
 			// 0xa9: server create/open file
 			// 0xaa: create/terminate SUBST
 			default:
-//				fatalerror("int 21h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//				fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 				REG16(AX) = 0x7100;
 				cpustate->CF = 1;
+				break;
 			}
 			break;
 		// 0x72: Windows95 beta - LFN FindClose
@@ -4852,13 +5049,20 @@ void msdos_syscall(unsigned num)
 			case 0x03: msdos_int_21h_7303h(); break;
 			// 0x04: set dpb to use for formatting
 			default:
-//				fatalerror("int 21h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
-				REG16(AX) = 0x7200;
+//				fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+				REG16(AX) = 0x7300;
 				cpustate->CF = 1;
+				break;
 			}
 			break;
 		default:
-			fatalerror("int 21h (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			REG16(AX) = 0x01;
+			cpustate->CF = 1;
+			break;
+		}
+		if(cpustate->CF) {
+			error_code = REG16(AX);
 		}
 		break;
 	case 0x22:
@@ -4888,15 +5092,24 @@ void msdos_syscall(unsigned num)
 		// multiplex interrupt
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
+		case 0x43: msdos_int_2fh_43h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
 		case 0x4f: msdos_int_2fh_4fh(); break;
+		case 0xae: msdos_int_2fh_aeh(); break;
+		case 0xb7: msdos_int_2fh_b7h(); break;
 		default:
-//			fatalerror("int 2fh (ah=%2xh al=%2xh)\n", REG8(AH), REG8(AL));
+//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			REG16(AX) = 0x01; // ???
+			cpustate->CF = 1;
 			break;
 		}
+		if(cpustate->CF) {
+			error_code = REG16(AX);
+		}
 		break;
-//	default:
-//		fatalerror("int %2xh (ah=%2xh al=%2xh)\n", num, REG8(AH), REG8(AL));
+	default:
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		break;
 	}
 	
 	// update cursor position

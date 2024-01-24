@@ -295,6 +295,15 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
+	UINT16 info_level;
+	UINT32 serial_number;
+	char volume_label[11];
+	char file_system[8];
+} drive_info_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
 	UINT16 size_of_structure;
 	UINT16 structure_version;
 	UINT32 sectors_per_cluster;
@@ -306,7 +315,7 @@ typedef struct {
 	UINT32 available_allocation_units;
 	UINT32 total_allocation_units;
 	UINT8 reserved[8];
-} ext_free_space_t;
+} ext_space_info_t;
 #pragma pack()
 
 #pragma pack(1)
@@ -383,6 +392,7 @@ typedef struct {
 UINT16 current_psp;
 
 int retval = 0;
+UINT16 error_code = 0;
 
 file_handler_t file_handler[MAX_FILES];
 UINT8 file_buffer[0x100000];
@@ -428,7 +438,7 @@ bool int_10h_ffh_called = false;
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
-//#define SUPPORT_HARDWARE
+#define SUPPORT_HARDWARE
 
 void hardware_init();
 void hardware_finish();

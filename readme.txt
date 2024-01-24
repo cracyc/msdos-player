@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/27/2014
+								3/13/2014
 
 ----- What's this
 
@@ -37,7 +37,7 @@ CPU 80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
 
 ----- Supported system calls
 
-INT 10H		Video Services
+INT 10H		PC BIOS - Video
 
 	00H	Set Video Mode
 	02H	Set Cursor Position
@@ -59,9 +59,9 @@ INT 10H		Video Services
 	FEH	Get Shadow Buffer
 	FFH	Update Screen from Shadow Buffer
 
-INT 11H		Read Equipment List
+INT 11H		PC BIOS - Get Equipment List
 
-INT 12H		Report Memory Size
+INT 12H		PC BIOS - Get Memory Size
 
 INT 15H		PC BIOS
 
@@ -72,6 +72,7 @@ INT 15H		PC BIOS
 	2402H	Get A20 Gate Status
 	2403H	A20 Support
 	49H	Get BIOS Type
+	86H	Wait
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
@@ -79,17 +80,17 @@ INT 15H		PC BIOS
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
 
-INT 16H		Keyboard Services
+INT 16H		PC BIOS - Keyboard
 
 	00H	Get Keystroke
 	01H	Check for Keystroke
 	02H	Get Shift Flags
-	05H	Stor Keystroke in Keyboard Buffer
+	05H	Store Keystroke in Keyboard Buffer
 	10H	Get Keystroke
 	11H	Check for Keystroke
 	12H	Get Extended Shift States
 
-INT 1AH		System Timer and Clock Services
+INT 1AH		PC BIOS - Timer
 
 	1A00H	Get System Timer
 	1A02H	Get Real Time Clock Time
@@ -185,6 +186,7 @@ INT 21H		MS-DOS System Call
 	5700H	Get Time and Date Stamps
 	5701H	Set Time and Date Stamps
 	5800H	Get Memory Allocation Strategy
+	59H	Get Extended Error Information
 	5AH	Create Unique File
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
@@ -200,6 +202,7 @@ INT 21H		MS-DOS System Call
 	6602H	Get Global Code Page Table
 	67H	Set Handle Count
 	68H	Commit File
+	6900H	Get Disk Serial Number
 	6AH	Commit File
 	6BH	Null Function
 	6CH	Extended Open/Create
@@ -238,14 +241,18 @@ INT 2EH		Pass Command to Command Interpreter for Execution
 
 INT 2FH		Multiplex Interrupt
 
+	4300H	XMS Installation Check (*3)
 	4A01H	Query Free HMA Space (*3)
 	4A02H	Allocate HMA Space (*3)
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
+	AE00H	
+	AE01H	Execute
+	B700H	APPEND Installation Check (*3)
 
 (*1) MS-DOS Version: 7.00
 (*2) No ROM Programs
-(*3) HMA is not supported
+(*3) XMS/HMA/APPEND are not supported
 
 ----------------------------------------
 TAKEDA, toshiya
