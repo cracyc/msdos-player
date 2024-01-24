@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								11/13/2010
+								8/23/2012
 
 ----- What's this
 
@@ -22,12 +22,16 @@ The emulator can access host's file path and envrionments directly.
 
 ----- Supported hardwares
 
-CPU 80286, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
+CPU 80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
 
 
 ----- Supported system calls
 
 INT 15H		PC BIOS
+	2400H	Disable A20 Gate
+	2401H	Enable A20 Gate
+	2402H	Get A20 Gate Status
+	2403H	A20 Support
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
@@ -103,6 +107,7 @@ INT 21H		MS-DOS System Call
 	4FH	Find Next Matching File
 	50H	Set Program Segment Prefix Address
 	51H	Get Program Segment Prefix Address
+	52H	Get DOS Info Table
 	54H	Get Verify State
 	55H	Create Child Program Segment Prefix
 	56H	Rename File
