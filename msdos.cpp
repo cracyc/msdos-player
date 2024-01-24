@@ -413,6 +413,16 @@ process_t *msdos_process_info_get(UINT16 psp_seg)
 	return(NULL);
 }
 
+void msdos_cds_update(int drv)
+{
+	cds_t *cds = (cds_t *)(mem + CDS_TOP);
+	
+	memset(mem + CDS_TOP, 0, CDS_SIZE);
+	sprintf(cds->path_name, "%c:\\", 'A' + drv);
+	cds->drive_attrib = 0x4000;	// physical drive
+	cds->physical_drive_number = drv;
+}
+
 // dbcs
 
 void msdos_dbcs_table_update()
@@ -858,7 +868,7 @@ retry:
 	if(echo && key_char) {
 		msdos_putch(key_char);
 	}
-	return key_char ? key_char : key_scan;
+	return key_char ? key_char : (key_scan != 0xe0) ? key_scan : 0;
 }
 
 inline int msdos_getch()
@@ -2374,12 +2384,16 @@ inline void pcbios_int_15h_cah()
 	}
 }
 
-UINT32 get_key_code()
+UINT32 get_key_code(bool clear_buffer)
 {
 	UINT32 code = 0;
 	
 	if(key_buf_char->count() == 0) {
 		update_key_buffer();
+	}
+	if(!clear_buffer) {
+		key_buf_char->store_buffer();
+		key_buf_scan->store_buffer();
 	}
 	if(key_buf_char->count() != 0) {
 		code = key_buf_char->read() | (key_buf_scan->read() << 8);
@@ -2387,15 +2401,19 @@ UINT32 get_key_code()
 	if(key_buf_char->count() != 0) {
 		code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
 	}
+	if(!clear_buffer) {
+		key_buf_char->restore_buffer();
+		key_buf_scan->restore_buffer();
+	}
 	return code;
 }
 
-UINT32 key_code = 0;
-
 inline void pcbios_int_16h_00h()
 {
+	static UINT32 key_code = 0;
+	
 	while(key_code == 0) {
-		key_code = get_key_code();
+		key_code = get_key_code(true);
 	}
 	if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
 		if(REG8(AH) == 0x10) {
@@ -2410,9 +2428,8 @@ inline void pcbios_int_16h_00h()
 
 inline void pcbios_int_16h_01h()
 {
-	if(key_code == 0) {
-		key_code = get_key_code();
-	}
+	UINT32 key_code = get_key_code(false);
+	
 	if(key_code != 0) {
 		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
 			if(REG8(AH) == 0x11) {
@@ -2658,7 +2675,10 @@ inline void msdos_int_21h_0ah()
 	int chr, p = 0;
 	
 	while((chr = msdos_getch()) != 0x0d) {
-		if(chr == 0x08) {
+		if(chr == 0x00) {
+			// skip 2nd byte
+			msdos_getch();
+		} else if(chr == 0x08) {
 			// back space
 			if(p > 0) {
 				p--;
@@ -2730,6 +2750,7 @@ inline void msdos_int_21h_0eh()
 {
 	if(REG8(DL) < 26) {
 		_chdrive(REG8(DL) + 1);
+		msdos_cds_update(REG8(DL));
 	}
 	REG8(AL) = 26; // zdrive
 }
@@ -3341,7 +3362,10 @@ inline void msdos_int_21h_3fh()
 				while(max > p) {
 					int chr = msdos_getch();
 					
-					if(chr == 0x0d) {
+					if(chr == 0x00) {
+						// skip 2nd byte
+						msdos_getch();
+					} else if(chr == 0x0d) {
 						// carriage return
 						buf[p++] = 0x0d;
 						if(max > p) {
@@ -4625,6 +4649,40 @@ inline void msdos_int_2eh()
 	REG8(AL) = 0;
 }
 
+inline void msdos_int_2fh_16h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		{
+			OSVERSIONINFO osvi;
+			ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+			osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+			GetVersionEx(&osvi);
+			REG8(AL) = osvi.dwMajorVersion;
+			REG8(AH) = osvi.dwMinorVersion;
+		}
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_1ah()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// ansi.sys is installed
+		REG8(AL) = 0xff;
+		break;
+	default:
+		REG16(AX) = 0x01;
+		cpustate->CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_2fh_43h()
 {
 	switch(REG8(AL)) {
@@ -5082,6 +5140,9 @@ void msdos_syscall(unsigned num)
 	case 0x27:
 		msdos_int_27h();
 		break;
+	case 0x28:
+		Sleep(10);
+		break;
 	case 0x29:
 		msdos_int_29h();
 		break;
@@ -5092,6 +5153,8 @@ void msdos_syscall(unsigned num)
 		// multiplex interrupt
 		cpustate->CF = 0;
 		switch(REG8(AH)) {
+		case 0x16: msdos_int_2fh_16h(); break;
+		case 0x1a: msdos_int_2fh_1ah(); break;
 		case 0x43: msdos_int_2fh_43h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
 		case 0x4f: msdos_int_2fh_4fh(); break;
@@ -5182,7 +5245,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->first_mcb = MEMORY_TOP >> 4;
 	dos_info->first_dpb.w.l = 0;
 	dos_info->first_dpb.w.h = DPB_TOP >> 4;
+	dos_info->first_sft.w.l = 0;
+	dos_info->first_sft.w.h = FILE_TABLE_TOP >> 4;
+	dos_info->cds.w.l = 0;
+	dos_info->cds.w.h = CDS_TOP >> 4;
+	dos_info->fcb_table.w.l = 0;
+	dos_info->fcb_table.w.h = FCB_TABLE_TOP >> 4;
 	dos_info->last_drive = 'Z' - 'A' + 1;
+	dos_info->buffers_x = 20;
+	dos_info->buffers_y = 0;
 	char *env;
 	if((env = getenv("LASTDRIVE")) != NULL) {
 		if(env[0] >= 'A' && env[0] <= 'Z') {
@@ -5198,20 +5269,25 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			dos_info->boot_drive = env[0] - 'a' + 1;
 		}
 	}
+	dos_info->i386_or_later = 1;
+	dos_info->ext_mem_size = (MAX_MEM - 0x100000) >> 10;
 	
 	// environment
 	int seg = MEMORY_TOP >> 4;
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
+	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
-		char tmp[ENV_SIZE], name[ENV_SIZE];
+		char tmp[ENV_SIZE], name[ENV_SIZE], value[ENV_SIZE];
+		int value_pos = 0;
 		strcpy(tmp, *p);
 		for(int i = 0;; i++) {
 			if(tmp[i] == '=') {
 				tmp[i] = '\0';
 				sprintf(name, ";%s;", tmp);
+				strcpy(value, tmp + (value_pos = i + 1));
 				tmp[i] = '=';
 				break;
 			} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
@@ -5219,6 +5295,38 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			}
 		}
 		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
+			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
+				char full_path[MAX_PATH], short_path[MAX_PATH], *file_name;
+				GetFullPathName(argv[0], MAX_PATH, full_path, &file_name);
+				if(_stricmp(file_name, "COMMAND.COM") == 0 || _stricmp(file_name, "COMMAND") == 0) {
+					sprintf(file_name, "COMMAND.COM");
+					if(_access(full_path, 0) == 0) {
+						GetShortPathName(full_path, short_path, MAX_PATH);
+						my_strupr(short_path);
+						sprintf(tmp, "COMSPEC=%s", short_path);
+					}
+				}
+			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
+				tmp[value_pos] = '\0';
+				char *token = my_strtok(value, ";");
+				while(token != NULL) {
+					if(strlen(token) != 0) {
+						char path[MAX_PATH], short_path[MAX_PATH];
+						if(token[0] == '"' && token[strlen(token) - 1] == '"') {
+							memset(path, 0, sizeof(path));
+							memcpy(path, token + 1, strlen(token) - 2);
+						} else {
+							sprintf(path, token);
+						}
+						GetShortPathName(path, short_path, MAX_PATH);
+						strcat(tmp, short_path);
+						strcat(tmp, ";");
+					}
+					token = my_strtok(NULL, ";");
+				}
+				tmp[strlen(tmp) - 1] = '\0';
+				my_strupr(tmp);
+			}
 			int len = strlen(tmp);
 			if (ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
 				fatalerror("too many environments\n");
@@ -5272,6 +5380,20 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		cmd_line->len = 0;
 	}
 	cmd_line->cmd[cmd_line->len] = 0x0d;
+	
+	// system file table
+	*(UINT16 *)(mem + FILE_TABLE_TOP +  0) = 6;
+	*(UINT16 *)(mem + FILE_TABLE_TOP +  2) = FILE_TABLE_TOP >> 4;
+	*(UINT16 *)(mem + FILE_TABLE_TOP +  4) = 100;
+	*(UINT32 *)(mem + FILE_TABLE_TOP +  6) = 0xffffffff;
+	*(UINT16 *)(mem + FILE_TABLE_TOP + 10) = 100;
+	
+	// current directory structure
+	msdos_cds_update(_getdrive() - 1);
+	
+	// fcb table
+	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
+	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 100;
 	
 	// dbcs table
 	msdos_dbcs_table_init();

@@ -78,7 +78,7 @@ class FIFO
 {
 private:
 	int buf[MAX_FIFO];
-	int cnt, rpt, wpt;
+	int cnt, rpt, wpt, stored[3];
 public:
 	FIFO() {
 		cnt = rpt = wpt = 0;
@@ -103,15 +103,18 @@ public:
 		}
 		return val;
 	}
-	int read_not_remove() {
-		int val = 0;
-		if(cnt) {
-			val = buf[rpt];
-		}
-		return val;
-	}
 	int count() {
 		return cnt;
+	}
+	void store_buffer() {
+		stored[0] = cnt;
+		stored[1] = rpt;
+		stored[2] = wpt;
+	}
+	void restore_buffer() {
+		cnt = stored[0];
+		rpt = stored[1];
+		wpt = stored[2];
 	}
 };
 
@@ -125,16 +128,22 @@ public:
 #define BIOS_SIZE	0x100
 #define WORK_TOP	(BIOS_TOP + BIOS_SIZE)
 #define WORK_SIZE	0x300
-#define DPB_TOP		(WORK_TOP + WORK_SIZE)
-#define DPB_SIZE	0x400
-#define IRET_TOP	(DPB_TOP + DPB_SIZE)
+#define IRET_TOP	(WORK_TOP + WORK_SIZE)
 #define IRET_SIZE	0x100
 #define DOS_INFO_TOP	(IRET_TOP + IRET_SIZE)
 #define DOS_INFO_BASE	(DOS_INFO_TOP + 12)
 #define DOS_INFO_SIZE	0x100
-#define DBCS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
+#define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
+#define DPB_SIZE	0x400
+#define FILE_TABLE_TOP	(DPB_TOP + DPB_SIZE)
+#define FILE_TABLE_SIZE	0x10
+#define CDS_TOP		(FILE_TABLE_TOP + FILE_TABLE_SIZE)
+#define CDS_SIZE	0x80
+#define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
+#define FCB_TABLE_SIZE	0x10
+#define DBCS_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
 #define DBCS_TABLE	(DBCS_TOP + 2)
-#define DBCS_SIZE	16
+#define DBCS_SIZE	0x10
 #define MEMORY_TOP	(DBCS_TOP + DBCS_SIZE)
 //#define MEMORY_END	0xffff0
 #define MEMORY_END	0xf8000
@@ -344,13 +353,29 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
+	char path_name[67];
+	UINT16 drive_attrib;
+	UINT8 physical_drive_number;
+} cds_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
 	UINT8 reserved_1[10];
 	UINT16 first_mcb;	// -2
 	PAIR32 first_dpb;	// +0
-	UINT8 reserved_2[29];
+	PAIR32 first_sft;	// +0
+	UINT8 reserved_2[14];
+	PAIR32 cds;		// +22
+	PAIR32 fcb_table;	// +26
+	UINT8 reserved_3[3];
 	UINT8 last_drive;	// +33
-	UINT8 reserved_3[33];
+	UINT8 reserved_4[29];
+	UINT16 buffers_x;	// +63
+	UINT16 buffers_y;	// +65
 	UINT8 boot_drive;	// +67
+	UINT8 i386_or_later;	// +68
+	UINT16 ext_mem_size;	// +69
 } dos_info_t;
 #pragma pack()
 

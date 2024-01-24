@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/13/2014
+								3/27/2014
 
 ----- What's this
 
@@ -235,24 +235,29 @@ INT 26H		Absolute Disk Write
 
 INT 27H		Terminate and Stay Resident
 
+INT 28H		DOS Idle
+
 INT 29H		DOS Fast Character I/O
 
 INT 2EH		Pass Command to Command Interpreter for Execution
 
 INT 2FH		Multiplex Interrupt
 
-	4300H	XMS Installation Check (*3)
-	4A01H	Query Free HMA Space (*3)
-	4A02H	Allocate HMA Space (*3)
+	1600H	Windows Enhanced Mode Installation Check
+	1A00H	ANSI.SYS Installation Check (*3)
+	4300H	XMS Installation Check (*4)
+	4A01H	Query Free HMA Space (*4)
+	4A02H	Allocate HMA Space (*4)
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
 	AE00H	
 	AE01H	Execute
-	B700H	APPEND Installation Check (*3)
+	B700H	APPEND Installation Check (*4)
 
-(*1) MS-DOS Version: 7.00
+(*1) MS-DOS Version: 7.10
 (*2) No ROM Programs
-(*3) XMS/HMA/APPEND are not supported
+(*3) ANSI.SYS is installed
+(*4) XMS/HMA/APPEND are not installed
 
 ----------------------------------------
 TAKEDA, toshiya
