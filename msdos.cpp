@@ -109,32 +109,44 @@ typedef UINT32	offs_t;
 // read accessors
 UINT8 read_byte(offs_t byteaddress)
 {
+#if defined(HAS_I386)
 	if(byteaddress < MAX_MEM) {
 		return mem[byteaddress];
 //	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 //		return read_byte(byteaddress & 0xfffff);
 	}
 	return 0;
+#else
+	return mem[byteaddress];
+#endif
 }
 
 UINT16 read_word(offs_t byteaddress)
 {
+#if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
 		return *(UINT16 *)(mem + byteaddress);
 //	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 //		return read_word(byteaddress & 0xfffff);
 	}
 	return 0;
+#else
+	return *(UINT16 *)(mem + byteaddress);
+#endif
 }
 
 UINT32 read_dword(offs_t byteaddress)
 {
+#if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
 		return *(UINT32 *)(mem + byteaddress);
 //	} else if((byteaddress & 0xfffffff0) == 0xfffffff0) {
 //		return read_dword(byteaddress & 0xfffff);
 	}
 	return 0;
+#else
+	return *(UINT32 *)(mem + byteaddress);
+#endif
 }
 
 // write accessors
@@ -159,7 +171,11 @@ void write_byte(offs_t byteaddress, UINT8 data)
 			}
 		}
 		mem[byteaddress] = data;
+#if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM) {
+#else
+	} else {
+#endif
 		mem[byteaddress] = data;
 	}
 }
@@ -175,7 +191,11 @@ void write_word(offs_t byteaddress, UINT16 data)
 			return;
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
+#if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM - 1) {
+#else
+	} else {
+#endif
 		*(UINT16 *)(mem + byteaddress) = data;
 	}
 }
@@ -193,7 +213,11 @@ void write_dword(offs_t byteaddress, UINT32 data)
 			return;
 		}
 		*(UINT32 *)(mem + byteaddress) = data;
+#if defined(HAS_I386)
 	} else if(byteaddress < MAX_MEM - 3) {
+#else
+	} else {
+#endif
 		*(UINT32 *)(mem + byteaddress) = data;
 	}
 }
@@ -1512,7 +1536,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	// load command file
 	int fd = -1;
 	int dos_command = 0;
-	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name;
+	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name, name_tmp[MAX_PATH];
 	
 	strcpy(command, cmd);
 	int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
@@ -1522,6 +1546,9 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	
 	// check command.com
 	GetFullPathName(command, MAX_PATH, path, &name);
+	memset(name_tmp, 0, sizeof(name_tmp));
+	strcpy(name_tmp, name);
+	
 	if(_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "CMD.EXE") == 0) {
 		for(int i = 0; i < opt_len; i++) {
 			if(opt[i] == ' ') {
@@ -1679,6 +1706,21 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	mcb_t *mcb_env = (mcb_t *)(mem + ((env_seg - 1) << 4));
 	mcb_t *mcb_psp = (mcb_t *)(mem + ((psp_seg - 1) << 4));
 	mcb_psp->psp = mcb_env->psp = psp_seg;
+	
+	for(int i = 0; i < 8; i++) {
+		if(name_tmp[i] == '.') {
+			mcb_psp->prog_name[i] = '\0';
+			break;
+		} else if(i < 7 && msdos_lead_byte_check(name_tmp[i])) {
+			mcb_psp->prog_name[i] = name_tmp[i];
+			i++;
+			mcb_psp->prog_name[i] = name_tmp[i];
+		} else if(name_tmp[i] >= 'a' && name_tmp[i] <= 'z') {
+			mcb_psp->prog_name[i] = name_tmp[i] - 'a' + 'A';
+		} else {
+			mcb_psp->prog_name[i] = name_tmp[i];
+		}
+	}
 	
 	// process info
 	process_t *process = msdos_process_info_create(psp_seg);

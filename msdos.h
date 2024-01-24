@@ -133,7 +133,7 @@ public:
 #define IRET_TOP	(WORK_TOP + WORK_SIZE)
 #define IRET_SIZE	0x100
 #define DOS_INFO_TOP	(IRET_TOP + IRET_SIZE)
-#define DOS_INFO_BASE	(DOS_INFO_TOP + 12)
+#define DOS_INFO_BASE	(DOS_INFO_TOP + 24)
 #define DOS_INFO_SIZE	0x100
 #define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
 #define DPB_SIZE	0x400
@@ -169,6 +169,8 @@ typedef struct {
 	UINT8 mz;
 	UINT16 psp;
 	UINT16 paragraphs;
+	UINT8 reserved[3];
+	char prog_name[8];
 } mcb_t;
 #pragma pack()
 
@@ -363,7 +365,7 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	UINT8 reserved_1[10];
+	UINT8 reserved_1[22];	// -24
 	UINT16 first_mcb;	// -2
 	PAIR32 first_dpb;	// +0
 	PAIR32 first_sft;	// +0
@@ -477,7 +479,7 @@ void hardware_update();
 // memory
 
 #define MAX_MEM 0x1000000
-UINT8 mem[MAX_MEM];
+UINT8 mem[MAX_MEM + 3];
 
 // cmos
 

@@ -3202,15 +3202,15 @@ static CPU_EXECUTE( i386 )
 	m_base_cycles = cycles;
 	CHANGE_PC(m_eip);
 
-	if (m_halted)
-	{
-		m_tsc += cycles;
-		m_cycles = 0;
-		return;
-	}
+//	if (m_halted)
+//	{
+//		m_tsc += cycles;
+//		m_cycles = 0;
+//		return;
+//	}
 
 //	while( m_cycles > 0 )
-	{
+//	{
 		i386_check_irq_line();
 		m_operand_size = m_sreg[CS].d;
 		m_address_size = m_sreg[CS].d;
@@ -3248,7 +3248,7 @@ static CPU_EXECUTE( i386 )
 			m_ext = 1;
 			i386_trap_with_error(e&0xffffffff,0,0,e>>32);
 		}
-	}
+//	}
 	m_tsc += (cycles - m_cycles);
 }
 
