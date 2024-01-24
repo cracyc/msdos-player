@@ -393,6 +393,7 @@
 			UseOfMFC="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
 			CharacterSet="2"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -414,7 +415,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				InlineFunctionExpansion="1"
+				InlineFunctionExpansion="2"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;HAS_I286"
 				StringPooling="true"
 				RuntimeLibrary="0"
@@ -445,6 +446,7 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
 				TargetMachine="1"
@@ -482,6 +484,7 @@
 			UseOfMFC="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
 			CharacterSet="2"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -504,7 +507,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				InlineFunctionExpansion="1"
+				InlineFunctionExpansion="2"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;HAS_I286"
 				StringPooling="true"
 				RuntimeLibrary="0"
@@ -535,6 +538,7 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
 				TargetMachine="17"
@@ -572,6 +576,7 @@
 			UseOfMFC="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
 			CharacterSet="2"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -593,7 +598,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				InlineFunctionExpansion="1"
+				InlineFunctionExpansion="2"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;HAS_I386"
 				StringPooling="true"
 				RuntimeLibrary="0"
@@ -624,6 +629,7 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
 				TargetMachine="1"
@@ -661,6 +667,7 @@
 			UseOfMFC="0"
 			ATLMinimizesCRunTimeLibraryUsage="false"
 			CharacterSet="2"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -683,7 +690,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				InlineFunctionExpansion="1"
+				InlineFunctionExpansion="2"
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;HAS_I386"
 				StringPooling="true"
 				RuntimeLibrary="0"
@@ -714,6 +721,7 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
 				TargetMachine="17"
