@@ -431,6 +431,9 @@ UINT8 file_buffer[0x100000];
 
 process_t process[MAX_PROCESS];
 
+UINT16 malloc_strategy = 0;
+UINT8 umb_linked = 0;
+
 void msdos_syscall(unsigned num);
 int msdos_init(int argc, char *argv[], char *envp[], int standard_env);
 void msdos_finish();
@@ -548,5 +551,17 @@ void pit_latch_count(int ch);
 void pit_set_signal(int ch, int signal);
 int pit_get_next_count(int ch);
 int pit_get_expired_time(int clock);
+
+// kbd (a20)
+
+UINT8 kbd_data;
+UINT8 kbd_status;
+UINT8 kbd_command;
+
+void kbd_init();
+UINT8 kbd_read_data();
+void kbd_write_data(UINT8 val);
+UINT8 kbd_read_status();
+void kbd_write_command(UINT8 val);
 
 #endif

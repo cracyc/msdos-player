@@ -31,10 +31,16 @@
 
 //#define SUPPORT_DISASSEMBLER
 
-#if defined(HAS_I386)
+#if defined(HAS_I86)
+	#define CPU_MODEL i8086
+	//#define CPU_MODEL i80186
+#elif defined(HAS_I286)
+	#define CPU_MODEL i80286
+#elif defined(HAS_I386)
 	#define CPU_MODEL i386
 	//#define CPU_MODEL i386SX
-	//#define CPU_MODEL i486
+#elif defined(HAS_I486)
+	#define CPU_MODEL i486
 	//#define CPU_MODEL pentium
 	//#define CPU_MODEL mediagx
 	//#define CPU_MODEL pentium_pro
@@ -42,11 +48,7 @@
 	//#define CPU_MODEL pentium2
 	//#define CPU_MODEL pentium3
 	//#define CPU_MODEL pentium4
-#elif defined(HAS_I286)
-	#define CPU_MODEL i80286
-#else
-	#define CPU_MODEL i8086
-	//#define CPU_MODEL i80186
+	#define HAS_I386
 #endif
 
 #define LSB_FIRST
@@ -3796,7 +3798,12 @@ inline void msdos_int_21h_48h()
 {
 	int seg;
 	
-	if((seg = msdos_mem_alloc(REG16(BX), 0)) != -1) {
+	if((malloc_strategy & 0xf0) == 0x40) {
+		// UMB is not supported
+		REG16(AX) = 0x08;
+		REG16(BX) = 0;
+		m_CF = 1;
+	} else if((seg = msdos_mem_alloc(REG16(BX), 0)) != -1) {
 		REG16(AX) = seg;
 	} else {
 		REG16(AX) = 0x08;
@@ -4068,7 +4075,41 @@ inline void msdos_int_21h_58h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		REG16(AX) = 0x00;
+		REG16(AX) = malloc_strategy;
+		break;
+	case 0x01:
+		switch(REG16(BX)) {
+		case 0x0000:
+		case 0x0001:
+		case 0x0002:
+		case 0x0040:
+		case 0x0041:
+		case 0x0042:
+		case 0x0080:
+		case 0x0081:
+		case 0x0082:
+			malloc_strategy = REG16(BX);
+			break;
+		default:
+			REG16(AX) = 0x01;
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x02:
+		REG8(AL) = umb_linked;
+		break;
+	case 0x03:
+		switch(REG16(BX)) {
+		case 0x0000:
+		case 0x0001:
+			umb_linked = REG8(BL);
+			break;
+		default:
+			REG16(AX) = 0x01;
+			m_CF = 1;
+			break;
+		}
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -5628,6 +5669,7 @@ void hardware_init()
 	pic_init();
 	//pit_init();
 	pit_active = 0;
+	kbd_init();
 #endif
 }
 
@@ -6222,6 +6264,79 @@ int pit_get_expired_time(int clock)
 	}
 }
 
+// kbd (a20)
+
+void kbd_init()
+{
+	kbd_status = 0x18;
+}
+
+UINT8 kbd_read_data()
+{
+	return(kbd_data);
+}
+
+void kbd_write_data(UINT8 val)
+{
+	switch(kbd_command) {
+	case 0xd1:
+		i386_set_a20_line((val >> 1) & 1);
+		break;
+	}
+	kbd_command = 0;
+	kbd_status &= ~0x08;
+}
+
+UINT8 kbd_read_status()
+{
+	return(kbd_status);
+}
+
+void kbd_write_command(UINT8 val)
+{
+	switch(val) {
+	case 0xd0:
+		kbd_data = ((m_a20_mask >> 19) & 2) | 1;
+		break;
+	case 0xdd:
+		i386_set_a20_line(0);
+		break;
+	case 0xdf:
+		i386_set_a20_line(1);
+		break;
+	case 0xf0:
+	case 0xf1:
+	case 0xf2:
+	case 0xf3:
+	case 0xf4:
+	case 0xf5:
+	case 0xf6:
+	case 0xf7:
+	case 0xf8:
+	case 0xf9:
+	case 0xfa:
+	case 0xfb:
+	case 0xfc:
+	case 0xfd:
+	case 0xfe:
+	case 0xff:
+		if(!(val & 1)) {
+			if(cmos[0x0f] == 5) {
+				// reset pic
+				pic_init();
+				pic[0].irr = pic[1].irr = 0x00;
+				pic[0].imr = pic[1].imr = 0xff;
+			}
+			CPU_RESET_CALL(CPU_MODEL);
+			i386_jmp_far(0x40, 0x67);
+		}
+		i386_set_a20_line((val >> 1) & 1);
+		break;
+	}
+	kbd_command = val;
+	kbd_status |= 0x08;
+}
+
 // i/o bus
 
 UINT8 read_io_byte(offs_t addr)
@@ -6236,6 +6351,10 @@ UINT8 read_io_byte(offs_t addr)
 	case 0x42:
 	case 0x43:
 		return(pit_read(addr & 0x03));
+	case 0x60:
+		return(kbd_read_data());
+	case 0x64:
+		return(kbd_read_status());
 #endif
 	case 0x71:
 		return(cmos[cmos_addr & 0x7f]);
@@ -6277,19 +6396,13 @@ void write_io_byte(offs_t addr, UINT8 val)
 	case 0x43:
 		pit_write(addr & 0x03, val);
 		break;
-#endif
-	case 0x64:
-		if(val == 0xfe) {
-			if(cmos[0x0f] == 5) {
-				// reset pic
-				pic_init();
-				pic[0].irr = pic[1].irr = 0x00;
-				pic[0].imr = pic[1].imr = 0xff;
-			}
-			CPU_RESET_CALL(CPU_MODEL);
-			i386_jmp_far(0x40, 0x67);
-		}
+	case 0x60:
+		kbd_write_data(val);
 		break;
+	case 0x64:
+		kbd_write_command(val);
+		break;
+#endif
 	case 0x70:
 		cmos_addr = val;
 		break;
@@ -6297,7 +6410,7 @@ void write_io_byte(offs_t addr, UINT8 val)
 		cmos[cmos_addr & 0x07] = val;
 		break;
 	case 0x92:
-		i386_set_a20_line(val & 2);
+		i386_set_a20_line((val >> 1) & 1);
 		break;
 #ifdef SUPPORT_HARDWARE
 	case 0xa0:

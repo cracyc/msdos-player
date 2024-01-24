@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								11/19/2014
+								11/30/2014
 
 ----- What's this
 
@@ -29,17 +29,19 @@ In this case, please specify the option '-e' and only the minimum variables
 
 	> msdos -e dd.com
 
-This archive contains 4 executable binaries:
+This archive contains 6 executable binaries:
 
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
 	i286_x64	Emulates 80286 and supports only 64bit Windows
 	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
 	i386_x64	Emulates 80386 and supports only 64bit Windows
+	i486_x86	Emulates 80486 and supports both 32bit/64bit Windows
+	i486_x64	Emulates 80486 and supports only 64bit Windows
 
-80286 binaries are much faster than 80386.
+80286 binaries are much faster than 80386/80486.
 
-NOTE: You can change the cpu model from 80386 to 80486/Pentium/PRO/MMX/2/3/4
-by modifying msdos.cpp line 35-44 and build i386_x86/i386_x64 binaries.
+NOTE: You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4/MediaGX
+by modifying msdos.cpp line 43-50 and build i486_x86/i486_x64 binaries.
 
 
 ----- Supported hardwares
@@ -203,6 +205,9 @@ INT 21H		MS-DOS System Call
 	5706H	Windows95 - Get Creation Date and Time
 	5707H	Windows95 - Set Creation Date and Time
 	5800H	Get Memory Allocation Strategy
+	5801H	Set Memory Allocation Strategy
+	5802H	Get UMB Link State
+	5803H	Set UMB Link State
 	59H	Get Extended Error Information
 	5AH	Create Unique File
 	5BH	Create New File

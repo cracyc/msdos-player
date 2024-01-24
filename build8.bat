@@ -23,5 +23,13 @@ devenv.com msdos.vcproj /Rebuild "Release_i386|x64"
 mkdir binary\i386_x64
 copy Release\msdos.exe binary\i386_x64\.
 
+devenv.com msdos.vcproj /Rebuild "Release_i486|Win32"
+mkdir binary\i486_x86
+copy Release\msdos.exe binary\i486_x86\.
+
+devenv.com msdos.vcproj /Rebuild "Release_i486|x64"
+mkdir binary\i486_x64
+copy Release\msdos.exe binary\i486_x64\.
+
 pause
 echo on
