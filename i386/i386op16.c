@@ -3686,30 +3686,35 @@ static bool I386OP(load_far_pointer16)(int s)
 
 static void I386OP(lds16)()             // Opcode 0xc5
 {
-	if(I386OP(load_far_pointer16)(DS))
+	if(I386OP(load_far_pointer16)(DS)) {
 		CYCLES(CYCLES_LDS);
+	}
 }
 
 static void I386OP(lss16)()             // Opcode 0x0f 0xb2
 {
-	if(I386OP(load_far_pointer16)(SS))
+	if(I386OP(load_far_pointer16)(SS)) {
 		CYCLES(CYCLES_LSS);
+	}
 }
 
 static void I386OP(les16)()             // Opcode 0xc4
 {
-	if(I386OP(load_far_pointer16)(ES))
+	if(I386OP(load_far_pointer16)(ES)) {
 		CYCLES(CYCLES_LES);
+	}
 }
 
 static void I386OP(lfs16)()             // Opcode 0x0f 0xb4
 {
-	if(I386OP(load_far_pointer16)(FS))
+	if(I386OP(load_far_pointer16)(FS)) {
 		CYCLES(CYCLES_LFS);
+	}
 }
 
 static void I386OP(lgs16)()             // Opcode 0x0f 0xb5
 {
-	if(I386OP(load_far_pointer16)(GS))
+	if(I386OP(load_far_pointer16)(GS)) {
 		CYCLES(CYCLES_LGS);
+	}
 }

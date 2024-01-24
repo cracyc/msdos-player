@@ -33,21 +33,35 @@
 
 #if defined(HAS_I86)
 	#define CPU_MODEL i8086
-	//#define CPU_MODEL i80186
+#elif defined(HAS_I186)
+	#define CPU_MODEL i80186
 #elif defined(HAS_I286)
 	#define CPU_MODEL i80286
 #elif defined(HAS_I386)
 	#define CPU_MODEL i386
-	//#define CPU_MODEL i386SX
-#elif defined(HAS_I486)
-	#define CPU_MODEL i486
-	//#define CPU_MODEL pentium
-	//#define CPU_MODEL mediagx
-	//#define CPU_MODEL pentium_pro
-	//#define CPU_MODEL pentium_mmx
-	//#define CPU_MODEL pentium2
-	//#define CPU_MODEL pentium3
-	//#define CPU_MODEL pentium4
+#else
+	#if defined(HAS_I386SX)
+		#define CPU_MODEL i386SX
+	#elif defined(HAS_I486)
+		#define CPU_MODEL i486
+	#else
+		#if defined(HAS_PENTIUM)
+			#define CPU_MODEL pentium
+		#elif defined(HAS_MEDIAGX)
+			#define CPU_MODEL mediagx
+		#elif defined(HAS_PENTIUM_PRO)
+			#define CPU_MODEL pentium_pro
+		#elif defined(HAS_PENTIUM_MMX)
+			#define CPU_MODEL pentium_mmx
+		#elif defined(HAS_PENTIUM2)
+			#define CPU_MODEL pentium2
+		#elif defined(HAS_PENTIUM3)
+			#define CPU_MODEL pentium3
+		#elif defined(HAS_PENTIUM4)
+			#define CPU_MODEL pentium4
+		#endif
+		#define SUPPORT_RDTSC
+	#endif
 	#define HAS_I386
 #endif
 
@@ -405,17 +419,35 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 	main
 ---------------------------------------------------------------------------- */
 
+#define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
+
 int main(int argc, char *argv[], char *envp[])
 {
-	int standard_env = (argc > 1 && _stricmp(argv[1], "-e") == 0);
+	int arg_offset = 0;
+	int standard_env = 0;
 	
-	if(argc < 2 + standard_env) {
+	for(int i = 1; i < argc; i++) {
+		if(_strnicmp(argv[i], "-e", 2) == 0) {
+			standard_env = 1;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
+			if(strlen(argv[i]) >= 6 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && IS_NUMERIC(argv[i][5])) {
+				major_version = argv[i][2] - '0';
+				minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] - '0');
+			}
+			arg_offset++;
+		} else {
+			break;
+		}
+	}
+	
+	if(argc < 2 + arg_offset) {
 #ifdef _WIN64
 		fprintf(stderr, "MS-DOS Player for Win32-x64 console\n\n");
 #else
 		fprintf(stderr, "MS-DOS Player for Win32 console\n\n");
 #endif
-		fprintf(stderr, "Usage: MSDOS [-e] (command file) [opions]\n");
+		fprintf(stderr, "Usage: MSDOS [-e] [-vX.XX] (command file) [opions]\n");
 		return(EXIT_FAILURE);
 	}
 	
@@ -442,7 +474,7 @@ int main(int argc, char *argv[], char *envp[])
 	
 	hardware_init();
 	
-	if(msdos_init(argc - (standard_env + 1), argv + (standard_env + 1), envp, standard_env)) {
+	if(msdos_init(argc - (arg_offset + 1), argv + (arg_offset + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
 		TIMECAPS caps;
@@ -785,6 +817,41 @@ char *msdos_combine_path(char *dir, char *file)
 		sprintf(tmp, "%s\\%s", tmp_dir, file);
 	}
 	return(tmp);
+}
+
+char *msdos_search_command_com(char *command_path, char *env_path)
+{
+	static char tmp[MAX_PATH];
+	char path[MAX_PATH], *file_name;
+	
+	if(GetFullPathName(command_path, MAX_PATH, tmp, &file_name) != 0) {
+		sprintf(file_name, "COMMAND.COM");
+		if(_access(tmp, 0) == 0) {
+			return(tmp);
+		}
+	}
+	if(GetModuleFileName(NULL, path, MAX_PATH) != 0 && GetFullPathName(path, MAX_PATH, tmp, &file_name) != 0) {
+		sprintf(file_name, "COMMAND.COM");
+		if(_access(tmp, 0) == 0) {
+			return(tmp);
+		}
+	}
+	if(GetFullPathName("COMMAND.COM", MAX_PATH, tmp, &file_name) != 0) {
+		if(_access(tmp, 0) == 0) {
+			return(tmp);
+		}
+	}
+	char *token = my_strtok(env_path, ";");
+	while(token != NULL) {
+		if(strlen(token) != 0) {
+			strcpy(tmp, msdos_combine_path(token, "COMMAND.COM"));
+			if(_access(tmp, 0) == 0) {
+				return(tmp);
+			}
+		}
+		token = my_strtok(NULL, ";");
+	}
+	return(NULL);
 }
 
 int msdos_drive_number(char *path)
@@ -3403,9 +3470,8 @@ inline void msdos_int_21h_30h()
 	} else {
 		REG8(BH) = 0xff;	// OEM = Microsoft
 	}
-	// MS-DOS version (7.10)
-	REG8(AL) = 7;
-	REG8(AH) = 10;
+	REG8(AL) = major_version;	// 7
+	REG8(AH) = minor_version;	// 10
 }
 
 inline void msdos_int_21h_31h()
@@ -5682,7 +5748,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
+	char env_path[4096];
 	
+	for(char **p = envp; p != NULL && *p != NULL; p++) {
+		if(_strnicmp(*p, "PATH=", 5) == 0) {
+			strcpy(env_path, *p + 5);
+			break;
+		}
+	}
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
 		char tmp[ENV_SIZE], name[ENV_SIZE], value[ENV_SIZE];
@@ -5701,24 +5774,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
-				char path[MAX_PATH], tmp_path[MAX_PATH], *file_name, *env_path;
-				strcpy(path, tmp + 8);
-				GetFullPathName(argv[0], MAX_PATH, tmp_path, &file_name);
-				sprintf(file_name, "COMMAND.COM");
-				if(_access(tmp_path, 0) == 0) {
-					strcpy(path, tmp_path);
-				} else if((env_path = getenv("PATH")) != NULL) {
-					char *token = my_strtok(env_path, ";");
-					while(token != NULL) {
-						if(strlen(token) != 0) {
-							strcpy(tmp_path, msdos_combine_path(token, "COMMAND.COM"));
-							if(_access(tmp_path, 0) == 0) {
-								strcpy(path, tmp_path);
-								break;
-							}
-						}
-						token = my_strtok(NULL, ";");
-					}
+				char *path = msdos_search_command_com(argv[0], env_path), tmp_path[MAX_PATH];
+				if(path == NULL) {
+					path = msdos_remove_double_quote(tmp + 8);
 				}
 				GetShortPathName(path, tmp_path, MAX_PATH);
 				my_strupr(tmp_path);
@@ -6433,6 +6491,19 @@ void kbd_write_command(UINT8 val)
 	kbd_status |= 8;
 }
 
+// vga
+
+UINT8 vga_read_status()
+{
+	// 60hz
+	static const int period[3] = {16, 17, 17};
+	static int index = 0;
+	UINT32 time = timeGetTime() % period[index];
+	
+	index = (index + 1) % 3;
+	return((time < 4 ? 0x08 : 0) | 0x01);
+}
+
 // i/o bus
 
 UINT8 read_io_byte(offs_t addr)
@@ -6448,6 +6519,8 @@ UINT8 read_io_byte(offs_t addr)
 		return(pit_read(addr & 0x03));
 	case 0x60:
 		return(kbd_read_data());
+	case 0x61:
+		return(system_port);
 	case 0x64:
 		return(kbd_read_status());
 	case 0x71:
@@ -6457,6 +6530,9 @@ UINT8 read_io_byte(offs_t addr)
 	case 0xa0:
 	case 0xa1:
 		return(pic_read(1, addr));
+	case 0x3ba:
+	case 0x3da:
+		return(vga_read_status());
 	default:
 //		error("inb %4x\n", addr);
 		break;
@@ -6489,6 +6565,15 @@ void write_io_byte(offs_t addr, UINT8 val)
 		break;
 	case 0x60:
 		kbd_write_data(val);
+		break;
+	case 0x61:
+		if((system_port & 3) != 3 && (val & 3) == 3) {
+			// beep on
+//			MessageBeep(-1);
+		} else if((system_port & 3) == 3 && (val & 3) != 3) {
+			// beep off
+		}
+		system_port = val;
 		break;
 	case 0x64:
 		kbd_write_command(val);

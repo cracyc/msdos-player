@@ -423,6 +423,9 @@ typedef struct {
 	bool parent_int_10h_ffh_called;
 } process_t;
 
+UINT8 major_version = 7;
+UINT8 minor_version = 10;
+
 UINT16 first_mcb;
 UINT16 current_psp;
 
@@ -541,6 +544,8 @@ UINT8 pit_read(int ch);
 int pit_run(int ch, UINT32 cur_time);
 void pit_latch_count(int ch);
 int pit_get_expired_time(int ch);
+
+UINT8 system_port = 0;
 
 // cmos
 

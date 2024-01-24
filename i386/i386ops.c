@@ -1254,21 +1254,21 @@ static void I386OP(repeat)(int invert_flag)
 			count = --REG32(ECX);
 		else
 			count = --REG16(CX);
-		if (m_cycles <= 0)
-			goto outofcycles;
+//		if (m_cycles <= 0)
+//			goto outofcycles;
 	}
 	while( count && (!flag || (invert_flag ? !*flag : *flag)) );
-	return;
-
-outofcycles:
-	/* if we run out of cycles to execute, and we are still in the repeat, we need
-	 * to exit this instruction in such a way to go right back into it when we have
-	 * time to execute cycles */
-	if(flag && (invert_flag ? *flag : !*flag))
-		return;
-	m_eip = m_prev_eip;
-	CHANGE_PC(m_eip);
-	CYCLES_NUM(-cycle_base);
+//	return;
+//
+//outofcycles:
+//	/* if we run out of cycles to execute, and we are still in the repeat, we need
+//	 * to exit this instruction in such a way to go right back into it when we have
+//	 * time to execute cycles */
+//	if(flag && (invert_flag ? *flag : !*flag))
+//		return;
+//	m_eip = m_prev_eip;
+//	CHANGE_PC(m_eip);
+//	CYCLES_NUM(-cycle_base);
 }
 
 static void I386OP(rep)()               // Opcode 0xf3
@@ -2361,8 +2361,8 @@ static void I386OP(hlt)()               // Opcode 0xf4
 		FAULT(FAULT_GP,0);
 	m_halted = 1;
 	CYCLES(CYCLES_HLT);
-	if (m_cycles > 0)
-		m_cycles = 0;
+//	if (m_cycles > 0)
+//		m_cycles = 0;
 }
 
 static void I386OP(decimal_adjust)(int direction)

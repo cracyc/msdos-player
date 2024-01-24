@@ -1235,7 +1235,9 @@ static void i386_check_irq_line()
 	/* Check if the interrupts are enabled */
 	if ( (m_irq_state) && m_IF )
 	{
+#ifdef SUPPORT_RDTSC
 		m_cycles -= 2;
+#endif
 		i386_trap(pic_ack(), 1, 0);
 	}
 }
@@ -2670,6 +2672,8 @@ static void i386_protected_mode_iret(int operand32)
 static UINT8 cycle_table_rm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
 static UINT8 cycle_table_pm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
 
+#ifdef SUPPORT_RDTSC
+
 #define CYCLES_NUM(x)   (m_cycles -= (x))
 
 INLINE void CYCLES(int x)
@@ -2709,6 +2713,15 @@ INLINE void CYCLES_RM(int modrm, int r, int m)
 		}
 	}
 }
+
+#else
+
+/* i386/i486: we don't need to update cycles for rdtsc */
+#define CYCLES_NUM(x)
+#define CYCLES(x)
+#define CYCLES_RM(modrm, r, m)
+
+#endif
 
 static void build_cycle_table()
 {
@@ -3198,8 +3211,11 @@ static void i386_set_a20_line(int state)
 
 static CPU_EXECUTE( i386 )
 {
+#ifdef SUPPORT_RDTSC
+	m_cycles = 1;
 	int cycles = m_cycles;
 	m_base_cycles = cycles;
+#endif
 	CHANGE_PC(m_eip);
 
 //	if (m_halted)
@@ -3249,7 +3265,9 @@ static CPU_EXECUTE( i386 )
 			i386_trap_with_error(e&0xffffffff,0,0,e>>32);
 		}
 //	}
+#ifdef SUPPORT_RDTSC
 	m_tsc += (cycles - m_cycles);
+#endif
 }
 
 /*****************************************************************************/

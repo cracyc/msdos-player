@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/4/2014
+								12/6/2014
 
 ----- What's this
 
@@ -29,6 +29,18 @@ In this case, please specify the option '-e' and only the minimum variables
 
 	> msdos -e dd.com
 
+If COMMAND.COM file does exist
+- in the same directory as the target program file,
+- in the same directory as msdos.exe,
+- in the current directory,
+- in the directory that is in your PATH environment variable,
+the COMMAND.COM file path is copied to COMSPEC.
+
+"Get Version Number" API (INT 21H, AH=30H) returns the version number 7.10.
+If you want to change the version number, please specify the option '-vX.XX'.
+
+	> msdos -v3.30 command.com
+
 This archive contains 6 executable binaries:
 
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
@@ -38,19 +50,19 @@ This archive contains 6 executable binaries:
 	i486_x86	Emulates 80486 and supports both 32bit/64bit Windows
 	i486_x64	Emulates 80486 and supports only 64bit Windows
 
-NOTE)
-
 80286 binaries are much faster than 80386/80486.
 If you don't need the protected mode or mnemonics added with 80386/80486,
 I recommend i286_x86 or i286_x64 binary.
 
-You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4/MediaGX
-by modifying msdos.cpp line 43-50 and build i486_x86/i486_x64 binaries.
+You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4/MediaGX.
+Replace "HAS_I486" with for example "HAS_PENTIUM" in source/msdos.vcproj.
+See also source/msdos.cpp, line 48-62.
 
 
 ----- Supported hardwares
 
-CPU 80286/80386, MEMORY 16MB, PIC, PIT, RTC CMOS, A20 LINE MASK, CPU RESET
+CPU 80286/80386/80486, RAM 16MB, PIC, PIT, RTC CMOS,
+Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 
 
 ----- Memory map
