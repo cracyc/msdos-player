@@ -152,25 +152,83 @@ UINT32 read_dword(offs_t byteaddress)
 }
 
 // write accessors
+void write_text_vram_byte(offs_t offset, UINT8 data)
+{
+	// XXX: we need to consider a multi-byte character
+	COORD co;
+	DWORD num;
+	
+	co.X = (offset >> 1) % 80;
+	co.Y = (offset >> 1) / 80;
+	
+	if(offset & 1) {
+		scr_attr[0] = data;
+		WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+	} else {
+		scr_char[0] = data;
+		WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+	}
+}
+
+void write_text_vram_word(offs_t offset, UINT16 data)
+{
+	// XXX: we need to consider a multi-byte character
+	if(offset & 1) {
+		// Attr, Char
+		write_text_vram_byte(offset    , (data     ) & 0xff);
+		write_text_vram_byte(offset + 1, (data >> 8) & 0xff);
+	} else {
+		// Char, Attr
+		COORD co;
+		DWORD num;
+		
+		co.X = (offset >> 1) % 80;
+		co.Y = (offset >> 1) / 80;
+		
+		scr_char[0] = (data     ) & 0xff;
+		scr_attr[0] = (data >> 8) & 0xff;
+		
+		WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+		WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+	}
+}
+
+void write_text_vram_dword(offs_t offset, UINT32 data)
+{
+	// XXX: we need to consider a multi-byte character
+	if(offset & 1) {
+		// Attr, Char, Attr, Char
+		write_text_vram_byte(offset    , (data      ) & 0x00ff);
+		write_text_vram_word(offset + 1, (data >>  8) & 0xffff);
+		write_text_vram_byte(offset + 3, (data >> 24) & 0x00ff);
+	} else {
+		// Char, Attr, Char, Attr
+		COORD co;
+		DWORD num;
+		
+		co.X = (offset >> 1) % 80;
+		co.Y = (offset >> 1) / 80;
+		
+		scr_char[0] = (data      ) & 0xff;
+		scr_attr[0] = (data >>  8) & 0xff;
+		scr_char[1] = (data >> 16) & 0xff;
+		scr_attr[1] = (data >> 24) & 0xff;
+		
+		WriteConsoleOutputCharacter(hStdout, scr_char, 2, co, &num);
+		WriteConsoleOutputAttribute(hStdout, scr_attr, 2, co, &num);
+	}
+}
+
 void write_byte(offs_t byteaddress, UINT8 data)
 {
-	if(byteaddress < tvram_top_address) {
+	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
-	} else if(byteaddress < tvram_end_address) {
-		if(int_10h_feh_called && !int_10h_ffh_called && mem[byteaddress] != data) {
-			COORD co;
-			DWORD num;
-			
-			co.X = ((byteaddress - tvram_top_address) >> 1) % 80;
-			co.Y = ((byteaddress - tvram_top_address) >> 1) / 80;
-			
-			if(byteaddress & 1) {
-				scr_attr[0] = data;
-				WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
-			} else {
-				scr_char[0] = data;
-				WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
-			}
+	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		write_text_vram_byte(byteaddress - text_vram_top_address, data);
+		mem[byteaddress] = data;
+	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
+		if(int_10h_feh_called && !int_10h_ffh_called) {
+			write_text_vram_byte(byteaddress - shadow_buffer_top_address, data);
 		}
 		mem[byteaddress] = data;
 #if defined(HAS_I386)
@@ -184,13 +242,14 @@ void write_byte(offs_t byteaddress, UINT8 data)
 
 void write_word(offs_t byteaddress, UINT16 data)
 {
-	if(byteaddress < tvram_top_address) {
+	if(byteaddress < MEMORY_END) {
 		*(UINT16 *)(mem + byteaddress) = data;
-	} else if(byteaddress < tvram_end_address) {
-		if(int_10h_feh_called && !int_10h_ffh_called && *(UINT16 *)(mem + byteaddress) != data) {
-			write_byte(byteaddress    , data     );
-			write_byte(byteaddress + 1, data >> 8);
-			return;
+	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		write_text_vram_word(byteaddress - text_vram_top_address, data);
+		*(UINT16 *)(mem + byteaddress) = data;
+	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
+		if(int_10h_feh_called && !int_10h_ffh_called) {
+			write_text_vram_word(byteaddress - shadow_buffer_top_address, data);
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
 #if defined(HAS_I386)
@@ -204,15 +263,14 @@ void write_word(offs_t byteaddress, UINT16 data)
 
 void write_dword(offs_t byteaddress, UINT32 data)
 {
-	if(byteaddress < tvram_top_address) {
+	if(byteaddress < MEMORY_END) {
 		*(UINT32 *)(mem + byteaddress) = data;
-	} else if(byteaddress < tvram_end_address) {
-		if(int_10h_feh_called && !int_10h_ffh_called && *(UINT32 *)(mem + byteaddress) != data) {
-			write_byte(byteaddress    , data      );
-			write_byte(byteaddress + 1, data >>  8);
-			write_byte(byteaddress + 2, data >> 16);
-			write_byte(byteaddress + 3, data >> 24);
-			return;
+	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		write_text_vram_dword(byteaddress - text_vram_top_address, data);
+		*(UINT32 *)(mem + byteaddress) = data;
+	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
+		if(int_10h_feh_called && !int_10h_ffh_called) {
+			write_text_vram_dword(byteaddress - shadow_buffer_top_address, data);
 		}
 		*(UINT32 *)(mem + byteaddress) = data;
 #if defined(HAS_I386)
@@ -387,10 +445,12 @@ int main(int argc, char *argv[], char *envp[])
 	if(msdos_init(argc - (standard_env + 1), argv + (standard_env + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
-		timeBeginPeriod(1);
+		TIMECAPS caps;
+		timeGetDevCaps(&caps, sizeof(TIMECAPS));
+		timeBeginPeriod(caps.wPeriodMin);
 		hardware_run();
 		msdos_finish();
-		timeEndPeriod(1);
+		timeEndPeriod(caps.wPeriodMin);
 	}
 	
 	delete key_buf_char;
@@ -405,35 +465,58 @@ int main(int argc, char *argv[], char *envp[])
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
-void update_key_buffer()
+void update_key_buffer_tmp()
 {
+	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
 	INPUT_RECORD ir[16];
 	
-	if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
-		for(int i = 0; i < dwRead; i++) {
-			if((ir[i].EventType & KEY_EVENT) && ir[i].Event.KeyEvent.bKeyDown) {
-				if(ir[i].Event.KeyEvent.uChar.AsciiChar == 0) {
-					// ignore shift, ctrl and alt keys
-					if(ir[i].Event.KeyEvent.wVirtualScanCode != 0x1d &&
-					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x2a &&
-					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x36 &&
-					   ir[i].Event.KeyEvent.wVirtualScanCode != 0x38) {
-						key_buf_char->write(0x00);
-						key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
-						key_buf_char->write(0x00);
+	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) && dwNumberOfEvents != 0) {
+		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
+			for(int i = 0; i < dwRead; i++) {
+				if((ir[i].EventType & KEY_EVENT) && ir[i].Event.KeyEvent.bKeyDown) {
+					if(ir[i].Event.KeyEvent.uChar.AsciiChar == 0) {
+						// ignore shift, ctrl and alt keys
+						if(ir[i].Event.KeyEvent.wVirtualScanCode != 0x1d &&
+						   ir[i].Event.KeyEvent.wVirtualScanCode != 0x2a &&
+						   ir[i].Event.KeyEvent.wVirtualScanCode != 0x36 &&
+						   ir[i].Event.KeyEvent.wVirtualScanCode != 0x38) {
+							key_buf_char->write(0x00);
+							key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+							key_buf_char->write(0x00);
+							key_buf_scan->write(ir[i].Event.KeyEvent.wVirtualScanCode & 0xff);
+						}
+					} else {
+						key_buf_char->write(ir[i].Event.KeyEvent.uChar.AsciiChar & 0xff);
 						key_buf_scan->write(ir[i].Event.KeyEvent.wVirtualScanCode & 0xff);
 					}
-				} else {
-					key_buf_char->write(ir[i].Event.KeyEvent.uChar.AsciiChar & 0xff);
-					key_buf_scan->write(ir[i].Event.KeyEvent.wVirtualScanCode & 0xff);
 				}
 			}
 		}
 	}
+}
+
+void update_key_buffer()
+{
+	int prev_count = key_buf_char->count();
+	update_key_buffer_tmp();
+	key_input += key_buf_char->count() - prev_count;
+	
 	if(key_buf_char->count() == 0) {
 		Sleep(10);
 	}
+}
+
+int check_key_input()
+{
+	if(key_input == 0) {
+		int prev_count = key_buf_char->count();
+		update_key_buffer_tmp();
+		key_input = key_buf_char->count() - prev_count;
+	}
+	int val = key_input;
+	key_input = 0;
+	return(val);
 }
 
 // process info
@@ -674,6 +757,34 @@ char *msdos_local_file_path(char *path, int lfn)
 		}
 	}
 	return(trimmed);
+}
+
+char *msdos_remove_double_quote(char *path)
+{
+	static char tmp[MAX_PATH];
+	
+	memset(tmp, 0, sizeof(tmp));
+	if(strlen(path) >= 2 && path[0] == '"' && path[strlen(path) - 1] == '"') {
+		memcpy(tmp, path + 1, strlen(path) - 2);
+	} else {
+		sprintf(tmp, path);
+	}
+	return(tmp);
+}
+
+char *msdos_combine_path(char *dir, char *file)
+{
+	static char tmp[MAX_PATH];
+	char *tmp_dir = msdos_remove_double_quote(dir);
+	
+	if(strlen(tmp_dir) == 0) {
+		strcpy(tmp, file);
+	} else if(tmp_dir[strlen(tmp_dir) - 1] == '\\') {
+		sprintf(tmp, "%s%s", tmp_dir, file);
+	} else {
+		sprintf(tmp, "%s\\%s", tmp_dir, file);
+	}
+	return(tmp);
 }
 
 int msdos_drive_number(char *path)
@@ -1326,15 +1437,13 @@ void msdos_mem_merge(int seg)
 	}
 }
 
-int msdos_mem_alloc(int paragraphs, int new_process)
+int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 {
-	int mcb_seg = current_psp - 1;
-	
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		msdos_mcb_check(mcb);
 		
-		if(!new_process || mcb->mz == 'Z') {
+		if(!(new_process && mcb->mz != 'Z')) {
 			if(mcb->psp == 0 && mcb->paragraphs >= paragraphs) {
 				msdos_mem_split(mcb_seg + 1, paragraphs);
 				mcb->psp = current_psp;
@@ -1376,16 +1485,15 @@ void msdos_mem_free(int seg)
 	msdos_mem_merge(seg);
 }
 
-int msdos_mem_get_free(int new_process)
+int msdos_mem_get_free(int mcb_seg, int new_process)
 {
-	int mcb_seg = current_psp - 1;
 	int max_paragraphs = 0;
 	
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		msdos_mcb_check(mcb);
 		
-		if(!new_process || mcb->mz == 'Z') {
+		if(!(new_process && mcb->mz != 'Z')) {
 			if(mcb->psp == 0 && mcb->paragraphs > max_paragraphs) {
 				max_paragraphs = mcb->paragraphs;
 			}
@@ -1396,6 +1504,24 @@ int msdos_mem_get_free(int new_process)
 		mcb_seg += 1 + mcb->paragraphs;
 	}
 	return(max_paragraphs);
+}
+
+int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
+{
+	int last_seg = -1;
+	
+	while(1) {
+		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		msdos_mcb_check(mcb);
+		
+		if(mcb->mz == 'Z') {
+			break;
+		} else if(mcb->psp == psp) {
+			last_seg = mcb_seg;
+		}
+		mcb_seg += 1 + mcb->paragraphs;
+	}
+	return(last_seg);
 }
 
 // environment
@@ -1508,14 +1634,14 @@ void msdos_env_set(int env_seg, char *name, char *value)
 
 // process
 
-psp_t *msdos_psp_create(int psp_seg, UINT16 first_mcb, UINT16 parent_psp, UINT16 env_seg)
+psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 env_seg)
 {
 	psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
 	
 	memset(psp, 0, PSP_SIZE);
 	psp->exit[0] = 0xcd;
 	psp->exit[1] = 0x20;
-	psp->first_mcb = first_mcb;
+	psp->first_mcb = mcb_seg;
 	psp->far_call = 0xea;
 	psp->cpm_entry.w.l = 0xfff1;	// int 21h, retf
 	psp->cpm_entry.w.h = 0xf000;
@@ -1593,24 +1719,25 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				// search path in parent environments
 				psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
 				char *env = msdos_env_get(parent_psp->env_seg, "PATH");
-				
 				if(env != NULL) {
 					char env_path[1024];
 					strcpy(env_path, env);
 					char *token = my_strtok(env_path, ";");
 					
 					while(token != NULL) {
-						sprintf(path, "%s\\%s", token, command);
-						if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-							break;
-						}
-						sprintf(path, "%s\\%s.COM", token, command);
-						if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-							break;
-						}
-						sprintf(path, "%s\\%s.EXE", token, command);
-						if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-							break;
+						if(strlen(token) != 0) {
+							sprintf(path, "%s", msdos_combine_path(token, command));
+							if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
+								break;
+							}
+							sprintf(path, "%s.COM", msdos_combine_path(token, command));
+							if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
+								break;
+							}
+							sprintf(path, "%s.EXE", msdos_combine_path(token, command));
+							if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
+								break;
+							}
 						}
 						token = my_strtok(NULL, ";");
 					}
@@ -1635,7 +1762,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	// copy environment
 	int env_seg, psp_seg;
 	
-	if((env_seg = msdos_mem_alloc(ENV_SIZE >> 4, 1)) == -1) {
+	if((env_seg = msdos_mem_alloc(first_mcb, ENV_SIZE >> 4, 1)) == -1) {
 		return(-1);
 	}
 	if(param->env_seg == 0) {
@@ -1648,7 +1775,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	
 	// check exe header
 	exe_header_t *header = (exe_header_t *)file_buffer;
-	int paragraphs, free_paragraphs = msdos_mem_get_free(1);
+	int paragraphs, free_paragraphs = msdos_mem_get_free(first_mcb, 1);
 	UINT16 cs, ss, ip, sp;
 	
 	if(header->mz == 0x4d5a || header->mz == 0x5a4d) {
@@ -1667,7 +1794,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		if(paragraphs > free_paragraphs) {
 			paragraphs = free_paragraphs;
 		}
-		if((psp_seg = msdos_mem_alloc(paragraphs, 1)) == -1) {
+		if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs, 1)) == -1) {
 			msdos_mem_free(env_seg);
 			return(-1);
 		}
@@ -1687,7 +1814,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	} else {
 		// memory allocation
 		paragraphs = free_paragraphs;
-		if((psp_seg = msdos_mem_alloc(paragraphs, 1)) == -1) {
+		if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs, 1)) == -1) {
 			msdos_mem_free(env_seg);
 			return(-1);
 		}
@@ -1789,8 +1916,13 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	int_10h_ffh_called = process->parent_int_10h_ffh_called;
 	
 	if(mem_free) {
-		int mcb_seg = psp->env_seg - 1;
-		msdos_mcb_create(mcb_seg, 'Z', 0, (MEMORY_END >> 4) - mcb_seg - 1);
+		int mcb_seg;
+		while((mcb_seg = msdos_mem_get_last_mcb(first_mcb, psp_seg)) != -1) {
+			msdos_mem_free(mcb_seg + 1);
+		}
+		while((mcb_seg = msdos_mem_get_last_mcb(UMB_TOP >> 4, psp_seg)) != -1) {
+			msdos_mem_free(mcb_seg + 1);
+		}
 		
 		for(int i = 0; i < MAX_FILES; i++) {
 			if(file_handler[i].valid && file_handler[i].psp == psp_seg) {
@@ -1876,30 +2008,41 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 
 // pc bios
 
-int get_tvram_address(int page)
+int get_text_vram_address(int page)
 {
 	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
-		return TVRAM_TOP;
+		return TEXT_VRAM_TOP;
 	} else {
-		return TVRAM_TOP + 0x1000 * (page & 7);
+		return TEXT_VRAM_TOP + 0x1000 * (page & 7);
 	}
 }
 
-inline int get_tvram_address(int page, int x, int y)
+int get_shadow_buffer_address(int page)
 {
-	return get_tvram_address(page) + (x + y * 80) * 2;
+	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
+		return SHADOW_BUF_TOP;
+	} else {
+		return SHADOW_BUF_TOP + 0x1000 * (page & 7);
+	}
+}
+
+inline int get_shadow_buffer_address(int page, int x, int y)
+{
+	return get_shadow_buffer_address(page) + (x + y * 80) * 2;
 }
 
 inline void pcbios_int_10h_00h()
 {
 	mem[0x449] = REG8(AL) & 0x7f;
-	tvram_top_address = get_tvram_address(mem[0x462]);
-	tvram_end_address = tvram_top_address + 4000;
+	text_vram_top_address = get_text_vram_address(mem[0x462]);
+	text_vram_end_address = text_vram_top_address + 4000;
+	shadow_buffer_top_address = get_shadow_buffer_address(mem[0x462]);
+	shadow_buffer_end_address = shadow_buffer_top_address + 4000;
 	
 	if(REG8(AL) & 0x80) {
 		mem[0x487] |= 0x80;
 	} else {
-		for(int y = 0, ofs = get_tvram_address(mem[0x462]); y < 25; y++) {
+		for(int y = 0, ofs = get_shadow_buffer_address(mem[0x462]); y < 25; y++) {
 			for(int x = 0; x < 80; x++) {
 				scr_buf[y][x].Char.AsciiChar = ' ';
 				scr_buf[y][x].Attributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
@@ -1947,13 +2090,13 @@ inline void pcbios_int_10h_05h()
 		SET_RECT(rect, 0, 0, 79, 24);
 		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
 		
-		for(int y = 0, ofs = get_tvram_address(mem[0x462]); y < 25; y++) {
+		for(int y = 0, ofs = get_shadow_buffer_address(mem[0x462]); y < 25; y++) {
 			for(int x = 0; x < 80; x++) {
 				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
 				mem[ofs++] = scr_buf[y][x].Attributes;
 			}
 		}
-		for(int y = 0, ofs = get_tvram_address(REG8(BH)); y < 25; y++) {
+		for(int y = 0, ofs = get_shadow_buffer_address(REG8(BH)); y < 25; y++) {
 			for(int x = 0; x < 80; x++) {
 				scr_buf[y][x].Char.AsciiChar = mem[ofs++];
 				scr_buf[y][x].Attributes = mem[ofs++];
@@ -1969,8 +2112,10 @@ inline void pcbios_int_10h_05h()
 	mem[0x462] = REG8(BH) & 7;
 	mem[0x44e] = 0;
 	mem[0x44f] = REG8(BH) << 4;
-	tvram_top_address = get_tvram_address(mem[0x462]);
-	tvram_end_address = tvram_top_address + 4000;
+	text_vram_top_address = get_text_vram_address(mem[0x462]);
+	text_vram_end_address = text_vram_top_address + 4000;
+	shadow_buffer_top_address = get_shadow_buffer_address(mem[0x462]);
+	shadow_buffer_end_address = shadow_buffer_top_address + 4000;
 }
 
 inline void pcbios_int_10h_06h()
@@ -1981,7 +2126,7 @@ inline void pcbios_int_10h_06h()
 	
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= REG8(DH); y++) {
-			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
 				scr_buf[y][x].Char.AsciiChar = ' ';
 				scr_buf[y][x].Attributes = REG8(BH);
 				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
@@ -1991,7 +2136,7 @@ inline void pcbios_int_10h_06h()
 	} else {
 		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
 		for(int y = REG8(CH), y2 = REG8(CH) + REG8(AL); y <= REG8(DH); y++, y2++) {
-			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
 				if(y2 <= REG8(DH) && y2 >= 0 && y2 < SCR_BUF_SIZE) {
 					scr_buf[y][x] = scr_buf[y2][x];
 				} else {
@@ -2014,7 +2159,7 @@ inline void pcbios_int_10h_07h()
 	
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= REG8(DH); y++) {
-			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
 				scr_buf[y][x].Char.AsciiChar = ' ';
 				scr_buf[y][x].Attributes = REG8(BH);
 				mem[ofs++] = scr_buf[y][x].Char.AsciiChar;
@@ -2024,7 +2169,7 @@ inline void pcbios_int_10h_07h()
 	} else {
 		ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
 		for(int y = REG8(DH), y2 = REG8(DH) - REG8(AL); y >= REG8(CH); y--, y2--) {
-			for(int x = REG8(CL), ofs = get_tvram_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
+			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= REG8(DL); x++) {
 				if(y2 >= REG8(CH) && y2 >= 0 && y2 < SCR_BUF_SIZE) {
 					scr_buf[y][x] = scr_buf[y2][x];
 				} else {
@@ -2053,7 +2198,7 @@ inline void pcbios_int_10h_08h()
 		REG8(AL) = scr_char[0];
 		REG8(AH) = scr_attr[0];
 	} else {
-		REG16(AX) = *(UINT16 *)(mem + get_tvram_address(REG8(BH), co.X, co.Y));
+		REG16(AX) = *(UINT16 *)(mem + get_shadow_buffer_address(REG8(BH), co.X, co.Y));
 	}
 }
 
@@ -2073,7 +2218,7 @@ inline void pcbios_int_10h_09h()
 		WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
 		WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
 	} else {
-		for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+		for(int i = 0, dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
 			mem[dest++] = REG8(AL);
 			mem[dest++] = REG8(BL);
 			if(++co.X == 80) {
@@ -2102,7 +2247,7 @@ inline void pcbios_int_10h_0ah()
 		WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
 //		WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
 	} else {
-		for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+		for(int i = 0, dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
 			mem[dest++] = REG8(AL);
 //			mem[dest++] = REG8(BL);
 			dest++;
@@ -2208,7 +2353,7 @@ inline void pcbios_int_10h_13h()
 				}
 			}
 		} else {
-			for(int i = 0, src = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+			for(int i = 0, src = get_shadow_buffer_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
 				mem[ofs++] = mem[src++];
 				mem[ofs++] = mem[src++];
 				if(REG8(AL) == 0x11) {
@@ -2237,7 +2382,7 @@ inline void pcbios_int_10h_13h()
 			WriteConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
 			WriteConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
 		} else {
-			for(int i = 0, dest = get_tvram_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
+			for(int i = 0, dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y); i < REG16(CX); i++) {
 				mem[dest++] = mem[ofs++];
 				mem[dest++] = mem[ofs++];
 				if(REG8(AL) == 0x21) {
@@ -2292,9 +2437,9 @@ inline void pcbios_int_10h_82h()
 inline void pcbios_int_10h_feh()
 {
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
-		SREG(ES) = (TVRAM_TOP >> 4);
+		SREG(ES) = (SHADOW_BUF_TOP >> 4);
 		i386_load_segment_descriptor(ES);
-		REG16(DI) = (TVRAM_TOP & 0x0f);
+		REG16(DI) = (SHADOW_BUF_TOP & 0x0f);
 	}
 	int_10h_feh_called = true;
 }
@@ -2307,7 +2452,7 @@ inline void pcbios_int_10h_ffh()
 		
 		co.X = (REG16(DI) >> 1) % 80;
 		co.Y = (REG16(DI) >> 1) / 80;
-		for(int i = 0, ofs = get_tvram_address(0, co.X, co.Y); i < REG16(CX) && i < 80 * 25; i++) {
+		for(int i = 0, ofs = get_shadow_buffer_address(0, co.X, co.Y); i < REG16(CX) && i < 80 * 25; i++) {
 			scr_char[i] = mem[ofs++];
 			scr_attr[i] = mem[ofs++];
 		}
@@ -2321,12 +2466,12 @@ inline void pcbios_int_15h_23h()
 {
 	switch(REG8(AL)) {
 	case 0:
-		REG8(CL) = cmos[0x2d];
-		REG8(CH) = cmos[0x2e];
+		REG8(CL) = cmos_read(0x2d);
+		REG8(CH) = cmos_read(0x2e);
 		break;
 	case 1:
-		cmos[0x2d] = REG8(CL);
-		cmos[0x2e] = REG8(CH);
+		cmos_write(0x2d, REG8(CL));
+		cmos_write(0x2e, REG8(CH));
 		break;
 	default:
 		REG8(AH) = 0x86;
@@ -2448,7 +2593,7 @@ inline void pcbios_int_15h_cah()
 			REG8(AH) = 0x04;
 			m_CF = 1;
 		} else {
-			REG8(CL) = cmos[REG8(BL)];
+			REG8(CL) = cmos_read(REG8(BL));
 		}
 		break;
 	case 1:
@@ -2459,7 +2604,7 @@ inline void pcbios_int_15h_cah()
 			REG8(AH) = 0x04;
 			m_CF = 1;
 		} else {
-			cmos[REG8(BL)] = REG8(CL);
+			cmos_write(REG8(BL), REG8(CL));
 		}
 		break;
 	default:
@@ -2689,9 +2834,8 @@ inline void msdos_int_21h_00h()
 inline void msdos_int_21h_01h()
 {
 	REG8(AL) = msdos_getche();
-#ifdef SUPPORT_HARDWARE
+	// some seconds may be passed in console
 	hardware_update();
-#endif
 }
 
 inline void msdos_int_21h_02h()
@@ -2741,17 +2885,15 @@ inline void msdos_int_21h_06h()
 inline void msdos_int_21h_07h()
 {
 	REG8(AL) = msdos_getch();
-#ifdef SUPPORT_HARDWARE
+	// some seconds may be passed in console
 	hardware_update();
-#endif
 }
 
 inline void msdos_int_21h_08h()
 {
 	REG8(AL) = msdos_getch();
-#ifdef SUPPORT_HARDWARE
+	// some seconds may be passed in console
 	hardware_update();
-#endif
 }
 
 inline void msdos_int_21h_09h()
@@ -2797,9 +2939,8 @@ inline void msdos_int_21h_0ah()
 	}
 	buf[p] = 0x0d;
 	mem[ofs + 1] = p;
-#ifdef SUPPORT_HARDWARE
+	// some seconds may be passed in console
 	hardware_update();
-#endif
 }
 
 inline void msdos_int_21h_0bh()
@@ -3497,9 +3638,8 @@ inline void msdos_int_21h_3fh()
 					}
 				}
 				REG16(AX) = p;
-#ifdef SUPPORT_HARDWARE
+				// some seconds may be passed in console
 				hardware_update();
-#endif
 			} else {
 				REG16(AX) = _read(REG16(BX), mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
@@ -3798,17 +3938,32 @@ inline void msdos_int_21h_48h()
 {
 	int seg;
 	
-	if((malloc_strategy & 0xf0) == 0x40) {
-		// UMB is not supported
-		REG16(AX) = 0x08;
-		REG16(BX) = 0;
-		m_CF = 1;
-	} else if((seg = msdos_mem_alloc(REG16(BX), 0)) != -1) {
-		REG16(AX) = seg;
-	} else {
-		REG16(AX) = 0x08;
-		REG16(BX) = msdos_mem_get_free(0);
-		m_CF = 1;
+	if((malloc_strategy & 0xf0) == 0x00) {
+		if((seg = msdos_mem_alloc(first_mcb, REG16(BX), 0)) != -1) {
+			REG16(AX) = seg;
+		} else {
+			REG16(AX) = 0x08;
+			REG16(BX) = msdos_mem_get_free(first_mcb, 0);
+			m_CF = 1;
+		}
+	} else if((malloc_strategy & 0xf0) == 0x40) {
+		if((seg = msdos_mem_alloc(UMB_TOP >> 4, REG16(BX), 0)) != -1) {
+			REG16(AX) = seg;
+		} else {
+			REG16(AX) = 0x08;
+			REG16(BX) = msdos_mem_get_free(UMB_TOP >> 4, 0);
+			m_CF = 1;
+		}
+	} else if((malloc_strategy & 0xf0) == 0x80) {
+		if((seg = msdos_mem_alloc(UMB_TOP >> 4, REG16(BX), 0)) != -1) {
+			REG16(AX) = seg;
+		} else if((seg = msdos_mem_alloc(first_mcb, REG16(BX), 0)) != -1) {
+			REG16(AX) = seg;
+		} else {
+			REG16(AX) = 0x08;
+			REG16(BX) = max(msdos_mem_get_free(UMB_TOP >> 4, 0), msdos_mem_get_free(first_mcb, 0));
+			m_CF = 1;
+		}
 	}
 }
 
@@ -3944,7 +4099,13 @@ inline void msdos_int_21h_4fh()
 
 inline void msdos_int_21h_50h()
 {
-	current_psp = REG16(BX);
+	if(current_psp != REG16(BX)) {
+		process_t *process = msdos_process_info_get(current_psp);
+		if(process != NULL) {
+			process->psp = REG16(BX);
+		}
+		current_psp = REG16(BX);
+	}
 }
 
 inline void msdos_int_21h_51h()
@@ -4226,10 +4387,8 @@ inline void msdos_int_21h_5ch()
 				m_CF = 1;
 			}
 			_lseek(REG16(BX), pos, SEEK_SET);
-#ifdef SUPPORT_HARDWARE
 			// some seconds may be passed in _locking()
 			hardware_update();
-#endif
 		} else {
 			REG16(AX) = 0x01;
 			m_CF = 1;
@@ -5019,6 +5178,18 @@ void msdos_syscall(unsigned num)
 //		error("illegal instruction\n");
 //		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
 		break;
+	case 0x08:
+	case 0x09:
+	case 0x0a:
+	case 0x0b:
+	case 0x0c:
+	case 0x0d:
+	case 0x0e:
+	case 0x0f:
+		// EOI
+		pic[0].isr &= ~(1 << (num - 0x08));
+		pic_update();
+		break;
 	case 0x10:
 		// PC BIOS - Video
 		if(scr_width != 80 || scr_height != 25) {
@@ -5386,6 +5557,20 @@ void msdos_syscall(unsigned num)
 			error_code = REG16(AX);
 		}
 		break;
+	case 0x70:
+	case 0x71:
+	case 0x72:
+	case 0x73:
+	case 0x74:
+	case 0x75:
+	case 0x76:
+	case 0x77:
+		// EOI
+		if((pic[1].isr &= ~(1 << (num - 0x70))) == 0) {
+			pic[0].isr &= ~(1 << 2); // master
+		}
+		pic_update();
+		break;
 	default:
 //		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 		break;
@@ -5516,31 +5701,39 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
-				char full_path[MAX_PATH], short_path[MAX_PATH], *file_name;
-				GetFullPathName(argv[0], MAX_PATH, full_path, &file_name);
-				if(_stricmp(file_name, "COMMAND.COM") == 0 || _stricmp(file_name, "COMMAND") == 0) {
-					sprintf(file_name, "COMMAND.COM");
-					if(_access(full_path, 0) == 0) {
-						GetShortPathName(full_path, short_path, MAX_PATH);
-						my_strupr(short_path);
-						sprintf(tmp, "COMSPEC=%s", short_path);
+				char path[MAX_PATH], tmp_path[MAX_PATH], *file_name, *env_path;
+				strcpy(path, tmp + 8);
+				GetFullPathName(argv[0], MAX_PATH, tmp_path, &file_name);
+				sprintf(file_name, "COMMAND.COM");
+				if(_access(tmp_path, 0) == 0) {
+					strcpy(path, tmp_path);
+				} else if((env_path = getenv("PATH")) != NULL) {
+					char *token = my_strtok(env_path, ";");
+					while(token != NULL) {
+						if(strlen(token) != 0) {
+							strcpy(tmp_path, msdos_combine_path(token, "COMMAND.COM"));
+							if(_access(tmp_path, 0) == 0) {
+								strcpy(path, tmp_path);
+								break;
+							}
+						}
+						token = my_strtok(NULL, ";");
 					}
 				}
+				GetShortPathName(path, tmp_path, MAX_PATH);
+				my_strupr(tmp_path);
+				sprintf(tmp, "COMSPEC=%s", tmp_path);
 			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
 				tmp[value_pos] = '\0';
 				char *token = my_strtok(value, ";");
 				while(token != NULL) {
 					if(strlen(token) != 0) {
-						char path[MAX_PATH], short_path[MAX_PATH];
-						if(token[0] == '"' && token[strlen(token) - 1] == '"') {
-							memset(path, 0, sizeof(path));
-							memcpy(path, token + 1, strlen(token) - 2);
-						} else {
-							sprintf(path, token);
+						char *path = msdos_remove_double_quote(token), tmp_path[MAX_PATH];
+						if(strlen(path) != 0) {
+							GetShortPathName(path, tmp_path, MAX_PATH);
+							strcat(tmp, tmp_path);
+							strcat(tmp, ";");
 						}
-						GetShortPathName(path, short_path, MAX_PATH);
-						strcat(tmp, short_path);
-						strcat(tmp, ";");
 					}
 					token = my_strtok(NULL, ";");
 				}
@@ -5563,8 +5756,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	psp_t *psp = msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
 	seg += (PSP_SIZE >> 4);
 	
-	// first mcb
+	// first mcb in conventional memory
 	msdos_mcb_create(seg, 'Z', 0, (MEMORY_END >> 4) - seg - 1);
+	first_mcb = seg;
+	
+	// first mcb in upper memory block
+	msdos_mcb_create(UMB_TOP >> 4, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 1);
 	
 	// boot
 	mem[0xffff0] = 0xf4;	// halt
@@ -5665,12 +5862,14 @@ void hardware_init()
 	cpu_step = (REG32(EDX) >> 0) & 0x0f;
 #endif
 	i386_set_a20_line(0);
-#ifdef SUPPORT_HARDWARE
 	pic_init();
-	//pit_init();
+#ifdef PIT_ALWAYS_RUNNING
+	pit_init();
+#else
 	pit_active = 0;
-	kbd_init();
 #endif
+	cmos_init();
+	kbd_init();
 }
 
 void hardware_run()
@@ -5703,35 +5902,49 @@ void hardware_run()
 #else
 		CPU_EXECUTE_CALL(CPU_MODEL);
 #endif
-#ifdef SUPPORT_HARDWARE
-		if(++ops == 1024) {
+		if(++ops == 16384) {
 			hardware_update();
 			ops = 0;
 		}
-#endif
 	}
 }
 
-#ifdef SUPPORT_HARDWARE
 void hardware_update()
 {
-	if(pit_active) {
-		pit_run();
+	static UINT32 prev_time = 0;
+	UINT32 cur_time = timeGetTime();
+	
+	if(prev_time != cur_time) {
+		// update pit and raise irq0
+#ifndef PIT_ALWAYS_RUNNING
+		if(pit_active)
+#endif
+		{
+			if(pit_run(0, cur_time)) {
+				pic_req(0, 0, 1);
+			}
+			pit_run(1, cur_time);
+			pit_run(2, cur_time);
+		}
+		// check key input and raise irq1
+		static UINT32 prev_100ms = 0;
+		UINT32 cur_100ms = cur_time / 100;
+		if(prev_100ms != cur_100ms) {
+			if(check_key_input()) {
+				pic_req(0, 1, 1);
+			}
+			prev_100ms = cur_100ms;
+		}
+		prev_time = cur_time;
 	}
 }
-#endif
 
 // pic
 
 void pic_init()
 {
-	for(int c = 0; c < 2; c++) {
-		pic[c].imr = 0xff;
-		pic[c].irr = pic[c].isr = pic[c].prio = 0;
-		pic[c].icw1 = pic[c].icw2 = pic[c].icw3 = pic[c].icw4 = 0;
-		pic[c].ocw3 = 0;
-		pic[c].icw2_r = pic[c].icw3_r = pic[c].icw4_r = 0;
-	}
+	memset(pic, 0, sizeof(pic));
+	pic[0].imr = pic[1].imr = 0xff;
 	
 	// from bochs bios
 	pic_write(0, 0, 0x11);	// icw1 = 11h
@@ -5771,7 +5984,6 @@ void pic_write(int c, UINT32 addr, UINT8 data)
 			pic[c].icw2_r = 1;
 			pic[c].icw3_r = (data & 2) ? 0 : 1;
 			pic[c].icw4_r = data & 1;
-			
 			pic[c].irr = 0;
 			pic[c].isr = 0;
 			pic[c].imr = 0;
@@ -5920,20 +6132,11 @@ void pic_update()
 
 void pit_init()
 {
+	memset(pit, 0, sizeof(pit));
 	for(int ch = 0; ch < 3; ch++) {
-		pit[ch].prev_out = 1;
-		//pit[ch].gate = 1;
 		pit[ch].count = 0x10000;
-		pit[ch].count_reg = 0;
 		pit[ch].ctrl_reg = 0x34;
 		pit[ch].mode = 3;
-		pit[ch].count_latched = 0;
-		pit[ch].low_read = pit[ch].high_read = 0;
-		pit[ch].low_write = pit[ch].high_write = 0;
-		pit[ch].delay = 0;
-		pit[ch].start = 0;
-		pit[ch].null_count = 1;
-		pit[ch].status_latched = 0;
 	}
 	
 	// from bochs bios
@@ -5944,11 +6147,12 @@ void pit_init()
 
 void pit_write(int ch, UINT8 val)
 {
+#ifndef PIT_ALWAYS_RUNNING
 	if(!pit_active) {
 		pit_active = 1;
 		pit_init();
 	}
-	
+#endif
 	switch(ch) {
 	case 0:
 	case 1:
@@ -5973,24 +6177,12 @@ void pit_write(int ch, UINT8 val)
 			}
 			pit[ch].high_write = 0;
 		}
-		pit[ch].null_count = 1;
-		// set signal
-		if(pit[ch].mode == 0) {
-			pit_set_signal(ch, 0);
-		} else {
-			pit_set_signal(ch, 1);
-		}
 		// start count
-		if(pit[ch].mode == 0 || pit[ch].mode == 4) {
-			// restart with new count
-			pit_stop_count(ch);
-			pit[ch].delay = 1;
-			pit_start_count(ch);
-		} else if(pit[ch].mode == 2 || pit[ch].mode == 3) {
-			// start with new pit after the current count is finished
-			if(!pit[ch].start) {
-				pit[ch].delay = 1;
-				pit_start_count(ch);
+		if(!pit[ch].low_write && !pit[ch].high_write) {
+			if(pit[ch].mode == 0 || pit[ch].mode == 4 || pit[ch].prev_time == 0) {
+				pit[ch].count = PIT_COUNT_VALUE(ch);
+				pit[ch].prev_time = timeGetTime();
+				pit[ch].expired_time = pit[ch].prev_time + pit_get_expired_time(ch);
 			}
 		}
 		break;
@@ -6001,12 +6193,6 @@ void pit_write(int ch, UINT8 val)
 				UINT8 bit = 2 << ch;
 				if(!(val & 0x10) && !pit[ch].status_latched) {
 					pit[ch].status = pit[ch].ctrl_reg & 0x3f;
-					if(pit[ch].prev_out) {
-						pit[ch].status |= 0x80;
-					}
-					if(pit[ch].null_count) {
-						pit[ch].status |= 0x40;
-					}
 					pit[ch].status_latched = 1;
 				}
 				if(!(val & 0x20) && !pit[ch].count_latched) {
@@ -6023,16 +6209,9 @@ void pit_write(int ch, UINT8 val)
 			pit[ch].low_read = pit[ch].high_read = 0;
 			pit[ch].low_write = pit[ch].high_write = 0;
 			pit[ch].ctrl_reg = val;
-			// set signal
-			if(pit[ch].mode == 0) {
-				pit_set_signal(ch, 0);
-			} else {
-				pit_set_signal(ch, 1);
-			}
 			// stop count
-			pit_stop_count(ch);
+			pit[ch].prev_time = pit[ch].expired_time = 0;
 			pit[ch].count_reg = 0;
-			pit[ch].null_count = 1;
 		} else if(!pit[ch].count_latched) {
 			pit_latch_count(ch);
 		}
@@ -6042,11 +6221,12 @@ void pit_write(int ch, UINT8 val)
 
 UINT8 pit_read(int ch)
 {
+#ifndef PIT_ALWAYS_RUNNING
 	if(!pit_active) {
 		pit_active = 1;
 		pit_init();
 	}
-	
+#endif
 	switch(ch) {
 	case 0:
 	case 1:
@@ -6077,129 +6257,32 @@ UINT8 pit_read(int ch)
 	return(0xff);
 }
 
-void pit_run()
+int pit_run(int ch, UINT32 cur_time)
 {
-	static UINT32 prev_time = 0;
-	UINT32 cur_time = timeGetTime();
-	
-	if(prev_time == cur_time) {
-		return;
-	}
-	prev_time = cur_time;
-	
-	for(int ch = 0; ch < 3; ch++) {
-		if(pit[ch].start && cur_time >= pit[ch].expired_time) {
-			pit_input_clock(ch, pit[ch].input_clk);
-			
-			// next expired time
-			if(pit[ch].start) {
-				pit[ch].input_clk = pit[ch].delay ? 1 : pit_get_next_count(ch);
-				pit[ch].prev_time = pit[ch].expired_time;
-				pit[ch].expired_time += pit_get_expired_time(pit[ch].input_clk);
-				if(pit[ch].expired_time <= cur_time) {
-					pit[ch].prev_time = cur_time;
-					pit[ch].expired_time = cur_time + pit_get_expired_time(pit[ch].input_clk);
-				}
-			}
-		}
-	}
-}
-
-void pit_input_clock(int ch, int clock)
-{
-	if(!(pit[ch].start && clock)) {
-		return;
-	}
-	if(pit[ch].delay) {
-		clock -= 1;
-		pit[ch].delay = 0;
+	if(pit[ch].expired_time != 0 && cur_time >= pit[ch].expired_time) {
 		pit[ch].count = PIT_COUNT_VALUE(ch);
-		pit[ch].null_count = 0;
-	}
-	
-	// update pit
-	pit[ch].count -= clock;
-	INT32 tmp = PIT_COUNT_VALUE(ch);
-loop:
-	if(pit[ch].mode == 3) {
-		INT32 half = tmp >> 1;
-		if(pit[ch].count > half) {
-			pit_set_signal(ch, 1);
-		} else {
-			pit_set_signal(ch, 0);
+		pit[ch].prev_time = pit[ch].expired_time;
+		pit[ch].expired_time = pit[ch].prev_time + pit_get_expired_time(ch);
+		if(cur_time >= pit[ch].expired_time) {
+			pit[ch].prev_time = cur_time;
+			pit[ch].expired_time = pit[ch].prev_time + pit_get_expired_time(ch);
 		}
-	} else {
-		if(pit[ch].count <= 1) {
-			if(pit[ch].mode == 2 || pit[ch].mode == 4 || pit[ch].mode == 5) {
-				pit_set_signal(ch, 0);
-			}
-		}
-		if(pit[ch].count <= 0) {
-			pit_set_signal(ch, 1);
-		}
+		return(1);
 	}
-	if(pit[ch].count <= 0) {
-		if(pit[ch].mode == 0 || pit[ch].mode == 2 || pit[ch].mode == 3) {
-			pit[ch].count += tmp;
-			pit[ch].null_count = 0;
-			goto loop;
-		} else {
-			pit[ch].start = 0;
-			pit[ch].count = 0x10000;
-		}
-	}
-}
-
-void pit_start_count(int ch)
-{
-	if(pit[ch].low_write || pit[ch].high_write) {
-		return;
-	}
-	//if(!pit[ch].gate) {
-	//	return;
-	//}
-	pit[ch].start = 1;
-	
-	// next expired time
-	pit[ch].input_clk = pit[ch].delay ? 1 : pit_get_next_count(ch);
-	UINT32 cur_time = timeGetTime();
-	pit[ch].prev_time = cur_time;
-	pit[ch].expired_time = cur_time + pit_get_expired_time(pit[ch].input_clk);
-}
-
-void pit_stop_count(int ch)
-{
-	pit[ch].start = 0;
+	return(0);
 }
 
 void pit_latch_count(int ch)
 {
-	if(pit[ch].start) {
-		// update pit
-		UINT32 cur_time = timeGetTime();
-		if(cur_time > pit[ch].prev_time) {
-			UINT32 input = PIT_FREQ * (cur_time - pit[ch].prev_time) / 1000;
-			pit_input_clock(ch, input);
-			
-			if(pit[ch].input_clk <= input) {
-				// next expired time
-				if(pit[ch].start) {
-					pit[ch].input_clk = pit[ch].delay ? 1 : pit_get_next_count(ch);
-					pit[ch].prev_time = pit[ch].expired_time;
-					pit[ch].expired_time += pit_get_expired_time(pit[ch].input_clk);
-					if(pit[ch].expired_time <= cur_time) {
-						pit[ch].prev_time = cur_time;
-						pit[ch].expired_time = cur_time + pit_get_expired_time(pit[ch].input_clk);
-					}
-				}
-			} else {
-				pit[ch].input_clk -= input;
-				pit[ch].prev_time = cur_time;
-			}
-		}
+	UINT32 cur_time = timeGetTime();
+	
+	if(pit[ch].expired_time != 0) {
+		pit_run(ch, cur_time);
+		UINT32 tmp = (pit[ch].count * (pit[ch].expired_time - cur_time)) / (pit[ch].expired_time - pit[ch].prev_time);
+		pit[ch].latch = (tmp != 0) ? (UINT16)tmp : 1;
+	} else {
+		pit[ch].latch = (UINT16)pit[ch].count;
 	}
-	// latch pit
-	pit[ch].latch = (UINT16)pit[ch].count;
 	pit[ch].count_latched = 1;
 	if((pit[ch].ctrl_reg & 0x30) == 0x10) {
 		// lower byte
@@ -6215,64 +6298,76 @@ void pit_latch_count(int ch)
 	}
 }
 
-void pit_set_signal(int ch, int signal)
+int pit_get_expired_time(int ch)
 {
-	int prev = pit[ch].prev_out;
-	pit[ch].prev_out = signal;
-	
-	if(prev && !signal) {
-		// H->L
-		if(ch == 0) {
-			pic_req(0, 0, 0);
-		}
-	} else if(!prev && signal) {
-		// L->H
-		if(ch == 0) {
-			pic_req(0, 0, 1);
-		}
-	}
+	UINT32 val = (1000 * pit[ch].count) / PIT_FREQ;
+	return((val > 0) ? val : 1);
 }
 
-int pit_get_next_count(int ch)
+// cmos
+
+void cmos_init()
 {
-	if(pit[ch].mode == 2 || pit[ch].mode == 4 || pit[ch].mode == 5) {
-		if(pit[ch].count > 1) {
-			return(pit[ch].count - 1);
-		} else {
-			return(1);
-		}
-	}
-	if(pit[ch].mode == 3) {
-		INT32 half = PIT_COUNT_VALUE(ch) >> 1;
-		if(pit[ch].count > half) {
-			return(pit[ch].count - half);
-		} else {
-			return(pit[ch].count);
-		}
-	}
-	return(pit[ch].count);
+	memset(cmos, 0, sizeof(cmos));
+	cmos_addr = 0;
+	
+	// from DOSBox
+	cmos_write(0x0a, 0x26);
+	cmos_write(0x0b, 0x02);
+	cmos_write(0x0d, 0x80);
 }
 
-int pit_get_expired_time(int clock)
+void cmos_write(int addr, UINT8 val)
 {
-	UINT32 val = 1000 * clock / PIT_FREQ;
+	cmos[addr & 0x7f] = val;
+}
+
+#define CMOS_GET_TIME() { \
+	UINT32 cur_sec = timeGetTime() / 1000 ; \
+	if(prev_sec != cur_sec) { \
+		GetLocalTime(&time); \
+		prev_sec = cur_sec; \
+	} \
+}
+#define CMOS_BCD(v) ((cmos[0x0b] & 4) ? (v) : to_bcd(v))
+
+UINT8 cmos_read(int addr)
+{
+	static SYSTEMTIME time;
+	static UINT32 prev_sec = 0;
 	
-	if(val > 0) {
-		return(val);
-	} else {
-		return(1);
+	switch(addr & 0x7f) {
+	case 0x00: CMOS_GET_TIME(); return(CMOS_BCD(time.wSecond));
+	case 0x02: CMOS_GET_TIME(); return(CMOS_BCD(time.wMinute));
+	case 0x04: CMOS_GET_TIME(); return(CMOS_BCD(time.wHour));
+	case 0x06: CMOS_GET_TIME(); return(time.wDayOfWeek + 1);
+	case 0x07: CMOS_GET_TIME(); return(CMOS_BCD(time.wDay));
+	case 0x08: CMOS_GET_TIME(); return(CMOS_BCD(time.wMonth));
+	case 0x09: CMOS_GET_TIME(); return(CMOS_BCD(time.wYear));
+//	case 0x0a: return((cmos[0x0a] & 0x7f) | ((timeGetTime() % 1000) < 2 ? 0x80 : 0));	// 2msec
+	case 0x0a: return((cmos[0x0a] & 0x7f) | ((timeGetTime() % 1000) < 20 ? 0x80 : 0));	// precision of timeGetTime() may not be 1msec
+	case 0x15: return((MEMORY_END >> 10) & 0xff);
+	case 0x16: return((MEMORY_END >> 18) & 0xff);
+	case 0x17: return(((MAX_MEM - 0x100000) >> 10) & 0xff);
+	case 0x18: return(((MAX_MEM - 0x100000) >> 18) & 0xff);
+	case 0x30: return(((MAX_MEM - 0x100000) >> 10) & 0xff);
+	case 0x31: return(((MAX_MEM - 0x100000) >> 18) & 0xff);
+	case 0x32: CMOS_GET_TIME(); return(CMOS_BCD(time.wYear / 100));
 	}
+	return(cmos[addr & 0x7f]);
 }
 
 // kbd (a20)
 
 void kbd_init()
 {
+	kbd_data = kbd_command = 0;
 	kbd_status = 0x18;
 }
 
 UINT8 kbd_read_data()
 {
+	kbd_status &= ~1;
 	return(kbd_data);
 }
 
@@ -6284,7 +6379,7 @@ void kbd_write_data(UINT8 val)
 		break;
 	}
 	kbd_command = 0;
-	kbd_status &= ~0x08;
+	kbd_status &= ~8;
 }
 
 UINT8 kbd_read_status()
@@ -6297,6 +6392,7 @@ void kbd_write_command(UINT8 val)
 	switch(val) {
 	case 0xd0:
 		kbd_data = ((m_a20_mask >> 19) & 2) | 1;
+		kbd_status |= 1;
 		break;
 	case 0xdd:
 		i386_set_a20_line(0);
@@ -6321,7 +6417,7 @@ void kbd_write_command(UINT8 val)
 	case 0xfe:
 	case 0xff:
 		if(!(val & 1)) {
-			if(cmos[0x0f] == 5) {
+			if((cmos[0x0f] & 0x7f) == 5) {
 				// reset pic
 				pic_init();
 				pic[0].irr = pic[1].irr = 0x00;
@@ -6334,7 +6430,7 @@ void kbd_write_command(UINT8 val)
 		break;
 	}
 	kbd_command = val;
-	kbd_status |= 0x08;
+	kbd_status |= 8;
 }
 
 // i/o bus
@@ -6342,7 +6438,6 @@ void kbd_write_command(UINT8 val)
 UINT8 read_io_byte(offs_t addr)
 {
 	switch(addr) {
-#ifdef SUPPORT_HARDWARE
 	case 0x20:
 	case 0x21:
 		return(pic_read(0, addr));
@@ -6355,16 +6450,13 @@ UINT8 read_io_byte(offs_t addr)
 		return(kbd_read_data());
 	case 0x64:
 		return(kbd_read_status());
-#endif
 	case 0x71:
-		return(cmos[cmos_addr & 0x7f]);
+		return(cmos_read(cmos_addr));
 	case 0x92:
 		return((m_a20_mask >> 19) & 2);
-#ifdef SUPPORT_HARDWARE
 	case 0xa0:
 	case 0xa1:
 		return(pic_read(1, addr));
-#endif
 	default:
 //		error("inb %4x\n", addr);
 		break;
@@ -6385,7 +6477,6 @@ UINT32 read_io_dword(offs_t addr)
 void write_io_byte(offs_t addr, UINT8 val)
 {
 	switch(addr) {
-#ifdef SUPPORT_HARDWARE
 	case 0x20:
 	case 0x21:
 		pic_write(0, addr, val);
@@ -6402,22 +6493,19 @@ void write_io_byte(offs_t addr, UINT8 val)
 	case 0x64:
 		kbd_write_command(val);
 		break;
-#endif
 	case 0x70:
 		cmos_addr = val;
 		break;
 	case 0x71:
-		cmos[cmos_addr & 0x07] = val;
+		cmos_write(cmos_addr, val);
 		break;
 	case 0x92:
 		i386_set_a20_line((val >> 1) & 1);
 		break;
-#ifdef SUPPORT_HARDWARE
 	case 0xa0:
 	case 0xa1:
 		pic_write(1, addr, val);
 		break;
-#endif
 	default:
 //		error("outb %4x,%2x\n", addr, val);
 		break;

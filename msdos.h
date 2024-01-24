@@ -147,9 +147,11 @@ public:
 #define DBCS_TABLE	(DBCS_TOP + 2)
 #define DBCS_SIZE	0x10
 #define MEMORY_TOP	(DBCS_TOP + DBCS_SIZE)
-//#define MEMORY_END	0xffff0
-#define MEMORY_END	0xf8000
-#define TVRAM_TOP	0xf8000
+#define MEMORY_END	0xb8000
+#define TEXT_VRAM_TOP	0xb8000
+#define UMB_TOP		0xc0000
+#define UMB_END		0xf8000
+#define SHADOW_BUF_TOP	0xf8000
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000
@@ -421,6 +423,7 @@ typedef struct {
 	bool parent_int_10h_ffh_called;
 } process_t;
 
+UINT16 first_mcb;
 UINT16 current_psp;
 
 int retval = 0;
@@ -461,13 +464,16 @@ bool cursor_moved;
 
 FIFO *key_buf_char;
 FIFO *key_buf_scan;
+int key_input = 0;
 UINT32 key_code = 0;
 
 int active_code_page;
 int system_code_page;
 
-UINT32 tvram_top_address = TVRAM_TOP;
-UINT32 tvram_end_address = TVRAM_TOP + 4000;
+UINT32 text_vram_top_address = TEXT_VRAM_TOP;
+UINT32 text_vram_end_address = TEXT_VRAM_TOP + 4000;
+UINT32 shadow_buffer_top_address = SHADOW_BUF_TOP;
+UINT32 shadow_buffer_end_address = SHADOW_BUF_TOP + 4000;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
 
@@ -475,23 +481,14 @@ bool int_10h_ffh_called = false;
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
-#define SUPPORT_HARDWARE
-
 void hardware_init();
 void hardware_run();
-#ifdef SUPPORT_HARDWARE
 void hardware_update();
-#endif
 
 // memory
 
 #define MAX_MEM 0x1000000
 UINT8 mem[MAX_MEM + 3];
-
-// cmos
-
-UINT8 cmos[128];
-UINT8 cmos_addr;
 
 // pic
 
@@ -515,9 +512,9 @@ void pic_update();
 
 // pit
 
+#define PIT_ALWAYS_RUNNING
+
 typedef struct {
-	int prev_out;
-	//int gate;
 	INT32 count;
 	UINT16 latch;
 	UINT16 count_reg;
@@ -526,31 +523,33 @@ typedef struct {
 	int low_read, high_read;
 	int low_write, high_write;
 	int mode;
-	int delay;
-	int start;
-	int null_count;
 	int status_latched;
 	UINT8 status;
 	// constant clock
-	UINT32 input_clk;
 	UINT32 expired_time;
 	UINT32 prev_time;
 } pit_t;
 
 pit_t pit[3];
+#ifndef PIT_ALWAYS_RUNNING
 int pit_active;
+#endif
 
 void pit_init();
 void pit_write(int ch, UINT8 val);
 UINT8 pit_read(int ch);
-void pit_run();
-void pit_input_clock(int ch, int clock);
-void pit_start_count(int ch);
-void pit_stop_count(int ch);
+int pit_run(int ch, UINT32 cur_time);
 void pit_latch_count(int ch);
-void pit_set_signal(int ch, int signal);
-int pit_get_next_count(int ch);
-int pit_get_expired_time(int clock);
+int pit_get_expired_time(int ch);
+
+// cmos
+
+UINT8 cmos[128];
+UINT8 cmos_addr;
+
+void cmos_init();
+void cmos_write(int addr, UINT8 val);
+UINT8 cmos_read(int addr);
 
 // kbd (a20)
 
