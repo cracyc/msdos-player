@@ -3112,6 +3112,9 @@
     <ClCompile Include="msdos.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="common.h" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="msdos.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -23,6 +23,16 @@ mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i86_x64
 copy Release\msdos.exe binary\i86_x64\.
 
+devenv.com msdos.vcproj /Rebuild "Release_v30|Win32"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\v30_x86
+copy Release\msdos.exe binary\v30_x86\.
+
+devenv.com msdos.vcproj /Rebuild "Release_v30|x64"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\v30_x64
+copy Release\msdos.exe binary\v30_x64\.
+
 devenv.com msdos.vcproj /Rebuild "Release_i286|Win32"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i286_x86
@@ -52,6 +62,16 @@ devenv.com msdos.vcproj /Rebuild "Release_i486|x64"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i486_x64
 copy Release\msdos.exe binary\i486_x64\.
+
+devenv.com msdos_np21.vcproj /Rebuild "Release|Win32"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\ia32_x86
+copy Release\msdos.exe binary\ia32_x86\.
+
+devenv.com msdos_np21.vcproj /Rebuild "Release|x64"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\ia32_x64
+copy Release\msdos.exe binary\ia32_x64\.
 
 pause
 echo on

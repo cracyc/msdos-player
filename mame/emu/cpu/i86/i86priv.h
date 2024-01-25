@@ -42,7 +42,6 @@ enum BREGS {
 
 #define SetTF(x)            (m_TF = (x))
 #define SetIF(x)            (m_IF = (x))
-#define SetMD(x)            (m_MF = (x))
 #define SetDF(x)            (m_DirVal = (x) ? -1 : 1)
 
 #define SetOFW_Add(x,y,z)   (m_OverVal = ((x) ^ (y)) & ((x) ^ (z)) & 0x8000)
@@ -147,11 +146,11 @@ enum BREGS {
 #else
 #define IOPL (3)
 #define NT (1)
-#define xF (1)
+#define xF (m_MF)
 #endif
 
 #define CompressFlags() (WORD)(CF | 2 |(PF << 2) | (AF << 4) | (ZF << 6) \
-				| (SF << 7) | (m_TF << 8) | (m_IF << 9) | (m_MF << 15) \
+				| (SF << 7) | (m_TF << 8) | (m_IF << 9) \
 				| (DF << 10) | (OF << 11) | (IOPL << 12) | (NT << 14) | (xF << 15))
 
 #define ExpandFlags(f) \
@@ -163,8 +162,8 @@ enum BREGS {
 		m_SignVal = ((f) & 128) ? -1 : 0; \
 		m_TF = ((f) & 256) >> 8; \
 		m_IF = ((f) & 512) >> 9; \
-		m_MF = ((f) & 32768) >> 15; \
 		m_DirVal = ((f) & 1024) ? -1 : 1; \
 		m_OverVal = (f) & 2048; \
+		m_MF = ((f) & 32768) >> 15; \
 }
 #endif /* __I86_H__ */

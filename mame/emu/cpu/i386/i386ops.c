@@ -2374,7 +2374,7 @@ static void I386OP(hlt)()               // Opcode 0xf4
 	// Exit MS-DOS Player
 	if(m_pc == 0xffff1) {
 		// The first process is terminated and jump to FFFF:0000 HALT
-		m_exit = 1;
+		msdos_exit = 1;
 	}
 }
 

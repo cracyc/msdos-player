@@ -2176,7 +2176,7 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
 #ifdef USE_DEBUGGER
 		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
+		msdos_intnum = (old - IRET_TOP);
 #else
 		// Call msdos_syscall() here for better processing speed
 		msdos_syscall(old - IRET_TOP);
@@ -2589,7 +2589,7 @@ static void PREFIX86(_hlt)()    /* Opcode 0xf4 */
 	// Exit MS-DOS Player
 	if(m_pc == 0xffff1) {
 		// The first process is terminated and jump to FFFF:0000 HALT
-		m_exit = 1;
+		msdos_exit = 1;
 	}
 }
 

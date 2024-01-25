@@ -8,118 +8,6 @@
 #ifndef _MSDOS_H_
 #define _MSDOS_H_
 
-#ifndef _WIN32_WINNT
-//#define _WIN32_WINNT 0x400	// Windows NT 4.0
-#define _WIN32_WINNT 0x500	// Windows 2000
-//#define _WIN32_WINNT 0x501	// Windows XP
-#endif
-#include <windows.h>
-#include <winioctl.h>
-#ifdef _MBCS
-#include <mbstring.h>
-#endif
-#include <stddef.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-#include <conio.h>
-#include <locale.h>
-#include <math.h>
-#include <dos.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <io.h>
-#include <sys/locking.h>
-#include <mbctype.h>
-#include <direct.h>
-#include <errno.h>
-#include <tlhelp32.h>
-#include <psapi.h>
-#include <setupapi.h>
-#include <winsock.h>
-#include <intrin.h>
-
-#ifdef _DEBUG
-// _malloca is defined in both intrin.h and crtdbg.h
-#ifdef _malloca
-#undef _malloca
-#endif
-#define _CRTDBG_MAP_ALLOC
-#include <crtdbg.h>
-#define calloc(c, s) _calloc_dbg(c, s, _NORMAL_BLOCK, __FILE__, __LINE__)
-#define malloc(s) _malloc_dbg(s, _NORMAL_BLOCK, __FILE__, __LINE__)
-#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
-#endif
-
-// variable scope of 'for' loop for Microsoft Visual C++ 6.0
-#if defined(_MSC_VER) && (_MSC_VER == 1200)
-#define for if(0);else for
-#endif
-
-// disable warnings for Microsoft Visual C++ 2005 or later
-#if defined(_MSC_VER) && (_MSC_VER >= 1400)
-#pragma warning( disable : 4819 )
-#pragma warning( disable : 4995 )
-#pragma warning( disable : 4996 )
-// for MAME i86/i386
-#pragma warning( disable : 4018 )
-#pragma warning( disable : 4065 )
-#pragma warning( disable : 4146 )
-#pragma warning( disable : 4244 )
-#pragma warning( disable : 4267 )
-#endif
-
-// endian
-#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
-	#if defined(__BYTE_ORDER) && (defined(__LITTLE_ENDIAN) || defined(__BIG_ENDIAN))
-		#if __BYTE_ORDER == __LITTLE_ENDIAN
-			#define __LITTLE_ENDIAN__
-		#elif __BYTE_ORDER == __BIG_ENDIAN
-			#define __BIG_ENDIAN__
-		#endif
-	#elif defined(WORDS_LITTLEENDIAN)
-		#define __LITTLE_ENDIAN__
-	#elif defined(WORDS_BIGENDIAN)
-		#define __BIG_ENDIAN__
-	#endif
-#endif
-#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
-	// Microsoft Visual C++
-	#define __LITTLE_ENDIAN__
-#endif
-
-// compat for mingw32 headers
-#ifndef COMMON_LVB_UNDERSCORE
-#define COMMON_LVB_UNDERSCORE 0x8000
-#endif
-
-// type definition
-#ifndef UINT8
-typedef unsigned char UINT8;
-#endif
-#ifndef UINT16
-typedef unsigned short UINT16;
-#endif
-#ifndef UINT32
-typedef unsigned int UINT32;
-#endif
-#ifndef UINT64
-typedef unsigned long long UINT64;
-#endif
-#ifndef INT8
-typedef signed char INT8;
-#endif
-#ifndef INT16
-typedef signed short INT16;
-#endif
-#ifndef INT32
-typedef signed int INT32;
-#endif
-#ifndef INT64
-typedef signed long long INT64;
-#endif
-
 #pragma pack(1)
 typedef union {
 	UINT32 dw;
@@ -132,12 +20,6 @@ typedef union {
 	} w;
 } PAIR32;
 #pragma pack()
-
-// MAME i86/i386
-
-// src/emu/devcpu.h
-// offsets and addresses are 32-bit (for now...)
-typedef UINT32	offs_t;
 
 /* ----------------------------------------------------------------------------
 	FIFO buffer
@@ -206,7 +88,9 @@ public:
 	MAME i86/i386
 ---------------------------------------------------------------------------- */
 
-#if defined(HAS_I86)
+#if defined(HAS_IA32)
+//	#define CPU_MODEL ia32
+#elif defined(HAS_I86)
 	#define CPU_MODEL i8086
 #elif defined(HAS_I186)
 	#define CPU_MODEL i80186
@@ -242,6 +126,9 @@ public:
 		#endif
 		#define SUPPORT_FPU
 //	#endif
+#endif
+
+#if !(defined(HAS_I86) || defined(HAS_I186) || defined(HAS_V30) || defined(HAS_I286) || defined(HAS_I386))
 	#define HAS_I386
 #endif
 
@@ -249,41 +136,17 @@ public:
 	debugger
 ---------------------------------------------------------------------------- */
 
-//#define USE_DEBUGGER
-
 #ifdef USE_DEBUGGER
-#define MAX_BREAK_POINTS	8
-
 bool now_debugging = false;
 bool now_going = false;
 bool now_suspended = false;
 bool force_suspend = false;
-
-typedef struct {
-	struct {
-		UINT32 addr;
-		UINT32 seg;
-		UINT32 ofs;
-		int status;	// 0 = none, 1 = enabled, other = disabled
-	} table[MAX_BREAK_POINTS];
-	int hit;
-} break_point_t;
 
 break_point_t break_point = {0};
 break_point_t rd_break_point = {0};
 break_point_t wr_break_point = {0};
 break_point_t in_break_point = {0};
 break_point_t out_break_point = {0};
-
-typedef struct {
-	struct {
-		int int_num;
-		UINT8 ah, ah_registered;
-		UINT8 al, al_registered;
-		int status;	// 0 = none, 1 = enabled, other = disabled
-	} table[MAX_BREAK_POINTS];
-	int hit;
-} int_break_point_t;
 
 int_break_point_t int_break_point = {0};
 
@@ -292,18 +155,18 @@ FILE *fi_debugger = NULL;
 
 // these read/write interfaces do not check break points,
 // debugger should use them not to hit any break point mistakely
-UINT8 debugger_read_byte(offs_t byteaddress);
-UINT16 debugger_read_word(offs_t byteaddress);
-UINT32 debugger_read_dword(offs_t byteaddress);
-void debugger_write_byte(offs_t byteaddress, UINT8 data);
-void debugger_write_word(offs_t byteaddress, UINT16 data);
-void debugger_write_dword(offs_t byteaddress, UINT32 data);
-UINT8 debugger_read_io_byte(offs_t addr);
-UINT16 debugger_read_io_word(offs_t addr);
-UINT32 debugger_read_io_dword(offs_t addr);
-void debugger_write_io_byte(offs_t addr, UINT8 val);
-void debugger_write_io_word(offs_t addr, UINT16 val);
-void debugger_write_io_dword(offs_t addr, UINT32 val);
+UINT8 debugger_read_byte(UINT32 byteaddress);
+UINT16 debugger_read_word(UINT32 byteaddress);
+UINT32 debugger_read_dword(UINT32 byteaddress);
+void debugger_write_byte(UINT32 byteaddress, UINT8 data);
+void debugger_write_word(UINT32 byteaddress, UINT16 data);
+void debugger_write_dword(UINT32 byteaddress, UINT32 data);
+UINT8 debugger_read_io_byte(UINT32 addr);
+UINT16 debugger_read_io_word(UINT32 addr);
+UINT32 debugger_read_io_dword(UINT32 addr);
+void debugger_write_io_byte(UINT32 addr, UINT8 val);
+void debugger_write_io_word(UINT32 addr, UINT16 val);
+void debugger_write_io_dword(UINT32 addr, UINT32 val);
 #endif
 
 /* ----------------------------------------------------------------------------
@@ -428,7 +291,7 @@ drive_param_t drive_params[26] = {0};
 	#define ADDR_MASK 0xfffff
 	#define MAX_MEM 0x100000	/* 1MB */
 #endif
-UINT8 mem[MAX_MEM + 15];
+UINT8 mem[MAX_MEM + 16];
 
 // ems
 
@@ -1333,7 +1196,7 @@ bool is_hma_used_by_int_2fh = false;
 #ifdef SUPPORT_XMS
 typedef struct emb_handle_s {
 	UINT32 handle; // 0=allocated
-	offs_t address;
+	UINT32 address;
 	int size_kb;
 	int lock;
 	struct emb_handle_s *prev;

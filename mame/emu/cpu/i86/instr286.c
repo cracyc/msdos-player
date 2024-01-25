@@ -106,7 +106,7 @@ static void i80286_trap2(UINT32 error)
 			i80286_interrupt_descriptor(number,1,0);
 			break;
 		case ILLEGAL_INSTRUCTION:
-			m_int6h_skip_pc = m_pc;
+			msdos_int6h_pc = m_pc;
 		default:
 			i80286_interrupt_descriptor(number,1,-1);
 		}
@@ -851,7 +851,7 @@ static void PREFIX286(_iret)()
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
 #ifdef USE_DEBUGGER
 		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
+		msdos_intnum = (old - IRET_TOP);
 #else
 		// Call msdos_syscall() here for better processing speed
 		msdos_syscall(old - IRET_TOP);

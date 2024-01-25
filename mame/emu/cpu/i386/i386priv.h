@@ -354,7 +354,6 @@ union XMM_REG {
 	UINT32 m_prev_cs;
 #endif
 	UINT32 m_prev_eip;
-	UINT32 m_int6h_skip_eip;
 	UINT32 m_eflags;
 	UINT32 m_eflags_mask;
 	UINT8 m_CF;
@@ -393,7 +392,6 @@ union XMM_REG {
 	UINT8 m_ext;  // external interrupt
 
 	int m_halted;
-	int m_int_num;
 
 	int m_operand_size;
 	int m_xmm_operand_size;

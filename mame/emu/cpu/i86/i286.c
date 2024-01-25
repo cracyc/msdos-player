@@ -42,7 +42,6 @@ union i80286basicregs
 	UINT32  m_prev_cs;
 	UINT32  m_prev_eip;
 #endif
-	UINT32 m_int6h_skip_pc;
 	UINT16  m_flags;
 	UINT16  m_msw;
 	UINT32  m_base[4];
@@ -70,7 +69,6 @@ union i80286basicregs
 
 	int m_halted;         /* Is the CPU halted ? */
 	int m_trap_level;
-	int m_int_num;
 
 	char m_seg_prefix;
 	UINT8   m_prefix_seg;
@@ -184,7 +182,10 @@ static void set_irq_line(int irqline, int state)
 
 			/* on a rising edge, signal the NMI */
 			if (state != CLEAR_LINE)
+			{
 				i80286_interrupt_descriptor(I8086_NMI_INT_VECTOR, 2, -1);
+				m_nmi_state = CLEAR_LINE;
+			}
 		}
 		else
 		{
@@ -261,12 +262,12 @@ static CPU_EXECUTE( i80286 )
 //	}
 }
 
-extern int i386_dasm_one(char *buffer, UINT32 eip, const UINT8 *oprom, int mode);
+//extern int i386_dasm_one(char *buffer, UINT32 eip, const UINT8 *oprom, int mode);
 
-static CPU_DISASSEMBLE( i80286 )
-{
-	return i386_dasm_one(buffer, m_pc, oprom, 2);
-}
+//static CPU_DISASSEMBLE( i80286 )
+//{
+//	return i386_dasm_one(buffer, m_pc, oprom, 2);
+//}
 
 static CPU_INIT( i80286 )
 {

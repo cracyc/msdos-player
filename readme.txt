@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								10/26/2017
+								4/6/2020
 
 ----- What's This
 
@@ -232,7 +232,7 @@ https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
 +09:00  Tokyo Standard Time                 JST     JDT     JP Tokyo
 ------- Korean Standard Time --------------------------------------------------
 +09:00  Korea Standard Time                 KST     KDT     KR Seoul
-+08:30  North Korea Standard Time           KST     KDT     KP Pyongyang
++09:00  North Korea Standard Time           KST     KDT     KP Pyongyang
 ------- China Coast Time ------------------------------------------------------
 +08:00  China Standard Time                 CCT     CDT     CN Shanghai
 +08:00  Taipei Standard Time                CCT     CDT     TW Taipei
@@ -326,23 +326,33 @@ The extracted command file will be removed when the execution is finished.
 
 ----- Binaries
 
-This archive contains 8 executable binaries:
+This archive contains 12 executable binaries:
 
-	i86_x86 	Emulates 8086  and supports both 32bit/64bit Windows
-	i86_x64 	Emulates 8086  and supports only 64bit Windows
+	i86_x86 	Emulates 8086 and supports both 32bit/64bit Windows
+	i86_x64 	Emulates 8086 and supports only 64bit Windows
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
 	i286_x64	Emulates 80286 and supports only 64bit Windows
 	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
 	i386_x64	Emulates 80386 and supports only 64bit Windows
 	i486_x86	Emulates 80486 and supports both 32bit/64bit Windows
-	i486_x64	Emulates 80486 and supports only 64bit Windows
+	i486_x64	Emulates 80486 and supports only 64bit Window
+	v30_x86 	Emulates NEC V30 and supports both 32bit/64bit Windows
+	v30_x64 	Emulates NEC V30 and supports only 64bit Windows
+	ia32_x86	Emulates IA32 and supports both 32bit/64bit Windows
+	ia32_x64	Emulates IA32 and supports only 64bit Windows
 
-8086 binaries are much faster than 80286/80386/80486.
+8086 binaries are much faster than 80286/80386/80486 binaries.
 If you don't need the protected mode or new mnemonics of 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
+NEC V30 binaries support 8080 emulation mode.
+If you try CP/M80 emulator using 8080 emulation mode, use these binaries.
+
+IA32 binaries use Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
+These binaries will emulate the protected mode more correctly.
+
 The VC++ project file "msdos.vcproj/vcxproj" also contains the configurations
-for 80186, NEC V30, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
+for 80186, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
 You can build all binaries for several cpu models by running build8_all.bat
 or build12_all.bat.
 (You need VC++ 2008 with Service Pack 1 or VC++ 2013 with Update 5.)
@@ -1024,6 +1034,7 @@ See also COPYING.txt for more details about the license.
 8086/80286 code is based on MAME 0.149 and applied fixes in MAME 0.150-0.185.
 NEC V30 instructions code is based on MAME 0.128.
 8038/80486 code is based on MAME 0.152 and applied fixes in MAME 0.154-0.185.
+IA32 code is based on Neko Project 21/W.
 
 INT 15H AH=84H (Joystick Support),
 INT 15H AH=87H (Copy Extended Memory),
@@ -1037,7 +1048,7 @@ INT 67H AX=DE0CH (Switch To Protected Mode),
 and some DOS info block improvements are based on DOSBox.
 
 Patched by Mr.Sagawa, Mr.sava (lukewarm), Mr.Kimura (emk), Mr.Jason Hood,
-and Mr.N2583ZYOB6
+Mr.N2583ZYOB6, and Mr.Fujita.
 
 ----------------------------------------
 TAKEDA, toshiya

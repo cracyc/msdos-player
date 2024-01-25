@@ -775,7 +775,7 @@ static void I386OP(iret32)()            // Opcode 0xcf
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
 #ifdef USE_DEBUGGER
 		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		m_int_num = (old - IRET_TOP);
+		msdos_intnum = (old - IRET_TOP);
 #else
 		// Call msdos_syscall() here for better processing speed
 		if(m_lock)

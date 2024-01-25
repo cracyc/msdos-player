@@ -11,7 +11,7 @@
 #include "i86priv.h"
 //#include "i86.h"
 
-extern int i386_dasm_one(char *buffer, UINT32 eip, const UINT8 *oprom, int mode);
+//extern int i386_dasm_one(char *buffer, UINT32 eip, const UINT8 *oprom, int mode);
 
 #define VERBOSE 0
 #define LOG(x) do { if (VERBOSE) mame_printf_debug x; } while (0)
@@ -43,14 +43,15 @@ union i8086basicregs
 	INT32 m_AuxVal, m_OverVal, m_SignVal, m_ZeroVal, m_CarryVal, m_DirVal;      /* 0 or non-0 valued flags */
 	UINT8 m_ParityVal;
 	UINT8 m_TF, m_IF;                  /* 0 or 1 valued flags */
-	UINT8 m_MF;                          /* V30 mode flag */
+	UINT8 m_MF, m_MF_WriteDisabled;    /* V30 mode flag */
+	UINT8 m_NF;                        /* 8080 N flag */
+
 	UINT8 m_int_vector;
 	INT8 m_nmi_state;
 	INT8 m_irq_state;
 	INT8 m_test_state;
 
 	int m_halted;         /* Is the CPU halted ? */
-	int m_int_num;
 
 	UINT16 m_ip;
 	UINT32 m_sp;
@@ -175,7 +176,8 @@ static CPU_RESET( i80186 )
 static CPU_RESET( v30 )
 {
 	CPU_RESET_CALL(i8086);
-	SetMD(1);
+	m_MF = m_MF_WriteDisabled = 1;
+	m_NF = 0; /* is this correct ? */
 }
 
 /* ASG 971222 -- added these interface functions */
@@ -197,6 +199,8 @@ static void set_irq_line(int irqline, int state)
 		if (state != CLEAR_LINE)
 		{
 			PREFIX(_interrupt)(I8086_NMI_INT_VECTOR);
+			m_MF = 1; /* enter native mode */
+			m_nmi_state = CLEAR_LINE;
 		}
 	}
 	else
@@ -207,6 +211,7 @@ static void set_irq_line(int irqline, int state)
 		if (state != CLEAR_LINE && m_IF)
 		{
 			PREFIX(_interrupt)((UINT32)-1);
+			m_MF = 1; /* enter native mode */
 			m_irq_state = CLEAR_LINE;
 		}
 	}
@@ -259,6 +264,7 @@ static CPU_EXECUTE( i8086 )
 
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
+	m_MF = 1; /* bit15 in flags is always 1 */
 	TABLE86;
 
 #ifdef USE_DEBUGGER
@@ -271,10 +277,10 @@ static CPU_EXECUTE( i8086 )
 }
 
 
-static CPU_DISASSEMBLE( i8086 )
-{
-	return i386_dasm_one(buffer, m_pc, oprom, 1);
-}
+//static CPU_DISASSEMBLE( i8086 )
+//{
+//	return i386_dasm_one(buffer, m_pc, oprom, 1);
+//}
 
 
 
@@ -323,6 +329,7 @@ static CPU_EXECUTE( i80186 )
 
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
+	m_MF = 1; /* bit15 in flags is always 1 */
 	TABLE186;
 
 #ifdef USE_DEBUGGER
@@ -339,6 +346,7 @@ static CPU_EXECUTE( i80186 )
 #undef PREFIX
 #define PREFIX(name) v30##name
 #define PREFIXV30(name) v30##name
+#define PREFIX80(name) i8080##name
 
 #define I80186
 #include "instrv30.h"
@@ -379,7 +387,19 @@ static CPU_EXECUTE( v30 )
 
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
-	TABLEV30;
+	if(m_MF) {
+		TABLEV30;
+		if(m_MF_WriteDisabled) m_MF = 1;
+	} else {
+		UINT16 flags = (CompressFlags() & ~2) | (m_NF << 1);
+		UINT8 ah = m_regs.b[AH];
+		m_regs.b[AH] = (UINT8)(flags & 0xff);
+		TABLE80;
+		flags = (m_MF ? 0x8000 : 0) | (flags & 0x7f00) | m_regs.b[AH];
+		ExpandFlags(flags);
+		m_NF = (flags & 2) >> 1;
+		m_regs.b[AH] = ah;
+	}
 
 #ifdef USE_DEBUGGER
 	if(now_debugging) {

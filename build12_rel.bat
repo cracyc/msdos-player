@@ -22,6 +22,16 @@ mkdir binary\i86_x64
 copy Release\msdos.exe binary\i86_x64\.
 call :clean
 
+devenv.com msdos.vcxproj /Rebuild "Release_v30|Win32"
+mkdir binary\v30_x86
+copy Release\msdos.exe binary\v30_x86\.
+call :clean
+
+devenv.com msdos.vcxproj /Rebuild "Release_v30|x64"
+mkdir binary\v30_x64
+copy Release\msdos.exe binary\v30_x64\.
+call :clean
+
 devenv.com msdos.vcxproj /Rebuild "Release_i286|Win32"
 mkdir binary\i286_x86
 copy Release\msdos.exe binary\i286_x86\.
@@ -50,6 +60,16 @@ call :clean
 devenv.com msdos.vcxproj /Rebuild "Release_i486|x64"
 mkdir binary\i486_x64
 copy Release\msdos.exe binary\i486_x64\.
+call :clean
+
+devenv.com msdos_np21.vcxproj /Rebuild "Release|Win32"
+mkdir binary\ia32_x86
+copy Release\msdos.exe binary\ia32_x86\.
+call :clean
+
+devenv.com msdos_np21.vcxproj /Rebuild "Release|x64"
+mkdir binary\ia32_x64
+copy Release\msdos.exe binary\ia32_x64\.
 call :clean
 
 pause

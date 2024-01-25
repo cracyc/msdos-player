@@ -4794,6 +4794,10 @@
 			Filter="h"
 			>
 			<File
+				RelativePath=".\common.h"
+				>
+			</File>
+			<File
 				RelativePath=".\msdos.h"
 				>
 			</File>

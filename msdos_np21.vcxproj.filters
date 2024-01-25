@@ -1,0 +1,269 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{55fd3a78-dbf9-46cc-9bfa-c84ce5f9c0ae}</UniqueIdentifier>
+      <Extensions>c;cpp</Extensions>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files">
+      <UniqueIdentifier>{8d663b57-1c4a-426e-aa2a-ae86d8b818f3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32">
+      <UniqueIdentifier>{f1e74570-89f2-461c-8d44-e9fbe30ebe2a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions">
+      <UniqueIdentifier>{e1bf972f-706b-4fe0-98f9-a202a8627e3d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\fpu">
+      <UniqueIdentifier>{ffdbb176-cfa9-49a7-bd47-d162e6e15355}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\fpu\softfloat">
+      <UniqueIdentifier>{129faa45-e1a8-455f-b2e1-a470a8c26c9c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\mmx">
+      <UniqueIdentifier>{fbb0a22f-74b2-43a2-8f02-c966bc9b6ef2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse">
+      <UniqueIdentifier>{60406494-2798-453e-8d8c-57691351903e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse2">
+      <UniqueIdentifier>{5024deb2-6116-4a1e-bc4c-94d5c12aba43}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse3">
+      <UniqueIdentifier>{92465594-644b-4d27-9bbb-5434f94c1531}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{d3901fd0-707b-41b0-ba65-8907146ab530}</UniqueIdentifier>
+      <Extensions>h</Extensions>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files">
+      <UniqueIdentifier>{fed3ec18-8ce8-4594-8414-016a2b4dc11c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32">
+      <UniqueIdentifier>{f754c096-628c-43b2-a546-85ffa6af3e62}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\fpu">
+      <UniqueIdentifier>{20b86bec-6347-418c-a60b-cb3b9d0c3355}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\fpu\softfloat">
+      <UniqueIdentifier>{8465a395-256f-4b98-b9ec-2af8366542cf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\mmx">
+      <UniqueIdentifier>{59d953fd-7079-4b9c-86ce-fb7a60d36046}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\sse">
+      <UniqueIdentifier>{bbb4caaa-d8c3-42d3-9dab-307e49d31830}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\sse2">
+      <UniqueIdentifier>{75e03cda-84b6-4e9d-834c-ca30f3475967}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\sse3">
+      <UniqueIdentifier>{691669a0-0874-4da8-bd6a-fc3963ef3b95}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="msdos.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\cpucore.cpp">
+      <Filter>Source Files\np21w i386c Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\cpumem.cpp">
+      <Filter>Source Files\np21w i386c Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\cpu.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\cpu_io.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\cpu_mem.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\ctrlxfer.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\debug.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\exception.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\groups.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\ia32.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\inst_table.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\interface.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\paging.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\resolve.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\segments.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\task.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\bin_arith.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\bit_byte.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\ctrl_trans.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\data_trans.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\dec_arith.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\flag_ctrl.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\logic_arith.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\misc_inst.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\seg_reg.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\shift_rotate.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\string_inst.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\system_inst.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpdummy.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox2.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_softfloat.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloat.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu\softfloat</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\mmx\3dnow.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\mmx</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\mmx\mmx.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\mmx</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse\sse.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse2\sse2.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse2</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse3\sse3.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse3</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="msdos.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\cpucore.h">
+      <Filter>Header Files\np21w i386c Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\cpumem.h">
+      <Filter>Header Files\np21w i386c Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\cpu.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\cpu_io.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\cpu_mem.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\ctrlxfer.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\exception.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\groups.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\inst_table.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\interface.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\paging.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\resolve.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\segments.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\task.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\fp.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\fpumem.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloat-macros.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu\softfloat</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloat-specialize.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu\softfloat</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloat.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu\softfloat</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloatdef.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\fpu\softfloat</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\mmx\3dnow.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\mmx</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\mmx\mmx.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\mmx</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse\sse.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse2\sse2.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse2</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse3\sse3.h">
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse3</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

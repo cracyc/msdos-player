@@ -142,6 +142,16 @@ mkdir binary\pentium4_x64
 copy Release\msdos.exe binary\pentium4_x64\.
 call :clean
 
+devenv.com msdos_np21.vcxproj /Rebuild "Release|Win32"
+mkdir binary\ia32_x86
+copy Release\msdos.exe binary\ia32_x86\.
+call :clean
+
+devenv.com msdos_np21.vcxproj /Rebuild "Release|x64"
+mkdir binary\ia32_x64
+copy Release\msdos.exe binary\ia32_x64\.
+call :clean
+
 pause
 echo on
 exit /b
