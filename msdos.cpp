@@ -7863,22 +7863,24 @@ inline void pcbios_int_10h_07h()
 
 inline void pcbios_int_10h_08h()
 {
+	short co_X;
 	COORD co;
 	DWORD num;
 	
-	co.X = mem[0x450 + (CPU_BH % vram_pages) * 2];
+	co_X = mem[0x450 + (CPU_BH % vram_pages) * 2];
+	co.X = 0;
 	co.Y = mem[0x451 + (CPU_BH % vram_pages) * 2];
 	
 	if(mem[0x462] == CPU_BH) {
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		co.Y += scr_top;
 		vram_flush();
-		ReadConsoleOutputCharacterA(hStdout, scr_char, 1, co, &num);
-		ReadConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
-		CPU_AL = scr_char[0];
-		CPU_AH = scr_attr[0];
+		ReadConsoleOutputCharacterA(hStdout, scr_char, scr_width, co, &num);
+		ReadConsoleOutputAttribute(hStdout, scr_attr, scr_width, co, &num);
+		CPU_AL = scr_char[co_X];
+		CPU_AH = scr_attr[co_X];
 	} else {
-		CPU_AX = *(UINT16 *)(mem + pcbios_get_shadow_buffer_address(CPU_BH, co.X, co.Y));
+		CPU_AX = *(UINT16 *)(mem + pcbios_get_shadow_buffer_address(CPU_BH, co_X, co.Y));
 	}
 }
 
