@@ -1574,13 +1574,13 @@ void debugger_main()
 			} else if(stricmp(params[0], "BP") == 0 || stricmp(params[0], "RBP") == 0 || stricmp(params[0], "WBP") == 0) {
 				break_point_t *break_point_ptr;
 				#define GET_BREAK_POINT_PTR() { \
-					if(params[0][0] == 'R') { \
+					if(params[0][0] == 'R' || params[0][0] == 'r') { \
 						break_point_ptr = &rd_break_point; \
-					} else if(params[0][0] == 'W') { \
+					} else if(params[0][0] == 'W' || params[0][0] == 'w') { \
 						break_point_ptr = &wr_break_point; \
-					} else if(params[0][0] == 'I') { \
+					} else if(params[0][0] == 'I' || params[0][0] == 'i') { \
 						break_point_ptr = &in_break_point; \
-					} else if(params[0][0] == 'O') { \
+					} else if(params[0][0] == 'O' || params[0][0] == 'o') { \
 						break_point_ptr = &out_break_point; \
 					} else { \
 						break_point_ptr = &break_point; \
@@ -1588,7 +1588,12 @@ void debugger_main()
 				}
 				GET_BREAK_POINT_PTR();
 				if(num == 2) {
-					UINT32 seg = debugger_get_seg(params[1], SREG(CS));
+					UINT32 seg = 0;
+					if(params[0][0] == 'R' || params[0][0] == 'r' || params[0][0] == 'W' || params[0][0] == 'w') {
+						seg = debugger_get_seg(params[1], data_seg);
+					} else {
+						seg = debugger_get_seg(params[1], SREG(CS));
+					}
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					bool found = false;
 					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
@@ -2294,18 +2299,18 @@ long get_section_in_exec_file(FILE *fp, const char *name)
 
 bool is_started_from_command_prompt()
 {
-	bool ret = false;
-	
+	bool result = false;
 	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	
 	if(hLibrary) {
 		typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
 		GetConsoleProcessListFunction lpfnGetConsoleProcessList;
 		lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
-		if(lpfnGetConsoleProcessList) {
+		if(lpfnGetConsoleProcessList) { // Windows XP or later
 			DWORD pl;
-			ret = (lpfnGetConsoleProcessList(&pl, 1) > 1);
+			result = (lpfnGetConsoleProcessList(&pl, 1) > 1);
 			FreeLibrary(hLibrary);
-			return(ret);
+			return(result);
 		}
 		FreeLibrary(hLibrary);
 	}
@@ -2332,14 +2337,14 @@ bool is_started_from_command_prompt()
 				if(EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
 					char module_name[MAX_PATH];
 					if(GetModuleBaseName(hProcess, hMod, module_name, sizeof(module_name))) {
-						ret = (_strnicmp(module_name, "cmd.exe", 7) == 0);
+						result = (_strnicmp(module_name, "cmd.exe", 7) == 0);
 					}
 				}
 				CloseHandle(hProcess);
 			}
 		}
 	}
-	return(ret);
+	return(result);
 }
 
 BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD wServicePackMajor, WORD wServicePackMinor)
@@ -2367,6 +2372,27 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 	return VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, dwlConditionMask);
 }
 
+bool get_console_font_size(HANDLE hStdout, int *width, int *height)
+{
+	bool result = false;
+	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	
+	if(hLibrary) {
+		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+		if(lpfnGetCurrentConsoleFont) { // Windows XP or later
+			CONSOLE_FONT_INFO fi;
+			if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi) != 0) {
+				*width  = fi.dwFontSize.X;
+				*height = fi.dwFontSize.Y;
+				result = true;
+			}
+		}
+		FreeLibrary(hLibrary);
+	}
+	return(result);
+}
+
 bool set_console_font_size(HANDLE hStdout, int width, int height)
 {
 	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
@@ -2385,28 +2411,40 @@ bool set_console_font_size(HANDLE hStdout, int width, int height)
 		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
 		
 		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont) {
+			static const int offsets[] = {0, +1, -1, +2, -2, +3, -3};
 			DWORD dwFontNum = lpfnGetNumberOfConsoleFonts();
 			CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
 			lpfnGetConsoleFontInfo(hStdout, FALSE, dwFontNum, fonts);
 			for(int i = 0; i < dwFontNum; i++) {
 				fonts[i].dwFontSize = GetConsoleFontSize(hStdout, fonts[i].nFont);
-				if(fonts[i].dwFontSize.X == width && fonts[i].dwFontSize.Y == height) {
-					lpfnSetConsoleFont(hStdout, fonts[i].nFont);
-					result = true;
-					break;
+			}
+			for(int h = 0; h < 5; h++) { // 0, +1, -1, +2, -2
+				int height_tmp = height + offsets[h];
+				for(int w = 0; w < 7; w++) { // 0, +1, -1, +2, -2, +3, -3
+					int width_tmp = width + offsets[w];
+					for(int i = 0; i < dwFontNum; i++) {
+						if(fonts[i].dwFontSize.X == width_tmp && fonts[i].dwFontSize.Y == height_tmp) {
+							lpfnSetConsoleFont(hStdout, fonts[i].nFont);
+							if(lpfnGetCurrentConsoleFont) { // Windows XP or later
+								CONSOLE_FONT_INFO fi;
+								if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
+									if(fi.dwFontSize.X == width_tmp && fi.dwFontSize.Y == height_tmp) {
+										result = true;
+									}
+								}
+							} else {
+								result = true;
+							}
+						}
+						if(result) {
+							*(UINT16 *)(mem + 0x485) = height_tmp;
+							goto exit_loop;
+						}
+					}
 				}
 			}
+exit_loop:
 			free(fonts);
-		}
-		if(lpfnGetCurrentConsoleFont && result) {
-			CONSOLE_FONT_INFO fi;
-			if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
-				if(fi.dwFontSize.X == width && fi.dwFontSize.Y == height) {
-					*(UINT16 *)(mem + 0x485) = fi.dwFontSize.Y;
-				} else {
-					result = false;
-				}
-			}
 		}
 		FreeLibrary(hLibrary);
 	}
@@ -2883,22 +2921,12 @@ int main(int argc, char *argv[], char *envp[])
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
-	CONSOLE_FONT_INFO fi;
+	int font_width = 10, font_height = 18; // default in english mode
 	
 	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	GetConsoleCursorInfo(hStdout, &ci);
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
-//	get_console_font_success = (GetCurrentConsoleFont(hStdout, FALSE, &fi) != 0);
-	
-	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
-	if(hLibrary) {
-		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
-		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
-		if(lpfnGetCurrentConsoleFont) {
-			get_console_font_success = (lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi) != 0);
-		}
-		FreeLibrary(hLibrary);
-	}
+	get_console_font_success = get_console_font_size(hStdout, &font_width, &font_height);
 	
 	for(int y = 0; y < SCR_BUF_WIDTH; y++) {
 		for(int x = 0; x < SCR_BUF_HEIGHT; x++) {
@@ -2992,7 +3020,7 @@ int main(int argc, char *argv[], char *envp[])
 		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
 		if(get_console_font_success) {
 			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-			set_console_font_size(hStdout, fi.dwFontSize.X, fi.dwFontSize.Y);
+			set_console_font_size(hStdout, font_width, font_height);
 		}
 		if(get_console_info_success) {
 			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -5220,7 +5248,7 @@ void msdos_putch(UINT8 data)
 	}
 	
 	// call int 29h ?
-	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// int 29h is not hooked, no need to call int 29h
 		msdos_putch_fast(data);
@@ -6945,12 +6973,16 @@ inline void pcbios_int_10h_01h()
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_CURSOR_INFO ci;
 	GetConsoleCursorInfo(hStdout, &ci);
-//	ci.bVisible = !(REG8(CH) & 0x60) && REG8(CH) <= REG8(CL);
-//	if(ci.bVisible) {
-		int lines = max(8, REG8(CL) + 1);
-		ci.dwSize = (REG8(CL) - REG8(CH) + 1) * 100 / lines;
-//	}
-	SetConsoleCursorInfo(hStdout, &ci);
+	
+//	BOOL bVisible = ((REG8(CH) & 0x20) == 0 || (REG8(CH) & 7) > (REG8(CL) & 7));
+	BOOL bVisible = TRUE;
+	DWORD dwSize = ((REG8(CL) & 7) + 1) * 100 / 8;
+	
+	if(ci.bVisible != bVisible || ci.dwSize != dwSize) {
+		ci.bVisible = bVisible;
+		ci.dwSize = dwSize;
+		SetConsoleCursorInfo(hStdout, &ci);
+	}
 }
 
 inline void pcbios_int_10h_02h()
@@ -7314,42 +7346,46 @@ inline void pcbios_int_10h_0fh()
 inline void pcbios_int_10h_11h()
 {
 	switch(REG8(AL)) {
+	case 0x00:
+	case 0x10:
+		if(REG8(BH) != 0 && pcbios_set_font_size(8, REG8(BH))) {
+			pcbios_set_console_size(80, (25 * 16) / REG8(BH), true);
+		} else {
+			m_CF = 1; // never failed in real PC BIOS
+		}
+		break;
 	case 0x01:
 	case 0x11:
-		if(!pcbios_set_font_size(8, 14)) {
-			if(active_code_page == 932) {
-				pcbios_set_font_size(6, 13);
-			} else {
-				pcbios_set_font_size(8, 12);
-			}
+//		if(pcbios_set_font_size(8, 14)) {
+		if(pcbios_set_font_size(8, 12)) {
+			pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
+		} else {
+			m_CF = 1; // never failed in real PC BIOS
 		}
-		pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
 		break;
 	case 0x02:
 	case 0x12:
-		if(!pcbios_set_font_size(8, 8)) {
-			if(active_code_page == 932) {
-				pcbios_set_font_size(5, 8);
-			} else {
-				pcbios_set_font_size(6, 8);
-			}
+		if(pcbios_set_font_size(8, 8)) {
+			pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
+		} else {
+			m_CF = 1; // never failed in real PC BIOS
 		}
-		pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
 		break;
 	case 0x04:
 	case 0x14:
-	case 0x18:
-		if(!pcbios_set_font_size(8, 16)) {
-			if(active_code_page == 932) {
-				pcbios_set_font_size(8, 18);
-			} else {
-				pcbios_set_font_size(10, 18);
-			}
+//		if(pcbios_set_font_size(8, 16)) {
+		if(pcbios_set_font_size(8, 18)) {
+			pcbios_set_console_size(80, 25, true);
+		} else {
+			m_CF = 1; // never failed in real PC BIOS
 		}
-		if(REG8(AL) == 0x18) {
+		break;
+	case 0x18:
+//		if(pcbios_set_font_size(8, 16)) {
+		if(pcbios_set_font_size(8, 18)) {
 			pcbios_set_console_size(80, 50, true);
 		} else {
-			pcbios_set_console_size(80, 25, true);
+			m_CF = 1; // never failed in real PC BIOS
 		}
 		break;
 	case 0x30:
@@ -9245,7 +9281,7 @@ inline void msdos_int_21h_01h()
 {
 #ifdef USE_SERVICE_THREAD
 	if(!in_service && !in_service_29h &&
-	   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+	   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// msdos_putch() will be used in this service
 		// if int 29h is hooked, run this service in main thread to call int 29h
@@ -9463,7 +9499,7 @@ inline void msdos_int_21h_0ah()
 	if(mem[SREG_BASE(DS) + REG16(DX)] != 0x00) {
 #ifdef USE_SERVICE_THREAD
 		if(!in_service && !in_service_29h &&
-		   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+		   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 		   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 			// msdos_putch() will be used in this service
 			// if int 29h is hooked, run this service in main thread to call int 29h
@@ -10883,7 +10919,7 @@ inline void msdos_int_21h_3fh()
 				if(REG16(CX) != 0) {
 #ifdef USE_SERVICE_THREAD
 					if(!in_service && !in_service_29h &&
-					   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+					   *(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 					   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 						// msdos_putch() will be used in this service
 						// if int 29h is hooked, run this service in main thread to call int 29h
@@ -11939,6 +11975,10 @@ inline void msdos_int_21h_4eh()
 	find->dta_index = dtainfo - dtalist;
 	strcpy(process->volume_label, msdos_volume_label(path));
 	dtainfo->allowable_mask = REG8(CL);
+	// note: SO1 dir command sets 0x3f, but only directories and volue label are found if bit3 is set :-(
+	if((dtainfo->allowable_mask & 0x3f) == 0x3f) {
+		dtainfo->allowable_mask &= ~0x08;
+	}
 	bool label_only = (dtainfo->allowable_mask == 8);
 	
 	if((dtainfo->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
@@ -17380,6 +17420,7 @@ void msdos_syscall(unsigned num)
 				break;
 			}
 		}
+/*
 		if(mouse.status_irq_ps2 && mouse.call_addr_ps2.dw) {
 			UINT16 data_1st, data_2nd, data_3rd;
 			pcbios_read_from_ps2_mouse(&data_1st, &data_2nd, &data_3rd);
@@ -17395,6 +17436,7 @@ void msdos_syscall(unsigned num)
 			mem[DUMMY_TOP + 0x06] = mouse.call_addr_ps2.w.h >> 8;
 			break;
 		}
+*/
 		// invalid call addr :-(
 		mem[DUMMY_TOP + 0x02] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x03] = 0x90;	// nop
@@ -17563,19 +17605,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
-	CONSOLE_FONT_INFO cfi;
+//	CONSOLE_FONT_INFO cfi;
 //	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
-	cfi.dwFontSize.Y = 18;
-	
-	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
-	if(hLibrary) {
-		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
-		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
-		if(lpfnGetCurrentConsoleFont) {
-			lpfnGetCurrentConsoleFont(hStdout, FALSE, &cfi);
-		}
-		FreeLibrary(hLibrary);
-	}
+	int font_width = 10, font_height = 18; // default in english mode
+	get_console_font_size(hStdout, &font_width, &font_height);
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
 	text_vram_top_address = TEXT_VRAM_TOP;
@@ -17628,7 +17661,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x480) = 0x1e;
 	*(UINT16 *)(mem + 0x482) = 0x3e;
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
-	*(UINT16 *)(mem + 0x485) = cfi.dwFontSize.Y;
+	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 #ifdef EXT_BIOS_TOP
@@ -17654,10 +17687,19 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
 	// so move iret table into allocated memory block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
-	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, IRET_SIZE >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 5 * 128) >> 4);
 	IRET_TOP = seg << 4;
-	seg += IRET_SIZE >> 4;
+	seg += (IRET_SIZE + 5 * 128) >> 4;
 	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
+	
+	// note: SO1 checks int 21h vector and if it aims iret (cfh)
+	// it is recognized SO1 is not running on MS-DOS environment
+	for(int i = 0; i < 128; i++) {
+		// jmp far (IRET_TOP >> 4):(interrupt number)
+		*(UINT8  *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 0) = 0xea;
+		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 1) = i;
+		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 3) = IRET_TOP >> 4;
+	}
 	
 	// dummy xms/ems device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
@@ -17930,8 +17972,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	
 	// interrupt vector
-	for(int i = 0; i < 0x80; i++) {
-		*(UINT16 *)(mem + 4 * i + 0) = i;
+	for(int i = 0; i < 256; i++) {
+		// 00-07: CPU exception handler
+		// 08-0F: IRQ 0-7
+		// 10-1F: PC BIOS
+		// 20-3F: MS-DOS system call
+		// 70-77: IRQ 8-15
+		*(UINT16 *)(mem + 4 * i + 0) = (i <= 0x3f || (i >= 0x70 && i <= 0x77)) ? (IRET_SIZE + 5 * i) : i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
 	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffc:0018 irq0 (system timer)
@@ -18450,13 +18497,16 @@ void hardware_update()
 			}
 			
 			// raise irq12 if mouse status is changed
+/*
 			if((mouse.status & 0x1f) && mouse.call_addr_ps2.dw) {
 				mouse.status_irq = 0; // ???
 				mouse.status_irq_alt = 0; // ???
 				mouse.status_irq_ps2 = mouse.status & 0x1f;
 				mouse.status = 0;
 				pic_req(1, 4, 1);
-			} else if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
+			} else
+*/
+			if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
 				mouse.status_irq = mouse.status & mouse.call_mask;
 				mouse.status_irq_alt = 0; // ???
 				mouse.status_irq_ps2 = 0; // ???
@@ -18480,6 +18530,18 @@ void hardware_update()
 				}
 			}
 			
+			// update cursor position by crtc
+			if(crtc_changed[14] != 0 || crtc_changed[15] != 0) {
+				HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+				int position = crtc_regs[14] * 256 + crtc_regs[15];
+				int width = *(UINT16 *)(mem + 0x44a);
+				COORD co;
+				co.X = position % width;
+				co.Y = position / width + scr_top;
+				SetConsoleCursorPosition(hStdout, co);
+				
+				crtc_changed[14] = crtc_changed[15] = 0;
+			}
 			prev_tick = cur_tick;
 		}
 		
@@ -20208,6 +20270,11 @@ UINT8 debugger_read_io_byte(offs_t addr)
 	case 0x3bc: case 0x3bd: case 0x3be:
 		val = pio_read(2, addr);
 		break;
+	case 0x3d5:
+		if(crtc_addr < 16) {
+			val = crtc_regs[crtc_addr];
+		}
+		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		val = sio_read(2, addr);
 		break;
@@ -20367,6 +20434,17 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		break;
 	case 0x3bc: case 0x3bd: case 0x3be:
 		pio_write(2, addr, val);
+		break;
+	case 0x3d4:
+		crtc_addr = val;
+		break;
+	case 0x3d5:
+		if(crtc_addr < 16) {
+			if(crtc_regs[crtc_addr] != val) {
+				crtc_regs[crtc_addr] = val;
+				crtc_changed[crtc_addr] = 1;
+			}
+		}
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		sio_write(2, addr, val);

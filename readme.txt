@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/20/2017
+								8/23/2017
 
 ----- What's this
 
@@ -17,8 +17,18 @@ NOTE: This emulator DOES NOT support Win16 execution files.
 
 This emulator aims to support character user interface utilities, for example
 file converters, compilers, assemblers, debuggers, and text editors.
-This emulator DOES NOT support graphic/sound hardwares and DOES NOT aim to
-support game softwares. I recommend DOSBOx for this purpose.
+
+NOTE: This emulator DOES NOT support graphic/sound hardwares and DOES NOT
+aim to support game softwares. I recommend DOSBOx for this purpose.
+
+
+----- Windows 10 command prompt [IMPORTANT]
+
+Win32 console APIs are used to support INT 10H services on MS-DOS Player,
+but they seem not work correctly on Windows 10's enhanced command prompt.
+
+Please open the "Command Prompt" Properties by right-clicking on title bar
+and check "Use legacy console (requires relaunch)".
 
 
 ----- How to use
@@ -442,13 +452,15 @@ INT 10H		PC BIOS - Video
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
-	1101H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
-	1102H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
-	1104H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
-	1111H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
-	1112H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
-	1114H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
-	1118H	Set Video Mode to 80x50 (Set V-TEXT Vertically Long Mode)
+	1100H	Load User-Specified Patterns
+	1101H	Load ROM 8x14 Monochrome Patterns
+	1102H	Load ROM 8x8 Dbl-Dot Patterns
+	1104H	Load ROM 8x16 Character Set
+	1110H	Load User-Specified Patterns
+	1111H	Load ROM 8x14 Monochrome Patterns
+	1112H	Load ROM 8x8 Dbl-Dot Patterns
+	1114H	Load ROM 8x16 Character Set
+	1118H	Set V-TEXT Vertically Long Mode
 	1130H	Get Font Information
 	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
