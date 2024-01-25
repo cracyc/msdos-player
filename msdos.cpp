@@ -786,6 +786,8 @@ int m_exit = 0;
 	#define SREG(x)				m_sreg[x].selector
 	#define SREG_BASE(x)			m_sreg[x].base
 	int cpu_type, cpu_step;
+	#define i386_get_flags()		get_flags()
+	#define i386_set_flags(x)		set_flags(x)
 #else
 	#define REG8(x)				m_regs.b[x]
 	#define REG16(x)			m_regs.w[x]
@@ -795,6 +797,17 @@ int m_exit = 0;
 	#define m_CF				m_CarryVal
 	#define m_a20_mask			AMASK
 	#define i386_load_segment_descriptor(x)	m_base[x] = SegBase(x)
+	void i386_sreg_load(UINT16 selector, UINT8 reg, bool *fault)
+	{
+#if defined(HAS_I286)
+		i80286_data_descriptor(reg, selector);
+#else
+		m_sregs[reg] = selector;
+		m_base[reg] = SegBase(reg);
+#endif
+	}
+	#define i386_get_flags()		CompressFlags()
+	#define i386_set_flags(x)		ExpandFlags(x)
 	#if defined(HAS_I286)
 		#define i386_set_a20_line(x)	i80286_set_a20_line(x)
 	#else
@@ -1090,11 +1103,8 @@ int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
 
 void debugger_regs_info(char *buffer)
 {
-#if defined(HAS_I386)
-	UINT32 flags = get_flags();
-#else
-	UINT32 flags = CompressFlags();
-#endif
+	UINT32 flags = i386_get_flags();
+	
 #if defined(HAS_I386)
 	if(m_operand_size) {
 		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
@@ -3223,7 +3233,11 @@ int main(int argc, char *argv[], char *envp[])
 			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			SetConsoleCursorInfo(hStdout, &ci);
 		}
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+		} else {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		}
 		
 		msdos_finish();
 		
@@ -8367,20 +8381,6 @@ inline void pcbios_int_14h_05h()
 	}
 }
 
-inline void pcbios_int_15h_10h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
-		break;
-	default:
-		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0x86;
-		m_CF = 1;
-	}
-}
-
 inline void pcbios_int_15h_23h()
 {
 	switch(REG8(AL)) {
@@ -8432,6 +8432,7 @@ inline void pcbios_int_15h_49h()
 {
 	REG8(AH) = 0x00;
 	REG8(BL) = 0x00; // DOS/V
+//	REG8(BL) = 0x01; // standard DBCS DOS (hardware DBCS support)
 }
 
 inline void pcbios_int_15h_50h()
@@ -8563,37 +8564,29 @@ inline void pcbios_int_15h_89h()
 	write_io_byte(0x20, 0x10);
 	write_io_byte(0x21, REG8(BH));
 	write_io_byte(0x21, 0x00);
+	write_io_byte(0x21, 0xff);
 	write_io_byte(0xa0, 0x10);
 	write_io_byte(0xa1, REG8(BL));
 	write_io_byte(0xa1, 0x00);
+	write_io_byte(0xa1, 0xff);
 	i386_set_a20_line(1);
-	int ofs = SREG_BASE(ES) + REG16(SI);
-	m_gdtr.limit = *(UINT16 *)(mem + ofs + 0x08);
-	m_gdtr.base = *(UINT32 *)(mem + ofs + 0x08 + 0x02) & 0xffffff;
-	m_idtr.limit = *(UINT16 *)(mem + ofs + 0x10);
-	m_idtr.base = *(UINT32 *)(mem + ofs + 0x10 + 0x02) & 0xffffff;
+	m_gdtr.limit = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x08);
+	m_gdtr.base  = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x08 + 0x02) & 0xffffff;
+	m_idtr.limit = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x10);
+	m_idtr.base  = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(SI) + 0x10 + 0x02) & 0xffffff;
 #if defined(HAS_I386)
 	m_cr[0] |= 1;
 #else
 	m_msw |= 1;
 #endif
-	SREG(DS) = 0x18;
-	SREG(ES) = 0x20;
-	SREG(SS) = 0x28;
-	i386_load_segment_descriptor(DS);
-	i386_load_segment_descriptor(ES);
-	i386_load_segment_descriptor(SS);
+	i386_sreg_load(0x18, DS, NULL);
+	i386_sreg_load(0x20, ES, NULL);
+	i386_sreg_load(0x28, SS, NULL);
 	UINT16 offset = *(UINT16 *)(mem + SREG_BASE(SS) + REG16(SP));
-	REG16(SP) += 6;
-#if defined(HAS_I386)
-	UINT32 flags = get_flags();
-	flags &= (0x20000 | 0x40000 | 0x80000 | 0x100000 | 0x200000);
-	set_flags(flags);
-#else
-	UINT32 flags = CompressFlags();
-	flags &= (0x20000 | 0x40000 | 0x80000 | 0x100000 | 0x200000);
-	ExpandFlags(flags);
-#endif
+	REG16(SP) += 6; // clear stack of interrupt frame
+	UINT32 flags = i386_get_flags();
+	flags &= ~0x247fd5; // clear CF,PF,AF,ZF,SF,TF,IF,DF,OF,IOPL,NT,AC,ID
+	i386_set_flags(flags);
 	REG16(AX) = 0x00;
 	i386_jmp_far(0x30, /*REG16(CX)*/offset);
 #else
@@ -8671,12 +8664,16 @@ inline void pcbios_int_15h_c2h()
 	switch(REG8(AL)) {
 	case 0x00:
 		if(REG8(BH) == 0x00) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+			if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
+				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+			} else {
+				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+			}
 			pic[1].imr |= 0x10; // disable irq12
 			mouse.enabled_ps2 = false;
 			REG8(AH) = 0x00; // successful
 		} else if(REG8(BH) == 0x01) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~(ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE));
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
 			pic[1].imr &= ~0x10; // enable irq12
 			mouse.enabled_ps2 = true;
 			REG8(AH) = 0x00; // successful
@@ -8689,7 +8686,11 @@ inline void pcbios_int_15h_c2h()
 		REG8(BH) = 0x00; // device id
 		REG8(BL) = 0xaa; // mouse
 	case 0x05:
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+		} else {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		}
 		pic[1].imr |= 0x10; // disable irq12
 		mouse.enabled_ps2 = false;
 		sampling_rate = 5;
@@ -8819,10 +8820,51 @@ inline void pcbios_int_15h_cah()
 inline void pcbios_int_15h_e8h()
 {
 	switch(REG8(AL)) {
-#if defined(HAS_I386)
 	case 0x01:
-		REG16(AX) = REG16(CX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
+		REG16(AX) = REG16(CX) = ((min(MAX_MEM, 0x1000000) - 0x0100000) >> 10);
 		REG16(BX) = REG16(DX) = ((max(MAX_MEM, 0x1000000) - 0x1000000) >> 16);
+		break;
+#if defined(HAS_I386)
+	case 0x20:
+		if (REG32(EDX) == 0x534d4150 && REG32(ECX) >= 20) {
+			if(REG32(EBX) < 3) {
+				UINT32 base = 0, len = 0, type = 0;
+				switch(REG32(EBX)) {
+				case 0:
+					base = 0x000000;
+					len  = MEMORY_END;
+					type = 1;
+					break;
+				case 1:
+					base = DUMMY_TOP;
+					len  = 0x100000 - DUMMY_TOP;
+					type = 2;
+					break;
+				case 2:
+					base = 0x100000;
+					len  = MAX_MEM - 0x100000;
+					type = 1;
+					break;
+				}
+				*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 0x00) = base;
+				*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 0x04) = 0;
+				*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 0x08) = len;
+				*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 0x0c) = 0;
+				*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 0x10) = type;
+				
+				if(++REG32(EBX) >= 3) {
+					REG32(EBX) = 0;
+				}
+				REG32(ECX) = 20;
+			} else {
+				m_CF = 1;
+			}
+			REG32(EAX) = 0x534d4150;
+			break;
+		}
+	case 0x81:
+		REG32(EAX) = REG32(ECX) = ((min(MAX_MEM, 0x1000000) - 0x0100000) >> 10);
+		REG32(EBX) = REG32(EDX) = ((max(MAX_MEM, 0x1000000) - 0x1000000) >> 16);
 		break;
 #endif
 	default:
@@ -15078,7 +15120,7 @@ inline void msdos_int_33h_0001h()
 		mouse.hidden--;
 	}
 	if(mouse.hidden == 0) {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~(ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE));
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
 		pic[1].imr &= ~0x10; // enable irq12
 	}
 }
@@ -15086,7 +15128,11 @@ inline void msdos_int_33h_0001h()
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+	if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+	} else {
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+	}
 	pic[1].imr |= 0x10; // disable irq12
 }
 
@@ -16370,14 +16416,10 @@ inline void msdos_int_67h_deh()
 		m_idtr.limit = new_idt_limit;
 		m_idtr.base = new_idt_base;
 		
-		SREG(DS) = 0x00;
-		SREG(ES) = 0x00;
-		SREG(FS) = 0x00;
-		SREG(GS) = 0x00;
-		i386_load_segment_descriptor(DS);
-		i386_load_segment_descriptor(ES);
-		i386_load_segment_descriptor(FS);
-		i386_load_segment_descriptor(GS);
+		i386_sreg_load(0x00, DS, NULL);
+		i386_sreg_load(0x00, ES, NULL);
+		i386_sreg_load(0x00, FS, NULL);
+		i386_sreg_load(0x00, GS, NULL);
 		
 //		i386_set_a20_line(1);
 		
@@ -17211,11 +17253,11 @@ void msdos_syscall(unsigned num)
 		// PC BIOS
 		m_CF = 0;
 		switch(REG8(AH)) {
-		case 0x10: pcbios_int_15h_10h(); break;
 		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
 		case 0x41: break;
 		case 0x49: pcbios_int_15h_49h(); break;
+		case 0x4f: m_CF = 1; break; // from DOSBox
 		case 0x50: pcbios_int_15h_50h(); break;
 		case 0x53: pcbios_int_15h_53h(); break;
 		case 0x84: pcbios_int_15h_84h(); break;
@@ -17224,6 +17266,8 @@ void msdos_syscall(unsigned num)
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
 		case 0x8a: pcbios_int_15h_8ah(); break;
+		case 0x90: REG8(AH) = 0x00; break; // from DOSBox
+		case 0x91: REG8(AH) = 0x00; break; // from DOSBox
 		case 0xc0: // PS/2 ???
 #ifndef EXT_BIOS_TOP
 		case 0xc1:

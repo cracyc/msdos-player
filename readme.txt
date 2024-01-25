@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/28/2017
+								9/3/2017
 
 ----- What's This
 
@@ -488,7 +488,6 @@ INT 14H		PC BIOS - Serial I/O
 
 INT 15H		PC BIOS
 
-	1000H	TopView Pause
 	2300H	Get CMOS Data
 	2301H	Set CMOS Data
 	2400H	Disable A20 Gate
@@ -518,6 +517,8 @@ INT 15H		PC BIOS
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
 	E801H	Get Memory Size For >64M Configurations
+	E820H	Get System Memory MAP
+	E881H	Get Memory Size For >64M Configurations
 
 INT 16H		PC BIOS - Keyboard
 
