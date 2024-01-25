@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/31/2017
+								6/7/2017
 
 ----- What's this
 
@@ -480,6 +480,7 @@ INT 15H		PC BIOS
 	49H	Get BIOS Type
 	5000H	Get Address of "Read Font" Function
 	5001H	Get Address of "Write Font" Function
+	84H	Joystick Support (*3)
 	86H	Wait
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
@@ -572,14 +573,14 @@ INT 21H		MS-DOS System Call
 	2DH	Set Time
 	2EH	Set/Reset Verify Switch
 	2FH	Get Disk Transfer Address
-	30H	Get Version Number (*3)
+	30H	Get Version Number (*4)
 	31H	Keep Process
 	32H	Get DOS Drive Parameter Block
 	3300H	Get Ctrl-Break Checking State
 	3301H	Set Ctrl-Break Checking State
 	3302H	Get/Set Ctrl-Break Checking State
 	3305H	Get Boot Drive
-	3306H	Get True Version Number (*4)
+	3306H	Get True Version Number (*5)
 	3307H	Windows95 - Set/Clear DOS_FLAG
 	34H	Get Address of InDOS Flag
 	35H	Get Vector
@@ -601,6 +602,8 @@ INT 21H		MS-DOS System Call
 	42H	Move File Read/Write Pointer
 	4300H	Get File Attribute
 	4301H	Set File Attribute
+	4302H	MS-DOS 7 - Get Compressed File Size
+	43FFH	Windows98 - Extended-Length File Name Operations
 	4400H	Get Device Information
 	4401H	Set Device Information
 	4406H	Get Input Status
@@ -628,6 +631,7 @@ INT 21H		MS-DOS System Call
 	50H	Set Program Segment Prefix Address
 	51H	Get Program Segment Prefix Address
 	52H	Get DOS Info Table
+	53H	Translate BIOS Parameter Block to Drive Param Bock
 	54H	Get Verify State
 	55H	Create Child Program Segment Prefix
 	56H	Rename File
@@ -646,6 +650,7 @@ INT 21H		MS-DOS System Call
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
 	5D06H	Get Address of DOS Swappable Data Area
+	5D0AH	Set Extended Error Information
 	5E00H	Get Machine Name
 	5F02H	Get Redirection List Entry
 	5F05H	Get Extended Redirection List Entry
@@ -653,6 +658,7 @@ INT 21H		MS-DOS System Call
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
 	6300H	Get DBCS Vector
+	6500H	Windows95 OSR2 - Set General Internationalization Info
 	6501H	Get General Internationalization Info
 	6502H	Get Upper Case Table
 	6503H	Get Lower Case Table
@@ -668,13 +674,14 @@ INT 21H		MS-DOS System Call
 	65A1H	String Capitalization
 	65A2H	ASCIIZ Capitalization
 	6601H	Get Global Code Page Table
-	6602H	Get Global Code Page Table
+	6602H	Set Global Code Page Table
 	67H	Set Handle Count
 	68H	Commit File
 	6900H	Get Disk Serial Number
 	6AH	Commit File
 	6BH	Null Function
 	6CH	Extended Open/Create
+	7002H	Windows95 - Set General Internationalization Info
 	710DH	Windows95 - Reset Drive
 	7139H	Windows95 - LFN - Create Subdirectory
 	713AH	Windows95 - LFN - Remove Subdirectory
@@ -750,9 +757,11 @@ INT 2FH		Multiplex Interrupt
 	1402H	NLSFUNC.COM - Get Extended Country Info
 	1403H	NLSFUNC.COM - Set Code Page
 	1404H	NLSFUNC.COM - Get Country Info
-	1600H	Windows - Windows Enhanced Mode Installation Check (*5)
+	150BH	CD-ROM v2.00+ - Drive Check
+	150DH	CD-ROM v2.00+ - Get CD-ROM Drive Letters
+	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
-	160AH	Windows - Identify Windows Version and Type (*5)
+	160AH	Windows - Identify Windows Version and Type (*6)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1A00H	ANSI.SYS - Installation Check
@@ -792,6 +801,8 @@ INT 33H		Mouse
 	0015H	Return Driver Storage Requirements
 	0016H	Save Driver State
 	0017H	Restore Driver State
+	0018H	Set Alternate Mouse User Handler
+	0019H	Return User Alternate Interrupt Vector
 	001AH	Set Mouse Sensitivity
 	001BH	Return Mouse Sensitivity
 	001DH	Define Display Page Number
@@ -801,7 +812,7 @@ INT 33H		Mouse
 	0021H	Software Reset
 	0022H	Set Language for Messages
 	0023H	Get Language for Messages
-	0024H	Get Software Version, Moouse Type, and IRQ Number (*6)
+	0024H	Get Software Version, Moouse Type, and IRQ Number (*7)
 	0026H	Get Maximum Virtual Coordinates
 	002AH	Get Cursor Host Spot
 	0031H	Get Current Minimum/Maximum Virtual Coordinates
@@ -815,7 +826,7 @@ INT 67H		LIM EMS
 	43H	LIM EMS - Get Handle and Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
 	45H	LIM EMS - Release Handle and Memory
-	46H	LIM EMS - Get EMM Version (*7)
+	46H	LIM EMS - Get EMM Version (*8)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
 	4BH	LIM EMS - Get Number of EMM Handles
@@ -846,7 +857,7 @@ INT 67H		LIM EMS
 
 CALL FAR XMS
 
-	00H	XMS - Get XMS Version Number (*8)
+	00H	XMS - Get XMS Version Number (*9)
 	01H	XMS - Request High Memory Area
 	02H	XMS - Release High Memory Area
 	03H	XMS - Global Enable A20
@@ -872,12 +883,13 @@ CALL FAR XMS
 
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive
-(*3) MS-DOS Version: 7.10 (default) or specified version with -v option
-(*4) MS-DOS Version: 7.10, -v option is not affected
-(*5) Windows Version: 4.10 (default) or specified version with -w option
-(*6) Mouse Version: 8.05
-(*7) EMS Version: 4.0
-(*8) XMS Version: 3.95
+(*3) Joysticks are not connected
+(*4) MS-DOS Version: 7.10 (default) or specified version with -v option
+(*5) MS-DOS Version: 7.10, -v option is not affected
+(*6) Windows Version: 4.10 (default) or specified version with -w option
+(*7) Mouse Version: 8.05
+(*8) EMS Version: 4.0
+(*9) XMS Version: 3.95
 
 
 --- License
@@ -896,8 +908,11 @@ NEC V30 instructions code is based on MAME 0.128.
 8038/80486 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.185
 are applied.
 
-INT 15H AH=87H (Copy Extended Memory), AH=89H (Switch to Protected Mode),
-INT 33H AX=001FH (Disable Mouse Driver), AX=0020H (Enable Mouse Driver),
+INT 15H AH=84H (Joystick Support),
+INT 15H AH=87H (Copy Extended Memory),
+INT 15H AH=89H (Switch to Protected Mode),
+INT 33H AX=001FH (Disable Mouse Driver),
+INT 33H AX=0020H (Enable Mouse Driver),
 and some DOS info block improvements are based on DOSBox.
 
 Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk), and Mr.Jason Hood.

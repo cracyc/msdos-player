@@ -3030,6 +3030,7 @@ bool update_console_input()
 							mouse.position.x = x;
 							mouse.position.y = y;
 							mouse.status |= 1;
+							mouse.status_alt |= 1;
 						}
 					}
 					if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
@@ -3046,11 +3047,17 @@ bool update_console_input()
 								mouse.buttons[i].pressed_times++;
 								mouse.buttons[i].pressed_position.x = mouse.position.x;
 								mouse.buttons[i].pressed_position.y = mouse.position.x;
+								if(i < 2) {
+									mouse.status_alt |= 2 << (i * 2);
+								}
 								mouse.status |= 2 << (i * 2);
 							} else if(prev_status && !mouse.buttons[i].status) {
 								mouse.buttons[i].released_times++;
 								mouse.buttons[i].released_position.x = mouse.position.x;
 								mouse.buttons[i].released_position.y = mouse.position.x;
+								if(i < 2) {
+									mouse.status_alt |= 4 << (i * 2);
+								}
 								mouse.status |= 4 << (i * 2);
 							}
 						}
@@ -3073,16 +3080,25 @@ bool update_console_input()
 						mem[0x417] &= ~0x10;
 					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
+						if(mouse.buttons[0].status || mouse.buttons[1].status) {
+							mouse.status_alt |= 0x80;
+						}
 						mem[0x417] |= 0x08;
 					} else {
 						mem[0x417] &= ~0x08;
 					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
+						if(mouse.buttons[0].status || mouse.buttons[1].status) {
+							mouse.status_alt |= 0x40;
+						}
 						mem[0x417] |= 0x04;
 					} else {
 						mem[0x417] &= ~0x04;
 					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
+						if(mouse.buttons[0].status || mouse.buttons[1].status) {
+							mouse.status_alt |= 0x20;
+						}
 						if(!(mem[0x417] & 0x03)) {
 							mem[0x417] |= 0x02; // left shift
 						}
@@ -4153,6 +4169,7 @@ bool msdos_is_device_path(char *path)
 			if(_stricmp(name, "CLOCK$"  ) == 0 ||
 			   _stricmp(name, "CONFIG$" ) == 0 ||
 			   _stricmp(name, "EMMXXXX0") == 0 ||
+//			   _stricmp(name, "SCSIMGR$") == 0 ||
 			   _stricmp(name, "$IBMAIAS") == 0) {
 				return(true);
 			}
@@ -7130,6 +7147,10 @@ inline void pcbios_int_10h_1ah()
 inline void pcbios_int_10h_1dh()
 {
 	switch(REG8(AL)) {
+	case 0x00:
+		// DOS/V Shift Status Line Control is not supported
+		m_CF = 1;
+		break;
 	case 0x01:
 		break;
 	case 0x02:
@@ -7545,6 +7566,19 @@ inline void pcbios_int_13h_15h()
 	}
 }
 
+inline void pcbios_int_13h_41h()
+{
+	if(REG16(BX) == 0x55aa) {
+		// IBM/MS INT 13 Extensions is not installed
+		REG8(AH) = 0x01;
+		m_CF = 1;
+	} else {
+		unimplemented_13h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x13, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x01;
+		m_CF = 1;
+	}
+}
+
 inline void pcbios_int_14h_00h()
 {
 	if(REG16(DX) < 4) {
@@ -7778,6 +7812,26 @@ inline void pcbios_int_15h_53h()
 	}
 }
 
+inline void pcbios_int_15h_84h()
+{
+	// joystick support (from DOSBox)
+	switch(REG16(DX)) {
+	case 0x00:
+		REG16(AX) = 0x00f0;
+		REG16(DX) = 0x0201;
+		m_CF = 1;
+		break;
+	case 0x01:
+		REG16(AX) = REG16(BX) = REG16(CX) = REG16(DX) = 0x0000;
+		m_CF = 1;
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x86;
+		m_CF = 1;
+		break;
+	}
+}
 
 DWORD WINAPI pcbios_int_15h_86h_thread(LPVOID)
 {
@@ -8553,6 +8607,8 @@ inline void pcbios_int_1ah_0ah()
 }
 
 // msdos system call
+
+inline void msdos_int_21h_56h(int lfn);
 
 inline void msdos_int_21h_00h()
 {
@@ -9716,6 +9772,69 @@ int get_country_info(country_info_t *ci)
 	return get_country_info(ci, LOCALE_USER_DEFAULT);
 }
 
+void set_country_info(country_info_t *ci, int size)
+{
+	char LCdata[80];
+	
+	if(size >= 0x00 + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+		*LCdata = '0' + ci->date_format;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE, LCdata);
+	}
+	if(size >= 0x02 + 5) {
+		memset(LCdata, 0, sizeof(LCdata));
+		memcpy(LCdata, &ci->currency_symbol, 4);
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SCURRENCY, LCdata);
+	}
+	if(size >= 0x07 + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+	 	*LCdata = *ci->thou_sep;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, LCdata);
+	}
+	if(size >= 0x09 + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+	 	*LCdata = *ci->dec_sep;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, LCdata);
+	}
+	if(size >= 0x0b + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+	 	*LCdata = *ci->date_sep;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, LCdata);
+	}
+	if(size >= 0x0d + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+	 	*LCdata = *ci->time_sep;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, LCdata);
+	}
+	if(size >= 0x0f + 1) {
+		memset(LCdata, 0, sizeof(LCdata));
+		*LCdata = '0' + ci->currency_format;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRENCY, LCdata);
+	}
+	if(size >= 0x10 + 1) {
+		sprintf(LCdata, "%d", ci->currency_dec_digits);
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRDIGITS, LCdata);
+	}
+	if(size >= 0x11 + 1) {
+		// FIXME: is time format always H/h:mm:ss ???
+		if(ci->time_format & 1) {
+			sprintf(LCdata, "H%cmm%css", *ci->time_sep, *ci->time_sep);
+		} else {
+			sprintf(LCdata, "h%cmm%css", *ci->time_sep, *ci->time_sep);
+		}
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT, LCdata);
+	}
+	if(size >= 0x12 + 4) {
+		// 12h	DWORD	address of case map routine
+		//		(FAR CALL, AL = character to map to upper case [>= 80h])
+	}
+	if(size >= 0x16 + 2) {
+		memset(LCdata, 0, sizeof(LCdata));
+	 	*LCdata = *ci->list_sep;
+		SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata);
+	}
+}
+
 #ifndef SUBLANG_SWAHILI
 	#define SUBLANG_SWAHILI 0x01
 #endif
@@ -9859,7 +9978,7 @@ static const struct {
 	{0x1FA, LANG_SPANISH, SUBLANG_SPANISH_COSTA_RICA},			// Costa Rica
 	{0x1FB, LANG_SPANISH, SUBLANG_SPANISH_PANAMA},				// Panama
 	{0x24F, LANG_SPANISH, SUBLANG_SPANISH_BOLIVIA},				// Bolivia
-	{0x24F, LANG_QUECHUA, SUBLANG_QUECHUA_BOLIVIA},				// Bolivia
+//	{0x24F, LANG_QUECHUA, SUBLANG_QUECHUA_BOLIVIA},				// Bolivia
 	{0x251, LANG_SPANISH, SUBLANG_SPANISH_ECUADOR},				// Ecuador
 //	{0x251, LANG_QUECHUA, SUBLANG_QUECHUA_ECUADOR},				// Ecuador
 	{0x253, LANG_SPANISH, SUBLANG_SPANISH_PARAGUAY},			// Paraguay
@@ -10326,6 +10445,16 @@ inline void msdos_int_21h_43h(int lfn)
 			}
 		}
 		break;
+	case 0xff:
+		if(REG16(BP) == 0x5053) {
+			if(REG8(CL) == 0x39) {
+				msdos_int_21h_39h(1);
+				break;
+			} else if(REG8(CL) == 0x56) {
+				msdos_int_21h_56h(1);
+				break;
+			}
+		}
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -10918,6 +11047,12 @@ inline void msdos_int_21h_4bh()
 			memcpy(mem + (overlay[0] << 4), file_buffer + header_size, size - header_size);
 		}
 		break;
+	case 0xfd:
+	case 0xfe:
+		// unknown function called in FreeCOM
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -11052,6 +11187,34 @@ inline void msdos_int_21h_52h()
 	SREG(ES) = DOS_INFO_TOP >> 4;
 	i386_load_segment_descriptor(ES);
 	REG16(BX) = offsetof(dos_info_t, first_dpb);
+}
+
+inline void msdos_int_21h_53h()
+{
+	dpb_t *dpb = (dpb_t *)(mem + SREG_BASE(ES) + REG16(BP));
+	bpb_t *bpb = (bpb_t *)(mem + SREG_BASE(DS) + REG16(SI));
+	
+	dpb->bytes_per_sector = bpb->bytes_per_sector;
+	dpb->highest_sector_num = bpb->sectors_per_track - 1;
+	dpb->shift_count = 0;
+	dpb->reserved_sectors = 0;
+	dpb->fat_num = bpb->fat_num;
+	dpb->root_entries = bpb->root_entries;
+	dpb->first_data_sector = 0;
+	if(bpb->sectors_per_cluster != 0) {
+		dpb->highest_cluster_num = (UINT16)(((REG16(CX) == 0x4558 && bpb->total_sectors == 0) ? bpb->ext_total_sectors : bpb->total_sectors) / bpb->sectors_per_cluster + 1);
+	} else {
+		dpb->highest_cluster_num = 0;
+	}
+	dpb->sectors_per_fat = (REG16(CX) == 0x4558 && bpb->sectors_per_fat == 0) ? bpb->ext_sectors_per_fat : bpb->sectors_per_fat;
+	dpb->first_dir_sector = 0;
+	dpb->device_driver_header = 0;
+	dpb->media_type = bpb->media_type;
+	dpb->drive_accessed = 0;
+	dpb->next_dpb_ofs = 0xffff;
+	dpb->next_dpb_seg = 0xffff;
+	dpb->first_free_cluster = 0;
+	dpb->free_clusters = 0xffff;
 }
 
 inline void msdos_int_21h_54h()
@@ -11193,9 +11356,17 @@ inline void msdos_int_21h_59h()
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
 	
 	REG16(AX) = sda->extended_error_code;
-	REG8(BH) = sda->error_class;
-	REG8(BL) = sda->suggested_action;
-	REG8(CH) = sda->locus_of_last_error;
+	REG8(BL)  = sda->suggested_action;
+	REG8(BH)  = sda->error_class;
+	REG8(CL)  = sda->byte_reserved_1;
+	REG8(CH)  = sda->locus_of_last_error;
+	REG16(DX) = sda->word_reserved_1;
+	REG16(SI) = sda->word_reserved_2;
+	REG16(DI) = sda->last_error_pointer.w.l;
+	SREG(DS)  = sda->word_reserved_3;
+	i386_load_segment_descriptor(DS);
+	SREG(ES)  = sda->last_error_pointer.w.h;
+	i386_load_segment_descriptor(ES);
 }
 
 inline void msdos_int_21h_5ah()
@@ -11289,13 +11460,27 @@ inline void msdos_int_21h_5dh()
 		REG16(CX) = 0x80;
 		REG16(DX) = 0x1a;
 		break;
+	case 0x0a: // set extended error information
+		{
+			sda_t *sda = (sda_t *)(mem + SDA_TOP);
+			sda->extended_error_code    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00); // AX
+			sda->suggested_action       = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02); // BL
+			sda->error_class            = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x03); // BH
+			sda->byte_reserved_1        = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04); // CL
+			sda->locus_of_last_error    = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x05); // CH
+			sda->word_reserved_1        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06); // DX
+			sda->word_reserved_2        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08); // SI
+			sda->last_error_pointer.w.l = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a); // DI
+			sda->word_reserved_3        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c); // DS
+			sda->last_error_pointer.w.h = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e); // ES
+		}
+		break;
 	case 0x0b: // get dos swappable data areas
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
 	case 0x08: // set redirected printer mode
 	case 0x09: // flush redirected printer output
-	case 0x0a: // set extended error information
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -11519,6 +11704,15 @@ inline void msdos_int_21h_65h()
 	char tmp[0x10000];
 	
 	switch(REG8(AL)) {
+	case 0x00:
+		if(REG16(CX) >= 7) {
+			set_country_info((country_info_t *)(mem + SREG_BASE(ES) + REG16(DI)), REG16(CX) - 7);
+			REG16(AX) = system_code_page;
+		} else {
+			REG16(AX) = 0x0c;
+			m_CF = 1;
+		}
+		break;
 	case 0x01:
 	case 0x02:
 	case 0x03:
@@ -11777,6 +11971,28 @@ inline void msdos_int_21h_6ch(int lfn)
 	} else {
 		REG16(AX) = 0x0c;
 		m_CF = 1;
+	}
+}
+
+inline void msdos_int_21h_70h()
+{
+	switch(REG8(AL)) {
+	case 0x02:
+		if(REG16(CX) >= 7) {
+			active_code_page = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 5);
+			msdos_nls_tables_update();
+			set_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(SI) + 7), REG16(CX) - 7);
+			REG16(AX) = system_code_page;
+		} else {
+			REG16(AX) = 0x0c;
+			m_CF = 1;
+		}
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
 	}
 }
 
@@ -12512,7 +12728,7 @@ inline void msdos_int_2fh_11h()
 		}
 		break;
 	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x49; //  network software not installed
 		m_CF = 1;
 		break;
@@ -12830,11 +13046,52 @@ inline void msdos_int_2fh_15h()
 	switch(REG8(AL)) {
 	case 0x00: // CD-ROM - Installation Check
 		if(REG16(BX) == 0x0000) {
+#if 0
+			// MSCDEX is installed
+			DWORD dwDrives = GetLogicalDrives();
+			REG16(BX) = 0;
+			for(int i = 0, n = 0; i < 26; i++) {
+				if(dwDrives & (1 << i)) {
+					char volume[] = "A:\\";
+					volume[0] = 'A' + i;
+					if(GetDriveType(volume) == DRIVE_CDROM) {
+						if(REG16(BX) == 0) {
+							REG16(CX) = i;
+						}
+						REG16(BX)++;
+					}
+				}
+			}
+#else
 			// MSCDEX is not installed
 //			REG8(AL) = 0x00;
+#endif
 		} else {
 			// GRAPHICS.COM is not installed
 //			REG8(AL) = 0x00;
+		}
+		break;
+	case 0x0b:
+		// this function is called in DOSSHELL
+		{
+			char volume[] = "A:\\";
+			volume[0] = 'A' + REG8(CL);
+			REG16(AX) = (GetDriveType(volume) == DRIVE_CDROM) ? 0x5ad8 : 0x0000;
+			REG16(BX) = 0xadad;
+		}
+		break;
+	case 0x0d:
+		{
+			DWORD dwDrives = GetLogicalDrives();
+			for(int i = 0, n = 0; i < 26; i++) {
+				if(dwDrives & (1 << i)) {
+					char volume[] = "A:\\";
+					volume[0] = 'A' + i;
+					if(GetDriveType(volume) == DRIVE_CDROM) {
+						mem[SREG_BASE(ES) + REG16(BX) + (n++)] = i;
+					}
+				}
+			}
 		}
 		break;
 	case 0xff:
@@ -12866,9 +13123,16 @@ inline void msdos_int_2fh_16h()
 			REG8(AH) = win_minor_version;
 		}
 		break;
-	case 0x05:
+	case 0x05: // Windows Enhanced Mode & 286 DOSX Init Broadcast
 		// from DOSBox
 		i386_set_a20_line(1);
+		break;
+	case 0x06: // Windows Enhanced Mode & 286 DOSX exit Broadcast
+	case 0x08: // Windows Enhanced Mode Init Complete Broadcast
+	case 0x09: // Windows Enhanced Mode Begin Exit Broadcast
+		break;
+	case 0x07:
+		// Virtual Device Call API
 		break;
 	case 0x0a:
 		if(!no_windows) {
@@ -12888,6 +13152,8 @@ inline void msdos_int_2fh_16h()
 	case 0x13:
 	case 0x14:
 	case 0x15:
+	case 0x81:
+	case 0x82:
 	case 0x86:
 	case 0x87:
 	case 0x89:
@@ -12972,6 +13238,11 @@ inline void msdos_int_2fh_40h()
 	case 0x00:
 		// Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 		REG8(AL) = 0x01; // does not virtualize video access
+		break;
+	case 0x10:
+		// OS/2 v2.0+ - Installation Check
+		REG16(AX) = 0x01;
+		m_CF = 1;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -13263,6 +13534,11 @@ inline void msdos_int_2fh_4bh()
 	case 0x04:
 		REG16(BX) = 0x0000; // free switcher id successfully
 		break;
+	case 0x05:
+		REG16(BX) = 0x0000; // no instance data chain
+		SREG(ES) = 0x0000;
+		i386_load_segment_descriptor(ES);
+		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -13394,6 +13670,7 @@ inline void msdos_int_2fh_b7h()
 //		REG8(AL) = 0x00;
 		break;
 	case 0x07:
+	case 0x11:
 		// COMMAND.COM calls this service without checking APPEND is installed
 		break;
 	default:
@@ -13559,6 +13836,41 @@ inline void msdos_int_33h_0016h()
 inline void msdos_int_33h_0017h()
 {
 	memcpy(&mouse, mem + SREG_BASE(ES) + REG16(DX), sizeof(mouse));
+}
+
+inline void msdos_int_33h_0018h()
+{
+	for(int i = 0; i < 8; i++) {
+		if(REG16(CX) & (1 << i)) {
+			if(mouse.call_addr_alt[i].dw && !(REG16(DX) == 0 && SREG(ES) == 0)) {
+				// event handler already exists
+				REG16(AX) = 0xffff;
+				break;
+			}
+			mouse.call_addr_alt[i].w.l = REG16(DX);
+			mouse.call_addr_alt[i].w.h = SREG(ES);
+		}
+	}
+}
+
+inline void msdos_int_33h_0019h()
+{
+	UINT16 call_mask = REG16(CX);
+	
+	REG16(CX) = 0;
+	
+	for(int i = 0; i < 8; i++) {
+		if((call_mask & (1 << i)) && mouse.call_addr_alt[i].dw) {
+			for(int j = 0; j < 8; j++) {
+				if((call_mask & (1 << j)) && mouse.call_addr_alt[i].dw == mouse.call_addr_alt[j].dw) {
+					REG16(CX) |= (1 << j);
+				}
+			}
+			REG16(DX) = mouse.call_addr_alt[i].w.l;
+			REG16(BX) = mouse.call_addr_alt[i].w.h;
+			break;
+		}
+	}
 }
 
 inline void msdos_int_33h_001ah()
@@ -14238,6 +14550,18 @@ inline void msdos_int_67h_5ah()
 	}
 }
 
+inline void msdos_int_67h_5dh()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01 || REG8(AL) == 0x02) {
+		REG8(AH) = 0xa4; // operating system denied access
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
 inline void msdos_int_67h_deh()
 {
 	REG8(AH) = 0x84;
@@ -14834,7 +15158,9 @@ UINT16 msdos_get_equipment()
 void msdos_syscall(unsigned num)
 {
 #ifdef ENABLE_DEBUG_SYSCALL
-	if(num == 0x68) {
+	if(num == 0x08 || num == 0x1c) {
+		// don't log the timer interrupts
+	} else if(num == 0x68) {
 		// dummy interrupt for EMS (int 67h)
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x69) {
@@ -14995,6 +15321,7 @@ void msdos_syscall(unsigned num)
 			case 0x0d: pcbios_int_13h_00h(); break;
 			case 0x10: pcbios_int_13h_10h(); break;
 			case 0x15: pcbios_int_13h_15h(); break;
+			case 0x41: pcbios_int_13h_41h(); break;
 			case 0x05: // format
 			case 0x06:
 			case 0x07:
@@ -15007,6 +15334,11 @@ void msdos_syscall(unsigned num)
 			case 0x14:
 			case 0x17:
 				REG8(AH) = 0x00; // successful completion
+				break;
+			case 0x21: // QUICKCACHE II v4.20 - Flush Cache
+			case 0xa1: // Super PC-Kwik v3.20+ - Flush Cache
+				REG8(AH) = 0x01; // invalid function
+				m_CF = 1;
 				break;
 			default:
 				unimplemented_13h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -15042,6 +15374,7 @@ void msdos_syscall(unsigned num)
 		case 0x49: pcbios_int_15h_49h(); break;
 		case 0x50: pcbios_int_15h_50h(); break;
 		case 0x53: pcbios_int_15h_53h(); break;
+		case 0x84: pcbios_int_15h_84h(); break;
 		case 0x86: pcbios_int_15h_86h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
@@ -15084,6 +15417,7 @@ void msdos_syscall(unsigned num)
 		case 0x55: pcbios_int_16h_55h(); break;
 		case 0x6f: pcbios_int_16h_6fh(); break;
 		case 0xda: break; // unknown
+		case 0xdb: break; // unknown
 		case 0xff: break; // unknown
 		default:
 			unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -15123,6 +15457,8 @@ void msdos_syscall(unsigned num)
 		case 0x35: break; // Word Perfect Third Party Interface?
 		case 0x36: break; // Word Perfect Third Party Interface
 		case 0x70: break; // SNAP? (Simple Network Application Protocol)
+		case 0xb1: break; // PCI BIOS v2.0c+
+		case 0xb4: break; // Intel Plug-and-Play Auto-Configuration
 		default:
 			unimplemented_1ah("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
@@ -15226,7 +15562,7 @@ void msdos_syscall(unsigned num)
 			case 0x50: msdos_int_21h_50h(); break;
 			case 0x51: msdos_int_21h_51h(); break;
 			case 0x52: msdos_int_21h_52h(); break;
-			// 0x53: Translate BIOS Parameter Block to Drive Param Bock
+			case 0x53: msdos_int_21h_53h(); break;
 			case 0x54: msdos_int_21h_54h(); break;
 			case 0x55: msdos_int_21h_55h(); break;
 			case 0x56: msdos_int_21h_56h(0); break;
@@ -15255,7 +15591,7 @@ void msdos_syscall(unsigned num)
 			// 0x6d: Find First ROM Program
 			// 0x6e: Find Next ROM Program
 			// 0x6f: Get/Set ROM Scan Start Address
-			// 0x70: Windows95 - Get/Set Internationalization Information
+			case 0x70: msdos_int_21h_70h(); break;
 			case 0x71:
 				// Windows95 - Long Filename Functions
 				switch(REG8(AL)) {
@@ -15435,90 +15771,7 @@ void msdos_syscall(unsigned num)
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
-		// Installation Check
-		case 0x01: // DOS 3.0+ PRINT
-		case 0x02: // PC LAN PROGRAM REDIR/REDIRIFS internal
-		case 0x06: // DOS 3.0+ ASSIGN
-		case 0x08: // DRIVER.SYS support
-		case 0x10: // SHARE
-		case 0x17: // MS Windows "WINOLDAP"
-		case 0x1b: // DOS 4+ XMA2EMS.SYS extension internal
-		case 0x23: // DR DOS 5.0 GRAFTABL
-		case 0x27: // DR-DOR 6.0 TaskMAX
-		case 0x2e: // Novell DOS 7 GRAFTABL
-		case 0x39: // Kingswood TSR INTERFACE
-		case 0x41: // DOS Enhanced LAN Manager 2.0+ MINIPOP/NETPOPUP
-		case 0x45: // Microsoft Profiler (PROF.COM/VPROD.386)
-		case 0x51: // ODIHELP.EXE
-		case 0x52: // JAM.SYS v1.10+
-		case 0x54: // POWER.EXE
-		case 0x56: // INTERLNK
-		case 0x57: // IOMEGA DRIVERS
-		case 0x70: // License Service API
-		case 0x72: // SRDISK v1.30+
-		case 0x7a: // Novell NetWare
-		case 0x7f: // PRINDIR v9.0
-		case 0x80: // FaxBIOS interface
-		case 0x81: // Nanosoft, Inc. TurboNET redirector
-		case 0x82: // Nanosoft, Inc. CAPDOS
-		case 0x89: // WHOA!.COM
-		case 0x90: // Resident AID
-		case 0x94: // MICRO.EXE
-		case 0x97: // Micro Focus COBOL v3.1.31
-		case 0x98: // Micro Focus COBOL v3.1.31
-		case 0x99: // DOS Navigator II
-		case 0x9e: // INTMON v2.1
-		case 0x9f: // INTCFG v2.1
-		case 0xa9: // METZTSR.COM
-		case 0xaa: // VIDCLOCK.COM
-		case 0xab: // SRSoft MODAL PC v2
-		case 0xac: // DOS 4.01+ GRAPHICS.COM
-		case 0xaf: // WinDOS v2.11
-		case 0xb0: // DOS 3.3+ GRAFTABL.COM
-		case 0xb4: // IBM PC3270 EMULATION PROG v3
-		case 0xb8: // NETWORK
-		case 0xb9: // PC Network RECEIVER.COM
-		case 0xbc: // Windows 3.0, DOS 5+ EGA.SYS
-		case 0xbe: // REDVIEW
-		case 0xbf: // PC LAN PROGRAM REDIRIFS.EXE internal
-		case 0xc0: // Novell ODI Link Support Layer (LSL.COM)
-		case 0xc1: // Personal NetWare - STPIPX v1.00
-		case 0xc3: // SETWPR.COM
-		case 0xc5: // PC-DOS Econet v1.05
-		case 0xc7: // COLAP.COM
-		case 0xc9: // ThunderByte???
-		case 0xca: // TBSCANX
-		case 0xcb: // Communicating Applications Specification
-		case 0xcc: // Tsoft NFSDRVR
-		case 0xcd: // SWELL.EXE
-		case 0xcf: // TEMPLEXX 1.0
-		case 0xd0: // Lotus CD/Networker
-		case 0xd2: // PCL-838.EXE
-		case 0xd3: // TeleReplica
-		case 0xd6: // VEDIT VSWAP
-		case 0xd7: // Banyan VINES v4+
-		case 0xd8: // Novell NetWare Lite - CLIENT.EXE
-		case 0xda: // ZyXEL ZFAX v1.x
-		case 0xdb: // ZyXEL ZFAX v2+
-		case 0xdc: // GOLD.COM
-		case 0xdd: // MIXFIX.EXE
-		case 0xde: // Quarterdeck QDPMI.SYS v1.0
-		case 0xdf: // HyperWare programs
-		case 0xe0: // SETDRVER.COM v2.10+
-		case 0xe1: // Phantom2 v1.1+
-		case 0xe3: // ANARKEY.COM
-		case 0xed: // Phar Lap DOS EXTENDERS
-		case 0xee: // XVIEW
-		case 0xf0: // 4MAP
-		case 0xf1: // DOS EXTENDER
-		case 0xf2: // WINX
-		case 0xf4: // FINDIRQ.COM
-		case 0xf7: // AUTOPARK.COM
-		case 0xf8: // SuperStor PRO 2XON.COM
-		case 0xfa: // Watcom Debugger
-		case 0xfb: // AutoBraille v1.1A
-		case 0xfe: // PC-NFS ???
-		case 0xff: // Topware Network Operating System
+		default:
 			switch(REG8(AL)) {
 			case 0x00:
 				// This is not installed
@@ -15543,13 +15796,10 @@ void msdos_syscall(unsigned num)
 					break;
 				}
 				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-				REG16(AX) = 0x01;
+				REG16(AX) = 0x01; // invalid function
 				m_CF = 1;
 				break;
 			}
-			break;
-		default:
-			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
 		}
 		break;
@@ -15582,6 +15832,8 @@ void msdos_syscall(unsigned num)
 			case 0x15: msdos_int_33h_0015h(); break;
 			case 0x16: msdos_int_33h_0016h(); break;
 			case 0x17: msdos_int_33h_0017h(); break;
+			case 0x18: msdos_int_33h_0018h(); break;
+			case 0x19: msdos_int_33h_0019h(); break;
 			case 0x1a: msdos_int_33h_001ah(); break;
 			case 0x1b: msdos_int_33h_001bh(); break;
 			case 0x1d: msdos_int_33h_001dh(); break;
@@ -15638,8 +15890,8 @@ void msdos_syscall(unsigned num)
 		case 0x59: msdos_int_67h_59h(); break;
 		case 0x5a: msdos_int_67h_5ah(); break;
 		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
-		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
-		// 0x5d: LIM EMS 4.0 - Enable/Disable OS Function Set Functions (for DOS Kernel)
+		// 0x5c: LIM EMS 4.0 - Prepare Expanded Memory Hardware For Warm Boot
+		case 0x5d: msdos_int_67h_5dh(); break;
 		// 0x60: EEMS - Get Physical Window Array
 		// 0x61: EEMS - Generic Accelerator Card Support
 		// 0x68: EEMS - Get Address of All Pge Frames om System
@@ -15704,7 +15956,7 @@ void msdos_syscall(unsigned num)
 		mouse_push_si = REG16(SI);
 		mouse_push_di = REG16(DI);
 		
-		if(/*mouse.hidden == 0 && */mouse.call_addr.dw != 0) {
+		if(mouse.status_irq && mouse.call_addr.dw) {
 			REG16(AX) = mouse.status_irq;
 			REG16(BX) = mouse.get_buttons();
 			REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.position.x));
@@ -15717,13 +15969,31 @@ void msdos_syscall(unsigned num)
 			mem[0xfffd0 + 0x04] = mouse.call_addr.w.l >> 8;
 			mem[0xfffd0 + 0x05] = mouse.call_addr.w.h & 0xff;
 			mem[0xfffd0 + 0x06] = mouse.call_addr.w.h >> 8;
-		} else {
-			mem[0xfffd0 + 0x02] = 0x90;	// nop
-			mem[0xfffd0 + 0x03] = 0x90;	// nop
-			mem[0xfffd0 + 0x04] = 0x90;	// nop
-			mem[0xfffd0 + 0x05] = 0x90;	// nop
-			mem[0xfffd0 + 0x06] = 0x90;	// nop
+			break;
 		}
+		for(int i = 0; i < 8; i++) {
+			if((mouse.status_irq_alt & (1 << i)) && mouse.call_addr_alt[i].dw) {
+				REG16(AX) = mouse.status_irq_alt;
+				REG16(BX) = mouse.get_buttons();
+				REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.position.x));
+				REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.position.y));
+				REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
+				REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
+				
+				mem[0xfffd0 + 0x02] = 0x9a;	// call far
+				mem[0xfffd0 + 0x03] = mouse.call_addr_alt[i].w.l & 0xff;
+				mem[0xfffd0 + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
+				mem[0xfffd0 + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
+				mem[0xfffd0 + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
+				break;
+			}
+		}
+		// invalid call addr :-(
+		mem[0xfffd0 + 0x02] = 0x90;	// nop
+		mem[0xfffd0 + 0x03] = 0x90;	// nop
+		mem[0xfffd0 + 0x04] = 0x90;	// nop
+		mem[0xfffd0 + 0x05] = 0x90;	// nop
+		mem[0xfffd0 + 0x06] = 0x90;	// nop
 		break;
 	case 0x6b:
 		// end of irq12 (mouse)
@@ -16460,11 +16730,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// drive parameter block
 	for(int i = 0; i < 2; i++) {
+		// may be a floppy drive
 		dpb_t *dpb = (dpb_t *)(mem + DPB_TOP + sizeof(dpb_t) * i);
 		dpb->drive_num = i;
 		dpb->unit_num = i;
-		dpb->next_dpb_ofs = (i == 25) ? 0xffff : sizeof(dpb_t) * (i + 1);
-		dpb->next_dpb_seg = (i == 25) ? 0xffff : DPB_TOP >> 4;
+		dpb->next_dpb_ofs = /*(i == 25) ? 0xffff : */sizeof(dpb_t) * (i + 1);
+		dpb->next_dpb_seg = /*(i == 25) ? 0xffff : */DPB_TOP >> 4;
 	}
 	for(int i = 2; i < 26; i++) {
 		UINT16 seg, ofs;
@@ -16663,12 +16934,26 @@ void hardware_update()
 			}
 			
 			// raise irq12 if mouse status is changed
-			if(mouse.status & mouse.call_mask) {
-//				if(mouse.hidden == 0) {
-					pic_req(1, 4, 1);
-					mouse.status_irq = mouse.status & mouse.call_mask;
-//				}
+			if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
+				mouse.status_irq = mouse.status & mouse.call_mask;
+				mouse.status_irq_alt = 0; // ???
 				mouse.status &= ~mouse.call_mask;
+				pic_req(1, 4, 1);
+			} else {
+				for(int i = 0; i < 8; i++) {
+					if((mouse.status_alt & (1 << i)) && mouse.call_addr_alt[i].dw) {
+						mouse.status_irq = 0; // ???
+						mouse.status_irq_alt = 0;
+						for(int j = 0; j < 8; j++) {
+							if((mouse.status_alt & (1 << j)) && mouse.call_addr_alt[i].dw == mouse.call_addr_alt[j].dw) {
+								mouse.status_irq_alt |=  (1 << j);
+								mouse.status_alt     &= ~(1 << j);
+							}
+						}
+						pic_req(1, 4, 1);
+						break;
+					}
+				}
 			}
 			
 			prev_tick = cur_tick;
@@ -18460,6 +18745,9 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 {
 #ifdef ENABLE_DEBUG_IOPORT
 	if(fp_debug_log != NULL) {
+#ifdef USE_SERVICE_THREAD
+		if(addr != 0xf7)
+#endif
 		fprintf(fp_debug_log, "outb %04X, %02X\n", addr, val);
 	}
 #endif

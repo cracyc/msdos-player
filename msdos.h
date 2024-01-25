@@ -978,6 +978,25 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
+	UINT16 bytes_per_sector;
+	UINT8 sectors_per_cluster;
+	UINT16 reserved_sectors;
+	UINT8 fat_num;
+	UINT16 root_entries;
+	UINT16 total_sectors;
+	UINT8 media_type;
+	UINT16 sectors_per_fat;
+	UINT16 sectors_per_track;
+	UINT16 heads_num;
+	UINT32 hidden_sectors;
+	// extended
+	UINT32 ext_total_sectors;
+	UINT32 ext_sectors_per_fat;
+} bpb_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
 	char path_name[67];
 	UINT16 drive_attrib;
 	UINT8 physical_drive_number;
@@ -986,10 +1005,18 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	UINT8 reserved_1[3];		// -34
+	UINT16 word_reserved_1;		// -38 for INT 21h, AX=5D0Ah
+	UINT16 word_reserved_2;		// -36 for INT 21h, AX=5D0Ah
+	// swappable data area
+	UINT8 printer_cho_flag;		// -34
+	UINT16 word_reserved_3;		// -33 for INT 21h, AX=5D0Ah
 	UINT8 switchar;			// -31 current switch character
 	UINT8 malloc_strategy;		// -30 current memory allocation strategy
-	UINT8 reserved_2[29];		// -29
+	UINT8 byte_reserved_1;		// -29 for INT 21h, AX=5D0Ah
+	UINT8 int21_5e01_counter;	// -28
+	UINT8 int21_5e01_name[16];	// -27
+	UINT16 offset_lists[5];		// -11
+	UINT8 byte_reserved_2;		// -1
 	// ----- from DOSBox -----
 	UINT8 crit_error_flag;		// 0x00 Critical Error Flag
 	UINT8 indos_flag;		// 0x01 InDOS flag (count of active INT 21 calls)
@@ -1234,10 +1261,10 @@ typedef struct {
 		}
 		return(val);
 	}
-	UINT16 status;
-	UINT16 status_irq;
+	UINT16 status, status_alt;
+	UINT16 status_irq, status_irq_alt;
 	UINT16 call_mask;
-	PAIR32 call_addr;
+	PAIR32 call_addr, call_addr_alt[8];
 	// dummy
 	UINT16 sensitivity[3];
 	UINT16 display_page;
