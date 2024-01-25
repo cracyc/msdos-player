@@ -9052,9 +9052,7 @@ inline void msdos_int_21h_0ch()
 		msdos_int_21h_0ah();
 		break;
 	default:
-//		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-//		REG16(AX) = 0x01;
-//		m_CF = 1;
+		// the buffer is flushed but no input is attempted
 		break;
 	}
 }
@@ -9494,7 +9492,7 @@ inline void msdos_int_21h_26h()
 	psp_t *psp = (psp_t *)(mem + (REG16(DX) << 4));
 	
 	memcpy(mem + (REG16(DX) << 4), mem + (current_psp << 4), sizeof(psp_t));
-	psp->first_mcb = REG16(DX) + 16;
+	psp->first_mcb = REG16(DX) + (PSP_SIZE >> 4);
 	psp->int_22h.dw = *(UINT32 *)(mem + 4 * 0x22);
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
@@ -9774,6 +9772,7 @@ inline void msdos_int_21h_32h()
 inline void msdos_int_21h_33h()
 {
 	char path[MAX_PATH];
+	char drive = 3; // C:
 	
 	switch(REG8(AL)) {
 	case 0x00:
@@ -9794,12 +9793,14 @@ inline void msdos_int_21h_33h()
 		// DOS 4.0+ - Unused
 		break;
 	case 0x05:
-		GetSystemDirectory(path, MAX_PATH);
-		if(path[0] >= 'a' && path[0] <= 'z') {
-			REG8(DL) = path[0] - 'a' + 1;
-		} else {
-			REG8(DL) = path[0] - 'A' + 1;
+		if(GetSystemDirectory(path, MAX_PATH) != 0) {
+			if(path[0] >= 'a' && path[0] <= 'z') {
+				drive = path[0] - 'a' + 1;
+			} else if(path[0] >= 'A' && path[0] <= 'Z') {
+				drive = path[0] - 'A' + 1;
+			}
 		}
+		REG8(DL) = (UINT8)drive;
 		break;
 	case 0x06:
 		// MS-DOS version (7.10)
@@ -9821,8 +9822,9 @@ inline void msdos_int_21h_33h()
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
+//		REG16(AX) = 0x01;
+//		m_CF = 1;
+		REG8(AL) = 0xff;
 		break;
 	}
 }
@@ -9893,12 +9895,14 @@ inline void msdos_int_21h_37h()
 	case 0xdd:
 	case 0xde:
 	case 0xdf:
-		// diet ???
-		REG16(AX) = 1;
+		// DIET v1.43e
+//		REG16(AX) = 1;
+		REG8(AL) = 0xff;
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 1;
+//		REG16(AX) = 1;
+		REG8(AL) = 0xff;
 		break;
 	}
 }
@@ -10200,6 +10204,7 @@ inline void msdos_int_21h_38h()
 //				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 //				REG16(AX) = 2;
 //				m_CF = 1;
+				// get current coutry info
 				REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)));
 				break;
 			}
@@ -10560,7 +10565,7 @@ inline void msdos_int_21h_43h(int lfn)
 	case 0x03:
 	case 0x05:
 	case 0x07:
-		{
+		if(lfn) {
 			HANDLE hFile = CreateFile(path, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 			if(hFile != INVALID_HANDLE_VALUE) {
 				FILETIME local, time;
@@ -10585,12 +10590,19 @@ inline void msdos_int_21h_43h(int lfn)
 				REG16(AX) = (UINT16)GetLastError();
 				m_CF = 1;
 			}
+		} else {
+			// 214303 DR DOS 3.41+ internal - Set Access Rights And Password
+			// 214305 DR DOS 5.0-6.0 internal - Set Extended File Attributes
+			// 214307 DR DOS 6.0 - Set File Owner
+//			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
 		}
 		break;
 	case 0x04:
 	case 0x06:
 	case 0x08:
-		{
+		if(lfn) {
 			WIN32_FILE_ATTRIBUTE_DATA fad;
 			if(GetFileAttributesEx(path, GetFileExInfoStandard, (LPVOID)&fad)) {
 				FILETIME *time, local;
@@ -10610,10 +10622,16 @@ inline void msdos_int_21h_43h(int lfn)
 				REG16(AX) = (UINT16)GetLastError();
 				m_CF = 1;
 			}
+		} else {
+			// 214304 DR DOS 5.0-6.0 internal - Get Encrypted Password
+			// 214306 DR DOS 6.0 - Get File Owner
+//			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
 		}
 		break;
 	case 0xff:
-		if(REG16(BP) == 0x5053) {
+		if(!lfn && REG16(BP) == 0x5053) {
 			if(REG8(CL) == 0x39) {
 				msdos_int_21h_39h(1);
 				break;
@@ -10624,7 +10642,7 @@ inline void msdos_int_21h_43h(int lfn)
 		}
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+		REG16(AX) = lfn ? 0x7100 : 0x01;
 		m_CF = 1;
 		break;
 	}
@@ -10666,10 +10684,10 @@ inline void msdos_int_21h_44h()
 		break;
 	}
 	switch(REG8(AL)) {
-	case 0x00: // get ioctrl data
+	case 0x00: // Get Device Information
 		REG16(DX) = file_handler[fd].info;
 		break;
-	case 0x01: // set ioctrl data
+	case 0x01: // Set Device Information
 		if(REG8(DH) != 0) {
 //			REG16(AX) = 0x0d; // data invalid
 //			m_CF = 1;
@@ -10679,7 +10697,7 @@ inline void msdos_int_21h_44h()
 			file_handler[fd].info |= REG8(DL);
 		}
 		break;
-	case 0x02: // recv from character device
+	case 0x02: // Read From Character Device Control Channel
 		if(strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) {
 			// from DOSBox
 			switch(*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX))) {
@@ -10772,17 +10790,17 @@ inline void msdos_int_21h_44h()
 			m_CF = 1;
 		}
 		break;
-	case 0x03: // send to character device
+	case 0x03: // Write To Character Device Control Channel
 //		REG16(AX) = 0x05;
 //		m_CF = 1;
 		REG16(AX) = 0x00; // success
 		break;
-	case 0x04: // recv from block device
-	case 0x05: // send to block device
+	case 0x04: // Read From Block Device Control Channel
+	case 0x05: // Write To Block Device Control Channel
 		REG16(AX) = 0x05;
 		m_CF = 1;
 		break;
-	case 0x06: // get read status
+	case 0x06: // Get Input Status
 		if(file_mode[file_handler[fd].mode].in) {
 			if(file_handler[fd].atty) {
 				REG8(AL) = msdos_kbhit() ? 0xff : 0x00;
@@ -10793,14 +10811,14 @@ inline void msdos_int_21h_44h()
 			REG8(AL) = 0x00;
 		}
 		break;
-	case 0x07: // get write status
+	case 0x07: // Get Output Status
 		if(file_mode[file_handler[fd].mode].out) {
 			REG8(AL) = 0xff;
 		} else {
 			REG8(AL) = 0x00;
 		}
 		break;
-	case 0x08: // check removable drive
+	case 0x08: // Check If Block Device Removable
 		if(msdos_is_removable_drive(drv) || msdos_is_cdrom_drive(drv)) {
 			// removable drive
 			REG16(AX) = 0x00;
@@ -10809,7 +10827,7 @@ inline void msdos_int_21h_44h()
 			REG16(AX) = 0x01;
 		}
 		break;
-	case 0x09: // check remote drive
+	case 0x09: // Check If Block Device Remote
 		if(msdos_is_remote_drive(drv)) {
 			// remote drive
 			REG16(DX) = 0x1000;
@@ -10821,16 +10839,16 @@ inline void msdos_int_21h_44h()
 			REG16(DX) = 0x0000;
 		}
 		break;
-	case 0x0a: // check remote handle
+	case 0x0a: // Check If Handle Is Remote
 		if(!(file_handler[fd].info & 0x8000) && msdos_is_remote_drive(msdos_drive_number(file_handler[fd].path))) {
 			REG16(DX) = 0x8000;
 		} else {
 			REG16(DX) = 0x0000;
 		}
 		break;
-	case 0x0b: // set retry count
+	case 0x0b: // Set Sharing Retry Count
 		break;
-	case 0x0c: // generic character device request
+	case 0x0c: // Generic Character Device Request
 		if(REG8(CL) == 0x45) {
 			// set iteration (retry) count
 			iteration_count = *(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX));
@@ -10858,6 +10876,8 @@ inline void msdos_int_21h_44h()
 			// end code-page preparation
 			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 2;
 			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = active_code_page;
+//		} else if(REG8(CL) == 0x5f) {
+//			// set display information
 		} else if(REG8(CL) == 0x65) {
 			// get iteration (retry) count
 			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX)) = iteration_count;
@@ -10921,11 +10941,21 @@ inline void msdos_int_21h_44h()
 			m_CF = 1;
 		}
 		break;
-	case 0x0d: // generic block device request
+	case 0x0d: // Generic Block Device Request
 		if(REG8(CL) == 0x40) {
 			// set device parameters
+//		} else if(REG8(CL) == 0x41) {
+//			// write logical device track
+//		} else if(REG8(CL) == 0x42) {
+//			// format and verify logical device track
 		} else if(REG8(CL) == 0x46) {
 			// set volume serial number
+		} else if(REG8(CL) == 0x47) {
+			// set access flag
+//		} else if(REG8(CL) == 0x48) {
+//			// set media lock state
+//		} else if(REG8(CL) == 0x49) {
+//			// eject media in drive
 		} else if(REG8(CL) == 0x4a) {
 			// lock logical volume
 		} else if(REG8(CL) == 0x4b) {
@@ -11035,6 +11065,10 @@ inline void msdos_int_21h_44h()
 				REG16(AX) = 0x0f; // invalid drive
 				m_CF = 1;
 			}
+//		} else if(REG8(CL) == 0x61) {
+//			// read logical device track
+//		} else if(REG8(CL) == 0x62) {
+//			// verify logical device track
 		} else if(REG8(CL) == 0x66) {
 			// get volume serial number
 			char path[] = "A:\\";
@@ -11094,13 +11128,25 @@ inline void msdos_int_21h_44h()
 			// unlock logical volume
 		} else if(REG8(CL) == 0x6b) {
 			// unlock physical volume
+//		} else if(REG8(CL) == 0x6c) {
+//			// get lock flag
+//		} else if(REG8(CL) == 0x6d) {
+//			// enumerate open files
+//		} else if(REG8(CL) == 0x6e) {
+//			// find swap file
+//		} else if(REG8(CL) == 0x6f) {
+//			// get drive map information
+//		} else if(REG8(CL) == 0x70) {
+//			// get current lock state
+//		} else if(REG8(CL) == 0x71) {
+//			// get first cluster
 		} else {
 			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01; // invalid function
 			m_CF = 1;
 		}
 		break;
-	case 0x0e: // get logical drive map
+	case 0x0e: // Get Lgical Drive Map
 		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
 			REG16(AX) = 0x0f; // invalid drive
 			m_CF = 1;
@@ -11108,18 +11154,21 @@ inline void msdos_int_21h_44h()
 			REG8(AL) = 0;
 		}
 		break;
-	case 0x0f: // set logical drive map
+	case 0x0f: // Set Logical Drive Map
 		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
 			REG16(AX) = 0x0f; // invalid drive
 			m_CF = 1;
 		}
 		break;
-	case 0x10: // query generic ioctrl capability (handle)
+	case 0x10: // Query Generic IOCTRL Capability (Handle)
 		switch(REG8(CL)) {
 		case 0x45:
 		case 0x4a:
+		case 0x4c:
+		case 0x4d:
 		case 0x65:
 		case 0x6a:
+		case 0x6b:
 		case 0x7f:
 			REG16(AX) = 0x0000; // supported
 			break;
@@ -11129,7 +11178,7 @@ inline void msdos_int_21h_44h()
 			break;
 		}
 		break;
-	case 0x11: // query generic ioctrl capability (drive)
+	case 0x11: // Query Generic IOCTRL Capability (Drive)
 		switch(REG8(CL)) {
 		case 0x40:
 		case 0x46:
@@ -11141,18 +11190,31 @@ inline void msdos_int_21h_44h()
 		case 0x68:
 		case 0x6a:
 		case 0x6b:
-			REG16(AX) = 0x0000; // supported
-			break;
+			if(REG8(CH) == 0x00 || REG8(CH) == 0x01 || REG8(CH) == 0x03 || REG8(CH) == 0x05) {
+				// CH = 00h	Unknown
+				// CH = 01h	COMn:
+				// CH = 03h	CON
+				// CH = 05h	LPTn:
+				REG16(AX) = 0x0000; // supported
+				break;
+			}
 		default:
 			REG8(AL) = 0x01; // ioctl capability not available
 			m_CF = 1;
 			break;
 		}
 		break;
-	case 0x12: // determine dos type
-	case 0x51: // concurrent dos v3.2+ - installation check
-	case 0x52: // determine dos type/get dr dos versuin
-		REG16(AX) = 0x01; // this  is not DR-DOS
+	case 0x12: // DR DOS 5.0-6.0 - Determine DOS Type
+	case 0x14: // DR DOS 5.0-6.0 - Set Global Password
+	case 0x16: // DR DOS 5.0-6.0 - History Buffer, Share, And Hiload Control
+	case 0x51: // Concurrent DOS v3.2+ - Installation Check
+	case 0x52: // DR DOS 3.41+ - Determine DOS tTpe/Get DR DOS Version
+	case 0x54: // DR DOS 3.41+ - Set Global Password
+	case 0x56: // DR DOS 5.0+ - History Buffer Control
+	case 0x57: // DR DOS 5.0-6.0 - Share/Hiload Control
+	case 0x58: // DR DOS 5.0+ internal - Get Pointer To Internal Variable Table
+	case 0x59: // DR Multiuser DOS 5.0 - API
+		REG16(AX) = 0x01; // this is not DR-DOS
 		m_CF = 1;
 		break;
 	default:
@@ -11348,6 +11410,15 @@ inline void msdos_int_21h_4bh()
 			memcpy(mem + (overlay[0] << 4), file_buffer + header_size, size - header_size);
 		}
 		break;
+	case 0x04:
+		// Load And Execute In Background (European MS-DOS 4.0 only)
+//	case 0x05:
+//		// DOS 5+ - Set Execution State
+	case 0x80:
+		// DR DOS v3.41 - Run Already-Loaded Kernel File
+	case 0xf0:
+	case 0xf1:
+		// DIET v1.10+
 	case 0xfd:
 	case 0xfe:
 		// unknown function called in FreeCOM
@@ -12319,7 +12390,13 @@ inline void msdos_int_21h_6ch(int lfn)
 inline void msdos_int_21h_70h()
 {
 	switch(REG8(AL)) {
-	case 0x02:
+	case 0x00: // get ??? info
+	case 0x01: // set above info
+//		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x7000;
+		m_CF = 1;
+		break;
+	case 0x02: // set general internationalization info
 		if(REG16(CX) >= 7) {
 			active_code_page = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 5);
 			msdos_nls_tables_update();
@@ -12332,7 +12409,7 @@ inline void msdos_int_21h_70h()
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+		REG16(AX) = 0x7000;
 		m_CF = 1;
 		break;
 	}
@@ -12343,10 +12420,10 @@ inline void msdos_int_21h_710dh()
 	// reset drive
 }
 
-inline void msdos_int_21h_7141h(int lfn)
+inline void msdos_int_21h_7141h()
 {
 	if(REG16(SI) == 0) {
-		msdos_int_21h_41h(lfn);
+		msdos_int_21h_41h(1);
 		return;
 	}
 	if(REG16(SI) != 1) {
@@ -12389,7 +12466,7 @@ inline void msdos_int_21h_7141h(int lfn)
 	do {
 		if(msdos_find_file_check_attribute(fd.dwFileAttributes, REG8(CL), REG8(CH)) && msdos_find_file_has_8dot3name(&fd)) {
 			strcpy(tmp_name, fd.cFileName);
-			if(remove(msdos_trimmed_path(tmp, lfn))) {
+			if(remove(msdos_trimmed_path(tmp, 1))) {
 				REG16(AX) = 5;
 				m_CF = 1;
 				break;
@@ -12614,7 +12691,7 @@ inline void msdos_int_21h_71a7h()
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+		REG16(AX) = 0x7100;
 		m_CF = 1;
 		break;
 	}
@@ -12688,7 +12765,7 @@ inline void msdos_int_21h_71aah()
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+		REG16(AX) = 0x7100;
 		m_CF = 1;
 		break;
 	}
@@ -16002,18 +16079,19 @@ void msdos_syscall(unsigned num)
 			case 0x6a: msdos_int_21h_6ah(); break;
 			case 0x6b: msdos_int_21h_6bh(); break;
 			case 0x6c: msdos_int_21h_6ch(0); break;
-			// 0x6d: Find First ROM Program
-			// 0x6e: Find Next ROM Program
-			// 0x6f: Get/Set ROM Scan Start Address
+			case 0x6d: // Find First ROM Program
+			case 0x6e: // Find Next ROM Program
+			case 0x6f: // Get/Set ROM Scan Start Address
+				REG8(AL) = 0x00; // if not supported (DOS <5, MS-DOS 5+ non-ROM versions)
+				break;
 			case 0x70: msdos_int_21h_70h(); break;
-			case 0x71:
-				// Windows95 - Long Filename Functions
+			case 0x71: // Windows95 - Long Filename Functions
 				switch(REG8(AL)) {
 				case 0x0d: msdos_int_21h_710dh(); break;
 				case 0x39: msdos_int_21h_39h(1); break;
 				case 0x3a: msdos_int_21h_3ah(1); break;
 				case 0x3b: msdos_int_21h_3bh(1); break;
-				case 0x41: msdos_int_21h_7141h(1); break;
+				case 0x41: msdos_int_21h_7141h(); break;
 				case 0x43: msdos_int_21h_43h(1); break;
 				case 0x47: msdos_int_21h_47h(1); break;
 				case 0x4e: msdos_int_21h_714eh(); break;
@@ -16035,9 +16113,12 @@ void msdos_syscall(unsigned num)
 					break;
 				}
 				break;
-			// 0x72: Windows95 beta - LFN FindClose
-			case 0x73:
-				// Windows95 - FAT32 Functions
+			case 0x72: // Windows95 beta - LFN FindClose
+//				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+				REG16(AX) = 0x7200;
+				m_CF = 1;
+				break;
+			case 0x73: // Windows95 - FAT32 Functions
 				switch(REG8(AL)) {
 				case 0x00: msdos_int_21h_7300h(); break;
 				// 0x01: Set Drive Locking ???

@@ -348,8 +348,8 @@ and you can start the debugger.
 
 If Tera Term PRO, PuTTY, or Windows telnet client (telnet.exe) is installed,
 it is automatically started and connected to MS-DOS Player.
-When you use Tera Term PRO or PuTTY, I recommend to disable "Line at Tiem"
-and enable "Character at Tiem".
+When you use Tera Term PRO or PuTTY, I recommend to disable "Line at Time"
+and enable "Character at Time".
 
 NOTE: When you run 32bit version of MS-DOS Player on Windows x64,
 MS-DOS Player will try to start 32bit version of telnet.exe in SysWOW64,
