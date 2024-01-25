@@ -83,6 +83,26 @@ void exit_handler();
 	#define unimplemented_xms nolog
 #endif
 
+#if 0
+char *my_getenv(const char *varname)
+{
+	char tmp[ENV_SIZE];
+
+	if(GetEnvironmentVariableA(varname, tmp, ENV_SIZE) != 0) {
+		static char result[8][ENV_SIZE];
+		static unsigned int table_index = 0;
+		unsigned int output_index = (table_index++) & 7;
+
+//		strcpy(result[output_index], tmp);
+		strcpy_s(result[output_index], ENV_SIZE, tmp);
+		return result[output_index];
+	}
+	return NULL;
+}
+#else
+#define my_getenv(varname) getenv(varname)
+#endif
+
 #ifdef _MBCS
 inline char *my_strchr(char *str, int chr)
 {
@@ -8632,26 +8652,31 @@ inline void pcbios_int_15h_87h()
 #else
 	memcpy(mem + dst, mem + src, len);
 #endif
-	CPU_AH = 0x00;
+//	CPU_AH = 0x00;
+	CPU_AX = 0x00; // from DOSBox
 }
 
 inline void pcbios_int_15h_88h()
 {
-	CPU_AX = ((min(MAX_MEM, 0x4000000) - 0x100000) >> 10);
+	if(support_ems) {
+		CPU_AX = 0x00; // from DOSBox
+	} else {
+		CPU_AX = ((min(MAX_MEM, 0x4000000) - 0x100000) >> 10);
+	}
 }
 
 inline void pcbios_int_15h_89h()
 {
 #if defined(HAS_I286) || defined(HAS_I386)
 	// switch to protected mode (from DOSBox)
-	write_io_byte(0x20, 0x10);
-	write_io_byte(0x21, CPU_BH);
-	write_io_byte(0x21, 0x00);
-	write_io_byte(0x21, 0xff);
-	write_io_byte(0xa0, 0x10);
-	write_io_byte(0xa1, CPU_BL);
-	write_io_byte(0xa1, 0x00);
-	write_io_byte(0xa1, 0xff);
+	write_io_byte(0x20, 0x10);	// icw1
+	write_io_byte(0x21, CPU_BH);	// icw2
+	write_io_byte(0x21, 0x00);	// icw3
+//	write_io_byte(0x21, 0xff);
+	write_io_byte(0xa0, 0x10);	// icw1
+	write_io_byte(0xa1, CPU_BL);	// icw2
+	write_io_byte(0xa1, 0x00);	// icw3
+//	write_io_byte(0xa1, 0xff);
 	CPU_A20_LINE(1);
 	CPU_GDTR_LIMIT = *(UINT16 *)(mem + CPU_ES_BASE + CPU_SI + 0x08);
 	CPU_GDTR_BASE  = *(UINT32 *)(mem + CPU_ES_BASE + CPU_SI + 0x08 + 0x02) & 0xffffff;
@@ -8665,13 +8690,13 @@ inline void pcbios_int_15h_89h()
 	CPU_LOAD_SREG(CPU_DS_INDEX, 0x0018);
 	CPU_LOAD_SREG(CPU_ES_INDEX, 0x0020);
 	CPU_LOAD_SREG(CPU_SS_INDEX, 0x0028);
-	UINT16 offset = *(UINT16 *)(mem + CPU_SS_BASE + CPU_SP);
+//	UINT16 offset = *(UINT16 *)(mem + CPU_SS_BASE + CPU_SP);
 	CPU_SP += 6; // clear stack of interrupt frame
 	UINT32 flags = CPU_EFLAG;
 	flags &= ~0x247fd5; // clear CF,PF,AF,ZF,SF,TF,IF,DF,OF,IOPL,NT,AC,ID
 	CPU_SET_EFLAG(flags);
 	CPU_AX = 0x00;
-	CPU_JMP_FAR(0x30, /*CPU_CX*/offset);
+	CPU_JMP_FAR(0x30, CPU_CX/*offset*/);
 #else
 	// i86/i186/v30: protected mode is not supported
 	CPU_AH = 0x86;
@@ -16602,7 +16627,7 @@ inline void msdos_int_67h_deh()
 			CPU_LOAD_SREG(CPU_FS_INDEX, 0x0000);
 			CPU_LOAD_SREG(CPU_GS_INDEX, 0x0000);
 
-			//		CPU_A20_LINE(1);
+			//CPU_A20_LINE(1);
 
 			/* Switch to protected mode */
 			CPU_SET_VM_FLAG(0);
@@ -18369,10 +18394,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
-	*(UINT16 *)(mem + 0x4ac) = 0x0a; // put rom config in reserved area
-	*(UINT8  *)(mem + 0x4ae) = 0xfc; // pc/at
-	*(UINT8  *)(mem + 0x4b1) = 0x60; // 2nd pic, rtc
-	*(UINT32 *)(mem + 0x4b2) = 0x40; // int 16/09
+	// put ROM configuration table for INT 15h, AH=C0h (Get Configuration) in reserved area
+	*(UINT16 *)(mem + 0x4ac + 0) = 0x0a; // number of bytes following
+	*(UINT8  *)(mem + 0x4ac + 2) = 0xfc; // model: pc/at
+	*(UINT8  *)(mem + 0x4ac + 3) = 0x00; // submodel: pc/at
+	*(UINT8  *)(mem + 0x4ac + 5) = 0x60; // 2nd pic, rtc
+	*(UINT32 *)(mem + 0x4ac + 6) = 0x40; // int 16/ah=09h
 #ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + EXT_BIOS_TOP) = 1;
 #endif
