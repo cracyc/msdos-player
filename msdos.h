@@ -826,6 +826,8 @@ void msdos_finish();
 	rect.Bottom = b; \
 }
 
+DWORD dwConsoleMode = 0;
+
 CHAR_INFO scr_buf[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 char scr_char[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 WORD scr_attr[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
@@ -838,7 +840,7 @@ bool cursor_moved;
 
 FIFO *key_buf_char;
 FIFO *key_buf_scan;
-int key_input = 0;
+bool key_changed = false;
 UINT32 key_code = 0;
 
 int active_code_page;
@@ -851,5 +853,51 @@ UINT32 shadow_buffer_end_address;
 int vram_pages;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
+
+#define MAX_MOUSE_BUTTONS	3
+
+struct {
+	bool active;
+	struct {
+		int x, y;
+	} position, prev_position, max_position, min_position, mickey;
+	struct {
+		bool status;
+		int pressed_times;
+		int released_times;
+		struct {
+			int x, y;
+		} pressed_position;
+		struct {
+			int x, y;
+		} released_position;
+	} buttons[MAX_MOUSE_BUTTONS];
+	int get_buttons()
+	{
+		int val = 0;
+		for(int i = 0; i < MAX_MOUSE_BUTTONS; i++) {
+			if(buttons[i].status) {
+				val |= 1 << i;
+			}
+		}
+		return(val);
+	}
+	UINT16 status;
+	UINT16 status_irq;
+	UINT16 call_mask;
+	PAIR32 call_addr;
+	// dummy
+	UINT16 sensitivity[3];
+	UINT16 display_page;
+	UINT16 language;
+	UINT16 hot_spot[2];
+} mouse = {0};
+
+UINT16 mouse_push_ax;
+UINT16 mouse_push_bx;
+UINT16 mouse_push_cx;
+UINT16 mouse_push_dx;
+UINT16 mouse_push_si;
+UINT16 mouse_push_di;
 
 #endif

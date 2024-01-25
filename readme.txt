@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/8/2016
+								6/10/2016
 
 ----- What's this
 
@@ -46,17 +46,28 @@ In this case, please specify the option '-e' and only the minimum variables
 
 	> msdos -e dd.com
 
-The environment variable COMSPEC is not copied from the host, and its
+The environment variable COMSPEC is not copied from the host Windows, and its
 value is always "C:\COMMAND.COM".
 If a program tries to open the "C:\COMMAND.COM" file, the file is redirected
-to the file path specified by the environment variable MSDOS_COMSPEC
-(NOTE: this environment variable is not copied to the variable table)
-or the COMMAND.COM file that does exist:
+to the path in the environment variable MSDOS_COMSPEC on the host Windows.
+If the MSDOS_COMSPEC is not defined, it is redirected to the COMMAND.COM file
+that does exist:
 
 - in the same directory as the target program file,
 - in the same directory as msdos.exe,
 - in the current directory,
 - in the directory that is in your PATH and MSDOS_PATH environment variables
+
+The environment variables TEMP and TMP on the host Windows is very long,
+for example, it is usually "C:\User\(User Name)\AppData\Local\Temp".
+DOSSHELL.EXE tries to create a batch file in the TEMP directry to start
+the selected program, and it does not work coorecty if the batch file path is
+too long.
+Please define the environment variable MSDOS_TEMP on the host Windows,
+for example "C:\TEMP", and its value is copied to TEMP/TMP on the table.
+If the MSDOS_TEMP is not defined, TEMP/TMP values on the host is copied.
+
+(NOTE: MSDOS_COMSPEC and MSDOS_TEMP are not copied to the variable table.)
 
 EDIT.COM does not work correctly when a free memory space is large.
 Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
@@ -110,7 +121,8 @@ You can build all binaries for several cpu models by running build8_all.bat.
 This emulator provides a very simple IBM PC hardware emulation:
 
 CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, EMS 32MB, PIC, PIT, RTC CMOS,
-Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register, PC BIOS
+VGA Status Register, PC BIOS,
+Keyboard Controller (A20 Line Mask, CPU Reset), and 3-Button Mouse
 
 
 ----- Memory map
@@ -403,14 +415,49 @@ INT 2FH		Multiplex Interrupt
 	1600H	Windows - Windows Enhanced Mode Installation Check
 	160AH	Windows - Identify Windows Version and Type
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
-	1A00H	ANSI.SYS Installation Check
+	1A00H	ANSI.SYS - Installation Check
 	4300H	XMS - Installation Check
 	4310H	XMS - Get Driver Address
 	4810H	Read Input Line From Console
+	AD00H	DISPLAY.SYS - Installation Check
+	AD01H	DISPLAY.SYS - Set Active Code Page
+	AD02H	DISPLAY.SYS - Get Active Code Page
+	AD03H	DISPLAY.SYS - Get Code Page Information
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
 	AE00H	Installable Command - Installation Check
 	AE01H	Installable Command - Execute
+
+INT 33H		Mouse
+
+	0000H	Reset Driver and Rest Status
+	0001H	Show Mouse Cursor
+	0002H	Hide Mouse Cursor
+	0003H	Return Position and Button Status
+	0005H	Return Button Press Data
+	0006H	Return Button Release Data
+	0007H	Define Horizontal Cursor Range
+	0008H	Define Vertical Cursor Range
+	000BH	Read Motion Counters
+	000CH	Define Interrupt Sub Routine Parameters
+	000FH	Define Mickey/Pixel Ratio
+	0011H	Get Number of Buttons
+	0014H	Exchange Interrupt Sub Routines
+	0015H	Return Driver Storage Requirements
+	0016H	Save Driver State
+	0017H	Restore Driver State
+	001AH	Set Mouse Sensitivity
+	001BH	Return Mouse Sensitivity
+	001DH	Define Display Page Number
+	001EH	Return Display Page Number
+	0021H	Software Reset
+	0022H	Set Language for Messages
+	0023H	Get Language for Messages
+	0024H	Get Software Version, Moouse Type, and IRQ Number (*6)
+	0026H	Get Maximum Virtual Coordinates
+	002AH	Get Cursor Host Spot
+	0031H	Get Current Minimum/Maximum Virtual Coordinates
+	0032H	Get Active Advanced Functions
 
 INT 67H		LIM EMS
 
@@ -420,7 +467,7 @@ INT 67H		LIM EMS
 	43H	LIM EMS - Get Handle and Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
 	45H	LIM EMS - Release Handle and Memory
-	46H	LIM EMS - Get EMM Version (*6)
+	46H	LIM EMS - Get EMM Version (*7)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
 	4BH	LIM EMS - Get Number of EMM Handles
@@ -450,7 +497,7 @@ INT 67H		LIM EMS
 
 CALL FAR XMS
 
-	00H	XMS - Get XMS Version Number (*7)
+	00H	XMS - Get XMS Version Number (*8)
 	01H	XMS - Request High Memory Area
 	02H	XMS - Release High Memory Area
 	03H	XMS - Global Enable A20
@@ -475,8 +522,9 @@ CALL FAR XMS
 (*3) MS-DOS Version: 7.10, -v option is not affected
 (*4) Support only floppy disk drive
 (*5) Returns a dummy error table
-(*6) EMS Version: 3.2
-(*7) XMS Version: 2.70
+(*6) Mouse Version: 8.05
+(*7) EMS Version: 3.2
+(*8) XMS Version: 2.70
 
 
 ----- Thanks

@@ -33,6 +33,7 @@
 		#define unimplemented_1ah fatalerror
 		#define unimplemented_21h fatalerror
 		#define unimplemented_2fh fatalerror
+		#define unimplemented_33h fatalerror
 		#define unimplemented_67h fatalerror
 		#define unimplemented_xms fatalerror
 	#endif
@@ -54,6 +55,9 @@
 #endif
 #ifndef unimplemented_2fh
 	#define unimplemented_2fh nolog
+#endif
+#ifndef unimplemented_33h
+	#define unimplemented_33h nolog
 #endif
 #ifndef unimplemented_67h
 	#define unimplemented_67h nolog
@@ -616,6 +620,38 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 #endif
 }
 
+/*
+void i386_call_far(UINT16 selector, UINT32 address)
+{
+#if defined(HAS_I386)
+	if(PROTECTED_MODE && !V8086_MODE) {
+		i386_protected_mode_call(selector, address, 1, m_operand_size);
+	} else {
+		PUSH16(SREG(CS));
+		PUSH16(m_eip);
+		SREG(CS) = selector;
+		m_performed_intersegment_jump = 1;
+		i386_load_segment_descriptor(CS);
+		m_eip = address;
+		CHANGE_PC(m_eip);
+	}
+#else
+	UINT16 ip = m_pc - SREG_BASE(CS);
+	UINT16 cs = SREG(CS);
+#if defined(HAS_I286)
+	i80286_code_descriptor(selector, address, 2);
+#else
+	SREG(CS) = selector;
+	i386_load_segment_descriptor(CS);
+	m_pc = (SREG_BASE(CS) + address) & m_a20_mask;
+#endif
+	PUSH(cs);
+	PUSH(ip);
+	CHANGE_PC(m_pc);
+#endif
+}
+*/
+
 /* ----------------------------------------------------------------------------
 	main
 ---------------------------------------------------------------------------- */
@@ -672,7 +708,7 @@ bool is_started_from_command_prompt()
 
 BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD wServicePackMajor, WORD wServicePackMinor)
 {
-	//https://msdn.microsoft.com/en-us/library/windows/desktop/ms725491(v=vs.85).aspx
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/ms725491(v=vs.85).aspx
 	OSVERSIONINFOEX osvi;
 	DWORDLONG dwlConditionMask = 0;
 	int op = VER_GREATER_EQUAL;
@@ -822,6 +858,7 @@ int main(int argc, char *argv[], char *envp[])
 	
 	bSuccess = GetConsoleScreenBufferInfo(hStdout, &csbi);
 	GetConsoleCursorInfo(hStdout, &ci);
+	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
 	
 	for(int y = 0; y < SCR_BUF_WIDTH; y++) {
 		for(int x = 0; x < SCR_BUF_HEIGHT; x++) {
@@ -863,18 +900,17 @@ int main(int argc, char *argv[], char *envp[])
 	if(msdos_init(argc - (arg_offset + 1), argv + (arg_offset + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
-		if(bChangeScreenSize) {
-			change_console_size(scr_width, scr_height);
-		}
 #if defined(_MSC_VER) && _MSC_VER >= 1400
 		_set_invalid_parameter_handler((_invalid_parameter_handler)ignore_invalid_parameters);
 #endif
 		SetConsoleCtrlHandler(ctrl_handler, TRUE);
 		
+		if(bChangeScreenSize) {
+			change_console_size(scr_width, scr_height);
+		}
 		TIMECAPS caps;
 		timeGetDevCaps(&caps, sizeof(TIMECAPS));
 		timeBeginPeriod(caps.wPeriodMin);
-		
 #ifdef USE_THREAD
 		InitializeCriticalSection(&vram_crit_sect);
 		CloseHandle(CreateThread(NULL, 4096, vram_thread, NULL, 0, NULL));
@@ -884,7 +920,9 @@ int main(int argc, char *argv[], char *envp[])
 		vram_flush();
 		DeleteCriticalSection(&vram_crit_sect);
 #endif
+		timeEndPeriod(caps.wPeriodMin);
 		
+		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
 		if(bSuccess) {
 			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(restore_console_on_exit) {
@@ -900,13 +938,13 @@ int main(int argc, char *argv[], char *envp[])
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
 				SetConsoleWindowInfo(hStdout, TRUE, &rect);
 			}
-			// hStdout (and all handles) will close in msdos_finish()...
 			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			SetConsoleCursorInfo(hStdout, &ci);
 		}
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		
 		msdos_finish();
 		
-		timeEndPeriod(caps.wPeriodMin);
 		SetConsoleCtrlHandler(ctrl_handler, FALSE);
 	}
 	
@@ -994,6 +1032,11 @@ void change_console_size(int width, int height)
 	*(UINT16 *)(mem + 0x44c) = regen;
 	*(UINT8  *)(mem + 0x484) = scr_height - 1;
 	
+	mouse.min_position.x = 0;
+	mouse.min_position.y = 0;
+	mouse.max_position.x = 8 * scr_width  - 1;
+	mouse.max_position.y = 8 * scr_height - 1;
+	
 	restore_console_on_exit = true;
 }
 
@@ -1007,137 +1050,161 @@ void clear_scr_buffer(WORD attr)
 	}
 }
 
-bool update_key_buffer_tmp()
+bool update_console_input()
 {
 	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
 	INPUT_RECORD ir[16];
+	CONSOLE_SCREEN_BUFFER_INFO csbi = {0};
+	bool result = false;
 	
 	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) && dwNumberOfEvents != 0) {
 		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
-				if((ir[i].EventType & KEY_EVENT) && ir[i].Event.KeyEvent.bKeyDown) {
-					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
-					UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
-					if(chr == 0) {
-						if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
-							if(scn >= 0x3b && scn <= 0x44) {
-								scn += 0x68 - 0x3b;	// F1 to F10
-							} else if(scn == 0x57 || scn == 0x58) {
-								scn += 0x8b - 0x57;	// F11 & F12
-							} else if(scn >= 0x47 && scn <= 0x53) {
-								scn += 0x97 - 0x47;	// edit/arrow clusters
-							} else if(scn == 0x35) {
-								scn = 0xa4;		// keypad /
-							}
-						} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
-							if(scn == 0x07) {
-								chr = 0x1e;	// Ctrl+^
-							} else if(scn == 0x0c) {
-								chr = 0x1f;	// Ctrl+_
-							} else if(scn >= 0x35 && scn <= 0x58) {
-								static const UINT8 ctrl_map[] = {
-									0x95,	// keypad /
-									0,
-									0x96,	// keypad *
-									0, 0, 0,
-									0x5e,	// F1
-									0x5f,	// F2
-									0x60,	// F3
-									0x61,	// F4
-									0x62,	// F5
-									0x63,	// F6
-									0x64,	// F7
-									0x65,	// F8
-									0x66,	// F9
-									0x67,	// F10
-									0,
-									0,
-									0x77,	// Home
-									0x8d,	// Up
-									0x84,	// PgUp
-									0x8e,	// keypad -
-									0x73,	// Left
-									0x8f,	// keypad center
-									0x74,	// Right
-									0x90,	// keyapd +
-									0x75,	// End
-									0x91,	// Down
-									0x76,	// PgDn
-									0x92,	// Insert
-									0x93,	// Delete
-									0, 0, 0,
-									0x89,	// F11
-									0x8a,	// F12
+				if(ir[i].EventType & MOUSE_EVENT) {
+					if(mouse.active) {
+						if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
+							for(int i = 0; i < MAX_MOUSE_BUTTONS; i++) {
+								static const DWORD bits[] = {
+									FROM_LEFT_1ST_BUTTON_PRESSED,	// left
+									RIGHTMOST_BUTTON_PRESSED,	// right
+									FROM_LEFT_2ND_BUTTON_PRESSED,	// middle
 								};
-								scn = ctrl_map[scn - 0x35];
+								bool prev_status = mouse.buttons[i].status;
+								mouse.buttons[i].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[i]) != 0);
+								
+								if(!prev_status && mouse.buttons[i].status) {
+									mouse.buttons[i].pressed_times++;
+									mouse.buttons[i].pressed_position.x = mouse.position.x;
+									mouse.buttons[i].pressed_position.y = mouse.position.y;
+									mouse.status |= 2 << (i * 2);
+								} else if(prev_status && !mouse.buttons[i].status) {
+									mouse.buttons[i].released_times++;
+									mouse.buttons[i].released_position.x = mouse.position.x;
+									mouse.buttons[i].released_position.y = mouse.position.y;
+									mouse.status |= 4 << (i * 2);
+								}
 							}
-						} else if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
-							if(scn >= 0x3b && scn <= 0x44) {
-								scn += 0x54 - 0x3b;	// F1 to F10
-							} else if(scn == 0x57 || scn == 0x58) {
-								scn += 0x87 - 0x57;	// F11 & F12
+						} else if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
+							// NOTE: if restore_console_on_exit, console is not scrolled
+							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
+								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 							}
-						} else if(scn == 0x57 || scn == 0x58) {
-							scn += 0x85 - 0x57;
+							// FIXME: character is always 8x8 ???
+							int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
+							int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+							if(mouse.position.x != x || mouse.position.y != y) {
+								mouse.position.x = x;
+								mouse.position.y = y;
+								mouse.status |= 1;
+							}
 						}
-						// ignore shift, ctrl, alt, win and menu keys
-						if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && (scn < 0x5b || scn > 0x5e)) {
-							if(chr == 0) {
-								key_buf_char->write(0x00);
-								key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+					}
+				} else if(ir[i].EventType & KEY_EVENT) {
+					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode;
+					if(!ir[i].Event.KeyEvent.bKeyDown) {
+						kbd_data |= 0x80;
+					} else {
+						kbd_data &= 0x7f;
+						
+						// update dos key buffer
+						UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
+						UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
+						
+						if(chr == 0) {
+							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
+								if(scn >= 0x3b && scn <= 0x44) {
+									scn += 0x68 - 0x3b;	// F1 to F10
+								} else if(scn == 0x57 || scn == 0x58) {
+									scn += 0x8b - 0x57;	// F11 & F12
+								} else if(scn >= 0x47 && scn <= 0x53) {
+									scn += 0x97 - 0x47;	// edit/arrow clusters
+								} else if(scn == 0x35) {
+									scn = 0xa4;		// keypad /
+								}
+							} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
+								if(scn == 0x07) {
+									chr = 0x1e;	// Ctrl+^
+								} else if(scn == 0x0c) {
+									chr = 0x1f;	// Ctrl+_
+								} else if(scn >= 0x35 && scn <= 0x58) {
+									static const UINT8 ctrl_map[] = {
+										0x95,	// keypad /
+										0,
+										0x96,	// keypad *
+										0, 0, 0,
+										0x5e,	// F1
+										0x5f,	// F2
+										0x60,	// F3
+										0x61,	// F4
+										0x62,	// F5
+										0x63,	// F6
+										0x64,	// F7
+										0x65,	// F8
+										0x66,	// F9
+										0x67,	// F10
+										0,
+										0,
+										0x77,	// Home
+										0x8d,	// Up
+										0x84,	// PgUp
+										0x8e,	// keypad -
+										0x73,	// Left
+										0x8f,	// keypad center
+										0x74,	// Right
+										0x90,	// keyapd +
+										0x75,	// End
+										0x91,	// Down
+										0x76,	// PgDn
+										0x92,	// Insert
+										0x93,	// Delete
+										0, 0, 0,
+										0x89,	// F11
+										0x8a,	// F12
+									};
+									scn = ctrl_map[scn - 0x35];
+								}
+							} else if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
+								if(scn >= 0x3b && scn <= 0x44) {
+									scn += 0x54 - 0x3b;	// F1 to F10
+								} else if(scn == 0x57 || scn == 0x58) {
+									scn += 0x87 - 0x57;	// F11 & F12
+								}
+							} else if(scn == 0x57 || scn == 0x58) {
+								scn += 0x85 - 0x57;
+							}
+							// ignore shift, ctrl, alt, win and menu keys
+							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && (scn < 0x5b || scn > 0x5e)) {
+								if(chr == 0) {
+									key_buf_char->write(0x00);
+									key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+								}
+								key_buf_char->write(chr);
+								key_buf_scan->write(scn);
+							}
+						} else {
+							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
+								chr = 0;
+								if(scn >= 0x02 && scn <= 0x0e) {
+									scn += 0x78 - 0x02;	// 1 to 0 - =
+								}
 							}
 							key_buf_char->write(chr);
 							key_buf_scan->write(scn);
 						}
-					} else {
-						if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
-							chr = 0;
-							if(scn >= 0x02 && scn <= 0x0e) {
-								scn += 0x78 - 0x02;	// 1 to 0 - =
-							}
-						}
-						key_buf_char->write(chr);
-						key_buf_scan->write(scn);
 					}
-				}
-			}
-			for(int i = dwRead; --i >= 0;) {
-				if((ir[i].EventType & KEY_EVENT)) {
-					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode & 0x7f;
-					if(!ir[i].Event.KeyEvent.bKeyDown) {
-						kbd_data |= 0x80;
-					}
-					return true;
+					result = key_changed = true;
 				}
 			}
 		}
 	}
-	return false;
+	return(result);
 }
 
 bool update_key_buffer()
 {
-	int prev_count = key_buf_char->count();
-	bool input = update_key_buffer_tmp();
-	key_input += key_buf_char->count() - prev_count;
-	return(input || key_buf_char->count() != 0);
-}
-
-int check_key_input()
-{
-	if(key_input == 0) {
-		int prev_count = key_buf_char->count();
-		bool input = update_key_buffer_tmp();
-		key_input = key_buf_char->count() - prev_count;
-		if(key_input == 0 && input) {
-			key_input = 1;
-		}
-	}
-	int val = key_input;
-	key_input = 0;
-	return(val);
+	return(update_console_input() || key_buf_char->count() != 0);
 }
 
 /* ----------------------------------------------------------------------------
@@ -1490,7 +1557,7 @@ char *msdos_trimmed_path(char *path, int lfn)
 
 bool match(char *text, char *pattern)
 {
-	//http://www.prefield.com/algorithm/string/wildcard.html
+	// http://www.prefield.com/algorithm/string/wildcard.html
 	switch(*pattern) {
 	case '\0':
 		return !*text;
@@ -1565,7 +1632,9 @@ char *msdos_short_path(char *path)
 {
 	static char tmp[MAX_PATH];
 	
-	GetShortPathName(path, tmp, MAX_PATH);
+	if(GetShortPathName(path, tmp, MAX_PATH) == 0) {
+		strcpy(tmp, path);
+	}
 	my_strupr(tmp);
 	return(tmp);
 }
@@ -1612,7 +1681,9 @@ char *msdos_short_full_dir(char *path)
 	
 	GetFullPathName(path, MAX_PATH, full, &name);
 	name[-1] = '\0';
-	GetShortPathName(full, tmp, MAX_PATH);
+	if(GetShortPathName(full, tmp, MAX_PATH) == 0) {
+		strcpy(tmp, full);
+	}
 	my_strupr(tmp);
 	return(tmp);
 }
@@ -1639,16 +1710,45 @@ bool msdos_is_con_path(char *path)
 {
 	char full[MAX_PATH], *name;
 	
-	GetFullPathName(path, MAX_PATH, full, &name);
-	return(_stricmp(full, "\\\\.\\CON") == 0);
+	if(GetFullPathName(path, MAX_PATH, full, &name) != 0) {
+		return(_stricmp(full, "\\\\.\\CON") == 0);
+	}
+	return(false);
 }
 
 bool msdos_is_nul_path(char *path)
 {
 	char full[MAX_PATH], *name;
 	
-	GetFullPathName(path, MAX_PATH, full, &name);
-	return(_stricmp(full, "\\\\.\\NUL") == 0);
+	if(GetFullPathName(path, MAX_PATH, full, &name) != 0) {
+		return(_stricmp(full, "\\\\.\\NUL") == 0);
+	}
+	return(false);
+}
+
+bool msdos_is_driver_name(char *path)
+{
+	char full[MAX_PATH], *name;
+	
+	if(GetFullPathName(path, MAX_PATH, full, &name) != 0) {
+		if(_stricmp(name, "EMMXXXX0") == 0) {
+			return(true);
+		}
+	}
+	return(false);
+}
+
+bool msdos_is_existing_file(char *path)
+{
+	// http://d.hatena.ne.jp/yu-hr/20100317/1268826458
+	WIN32_FIND_DATA FindData;
+	HANDLE hFind;
+	
+	if((hFind = FindFirstFile(path, &FindData)) != INVALID_HANDLE_VALUE) {
+		FindClose(hFind);
+		return(!(FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY));
+	}
+	return(false);
 }
 
 char *msdos_search_command_com(char *command_path, char *env_path)
@@ -2894,7 +2994,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	// load command file
 	int fd = -1;
 	int dos_command = 0;
-	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name, name_tmp[MAX_PATH];
+	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name = NULL, name_tmp[MAX_PATH];
 	
 	int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
 	int opt_len = mem[opt_ofs];
@@ -2922,7 +3022,9 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		} else {
 			strcpy(command, cmd);
 		}
-		GetFullPathName(command, MAX_PATH, path, &name);
+		if(GetFullPathName(command, MAX_PATH, path, &name) == 0) {
+			return(-1);
+		}
 		memset(name_tmp, 0, sizeof(name_tmp));
 		strcpy(name_tmp, name);
 		
@@ -4466,6 +4568,24 @@ inline void pcbios_int_16h_14h()
 	}
 }
 
+inline void pcbios_int_16h_55h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// keyboard tsr is not present
+		break;
+	case 0xfe:
+		// handlers for INT 08, INT 09, INT 16, INT 1B, and INT 1C are installed
+		break;
+	case 0xff:
+		break;
+	default:
+		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void pcbios_int_1ah_00h()
 {
 	pcbios_update_daily_timer_counter(timeGetTime());
@@ -5201,13 +5321,19 @@ inline void msdos_int_21h_29h()
 	}
 	ofs += strspn((char *)(buffer + ofs), spc_chars);
 	
-	if(mem[ofs + 1] == ':') {
-		if(mem[ofs] >= 'a' && mem[ofs] <= 'z') {
-			drv = mem[ofs] - 'a' + 1;
+	if(buffer[ofs + 1] == ':') {
+		if(buffer[ofs] >= 'a' && buffer[ofs] <= 'z') {
+			drv = buffer[ofs] - 'a' + 1;
 			ofs += 2;
-		} else if(mem[ofs] >= 'A' && mem[ofs] <= 'Z') {
-			drv = mem[ofs] - 'A' + 1;
+			if(buffer[ofs] == '\\' || buffer[ofs] == '/') {
+				ofs++;
+			}
+		} else if(buffer[ofs] >= 'A' && buffer[ofs] <= 'Z') {
+			drv = buffer[ofs] - 'A' + 1;
 			ofs += 2;
+			if(buffer[ofs] == '\\' || buffer[ofs] == '/') {
+				ofs++;
+			}
 		}
 	}
 	for(int i = 0, is_kanji = 0; i < MAX_PATH; i++) {
@@ -5516,8 +5642,8 @@ int get_country_info(country_info_t *ci)
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
-	ci->case_map.w.l = 0x000c;
-	ci->case_map.w.h = 0xffff;
+	ci->case_map.w.l = 0x000c; // FFFD:000C
+	ci->case_map.w.h = 0xfffd;
 	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
 }
@@ -5573,7 +5699,7 @@ inline void msdos_int_21h_3ch()
 	} else if(msdos_is_nul_path(path)) {
 		fd = _open("NUL", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
-	} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+	} else if(msdos_is_driver_name(path)) {
 		fd = _open("NUL", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
 	} else {
@@ -5608,7 +5734,7 @@ inline void msdos_int_21h_3dh()
 		} else if(msdos_is_nul_path(path)) {
 			fd = msdos_open("NUL", file_mode[mode].mode);
 			info = 0x80d3;
-		} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+		} else if(msdos_is_driver_name(path)) {
 			fd = msdos_open("NUL", file_mode[mode].mode);
 			info = 0x80d3;
 		} else {
@@ -6707,7 +6833,8 @@ inline void msdos_int_21h_58h()
 		REG16(AX) = malloc_strategy;
 		break;
 	case 0x01:
-		switch(REG16(BX)) {
+//		switch(REG16(BX)) {
+		switch(REG8(BL)) {
 		case 0x0000:
 		case 0x0001:
 		case 0x0002:
@@ -6731,7 +6858,8 @@ inline void msdos_int_21h_58h()
 		REG8(AL) = msdos_mem_get_umb_linked() ? 1 : 0;
 		break;
 	case 0x03:
-		switch(REG16(BX)) {
+//		switch(REG16(BX)) {
+		switch(REG8(BL)) {
 		case 0x0000:
 			msdos_mem_unlink_umb();
 			break;
@@ -6797,7 +6925,7 @@ inline void msdos_int_21h_5bh()
 {
 	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	
-	if(_access(path, 0) == 0) {
+	if(msdos_is_existing_file(path)) {
 		// already exists
 		REG16(AX) = 0x50;
 		m_CF = 1;
@@ -7119,7 +7247,7 @@ inline void msdos_int_21h_6ch(int lfn)
 	int mode = REG8(BL) & 0x03;
 	
 	if(mode < 0x03) {
-		if(_access(path, 0) == 0 || strncmp(path, "EMMXXXX0", 8) == 0) {
+		if(msdos_is_existing_file(path) || msdos_is_driver_name(path)) {
 			// file exists
 			if(REG8(DL) & 1) {
 				int fd = -1;
@@ -7131,7 +7259,7 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else if(msdos_is_nul_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
-				} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+				} else if(msdos_is_driver_name(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
 				} else {
@@ -7158,7 +7286,7 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else if(msdos_is_nul_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
-				} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+				} else if(msdos_is_driver_name(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
 				} else {
@@ -8165,8 +8293,13 @@ inline void msdos_int_2fh_4ah()
 inline void msdos_int_2fh_4bh()
 {
 	switch(REG8(AL)) {
+	case 0x01:
 	case 0x02:
-		// task switcher not loaded, do not clear AX
+		// task switcher not loaded
+		break;
+	case 0x03:
+		// this call is available from within DOSSHELL even if the task switcher is not installed
+		REG16(AX) = REG16(BX) = 0x0000; // no more avaiable switcher id
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -8203,6 +8336,40 @@ inline void msdos_int_2fh_55h()
 	case 0x01:
 //		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_adh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// display.sys is installed
+		REG8(AL) = 0xff;
+		REG16(BX) = 0x100; // ???
+		break;
+	case 0x01:
+		active_code_page = REG16(BX);
+		msdos_nls_tables_update();
+		REG16(AX) = 0x01;
+		break;
+	case 0x02:
+		REG16(BX) = active_code_page;
+		break;
+	case 0x03:
+		// FIXME
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 1;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2) = 3;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4) = 1;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 6) = active_code_page;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 8) = active_code_page;
+		break;
+	case 0x80:
+		break; // keyb.com is not installed
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -8269,6 +8436,237 @@ inline void msdos_int_2fh_b7h()
 		m_CF = 1;
 		break;
 	}
+}
+
+inline void msdos_int_33h_0000h()
+{
+	REG16(AX) = 0xffff; // hardware/driver installed
+	REG16(BX) = MAX_MOUSE_BUTTONS;
+}
+
+inline void msdos_int_33h_0001h()
+{
+	if(!mouse.active) {
+		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
+		}
+		mouse.active = true;
+		pic[1].imr &= ~0x10;	// enable irq12
+	}
+}
+
+inline void msdos_int_33h_0002h()
+{
+	if(mouse.active) {
+		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+		}
+		mouse.active = false;
+		pic[1].imr |= 0x10;	// disable irq12
+	}
+}
+
+inline void msdos_int_33h_0003h()
+{
+	REG16(BX) = mouse.get_buttons();
+	REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.position.x));
+	REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.position.y));
+}
+
+inline void msdos_int_33h_0005h()
+{
+	if(REG16(BX) < MAX_MOUSE_BUTTONS) {
+		int idx = REG16(BX);
+		REG16(BX) = mouse.buttons[idx].pressed_times;
+		REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.buttons[idx].pressed_position.x));
+		REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.buttons[idx].pressed_position.y));
+		mouse.buttons[idx].pressed_times = 0;
+	} else {
+		REG16(BX) = REG16(CX) = REG16(DX) = 0x0000;
+	}
+	REG16(AX) = mouse.get_buttons();
+}
+
+inline void msdos_int_33h_0006h()
+{
+	if(REG16(BX) < MAX_MOUSE_BUTTONS) {
+		int idx = REG16(BX);
+		REG16(BX) = mouse.buttons[idx].released_times;
+		REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.buttons[idx].released_position.x));
+		REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.buttons[idx].released_position.y));
+		mouse.buttons[idx].released_times = 0;
+	} else {
+		REG16(BX) = REG16(CX) = REG16(DX) = 0x0000;
+	}
+	REG16(AX) = mouse.get_buttons();
+}
+
+inline void msdos_int_33h_0007h()
+{
+	mouse.min_position.x = min(REG16(CX), REG16(DX));
+	mouse.max_position.x = max(REG16(CX), REG16(DX));
+}
+
+inline void msdos_int_33h_0008h()
+{
+	mouse.min_position.y = min(REG16(CX), REG16(DX));
+	mouse.max_position.y = max(REG16(CX), REG16(DX));
+}
+
+inline void msdos_int_33h_0009h()
+{
+	mouse.hot_spot[0] = REG16(BX);
+	mouse.hot_spot[1] = REG16(CX);
+}
+
+inline void msdos_int_33h_000bh()
+{
+	int dx = (mouse.position.x - mouse.prev_position.x) * mouse.mickey.x / 8;
+	int dy = (mouse.position.y - mouse.prev_position.y) * mouse.mickey.y / 8;
+	mouse.prev_position.x = mouse.position.x;
+	mouse.prev_position.y = mouse.position.y;
+	REG16(CX) = dx;
+	REG16(DX) = dy;
+}
+
+inline void msdos_int_33h_000ch()
+{
+	mouse.call_mask = REG16(CX);
+	mouse.call_addr.w.l = REG16(DX);
+	mouse.call_addr.w.h = SREG(ES);
+}
+
+inline void msdos_int_33h_000fh()
+{
+	mouse.mickey.x = REG16(CX);
+	mouse.mickey.y = REG16(DX);
+}
+
+inline void msdos_int_33h_0011h()
+{
+	REG16(AX) = 0xffff;
+	REG16(BX) = MAX_MOUSE_BUTTONS;
+}
+
+inline void msdos_int_33h_0014h()
+{
+	UINT16 old_mask = mouse.call_mask;
+	UINT16 old_ofs = mouse.call_addr.w.l;
+	UINT16 old_seg = mouse.call_addr.w.h;
+	
+	mouse.call_mask = REG16(CX);
+	mouse.call_addr.w.l = REG16(DX);
+	mouse.call_addr.w.h = SREG(ES);
+	
+	REG16(CX) = old_mask;
+	REG16(DX) = old_ofs;
+	SREG(ES) = old_seg;
+	i386_load_segment_descriptor(ES);
+}
+
+inline void msdos_int_33h_0015h()
+{
+	REG16(BX) = sizeof(mouse);
+}
+
+inline void msdos_int_33h_0016h()
+{
+	memcpy(mem + SREG_BASE(ES) + REG16(DX), &mouse, sizeof(mouse));
+}
+
+inline void msdos_int_33h_0017h()
+{
+	memcpy(&mouse, mem + SREG_BASE(ES) + REG16(DX), sizeof(mouse));
+}
+
+inline void msdos_int_33h_001ah()
+{
+	mouse.sensitivity[0] = REG16(BX);
+	mouse.sensitivity[1] = REG16(CX);
+	mouse.sensitivity[2] = REG16(DX);
+}
+
+inline void msdos_int_33h_001bh()
+{
+	REG16(BX) = mouse.sensitivity[0];
+	REG16(CX) = mouse.sensitivity[1];
+	REG16(DX) = mouse.sensitivity[2];
+}
+
+inline void msdos_int_33h_001dh()
+{
+	mouse.display_page = REG16(BX);
+}
+
+inline void msdos_int_33h_001eh()
+{
+	REG16(BX) = mouse.display_page;
+}
+
+inline void msdos_int_33h_0021h()
+{
+	REG16(AX) = 0xffff;
+	REG16(BX) = MAX_MOUSE_BUTTONS;
+}
+
+inline void msdos_int_33h_0022h()
+{
+	mouse.language = REG16(BX);
+}
+
+inline void msdos_int_33h_0023h()
+{
+	REG16(BX) = mouse.language;
+}
+
+inline void msdos_int_33h_0024h()
+{
+	REG16(BX) = 0x0805; // V8.05
+	REG16(CX) = 0x0400; // PS/2
+}
+
+inline void msdos_int_33h_0026h()
+{
+	REG16(BX) = 0x0000;
+	REG16(CX) = mouse.max_position.x;
+	REG16(DX) = mouse.max_position.y;
+}
+
+inline void msdos_int_33h_002ah()
+{
+	REG16(AX) = mouse.active ? 0 : 0xffff;
+	REG16(BX) = mouse.hot_spot[0];
+	REG16(CX) = mouse.hot_spot[1];
+	REG16(DX) = 4; // PS/2
+}
+
+inline void msdos_int_33h_0031h()
+{
+	REG16(AX) = mouse.min_position.x;
+	REG16(BX) = mouse.min_position.y;
+	REG16(CX) = mouse.max_position.x;
+	REG16(DX) = mouse.max_position.y;
+}
+
+inline void msdos_int_33h_0032h()
+{
+	REG16(AX) = 0;
+//	REG16(AX) |= 0x8000; // 0025h
+	REG16(AX) |= 0x4000; // 0026h
+//	REG16(AX) |= 0x2000; // 0027h
+//	REG16(AX) |= 0x1000; // 0028h
+//	REG16(AX) |= 0x0800; // 0029h
+	REG16(AX) |= 0x0400; // 002ah
+//	REG16(AX) |= 0x0200; // 002bh
+//	REG16(AX) |= 0x0100; // 002ch
+//	REG16(AX) |= 0x0080; // 002dh
+//	REG16(AX) |= 0x0040; // 002eh
+	REG16(AX) |= 0x0020; // 002fh
+//	REG16(AX) |= 0x0010; // 0030h
+	REG16(AX) |= 0x0008; // 0031h
+	REG16(AX) |= 0x0004; // 0032h
+//	REG16(AX) |= 0x0002; // 0033h
+//	REG16(AX) |= 0x0001; // 0034h
 }
 
 inline void msdos_int_67h_40h()
@@ -9203,9 +9601,11 @@ void msdos_syscall(unsigned num)
 		case 0x13: pcbios_int_10h_13h(); break;
 		case 0x18: REG8(AL) = 0x86; break;
 		case 0x1a: pcbios_int_10h_1ah(); break;
-		case 0x1b: break;
-		case 0x1c: REG8(AL) = 0x00; break;
+		case 0x1b: REG8(AL) = 0x00; break; // functionality/state information is not supported
+		case 0x1c: REG8(AL) = 0x00; break; // save/restore video state is not supported
 		case 0x1d: pcbios_int_10h_1dh(); break;
+		case 0x1e: REG8(AL) = 0x00; break; // flat-panel functions are not supported
+		case 0x1f: REG8(AL) = 0x00; break; // xga functions are not supported
 		case 0x4f: pcbios_int_10h_4fh(); break;
 		case 0x80: m_CF = 1; break; // unknown
 		case 0x81: m_CF = 1; break; // unknown
@@ -9220,6 +9620,7 @@ void msdos_syscall(unsigned num)
 		case 0x92: break;
 		case 0x93: break;
 		case 0xef: pcbios_int_10h_efh(); break;
+		case 0xfa: break; // ega register interface library is not installed
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
@@ -9259,6 +9660,7 @@ void msdos_syscall(unsigned num)
 		case 0x10: pcbios_int_15h_10h(); break;
 		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
+		case 0x41: break;
 		case 0x49: pcbios_int_15h_49h(); break;
 		case 0x50: pcbios_int_15h_50h(); break;
 		case 0x86: pcbios_int_15h_86h(); break;
@@ -9298,6 +9700,7 @@ void msdos_syscall(unsigned num)
 		case 0x12: pcbios_int_16h_12h(); break;
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
+		case 0x55: pcbios_int_16h_55h(); break;
 		case 0xda: break; // unknown
 		case 0xff: break; // unknown
 		default:
@@ -9598,12 +10001,65 @@ void msdos_syscall(unsigned num)
 		case 0x55: msdos_int_2fh_55h(); break;
 		case 0x58: break; // unknown
 		case 0x74: break; // unknown
+		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
 		case 0xe9: break; // unknown
 		case 0xfe: break; // norton utilities ???
 		default:
 			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			break;
+		}
+		break;
+	case 0x33:
+		switch(REG8(AH)) {
+		case 0x00:
+			// Mouse
+			switch(REG8(AL)) {
+			case 0x00: msdos_int_33h_0000h(); break;
+			case 0x01: msdos_int_33h_0001h(); break;
+			case 0x02: msdos_int_33h_0002h(); break;
+			case 0x03: msdos_int_33h_0003h(); break;
+			case 0x04: break; // position mouse cursor
+			case 0x05: msdos_int_33h_0005h(); break;
+			case 0x06: msdos_int_33h_0006h(); break;
+			case 0x07: msdos_int_33h_0007h(); break;
+			case 0x08: msdos_int_33h_0008h(); break;
+			case 0x09: msdos_int_33h_0009h(); break;
+			case 0x0a: break; // define text cursor
+			case 0x0b: msdos_int_33h_000bh(); break;
+			case 0x0c: msdos_int_33h_000ch(); break;
+			case 0x0d: break; // light pen emulation on
+			case 0x0e: break; // light pen emulation off
+			case 0x0f: msdos_int_33h_000fh(); break;
+			case 0x10: break; // define screen region for updating
+			case 0x11: msdos_int_33h_0011h(); break;
+			case 0x12: REG16(AX) = 0xffff; break; // set large graphics cursor block
+			case 0x13: break; // define double-speed threshold
+			case 0x14: msdos_int_33h_0014h(); break;
+			case 0x15: msdos_int_33h_0015h(); break;
+			case 0x16: msdos_int_33h_0016h(); break;
+			case 0x17: msdos_int_33h_0017h(); break;
+			case 0x1a: msdos_int_33h_001ah(); break;
+			case 0x1b: msdos_int_33h_001bh(); break;
+			case 0x1d: msdos_int_33h_001dh(); break;
+			case 0x1e: msdos_int_33h_001eh(); break;
+			case 0x21: msdos_int_33h_0021h(); break;
+			case 0x22: msdos_int_33h_0022h(); break;
+			case 0x23: msdos_int_33h_0023h(); break;
+			case 0x24: msdos_int_33h_0024h(); break;
+			case 0x26: msdos_int_33h_0026h(); break;
+			case 0x2a: msdos_int_33h_002ah(); break;
+			case 0x2f: break; // mouse hardware reset
+			case 0x31: msdos_int_33h_0031h(); break;
+			case 0x32: msdos_int_33h_0032h(); break;
+			default:
+				unimplemented_33h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+				break;
+			}
+			break;
+		default:
+			unimplemented_33h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
 		}
 		break;
@@ -9682,6 +10138,51 @@ void msdos_syscall(unsigned num)
 		break;
 #endif
 	case 0x6a:
+		// irq12 (mouse)
+		mouse_push_ax = REG16(AX);
+		mouse_push_bx = REG16(BX);
+		mouse_push_cx = REG16(CX);
+		mouse_push_dx = REG16(DX);
+		mouse_push_si = REG16(SI);
+		mouse_push_di = REG16(DI);
+		
+		if(mouse.active && mouse.call_addr.dw != 0) {
+			REG16(AX) = mouse.status_irq;
+			REG16(BX) = mouse.get_buttons();
+			REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.position.x));
+			REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.position.y));
+			REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
+			REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
+			
+			mem[0xfffd0 + 0x02] = 0x9a;	// call far
+			mem[0xfffd0 + 0x03] = mouse.call_addr.w.l & 0xff;
+			mem[0xfffd0 + 0x04] = mouse.call_addr.w.l >> 8;
+			mem[0xfffd0 + 0x05] = mouse.call_addr.w.h & 0xff;
+			mem[0xfffd0 + 0x06] = mouse.call_addr.w.h >> 8;
+		} else {
+			mem[0xfffd0 + 0x02] = 0x90;	// nop
+			mem[0xfffd0 + 0x03] = 0x90;	// nop
+			mem[0xfffd0 + 0x04] = 0x90;	// nop
+			mem[0xfffd0 + 0x05] = 0x90;	// nop
+			mem[0xfffd0 + 0x06] = 0x90;	// nop
+		}
+		break;
+	case 0x6b:
+		// end of irq12 (mouse)
+		REG16(AX) = mouse_push_ax;
+		REG16(BX) = mouse_push_bx;
+		REG16(CX) = mouse_push_cx;
+		REG16(DX) = mouse_push_dx;
+		REG16(SI) = mouse_push_si;
+		REG16(DI) = mouse_push_di;
+		
+		// EOI
+		if((pic[1].isr &= ~(1 << 4)) == 0) {
+			pic[0].isr &= ~(1 << 2); // master
+		}
+		pic_update();
+		break;
+	case 0x6c:
 		// dummy interrupt for case map routine pointed in the country info
 		if(REG8(AL) >= 0x80) {
 			char tmp[2] = {0};
@@ -9750,6 +10251,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	_dup2(2, DUP_STDERR);
 	_dup2(3, DUP_STDAUX);
 	_dup2(4, DUP_STDPRN);
+	
+	// init mouse
+	memset(&mouse, 0, sizeof(mouse));
+	mouse.max_position.x = 8 * scr_width  - 1;
+	mouse.max_position.y = 8 * scr_height - 1;
+	mouse.mickey.x = 8;
+	mouse.mickey.y = 16;
 	
 	// init process
 	memset(process, 0, sizeof(process));
@@ -9894,7 +10402,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
-	char env_path[8192] = "", *path;
+	char env_path[8192] = "", *path, temp_path[MAX_PATH] = {0};
 	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		if(_strnicmp(*p, "MSDOS_PATH=", 11) == 0) {
@@ -9911,6 +10419,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	if((path = getenv("MSDOS_COMSPEC")) != NULL ||
 	   (path = msdos_search_command_com(argv[0], env_path)) != NULL) {
 		strcpy(comspec_path, path);
+	}
+	if((path = getenv("MSDOS_TEMP")) != NULL) {
+		if(GetShortPathName(path, temp_path, MAX_PATH) == 0) {
+			strcpy(temp_path, path);
+		}
 	}
 	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
@@ -9931,20 +10444,29 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		if(strncmp(tmp, "MSDOS_COMSPEC=", 14) == 0) {
 			// ignore MSDOS_COMSPEC
+		} else if(strncmp(tmp, "MSDOS_TEMP=", 11) == 0) {
+			// ignore MSDOS_TEMP
 		} else if(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
 			// ignore non standard environments
 		} else {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
+			} else if(strncmp(tmp, "TEMP=", 5) == 0 && temp_path[0] != '\0') {
+				sprintf(tmp, "TEMP=%s", temp_path);
+			} else if(strncmp(tmp, "TMP=",  4) == 0 && temp_path[0] != '\0') {
+				sprintf(tmp, "TMP=%s", temp_path);
 			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
 				tmp[value_pos] = '\0';
 				char *token = my_strtok(value, ";");
 				while(token != NULL) {
 					if(strlen(token) != 0) {
-						char *path = msdos_remove_double_quote(token), tmp_path[MAX_PATH];
+						char *path = msdos_remove_double_quote(token), short_path[MAX_PATH];
 						if(strlen(path) != 0) {
-							GetShortPathName(path, tmp_path, MAX_PATH);
-							strcat(tmp, tmp_path);
+							if(GetShortPathName(path, short_path, MAX_PATH) == 0) {
+								strcat(tmp, path);
+							} else {
+								strcat(tmp, short_path);
+							}
 							strcat(tmp, ";");
 						}
 					}
@@ -9989,12 +10511,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0005;	// irq0
-	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xffff;
-	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// boot
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// FFFD:0010 irq0
+	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
+	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// FFFF:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
 	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0000;	// ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// FFFD:0000 irq12
+	*(UINT16 *)(mem + 4 * 0x74 + 2) = 0xfffd;
 	
 	// ems (int 67h) and xms (call far)
 	mem[XMS_TOP + 0] = 0xcd;	// int 68h (dummy)
@@ -10010,25 +10534,48 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[XMS_TOP + 4] = 0xcb;	// retf
 	memcpy(mem + XMS_TOP + 0x0a, "EMMXXXX0", 8);
 	
+	// irq12 (mouse)
+	mem[0xfffd0 + 0x00] = 0xcd;	// int 6ah (dummy)
+	mem[0xfffd0 + 0x01] = 0x6a;
+	mem[0xfffd0 + 0x02] = 0x9a;	// call far mouse
+	mem[0xfffd0 + 0x03] = 0xff;
+	mem[0xfffd0 + 0x04] = 0xff;
+	mem[0xfffd0 + 0x05] = 0xff;
+	mem[0xfffd0 + 0x06] = 0xff;
+	mem[0xfffd0 + 0x07] = 0xcd;	// int 6bh (dummy)
+	mem[0xfffd0 + 0x08] = 0x6b;
+	mem[0xfffd0 + 0x09] = 0xcf;	// iret
+	
 	// case map routine (call far)
-	mem[0xffffc] = 0xcd;	// int 6ah (dummy)
-	mem[0xffffd] = 0x6a;
-	mem[0xffffe] = 0xcb;	// retf
+	mem[0xfffd0 + 0x0c] = 0xcd;	// int 6ch (dummy)
+	mem[0xfffd0 + 0x0d] = 0x6b;
+	mem[0xfffd0 + 0x0e] = 0xcb;	// retf
 	
 	// have irq0 call system timer tick
-	mem[0xffff5] = 0xcd;	// int 1ch
-	mem[0xffff6] = 0x1c;
-	mem[0xffff7] = 0xea;	// jmp (IRET_TOP >> 4):0008
-	mem[0xffff8] = 0x08;
-	mem[0xffff9] = 0x00;
-	mem[0xffffa] = ((IRET_TOP >> 4)     ) & 0xff;
-	mem[0xffffb] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	mem[0xfffd0 + 0x10] = 0xcd;	// int 1ch
+	mem[0xfffd0 + 0x11] = 0x1c;
+	mem[0xfffd0 + 0x12] = 0xea;	// jmp far (IRET_TOP >> 4):0008
+	mem[0xfffd0 + 0x13] = 0x08;
+	mem[0xfffd0 + 0x14] = 0x00;
+	mem[0xfffd0 + 0x15] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[0xfffd0 + 0x16] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
 	// boot
 	mem[0xffff0] = 0xf4;	// halt
 	mem[0xffff1] = 0xcd;	// int 21h
 	mem[0xffff2] = 0x21;
 	mem[0xffff3] = 0xcb;	// retf
+	
+	mem[0xffff5] = '0';	// rom date
+	mem[0xffff6] = '2';
+	mem[0xffff7] = '/';
+	mem[0xffff8] = '2';
+	mem[0xffff9] = '2';
+	mem[0xffffa] = '/';
+	mem[0xffffb] = '0';
+	mem[0xffffc] = '6';
+	mem[0xffffe] = 0xfc;	// machine id
+	mem[0xfffff] = 0x00;
 	
 	// param block
 	// + 0: param block (22bytes)
@@ -10249,37 +10796,55 @@ void hardware_update()
 			pit_run(1, cur_time);
 			pit_run(2, cur_time);
 		}
-		// check key input and raise irq1
+		
+		// update keyboard and mouse
 		static UINT32 prev_tick = 0;
 		UINT32 cur_tick = cur_time / 32;
 		if(prev_tick != cur_tick) {
 			// update keyboard flags
 			UINT8 state;
-			state  = (GetAsyncKeyState(VK_INSERT ) & 0x0001) ? 0x80 : 0;
-			state |= (GetAsyncKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
-			state |= (GetAsyncKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
-			state |= (GetAsyncKeyState(VK_SCROLL ) & 0x0001) ? 0x10 : 0;
-			state |= (GetAsyncKeyState(VK_MENU   ) & 0x8000) ? 0x08 : 0;
-			state |= (GetAsyncKeyState(VK_CONTROL) & 0x8000) ? 0x04 : 0;
-			state |= (GetAsyncKeyState(VK_LSHIFT ) & 0x8000) ? 0x02 : 0;
-			state |= (GetAsyncKeyState(VK_RSHIFT ) & 0x8000) ? 0x01 : 0;
+			state  = (GetAsyncKeyState(VK_INSERT  ) & 0x0001) ? 0x80 : 0;
+			state |= (GetAsyncKeyState(VK_CAPITAL ) & 0x0001) ? 0x40 : 0;
+			state |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x0001) ? 0x20 : 0;
+			state |= (GetAsyncKeyState(VK_SCROLL  ) & 0x0001) ? 0x10 : 0;
+			state |= (GetAsyncKeyState(VK_MENU    ) & 0x8000) ? 0x08 : 0;
+			state |= (GetAsyncKeyState(VK_CONTROL ) & 0x8000) ? 0x04 : 0;
+			state |= (GetAsyncKeyState(VK_LSHIFT  ) & 0x8000) ? 0x02 : 0;
+			state |= (GetAsyncKeyState(VK_RSHIFT  ) & 0x8000) ? 0x01 : 0;
 			mem[0x417] = state;
 			state  = (GetAsyncKeyState(VK_INSERT  ) & 0x8000) ? 0x80 : 0;
 			state |= (GetAsyncKeyState(VK_CAPITAL ) & 0x8000) ? 0x40 : 0;
 			state |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x8000) ? 0x20 : 0;
 			state |= (GetAsyncKeyState(VK_SCROLL  ) & 0x8000) ? 0x10 : 0;
-	//		state |= (GetAsyncKeyState(VK_PAUSE   ) & 0x0001) ? 0x08 : 0;
-	//		state |= (GetAsyncKeyState(VK_SYSREQ  ) & 0x8000) ? 0x04 : 0;
+//			state |= (GetAsyncKeyState(VK_PAUSE   ) & 0x0001) ? 0x08 : 0;
+//			state |= (GetAsyncKeyState(VK_SYSREQ  ) & 0x8000) ? 0x04 : 0;
 			state |= (GetAsyncKeyState(VK_LMENU   ) & 0x8000) ? 0x02 : 0;
 			state |= (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ? 0x01 : 0;
 			mem[0x418] = state;
 			
-			// update keyboard input
-			if(check_key_input()) {
-				pic_req(0, 1, 1);
+			// update console input if needed
+			if(!key_changed || mouse.active) {
+				update_console_input();
 			}
+			
+			// raise irq1 if key is pressed/released
+			if(key_changed) {
+				pic_req(0, 1, 1);
+				key_changed = false;
+			}
+			
+			// raise irq12 if mouse status is changed
+			if(mouse.status & mouse.call_mask) {
+				if(mouse.active) {
+					pic_req(1, 4, 1);
+					mouse.status_irq = mouse.status & mouse.call_mask;
+				}
+				mouse.status &= ~mouse.call_mask;
+			}
+			
 			prev_tick = cur_tick;
 		}
+		
 		// update daily timer counter
 		pcbios_update_daily_timer_counter(cur_time);
 		prev_time = cur_time;
