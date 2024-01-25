@@ -10578,7 +10578,7 @@ inline void msdos_int_21h_2ch()
 	REG8(CH) = (UINT8)sTime.wHour;
 	REG8(CL) = (UINT8)sTime.wMinute;
 	REG8(DH) = (UINT8)sTime.wSecond;
-	REG8(DL) = (UINT8)sTime.wMilliseconds / 10;
+	REG8(DL) = (UINT8)(sTime.wMilliseconds / 10);
 }
 
 inline void msdos_int_21h_2dh()
