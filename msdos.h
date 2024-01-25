@@ -250,19 +250,21 @@ UINT8 mem[MAX_MEM + 3];
 #define MAX_EMS_HANDLES 16
 #define MAX_EMS_PAGES 2048	/* 32MB */
 
-struct {
+typedef struct {
 	char name[8];
 	UINT8* buffer;
 	int pages;
 	bool allocated;
-} ems_handles[MAX_EMS_HANDLES];
+} ems_handle_t;
 
-struct {
+typedef struct {
 	UINT16 handle;
 	UINT16 page;
 	bool mapped;
-} ems_pages[4];
+} ems_page_t;
 
+ems_handle_t ems_handles[MAX_EMS_HANDLES];
+ems_page_t ems_pages[4];
 int free_ems_pages;
 
 void ems_init();
@@ -283,14 +285,15 @@ void ems_unmap_page(int physical);
 #define MAX_XMS_HANDLES 16
 #define MAX_XMS_SIZE_KB 0x8000	// 32MB
 
-struct {
+typedef struct {
 	int seg;
 	int size_kb;
 	int lock;
 	bool allocated;
-} xms_handles[MAX_XMS_HANDLES + 1];
+} xms_handle_t;
 
-int xms_a20_local_enb_count = 0;
+xms_handle_t xms_handles[MAX_XMS_HANDLES + 1];
+int xms_a20_local_enb_count;
 #endif
 
 // dma
@@ -320,7 +323,7 @@ typedef struct {
 	UINT16 tmp;
 } dma_t;
 
-dma_t dma[2] = {0};
+dma_t dma[2];
 
 void dma_init();
 void dma_reset(int c);
@@ -356,7 +359,7 @@ typedef struct {
 	UINT8 data, stat, ctrl;
 } pio_t;
 
-pio_t pio[2] = {0};;
+pio_t pio[2];
 
 void pio_init();
 void pio_write(int c, UINT32 addr, UINT8 data);
@@ -369,6 +372,7 @@ UINT8 pio_read(int c, UINT32 addr);
 typedef struct {
 	INT32 count;
 	UINT16 latch;
+	UINT16 prev_latch, next_latch;
 	UINT16 count_reg;
 	UINT8 ctrl_reg;
 	int count_latched;
@@ -403,7 +407,6 @@ UINT8 system_port = 0;
 
 typedef struct {
 	int channel;
-	int port_number;
 	
 	FIFO *send_buffer;
 	FIFO *recv_buffer;
@@ -423,9 +426,9 @@ typedef struct {
 	UINT8 selector;
 	
 	UINT8 modem_ctrl;
-	bool set_brk, prev_set_brk;
-	bool set_rts, prev_set_rts;
-	bool set_dtr, prev_set_dtr;
+	bool set_brk, set_rts, set_dtr;
+	bool prev_set_brk;
+//	bool prev_set_rts, prev_set_dtr;
 	
 	UINT8 line_stat_buf, line_stat_err;
 	UINT8 modem_stat, prev_modem_stat;
@@ -446,8 +449,8 @@ typedef struct {
 	CRITICAL_SECTION csModemStat;
 } sio_mt_t;
 
-sio_t sio[2] = {0};
-sio_mt_t sio_mt[2] = {0};
+sio_t sio[2];
+sio_mt_t sio_mt[2];
 
 void sio_init();
 void sio_finish();
@@ -490,7 +493,7 @@ void kbd_write_command(UINT8 val);
 #define WORK_SIZE	0x200
 // IO.SYS 0070:0000
 #define DEVICE_TOP	(WORK_TOP + WORK_SIZE)
-#define DEVICE_SIZE	0x40	/* 22 + 18 * 2 */
+#define DEVICE_SIZE	0x100	/* 22 + 18 * 12 + 7 */
 #define DOS_INFO_TOP	(DEVICE_TOP + DEVICE_SIZE)
 #define DOS_INFO_SIZE	0x100
 #define EXT_BIOS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
@@ -853,6 +856,7 @@ typedef struct {
 	UINT8 reserved_6[2];	// +100
 	UINT16 first_umb_fcb;	// +102 from DOSBox
 	UINT16 first_mcb_2;	// +104 from DOSBox
+	UINT8 nul_device_routine[7];
 } dos_info_t;
 #pragma pack()
 
@@ -982,6 +986,10 @@ FIFO *key_buf_scan;
 bool key_changed = false;
 UINT32 key_code = 0;
 
+UINT8 ctrl_c_checking = 0x01; // ???
+bool ctrl_c_pressed = false;
+bool ctrl_c_detected = false;
+
 int active_code_page;
 int system_code_page;
 
@@ -995,7 +1003,7 @@ bool int_10h_ffh_called = false;
 
 #define MAX_MOUSE_BUTTONS	3
 
-struct {
+typedef struct {
 	bool active;
 	struct {
 		int x, y;
@@ -1030,7 +1038,9 @@ struct {
 	UINT16 display_page;
 	UINT16 language;
 	UINT16 hot_spot[2];
-} mouse = {0};
+} mouse_t;
+
+mouse_t mouse;
 
 UINT16 mouse_push_ax;
 UINT16 mouse_push_bx;

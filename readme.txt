@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/17/2016
+								6/21/2016
 
 ----- What's this
 
@@ -104,6 +104,8 @@ To enable the serial I/O, please specify the option '-s[P1[,P2]]'.
 If you specify '-s', the virtual COM1/2 are connected to the host's COM ports
 found in the first and second by SetupDiGetClassDevs() API.
 If you specify '-s3,4', the virtual COM1/2 are connected to the host's COM3/4.
+
+NOTE: The maximum baud rate is limited to 9600bps.
 
 
 ----- Binaries

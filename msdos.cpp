@@ -123,6 +123,7 @@ bool support_ems = false;
 #ifdef SUPPORT_XMS
 bool support_xms = false;
 #endif
+int sio_port_number[2] = {0, 0};
 
 BOOL is_vista_or_later;
 
@@ -738,9 +739,19 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 
 BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
-	if(dwCtrlType == CTRL_BREAK_EVENT || dwCtrlType == CTRL_C_EVENT) {
-		m_halted = 1;
+	if(dwCtrlType == CTRL_BREAK_EVENT) {
+		m_halted = true;
 		return TRUE;
+	} else if(dwCtrlType == CTRL_C_EVENT) {
+		ctrl_c_pressed = true;
+		return TRUE;
+#ifdef EXPORT_DEBUG_TO_FILE
+	} else if(dwCtrlType == CTRL_CLOSE_EVENT) {
+		if(fdebug) {
+			fclose(fdebug);
+			fdebug = NULL;
+		}
+#endif
 	}
 	return FALSE;
 }
@@ -807,11 +818,11 @@ int main(int argc, char *argv[], char *envp[])
 			if(strlen(argv[i]) > 2) {
 				char *p1 = &argv[i][2], *p2;
 				if((p2 = strchr(p1, ',')) != NULL) {
-					sio[1].port_number = atoi(p2 + 1);
+					sio_port_number[1] = atoi(p2 + 1);
 				}
-				sio[0].port_number = atoi(p1);
+				sio_port_number[0] = atoi(p1);
 			}
-			if(sio[0].port_number == 0 || sio[1].port_number == 0) {
+			if(sio_port_number[0] == 0 || sio_port_number[1] == 0) {
 				SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
 				HDEVINFO hDevInfo = 0;
 				HKEY hKey = 0;
@@ -830,15 +841,15 @@ int main(int argc, char *argv[], char *envp[])
 							}
 							RegCloseKey(hKey);
 							
-							if(sio[0].port_number == port_number || sio[1].port_number == port_number) {
+							if(sio_port_number[0] == port_number || sio_port_number[1] == port_number) {
 								continue;
 							}
-							if(sio[0].port_number == 0) {
-								sio[0].port_number = port_number;
-							} else if(sio[1].port_number == 0) {
-								sio[1].port_number = port_number;
+							if(sio_port_number[0] == 0) {
+								sio_port_number[0] = port_number;
+							} else if(sio_port_number[1] == 0) {
+								sio_port_number[1] = port_number;
 							}
-							if(sio[0].port_number != 0 && sio[1].port_number != 0) {
+							if(sio_port_number[0] != 0 && sio_port_number[1] != 0) {
 								break;
 							}
 						}
@@ -2259,7 +2270,7 @@ retry:
 		key_scan = (key_code >> 8) & 0xff;
 		key_code >>= 16;
 	} else {
-		while(key_buf_char->count() == 0 && !m_halted) {
+		while(key_buf_char->count() == 0 && !m_halted && !ctrl_c_pressed) {
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
@@ -2275,8 +2286,12 @@ retry:
 			}
 		}
 		if(m_halted) {
-			// ctrl-c pressed - insert CR to terminate input loops
+			// ctrl-break pressed - insert CR to terminate input loops
 			key_char = 0x0d;
+			key_scan = 0;
+		} else if(ctrl_c_pressed) {
+			// ctrl-c pressed
+			key_char = 0x03;
 			key_scan = 0;
 		} else {
 			key_char = key_buf_char->read();
@@ -4815,6 +4830,8 @@ inline void msdos_int_21h_00h()
 inline void msdos_int_21h_01h()
 {
 	REG8(AL) = msdos_getche();
+	ctrl_c_detected = ctrl_c_pressed;
+	
 	// some seconds may be passed in console
 	hardware_update();
 }
@@ -4822,6 +4839,7 @@ inline void msdos_int_21h_01h()
 inline void msdos_int_21h_02h()
 {
 	msdos_putch(REG8(DL));
+	ctrl_c_detected = ctrl_c_pressed;
 }
 
 inline void msdos_int_21h_03h()
@@ -4866,6 +4884,7 @@ inline void msdos_int_21h_06h()
 inline void msdos_int_21h_07h()
 {
 	REG8(AL) = msdos_getch();
+	
 	// some seconds may be passed in console
 	hardware_update();
 }
@@ -4873,6 +4892,8 @@ inline void msdos_int_21h_07h()
 inline void msdos_int_21h_08h()
 {
 	REG8(AL) = msdos_getch();
+	ctrl_c_detected = ctrl_c_pressed;
+	
 	// some seconds may be passed in console
 	hardware_update();
 }
@@ -4898,6 +4919,7 @@ inline void msdos_int_21h_09h()
 			msdos_putch(str[i]);
 		}
 	}
+	ctrl_c_detected = ctrl_c_pressed;
 }
 
 inline void msdos_int_21h_0ah()
@@ -4908,7 +4930,11 @@ inline void msdos_int_21h_0ah()
 	int chr, p = 0;
 	
 	while((chr = msdos_getch()) != 0x0d) {
-		if(chr == 0x00) {
+		if(ctrl_c_pressed) {
+			p = 0;
+			msdos_putch(chr);
+			break;
+		} else if(chr == 0x00) {
 			// skip 2nd byte
 			msdos_getch();
 		} else if(chr == 0x08) {
@@ -4935,6 +4961,8 @@ inline void msdos_int_21h_0ah()
 	}
 	buf[p] = 0x0d;
 	mem[ofs + 1] = p;
+	ctrl_c_detected = ctrl_c_pressed;
+	
 	// some seconds may be passed in console
 	hardware_update();
 }
@@ -4947,6 +4975,7 @@ inline void msdos_int_21h_0bh()
 		REG8(AL) = 0x00;
 		maybe_idle();
 	}
+	ctrl_c_detected = ctrl_c_pressed;
 }
 
 inline void msdos_int_21h_0ch()
@@ -5669,15 +5698,14 @@ inline void msdos_int_21h_32h()
 
 inline void msdos_int_21h_33h()
 {
-	static UINT8 state = 0x00;
 	char path[MAX_PATH];
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(DL) = state;
+		REG8(DL) = ctrl_c_checking;
 		break;
 	case 0x01:
-		state = REG8(DL);
+		ctrl_c_checking = REG8(DL);
 		break;
 	case 0x05:
 		GetSystemDirectory(path, MAX_PATH);
@@ -5956,7 +5984,16 @@ inline void msdos_int_21h_3fh()
 				while(max > p) {
 					int chr = msdos_getch();
 					
-					if(chr == 0x00) {
+					if(ctrl_c_pressed) {
+						p = 0;
+						buf[p++] = 0x0d;
+						if(max > p) {
+							buf[p++] = 0x0a;
+						}
+						msdos_putch(chr);
+						msdos_putch('\n');
+						break;
+					} else if(chr == 0x00) {
 						// skip 2nd byte
 						msdos_getch();
 					} else if(chr == 0x0d) {
@@ -5990,6 +6027,7 @@ inline void msdos_int_21h_3fh()
 					}
 				}
 				REG16(AX) = p;
+				
 				// some seconds may be passed in console
 				hardware_update();
 			} else {
@@ -7129,6 +7167,7 @@ inline void msdos_int_21h_5ch()
 				m_CF = 1;
 			}
 			_lseek(fd, pos, SEEK_SET);
+			
 			// some seconds may be passed in _locking()
 			hardware_update();
 		} else {
@@ -8441,7 +8480,7 @@ inline void msdos_int_2fh_43h()
 	case 0x10:
 		SREG(ES) = XMS_TOP >> 4;
 		i386_load_segment_descriptor(ES);
-		REG16(BX) = 0x1c;
+		REG16(BX) = 0x15;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9445,6 +9484,12 @@ inline void msdos_int_67h_5ah()
 
 #ifdef SUPPORT_XMS
 
+inline void msdos_xms_init()
+{
+	memset(xms_handles, 0, sizeof(xms_handles));
+	xms_a20_local_enb_count = 0;
+}
+
 inline void msdos_call_xms_00h()
 {
 	REG16(AX) = 0x0270; // V2.70
@@ -9745,6 +9790,23 @@ inline void msdos_call_xms_12h()
 
 #endif
 
+UINT16 msdos_get_equipment()
+{
+	static UINT16 equip = 0;
+	
+	if(equip == 0) {
+#ifdef SUPPORT_FPU
+		equip |= (1 << 1);	// 80x87 coprocessor installed
+#endif
+		equip |= (1 << 2);	// pointing device installed (PS/2)
+		equip |= (2 << 4);	// initial video mode (80x25 color)
+//		equip |= (1 << 8);	// 0 if DMA installed
+		equip |= (2 << 9);	// number of serial ports
+		equip |= (3 << 14);	// number of printer ports (NOTE: this number is 3 on Windows 98 SE though only LPT1 exists)
+	}
+	return(equip);
+}
+
 void msdos_syscall(unsigned num)
 {
 #ifdef ENABLE_DEBUG_SYSCALL
@@ -9760,6 +9822,7 @@ void msdos_syscall(unsigned num)
 		fprintf(fdebug, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
 #endif
+	ctrl_c_pressed = ctrl_c_detected = false;
 	
 	switch(num) {
 	case 0x00:
@@ -9854,11 +9917,7 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x11:
 		// PC BIOS - Get Equipment List
-#ifdef SUPPORT_FPU
-		REG16(AX) = 0x122;
-#else
-		REG16(AX) = 0x120;
-#endif
+		REG16(AX) = msdos_get_equipment();
 		break;
 	case 0x12:
 		// PC BIOS - Get Memory Size
@@ -10177,6 +10236,16 @@ void msdos_syscall(unsigned num)
 			sda->suggested_action = 1; // Retry
 			sda->locus_of_last_error = 1; // Unknown
 		}
+		if(ctrl_c_checking && ctrl_c_detected) {
+			// raise int 23h
+#if defined(HAS_I386)
+			m_ext = 0; // not an external interrupt
+			i386_trap(0x23, 1, 0);
+			m_ext = 1;
+#else
+			PREFIX86(_interrupt)(0x23);
+#endif
+		}
 		break;
 	case 0x22:
 		fatalerror("int 22h (terminate address)\n");
@@ -10491,6 +10560,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mouse.mickey.x = 8;
 	mouse.mickey.y = 16;
 	
+#ifdef SUPPORT_XMS
+	// init xms
+	msdos_xms_init();
+#endif
+	
 	// init process
 	memset(process, 0, sizeof(process));
 	
@@ -10532,14 +10606,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 //	*(UINT16 *)(mem + 0x404) = 0x3e8; // com3 port address
 //	*(UINT16 *)(mem + 0x406) = 0x2e8; // com4 port address
 	*(UINT16 *)(mem + 0x408) = 0x378; // lpt1 port address
-	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
+//	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
 //	*(UINT16 *)(mem + 0x40c) = 0x3bc; // lpt3 port address
 	*(UINT16 *)(mem + 0x40e) = EXT_BIOS_TOP >> 4;
-#ifdef SUPPORT_FPU
-	*(UINT16 *)(mem + 0x410) = 0x122;
-#else
-	*(UINT16 *)(mem + 0x410) = 0x120;
-#endif
+	*(UINT16 *)(mem + 0x410) = msdos_get_equipment();
 	*(UINT16 *)(mem + 0x413) = MEMORY_END / 1024;
 	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
 	*(UINT16 *)(mem + 0x44a) = csbi.dwSize.X;
@@ -10697,6 +10767,61 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(EMB_TOP >> 4, 'Z', 0, (EMB_END >> 4) - (EMB_TOP >> 4) - 1);
 #endif
 	
+	// interrupt vector
+	for(int i = 0; i < 0x80; i++) {
+		*(UINT16 *)(mem + 4 * i + 0) = i;
+		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
+	}
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// fffd:0010 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
+	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
+	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
+	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
+	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffd:0000 irq12 (mouse)
+	*(UINT16 *)(mem + 4 * 0x74 + 2) = 0xfffd;
+	
+	// dummy devices (CON -> ... -> CONFIG$ -> NUL -> EMMXXXX0)
+	static const struct {
+		UINT16 attributes;
+		char *dev_name;
+	} dummy_devices[] = {
+		{0x8013, "CON     "},
+		{0x8000, "AUX     "},
+		{0xa0c0, "PRN     "},
+		{0x8008, "CLOCK$  "},
+		{0x8000, "COM1    "},
+		{0xa0c0, "LPT1    "},
+		{0xa0c0, "LPT2    "},
+		{0xa0c0, "LPT3    "},
+		{0x8000, "COM2    "},
+		{0x8000, "COM3    "},
+		{0x8000, "COM4    "},
+		{0xc000, "CONFIG$ "},
+	};
+	static const UINT8 dummy_device_routine[] = {
+		// from NUL device of Windows 98 SE
+		// or word ptr ES:[BX+03],0100
+		0x26, 0x81, 0x4f, 0x03, 0x00, 0x01,
+		// retf
+		0xcb,
+	};
+	for(int i = 0; i < 12; i++) {
+		device_t *device = (device_t *)(mem + DEVICE_TOP + 22 + 18 * i);
+		if(i == 11) {
+			device->next_driver.w.l = offsetof(dos_info_t, nul_device);
+			device->next_driver.w.h = DOS_INFO_TOP >> 4;
+		} else {
+			device->next_driver.w.l = 22 + 18 * (i + 1);
+			device->next_driver.w.h = DEVICE_TOP >> 4;
+		}
+		device->attributes = dummy_devices[i].attributes;
+		device->strategy = 22 + 18 * 12;
+		device->interrupt = 22 + 18 * 12 + 6;
+		memcpy(device->dev_name, dummy_devices[i].dev_name, 8);
+	}
+	memcpy(mem + DEVICE_TOP + 22 + 18 * 12, dummy_device_routine, sizeof(dummy_device_routine));
+	
 	// dos info
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 	dos_info->magic_word = 1;
@@ -10705,9 +10830,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->first_dpb.w.h = DPB_TOP >> 4;
 	dos_info->first_sft.w.l = 0;
 	dos_info->first_sft.w.h = SFT_TOP >> 4;
-	dos_info->clock_device.w.l = 22 + 18;
+	dos_info->clock_device.w.l = 22 + 18 * 3;	// CLOCK$ is the 3rd device in IO.SYS
 	dos_info->clock_device.w.h = DEVICE_TOP >> 4;
-	dos_info->con_device.w.l = 22;
+	dos_info->con_device.w.l = 22 + 18 * 0;		// CON is the 1st device in IO.SYS
 	dos_info->con_device.w.h = DEVICE_TOP >> 4;
 	dos_info->max_sector_len = 512;
 	dos_info->disk_buf_info.w.l = offsetof(dos_info_t, disk_buf_heads);
@@ -10723,13 +10848,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->nul_device.next_driver.w.l = 0;
 	dos_info->nul_device.next_driver.w.h = XMS_TOP >> 4;
 	dos_info->nul_device.attributes = 0x8004;
-	dos_info->nul_device.strategy = 0xffff;
-	dos_info->nul_device.interrupt = 0xffff;
+	dos_info->nul_device.strategy = offsetof(dos_info_t, nul_device_routine);
+	dos_info->nul_device.interrupt = offsetof(dos_info_t, nul_device_routine) + 6;
 	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
 	dos_info->disk_buf_heads.w.l = 0;
 	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
 	dos_info->first_umb_fcb = UMB_TOP >> 4;
 	dos_info->first_mcb_2 = MEMORY_TOP >> 4;
+	memcpy(dos_info->nul_device_routine, dummy_device_routine, sizeof(dummy_device_routine));
 	
 	char *env;
 	if((env = getenv("LASTDRIVE")) != NULL) {
@@ -10753,67 +10879,29 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
-	// interrupt vector
-	for(int i = 0; i < 0x80; i++) {
-		*(UINT16 *)(mem + 4 * i + 0) = i;
-		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
-	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// fffd:0010 irq0
-	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
-	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
-	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
-	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0018;	// xxxx:0018 ems
-	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffd:0000 irq12
-	*(UINT16 *)(mem + 4 * 0x74 + 2) = 0xfffd;
-	
-	// dummy devices (CON -> CLOCK$ -> NUL -> EMMXXXX0)
-	static const UINT8 device_top[] = {
-		// from Windows 98 SE
-		0x3f, 0x01, 0x01, 0xc9, 0x00, 0xe9, 0x6a, 0x04,
-		0x67, 0x13, 0x00, 0x00, 0xfc, 0x01, 0xcf, 0x00,
-		0x0b, 0x02, 0x5a, 0x03, 0xc9, 0x00,
-	};
-	memcpy(mem + DEVICE_TOP, device_top, sizeof(device_top));
-	
-	device_t *con_device = (device_t *)(mem + DEVICE_TOP + 22);
-	con_device->next_driver.w.l = 22 + 18;
-	con_device->next_driver.w.h = DEVICE_TOP >> 4;
-	con_device->attributes = 0x8013;
-	con_device->strategy = 0xffff;
-	con_device->interrupt = 0xffff;
-	memcpy(con_device->dev_name, "CON     ", 8);
-	
-	device_t *clk_device = (device_t *)(mem + DEVICE_TOP + 22 + 18);
-	clk_device->next_driver.w.l = offsetof(dos_info_t, nul_device);
-	clk_device->next_driver.w.h = DOS_INFO_TOP >> 4;
-	clk_device->attributes = 0x8008;
-	clk_device->strategy = 0xffff;
-	clk_device->interrupt = 0xffff;
-	memcpy(clk_device->dev_name, "CLOCK$  ", 8);
-	
 	// ems (int 67h) and xms (call far)
 	device_t *xms_device = (device_t *)(mem + XMS_TOP);
 	xms_device->next_driver.w.l = 0xffff;
 	xms_device->next_driver.w.h = 0xffff;
 	xms_device->attributes = 0xc000;
-	xms_device->strategy = 0xffff;
-	xms_device->interrupt = 0xffff;
+	xms_device->strategy = 0x18;
+	xms_device->interrupt = 0x18 + 6;
 	memcpy(xms_device->dev_name, "EMMXXXX0", 8);
 	
-	mem[XMS_TOP + 0x18] = 0xcd;	// int 68h (dummy)
-	mem[XMS_TOP + 0x19] = 0x68;
-	mem[XMS_TOP + 0x1a] = 0xcf;	// iret
+	mem[XMS_TOP + 0x12] = 0xcd;	// int 68h (dummy)
+	mem[XMS_TOP + 0x13] = 0x68;
+	mem[XMS_TOP + 0x14] = 0xcf;	// iret
 #ifdef SUPPORT_XMS
 	if(support_xms) {
-		mem[XMS_TOP + 0x1c] = 0xcd;	// int 69h (dummy)
-		mem[XMS_TOP + 0x1d] = 0x69;
-		mem[XMS_TOP + 0x1e] = 0xcb;	// retf
+		mem[XMS_TOP + 0x15] = 0xcd;	// int 69h (dummy)
+		mem[XMS_TOP + 0x16] = 0x69;
+		mem[XMS_TOP + 0x17] = 0xcb;	// retf
 	} else
 #endif
-	mem[XMS_TOP + 0x1c] = 0xcb;	// retf
+	mem[XMS_TOP + 0x15] = 0xcb;	// retf
+	memcpy(mem + XMS_TOP + 0x18, dummy_device_routine, sizeof(dummy_device_routine));
 	
-	// irq12 (mouse)
+	// irq12 routine (mouse)
 	mem[0xfffd0 + 0x00] = 0xcd;	// int 6ah (dummy)
 	mem[0xfffd0 + 0x01] = 0x6a;
 	mem[0xfffd0 + 0x02] = 0x9a;	// call far mouse
@@ -10830,7 +10918,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xfffd0 + 0x0d] = 0x6b;
 	mem[0xfffd0 + 0x0e] = 0xcb;	// retf
 	
-	// have irq0 call system timer tick
+	// irq0 routine (system time)
 	mem[0xfffd0 + 0x10] = 0xcd;	// int 1ch
 	mem[0xfffd0 + 0x11] = 0x1c;
 	mem[0xfffd0 + 0x12] = 0xea;	// jmp far (IRET_TOP >> 4):0008
@@ -10839,7 +10927,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xfffd0 + 0x15] = ((IRET_TOP >> 4)     ) & 0xff;
 	mem[0xfffd0 + 0x16] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
-	// boot
+	// boot routine
 	mem[0xffff0] = 0xf4;	// halt
 	mem[0xffff1] = 0xcd;	// int 21h
 	mem[0xffff2] = 0x21;
@@ -11248,7 +11336,11 @@ void ems_unmap_page(int physical)
 
 void dma_init()
 {
+	memset(dma, 0, sizeof(dma));
 	for(int c = 0; c < 2; c++) {
+//		for(int ch = 0; ch < 4; ch++) {
+//			dma[c].ch[ch].creg.w = dma[c].ch[ch].bcreg.w = 0xffff;
+//		}
 		dma_reset(c);
 	}
 }
@@ -11357,8 +11449,11 @@ UINT8 dma_read(int c, UINT32 addr)
 		dma[c].tc = 0;
 		return(val);
 	case 0x0d:
-		// temporary register
+		// temporary register (intel 82374 does not support)
 		return(dma[c].tmp & 0xff);
+	case 0x0f:
+		// mask register (intel 82374 does support)
+		return(dma[c].mask);
 	}
 	return(0xff);
 }
@@ -11686,6 +11781,7 @@ void pic_update()
 
 void pio_init()
 {
+	memset(pio, 0, sizeof(pio));
 	for(int c = 0; c < 2; c++) {
 		pio[c].stat = 0xde;
 		pio[c].ctrl = 0x0c;
@@ -11865,14 +11961,28 @@ int pit_run(int ch, UINT32 cur_time)
 
 void pit_latch_count(int ch)
 {
-	UINT32 cur_time = timeGetTime();
-	
 	if(pit[ch].expired_time != 0) {
+		UINT32 cur_time = timeGetTime();
 		pit_run(ch, cur_time);
 		UINT32 tmp = (pit[ch].count * (pit[ch].expired_time - cur_time)) / (pit[ch].expired_time - pit[ch].prev_time);
-		pit[ch].latch = (tmp != 0) ? (UINT16)tmp : 1;
+		UINT16 latch = (tmp != 0) ? (UINT16)tmp : 1;
+		
+		if(pit[ch].prev_latch == latch && pit[ch].expired_time > cur_time) {
+			// decrement counter in 1msec period
+			if(pit[ch].next_latch == 0) {
+				tmp = (pit[ch].count * (pit[ch].expired_time - cur_time - 1)) / (pit[ch].expired_time - pit[ch].prev_time);
+				pit[ch].next_latch = (tmp != 0) ? (UINT16)tmp : 1;
+			}
+			if(pit[ch].latch > pit[ch].next_latch) {
+				pit[ch].latch--;
+			}
+		} else {
+			pit[ch].prev_latch = pit[ch].latch = latch;
+			pit[ch].next_latch = 0;
+		}
 	} else {
 		pit[ch].latch = (UINT16)pit[ch].count;
+		pit[ch].prev_latch = pit[ch].next_latch = 0;
 	}
 	pit[ch].count_latched = 1;
 	if((pit[ch].ctrl_reg & 0x30) == 0x10) {
@@ -11901,12 +12011,17 @@ int pit_get_expired_time(int ch)
 
 void sio_init()
 {
+	memset(sio, 0, sizeof(sio));
+	memset(sio_mt, 0, sizeof(sio_mt));
+	
 	for(int c = 0; c < 2; c++) {
 		sio[c].send_buffer = new FIFO(SIO_BUFFER_SIZE);
 		sio[c].recv_buffer = new FIFO(SIO_BUFFER_SIZE);
 		
 		sio[c].divisor.w = 12;		// 115200Hz / 9600Baud
 		sio[c].line_ctrl = 0x03;	// 8bit, stop 1bit, non parity
+		sio[c].modem_ctrl = 0x03;	// rts=on, dtr=on
+		sio[c].set_rts = sio[c].set_dtr = true;
 		sio[c].line_stat_buf = 0x60;	// send/recv buffers are empty
 		sio[c].irq_identify = 0x01;	// no pending irq
 		
@@ -11917,7 +12032,7 @@ void sio_init()
 		InitializeCriticalSection(&sio_mt[c].csModemCtrl);
 		InitializeCriticalSection(&sio_mt[c].csModemStat);
 		
-		if(sio[c].port_number != 0) {
+		if(sio_port_number[c] != 0) {
 			sio[c].channel = c;
 			sio_mt[c].hThread = CreateThread(NULL, 0, sio_thread, &sio[c], 0, NULL);
 		}
@@ -12005,10 +12120,45 @@ void sio_write(int c, UINT32 addr, UINT8 data)
 			bool set_rts = ((data & 0x02) != 0);
 			
 			if(sio[c].set_dtr != set_dtr || sio[c].set_rts != set_rts) {
-				EnterCriticalSection(&sio_mt[c].csModemCtrl);
+//				EnterCriticalSection(&sio_mt[c].csModemCtrl);
 				sio[c].set_dtr = set_dtr;
 				sio[c].set_rts = set_rts;
-				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+//				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+				
+				bool state_changed = false;
+				
+				EnterCriticalSection(&sio_mt[c].csModemStat);
+				if(set_dtr) {
+					sio[c].modem_stat |= 0x20;	// dsr on
+				} else {
+					sio[c].modem_stat &= ~0x20;	// dsr off
+				}
+				if(set_rts) {
+					sio[c].modem_stat |= 0x10;	// cts on
+				} else {
+					sio[c].modem_stat &= ~0x10;	// cts off
+				}
+				if((sio[c].prev_modem_stat & 0x20) != (sio[c].modem_stat & 0x20)) {
+					if(!(sio[c].modem_stat & 0x02)) {
+						if(sio[c].irq_enable & 0x08) {
+							state_changed = true;
+						}
+						sio[c].modem_stat |= 0x02;
+					}
+				}
+				if((sio[c].prev_modem_stat & 0x10) != (sio[c].modem_stat & 0x10)) {
+					if(!(sio[c].modem_stat & 0x01)) {
+						if(sio[c].irq_enable & 0x08) {
+							state_changed = true;
+						}
+						sio[c].modem_stat |= 0x01;
+					}
+				}
+				LeaveCriticalSection(&sio_mt[c].csModemStat);
+				
+				if(state_changed) {
+					sio_update_irq(c);
+				}
 			}
 		}
 		sio[c].modem_ctrl = data;
@@ -12178,15 +12328,20 @@ DWORD WINAPI sio_thread(void *lpx)
 	sio_mt_t *q = &sio_mt[p->channel];
 	
 	char name[] = "COM1";
-	name[3] = '0' + p->port_number;
-	HANDLE hComm = CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	name[3] = '0' + sio_port_number[p->channel];
+	HANDLE hComm = NULL;
+	COMMPROP commProp;
+	DCB dcb;
+	DWORD dwSettableBaud = 0xffb; // 75, 110, 150, 300, 600, 1200, 1800, 2400, 4800, 7200, and 9600bps
+	BYTE bytBuffer[SIO_BUFFER_SIZE];
 	
-	if(hComm != INVALID_HANDLE_VALUE) {
-		BYTE bytBuffer[SIO_BUFFER_SIZE];
-		
+	if((hComm = CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL)) != INVALID_HANDLE_VALUE) {
+		if(GetCommProperties(hComm, &commProp)) {
+			dwSettableBaud = commProp.dwSettableBaud;
+		}
 		EscapeCommFunction(hComm, CLRBREAK);
-		EscapeCommFunction(hComm, CLRDTR);
-		EscapeCommFunction(hComm, CLRRTS);
+//		EscapeCommFunction(hComm, SETRTS);
+//		EscapeCommFunction(hComm, SETDTR);
 		
 		while(!m_halted) {
 			// setup comm port
@@ -12201,28 +12356,59 @@ DWORD WINAPI sio_thread(void *lpx)
 			LeaveCriticalSection(&q->csLineCtrl);
 			
 			if(comm_state_changed) {
-				DCB dcb;
-				memset(&dcb, 0, sizeof(DCB));
-				dcb.DCBlength = sizeof(DCB);
-				dcb.BaudRate = min(9600, 115200 / p->prev_divisor);
-				switch(p->prev_line_ctrl & 0x03) {
-				case 0x00: dcb.ByteSize = 5; break;
-				case 0x01: dcb.ByteSize = 6; break;
-				case 0x02: dcb.ByteSize = 7; break;
-				case 0x03: dcb.ByteSize = 8; break;
+				if(GetCommState(hComm, &dcb)) {
+//					dcb.BaudRate = min(9600, 115200 / p->prev_divisor);
+					DWORD baud = 115200 / p->prev_divisor;
+					dcb.BaudRate = 9600; // default
+					
+					if((dwSettableBaud & BAUD_075  ) && baud >= 75   ) dcb.BaudRate = 75;
+					if((dwSettableBaud & BAUD_110  ) && baud >= 110  ) dcb.BaudRate = 110;
+					// 134.5bps is not supported ???
+//					if((dwSettableBaud & BAUD_134_5) && baud >= 134.5) dcb.BaudRate = 134.5;
+					if((dwSettableBaud & BAUD_150  ) && baud >= 150  ) dcb.BaudRate = 150;
+					if((dwSettableBaud & BAUD_300  ) && baud >= 300  ) dcb.BaudRate = 300;
+					if((dwSettableBaud & BAUD_600  ) && baud >= 600  ) dcb.BaudRate = 600;
+					if((dwSettableBaud & BAUD_1200 ) && baud >= 1200 ) dcb.BaudRate = 1200;
+					if((dwSettableBaud & BAUD_1800 ) && baud >= 1800 ) dcb.BaudRate = 1800;
+					if((dwSettableBaud & BAUD_2400 ) && baud >= 2400 ) dcb.BaudRate = 2400;
+					if((dwSettableBaud & BAUD_4800 ) && baud >= 4800 ) dcb.BaudRate = 4800;
+					if((dwSettableBaud & BAUD_7200 ) && baud >= 7200 ) dcb.BaudRate = 7200;
+					if((dwSettableBaud & BAUD_9600 ) && baud >= 9600 ) dcb.BaudRate = 9600;
+//					if((dwSettableBaud & BAUD_14400) && baud >= 14400) dcb.BaudRate = 14400;
+//					if((dwSettableBaud & BAUD_19200) && baud >= 19200) dcb.BaudRate = 19200;
+//					if((dwSettableBaud & BAUD_38400) && baud >= 38400) dcb.BaudRate = 38400;
+					
+					switch(p->prev_line_ctrl & 0x03) {
+					case 0x00: dcb.ByteSize = 5; break;
+					case 0x01: dcb.ByteSize = 6; break;
+					case 0x02: dcb.ByteSize = 7; break;
+					case 0x03: dcb.ByteSize = 8; break;
+					}
+					switch(p->prev_line_ctrl & 0x04) {
+					case 0x00: dcb.StopBits = ONESTOPBIT; break;
+					case 0x04: dcb.StopBits = (dcb.ByteSize == 5) ? ONE5STOPBITS : TWOSTOPBITS; break;
+					}
+					switch(p->prev_line_ctrl & 0x38) {
+					case 0x08: dcb.Parity = ODDPARITY;   break;
+					case 0x18: dcb.Parity = EVENPARITY;  break;
+					case 0x28: dcb.Parity = MARKPARITY;  break;
+					case 0x38: dcb.Parity = SPACEPARITY; break;
+					default:   dcb.Parity = NOPARITY;    break;
+					}
+					dcb.fBinary = TRUE;
+					dcb.fParity = (dcb.Parity != NOPARITY);
+					dcb.fOutxCtsFlow = dcb.fOutxDsrFlow = TRUE;
+					dcb.fDtrControl = DTR_CONTROL_HANDSHAKE;
+					dcb.fDsrSensitivity = FALSE;//TRUE;
+					dcb.fTXContinueOnXoff = TRUE;
+					dcb.fOutX = dcb.fInX = FALSE;
+					dcb.fErrorChar = FALSE;
+					dcb.fNull = FALSE;
+					dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+					dcb.fAbortOnError = FALSE;
+					
+					SetCommState(hComm, &dcb);
 				}
-				switch(p->prev_line_ctrl & 0x04) {
-				case 0x00: dcb.StopBits = ONESTOPBIT; break;
-				case 0x04: dcb.StopBits = (dcb.ByteSize == 5) ? ONE5STOPBITS : TWOSTOPBITS; break;
-				}
-				switch(p->prev_line_ctrl & 0x38) {
-				case 0x08: dcb.Parity = ODDPARITY;   break;
-				case 0x18: dcb.Parity = EVENPARITY;  break;
-				case 0x28: dcb.Parity = MARKPARITY;  break;
-				case 0x38: dcb.Parity = SPACEPARITY; break;
-				default:   dcb.Parity = NOPARITY;    break;
-				}
-				SetCommState(hComm, &dcb);
 				
 				// check again to apply all comm state changes
 				Sleep(10);
@@ -12231,33 +12417,52 @@ DWORD WINAPI sio_thread(void *lpx)
 			
 			// set comm pins
 			bool change_brk = false;
-			bool change_rts = false;
-			bool change_dtr = false;
+//			bool change_rts = false;
+//			bool change_dtr = false;
 			
 			EnterCriticalSection(&q->csModemCtrl);
 			if(p->prev_set_brk != p->set_brk) {
 				p->prev_set_brk = p->set_brk;
 				change_brk = true;
 			}
-			if(p->prev_set_rts != p->set_rts) {
-				p->prev_set_rts = p->set_rts;
-				change_rts = true;
-			}
-			if(p->prev_set_dtr != p->set_dtr) {
-				p->prev_set_dtr = p->set_dtr;
-				change_dtr = true;
-			}
+//			if(p->prev_set_rts != p->set_rts) {
+//				p->prev_set_rts = p->set_rts;
+//				change_rts = true;
+//			}
+//			if(p->prev_set_dtr != p->set_dtr) {
+//				p->prev_set_dtr = p->set_dtr;
+//				change_dtr = true;
+//			}
 			LeaveCriticalSection(&q->csModemCtrl);
 			
 			if(change_brk) {
-				EscapeCommFunction(hComm, p->prev_set_brk ? SETBREAK : CLRBREAK);
+				static UINT32 clear_time = 0;
+				if(p->prev_set_brk) {
+					EscapeCommFunction(hComm, SETBREAK);
+					clear_time = timeGetTime() + 200;
+				} else {
+					// keep break for at least 200msec
+					UINT32 cur_time = timeGetTime();
+					if(clear_time > cur_time) {
+						Sleep(clear_time - cur_time);
+					}
+					EscapeCommFunction(hComm, CLRBREAK);
+				}
 			}
-			if(change_rts) {
-				EscapeCommFunction(hComm, p->prev_set_rts ? SETRTS : SETRTS);
-			}
-			if(change_dtr) {
-				EscapeCommFunction(hComm, p->prev_set_dtr ? SETDTR : CLRDTR);
-			}
+//			if(change_rts) {
+//				if(p->prev_set_rts) {
+//					EscapeCommFunction(hComm, SETRTS);
+//				} else {
+//					EscapeCommFunction(hComm, CLRRTS);
+//				}
+//			}
+//			if(change_dtr) {
+//				if(p->prev_set_dtr) {
+//					EscapeCommFunction(hComm, SETDTR);
+//				} else {
+//					EscapeCommFunction(hComm, CLRDTR);
+//				}
+//			}
 			
 			// get comm pins
 			DWORD dwModemStat = 0;
@@ -12274,28 +12479,28 @@ DWORD WINAPI sio_thread(void *lpx)
 				} else {
 					p->modem_stat &= ~0x40;
 				}
-				if(dwModemStat & MS_DSR_ON) {
-					p->modem_stat |= 0x20;
-				} else {
-					p->modem_stat &= ~0x20;
-				}
-				if(dwModemStat & MS_CTS_ON) {
-					p->modem_stat |= 0x10;
-				} else {
-					p->modem_stat &= ~0x10;
-				}
+//				if(dwModemStat & MS_DSR_ON) {
+//					p->modem_stat |= 0x20;
+//				} else {
+//					p->modem_stat &= ~0x20;
+//				}
+//				if(dwModemStat & MS_CTS_ON) {
+//					p->modem_stat |= 0x10;
+//				} else {
+//					p->modem_stat &= ~0x10;
+//				}
 				if((p->prev_modem_stat & 0x80) != (p->modem_stat & 0x80)) {
 					p->modem_stat |= 0x08;
 				}
 				if((p->prev_modem_stat & 0x40) && !(p->modem_stat & 0x40)) {
 					p->modem_stat |= 0x04;
 				}
-				if((p->prev_modem_stat & 0x20) != (p->modem_stat & 0x20)) {
-					p->modem_stat |= 0x02;
-				}
-				if((p->prev_modem_stat & 0x10) != (p->modem_stat & 0x10)) {
-					p->modem_stat |= 0x01;
-				}
+//				if((p->prev_modem_stat & 0x20) != (p->modem_stat & 0x20)) {
+//					p->modem_stat |= 0x02;
+//				}
+//				if((p->prev_modem_stat & 0x10) != (p->modem_stat & 0x10)) {
+//					p->modem_stat |= 0x01;
+//				}
 				LeaveCriticalSection(&q->csModemStat);
 			}
 			
@@ -12453,22 +12658,8 @@ void kbd_write_command(UINT8 val)
 	case 0xdf:
 		i386_set_a20_line(1);
 		break;
-	case 0xf0:
-	case 0xf1:
-	case 0xf2:
-	case 0xf3:
-	case 0xf4:
-	case 0xf5:
-	case 0xf6:
-	case 0xf7:
-	case 0xf8:
-	case 0xf9:
-	case 0xfa:
-	case 0xfb:
-	case 0xfc:
-	case 0xfd:
-	case 0xfe:
-	case 0xff:
+	case 0xf0: case 0xf1: case 0xf2: case 0xf3: case 0xf4: case 0xf5: case 0xf6: case 0xf7:
+	case 0xf8: case 0xf9: case 0xfa: case 0xfb: case 0xfc: case 0xfd: case 0xfe: case 0xff:
 		if(!(val & 1)) {
 			if((cmos[0x0f] & 0x7f) == 5) {
 				// reset pic
@@ -12556,9 +12747,9 @@ UINT8 read_io_byte(offs_t addr)
 		return(pic_read(1, addr));
 	case 0xc0: case 0xc2: case 0xc4: case 0xc6: case 0xc8: case 0xca: case 0xcc: case 0xce:
 	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
-		return(dma_read(1, addr >> 1));
-	case 0x278: case 0x279: case 0x27a:
-		return(pio_read(1, addr));
+		return(dma_read(1, (addr - 0xc0) >> 1));
+//	case 0x278: case 0x279: case 0x27a:
+//		return(pio_read(1, addr));
 	case 0x2f8: case 0x2f9: case 0x2fa: case 0x2fb: case 0x2fc: case 0x2fd: case 0x2fe: case 0x2ff:
 		return(sio_read(1, addr));
 	case 0x378: case 0x379: case 0x37a:
@@ -12647,11 +12838,11 @@ void write_io_byte(offs_t addr, UINT8 val)
 		break;
 	case 0xc0: case 0xc2: case 0xc4: case 0xc6: case 0xc8: case 0xca: case 0xcc: case 0xce:
 	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
-		dma_write(1, addr >> 1, val);
+		dma_write(1, (addr - 0xc0) >> 1, val);
 		break;
-	case 0x278: case 0x279: case 0x27a:
-		pio_write(1, addr, val);
-		break;
+//	case 0x278: case 0x279: case 0x27a:
+//		pio_write(1, addr, val);
+//		break;
 	case 0x2f8: case 0x2f9: case 0x2fa: case 0x2fb: case 0x2fc: case 0x2fd: case 0x2fe: case 0x2ff:
 		sio_write(1, addr, val);
 		break;
