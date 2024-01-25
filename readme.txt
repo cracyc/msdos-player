@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/10/2016
+								6/17/2016
 
 ----- What's this
 
@@ -15,6 +15,11 @@ any files to/from a virtual machine (VMware, Virtual PC, XP mode, or others).
 
 NOTE: This emulator DOES NOT support Win16 execution files.
 
+This emulator aims to support character user interface utilities, for example
+file converters, compilers, assemblers, debuggers, and text editors.
+This emulator DOES NOT support graphic/sound hardwares and DOES NOT aim to
+support game softwares. I recommend DOSBOx for this purpose.
+
 
 ----- How to use
 
@@ -26,13 +31,15 @@ For example, compile sample.c with LSI C-86 and execute compiled binary:
 	> msdos lcc sample.c
 	> msdos sample
 
-Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-vX.XX] [-x] (command file) [options]
+Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-s[P1[,P2]]] [-vX.XX] [-x]
+             (command file) [options]
 
 	-b	stay busy during keyboard polling
 	-d	pretend running under straight DOS, not Windows
 	-e	use a reduced environment block
 	-i	ignore invalid instructions
 	-m	restrict free memory to 0x7FFF paragraphs
+	-s	enable serial I/O and set host's COM port numbers
 	-v	set the DOS version
 	-x	enable XMS/EMS
 
@@ -93,6 +100,11 @@ To enable XMS (i286 or later) and EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
 so the size of UMB is decreased from 224KB to 160KB.
 
+To enable the serial I/O, please specify the option '-s[P1[,P2]]'.
+If you specify '-s', the virtual COM1/2 are connected to the host's COM ports
+found in the first and second by SetupDiGetClassDevs() API.
+If you specify '-s3,4', the virtual COM1/2 are connected to the host's COM3/4.
+
 
 ----- Binaries
 
@@ -118,11 +130,19 @@ You can build all binaries for several cpu models by running build8_all.bat.
 
 ----- Supported hardwares
 
-This emulator provides a very simple IBM PC hardware emulation:
+This emulator provides a very simple IBM PC compatible hardware emulation:
 
-CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, EMS 32MB, PIC, PIT, RTC CMOS,
-VGA Status Register, PC BIOS,
-Keyboard Controller (A20 Line Mask, CPU Reset), and 3-Button Mouse
+CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB, PC BIOS,
+DMA Controller (dummy), Interrupt Controller, System Timer,
+Parallel I/O (dummy), Serial I/O (COM1/COM2), Real Time Clock + CMOS Memory,
+VGA Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
+and 3-Button Mouse
+
+NOTE:
+- Graphic/Sound hardwares are NOT implemented.
+- DMA Controller is implemented, but FDC and HDC are not connected.
+- Parallel I/O is implemented but is not connected to host's LPT ports.
+- Serial I/O is implemented and is connected to host's COM ports.
 
 
 ----- Memory map
@@ -184,6 +204,16 @@ INT 10H		PC BIOS - Video
 INT 11H		PC BIOS - Get Equipment List
 
 INT 12H		PC BIOS - Get Memory Size
+
+INT 14H		PC BIOS - Serial I/O
+
+	00H	Initialize Port
+	01H	Write Character to Port
+	02H	Read Character from Port
+	03H	Get Port Status
+	04H	Extended Initialize
+	0500H	Read Modem Control Register
+	0501H	Write Modem Control Register
 
 INT 15H		PC BIOS
 
@@ -361,6 +391,10 @@ INT 21H		MS-DOS System Call
 	6520H	Character Capitalization
 	6521H	String Capitalization
 	6522H	ASCIIZ Capitalization
+	6523H	Determine If Character Represents Yes/No Response
+	65A0H	Character Capitalization
+	65A1H	String Capitalization
+	65A2H	ASCIIZ Capitalization
 	6601H	Get Global Code Page Table
 	6602H	Get Global Code Page Table
 	67H	Set Handle Count
@@ -412,6 +446,11 @@ INT 2FH		Multiplex Interrupt
 	1216H	Get System File Table Entry
 	1220H	Get Job File Table Entry
 	122EH	Get Error Table Addresses (DL=00H/02H/04H/06H) (*5)
+	1400H	NLSFUNC.COM - Installation Check
+	1401H	NLSFUNC.COM - Change Code Page
+	1402H	NLSFUNC.COM - Get Extended Country Info
+	1403H	NLSFUNC.COM - Set Code Page
+	1404H	NLSFUNC.COM - Get Country Info
 	1600H	Windows - Windows Enhanced Mode Installation Check
 	160AH	Windows - Identify Windows Version and Type
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
@@ -525,6 +564,14 @@ CALL FAR XMS
 (*6) Mouse Version: 8.05
 (*7) EMS Version: 3.2
 (*8) XMS Version: 2.70
+
+
+--- License
+
+The copyright belongs to the author, but you can use the source codes
+under the GNU GENERAL PUBLIC LICENSE Version 2.
+
+See also COPYING.txt for more details about the license.
 
 
 ----- Thanks

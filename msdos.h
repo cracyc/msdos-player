@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <tlhelp32.h>
 #include <psapi.h>
+#include <setupapi.h>
 
 #ifdef _DEBUG
 #define _CRTDBG_MAP_ALLOC
@@ -119,21 +120,26 @@ typedef union {
 	FIFO buffer
 ---------------------------------------------------------------------------- */
 
-#define MAX_FIFO	256
-
 class FIFO
 {
 private:
-	int buf[MAX_FIFO];
+	int size;
+	int *buf;
 	int cnt, rpt, wpt, stored[3];
 public:
-	FIFO() {
+	FIFO(int s) {
+		size = s;
+		buf = (int *)malloc(size * sizeof(int));
 		cnt = rpt = wpt = 0;
 	}
+	void release()
+	{
+		free(buf);
+	}
 	void write(int val) {
-		if(cnt < MAX_FIFO) {
+		if(cnt < size) {
 			buf[wpt++] = val;
-			if(wpt >= MAX_FIFO) {
+			if(wpt >= size) {
 				wpt = 0;
 			}
 			cnt++;
@@ -143,15 +149,26 @@ public:
 		int val = 0;
 		if(cnt) {
 			val = buf[rpt++];
-			if(rpt >= MAX_FIFO) {
+			if(rpt >= size) {
 				rpt = 0;
 			}
 			cnt--;
 		}
-		return val;
+		return(val);
 	}
 	int count() {
-		return cnt;
+		return(cnt);
+	}
+	int remain() {
+		return(size - cnt);
+	}
+	bool full()
+	{
+		return(cnt == size);
+	}
+	bool empty()
+	{
+		return(cnt == 0);
 	}
 	void store_buffer() {
 		stored[0] = cnt;
@@ -276,6 +293,43 @@ struct {
 int xms_a20_local_enb_count = 0;
 #endif
 
+// dma
+
+typedef struct {
+	struct {
+		union {
+			UINT16 w;
+			struct {
+#ifdef __BIG_ENDIAN__
+				UINT8 h, l;
+#else
+				UINT8 l, h;
+#endif
+			} b;
+		} areg, creg, bareg, bcreg;
+		UINT8 mode;
+		UINT8 pagereg;
+		UINT32 port;
+	} ch[4];
+	
+	bool low_high;
+	UINT8 cmd;
+	UINT8 req;
+	UINT8 mask;
+	UINT8 tc;
+	UINT16 tmp;
+} dma_t;
+
+dma_t dma[2] = {0};
+
+void dma_init();
+void dma_reset(int c);
+void dma_write(int c, UINT32 addr, UINT8 data);
+UINT8 dma_read(int c, UINT32 addr);
+void dma_page_write(int c, int ch, UINT8 data);
+UINT8 dma_page_read(int c, int ch);
+void dma_run(int c, int ch);
+
 // pic
 
 typedef struct {
@@ -295,6 +349,18 @@ UINT8 pic_read(int c, UINT32 addr);
 void pic_req(int c, int level, int signal);
 int pic_ack();
 void pic_update();
+
+// pio
+
+typedef struct {
+	UINT8 data, stat, ctrl;
+} pio_t;
+
+pio_t pio[2] = {0};;
+
+void pio_init();
+void pio_write(int c, UINT32 addr, UINT8 data);
+UINT8 pio_read(int c, UINT32 addr);
 
 // pit
 
@@ -331,6 +397,66 @@ int pit_get_expired_time(int ch);
 
 UINT8 system_port = 0;
 
+// sio
+
+#define SIO_BUFFER_SIZE 1024
+
+typedef struct {
+	int channel;
+	int port_number;
+	
+	FIFO *send_buffer;
+	FIFO *recv_buffer;
+	
+	union {
+		UINT16 w;
+		struct {
+#ifdef __BIG_ENDIAN__
+			UINT8 h, l;
+#else
+			UINT8 l, h;
+#endif
+		} b;
+	} divisor;
+	UINT16 prev_divisor;
+	UINT8 line_ctrl, prev_line_ctrl;
+	UINT8 selector;
+	
+	UINT8 modem_ctrl;
+	bool set_brk, prev_set_brk;
+	bool set_rts, prev_set_rts;
+	bool set_dtr, prev_set_dtr;
+	
+	UINT8 line_stat_buf, line_stat_err;
+	UINT8 modem_stat, prev_modem_stat;
+	
+	UINT8 irq_enable;
+	UINT8 irq_identify;
+	
+	UINT8 scratch;
+} sio_t;
+
+typedef struct {
+	HANDLE hThread;
+	CRITICAL_SECTION csSendData;
+	CRITICAL_SECTION csRecvData;
+	CRITICAL_SECTION csLineCtrl;
+	CRITICAL_SECTION csLineStat;
+	CRITICAL_SECTION csModemCtrl;
+	CRITICAL_SECTION csModemStat;
+} sio_mt_t;
+
+sio_t sio[2] = {0};
+sio_mt_t sio_mt[2] = {0};
+
+void sio_init();
+void sio_finish();
+void sio_write(int c, UINT32 addr, UINT8 data);
+UINT8 sio_read(int c, UINT32 addr);
+void sio_update(int c);
+void sio_update_irq(int c);
+DWORD WINAPI sio_thread(void *lpx);
+
 // cmos
 
 UINT8 cmos[128];
@@ -362,10 +488,14 @@ void kbd_write_command(UINT8 val);
 #define BIOS_SIZE	0x100
 #define WORK_TOP	(BIOS_TOP + BIOS_SIZE)
 #define WORK_SIZE	0x200
-#define DOS_INFO_TOP	(WORK_TOP + WORK_SIZE)
-#define DOS_INFO_BASE	(DOS_INFO_TOP + 38)
+// IO.SYS 0070:0000
+#define DEVICE_TOP	(WORK_TOP + WORK_SIZE)
+#define DEVICE_SIZE	0x40	/* 22 + 18 * 2 */
+#define DOS_INFO_TOP	(DEVICE_TOP + DEVICE_SIZE)
 #define DOS_INFO_SIZE	0x100
-#define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
+#define EXT_BIOS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
+#define EXT_BIOS_SIZE	0x400
+#define DPB_TOP		(EXT_BIOS_TOP + EXT_BIOS_SIZE)
 #define DPB_SIZE	0x400
 #define SFT_TOP		(DPB_TOP + DPB_SIZE)
 #define SFT_SIZE	0x4b0	/* 6 + 0x3b * 20 */
@@ -378,7 +508,6 @@ void kbd_write_command(UINT8 val);
 #define ERR_TABLE_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
 #define ERR_TABLE_SIZE	0x10
 #define SDA_TOP		(ERR_TABLE_TOP + ERR_TABLE_SIZE)
-#define SDA_BASE	(SDA_TOP + 34)
 #define SDA_SIZE	0xb0
 // nls tables
 #define UPPERTABLE_TOP	(SDA_TOP + SDA_SIZE)
@@ -409,7 +538,6 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 UINT32 IRET_TOP = 0;
 #define IRET_SIZE	0x100
 UINT32 XMS_TOP = 0;
-#define XMS_OFFSET	0x04
 #define XMS_SIZE	0x20
 
 //#define ENV_SIZE	0x800
@@ -696,35 +824,46 @@ typedef struct {
 	UINT16 first_mcb;	// -2
 	PAIR32 first_dpb;	// +0
 	PAIR32 first_sft;	// +4
-	UINT8 reserved_2[8];	// +8
+	PAIR32 clock_device;	// +8
+	PAIR32 con_device;	// +12
 	UINT16 max_sector_len;	// +16
 	PAIR32 disk_buf_info;	// +18 from DOSBox
 	PAIR32 cds;		// +22
 	PAIR32 fcb_table;	// +26
-	UINT8 reserved_3[3];	// +30
+	UINT8 reserved_2[3];	// +30
 	UINT8 last_drive;	// +33
 	struct {
-		UINT32 next_driver;	// +34
+		PAIR32 next_driver;	// +34
 		UINT16 attributes;	// +38
 		UINT16 strategy;	// +40
 		UINT16 interrupt;	// +42
 		char dev_name[8];	// +44
 	} nul_device;
-	UINT8 reserved_4[11];	// +52
+	UINT8 reserved_3[11];	// +52
 	UINT16 buffers_x;	// +63
 	UINT16 buffers_y;	// +65
 	UINT8 boot_drive;	// +67
 	UINT8 i386_or_later;	// +68
 	UINT16 ext_mem_size;	// +69
 	PAIR32 disk_buf_heads;	// +71 from DOSBox
-	UINT8 reserved_5[21];	// +75
+	UINT8 reserved_4[21];	// +75
 	UINT8 dos_flag;		// +96
-	UINT8 reserved_6[2];	// +97
+	UINT8 reserved_5[2];	// +97
 	UINT8 umb_linked;	// +99 from DOSBox
-	UINT8 reserved_7[2];	// +100
+	UINT8 reserved_6[2];	// +100
 	UINT16 first_umb_fcb;	// +102 from DOSBox
 	UINT16 first_mcb_2;	// +104 from DOSBox
 } dos_info_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	PAIR32 next_driver;
+	UINT16 attributes;
+	UINT16 strategy;
+	UINT16 interrupt;
+	char dev_name[8];
+} device_t;
 #pragma pack()
 
 #pragma pack(1)

@@ -20,6 +20,7 @@
 	#define ENABLE_DEBUG_DASM
 	#define ENABLE_DEBUG_SYSCALL
 	#define ENABLE_DEBUG_UNIMPLEMENTED
+	#define ENABLE_DEBUG_IOPORT
 	
 	#ifdef EXPORT_DEBUG_TO_FILE
 		FILE* fdebug = NULL;
@@ -28,6 +29,7 @@
 	#endif
 	#ifdef ENABLE_DEBUG_UNIMPLEMENTED
 		#define unimplemented_10h fatalerror
+		#define unimplemented_14h fatalerror
 		#define unimplemented_15h fatalerror
 		#define unimplemented_16h fatalerror
 		#define unimplemented_1ah fatalerror
@@ -40,6 +42,9 @@
 #endif
 #ifndef unimplemented_10h
 	#define unimplemented_10h nolog
+#endif
+#ifndef unimplemented_14h
+	#define unimplemented_14h nolog
 #endif
 #ifndef unimplemented_15h
 	#define unimplemented_15h nolog
@@ -772,7 +777,13 @@ int main(int argc, char *argv[], char *envp[])
 	BOOL bSuccess, bChangeScreenSize = FALSE;
 	
 	for(int i = 1; i < argc; i++) {
-		if(_strnicmp(argv[i], "-e", 2) == 0) {
+		if(_strnicmp(argv[i], "-b", 2) == 0) {
+			stay_busy = true;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-d", 2) == 0) {
+			no_windows = true;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-e", 2) == 0) {
 			standard_env = 1;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-i", 2) == 0) {
@@ -780,19 +791,6 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-m", 2) == 0) {
 			limit_max_memory = true;
-			arg_offset++;
-		} else if(_strnicmp(argv[i], "-d", 2) == 0) {
-			no_windows = true;
-			arg_offset++;
-		} else if(_strnicmp(argv[i], "-b", 2) == 0) {
-			stay_busy = true;
-			arg_offset++;
-		} else if(_strnicmp(argv[i], "-x", 2) == 0) {
-			UMB_TOP = EMS_TOP + EMS_SIZE;
-			support_ems = true;
-#ifdef SUPPORT_XMS
-			support_xms = true;
-#endif
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-n", 2) == 0) {
 			if(sscanf(argv[1] + 2, "%d,%d", &buf_height, &buf_width) != 2) {
@@ -805,11 +803,61 @@ int main(int argc, char *argv[], char *envp[])
 				buf_height = 25;
 			}
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-s", 2) == 0) {
+			if(strlen(argv[i]) > 2) {
+				char *p1 = &argv[i][2], *p2;
+				if((p2 = strchr(p1, ',')) != NULL) {
+					sio[1].port_number = atoi(p2 + 1);
+				}
+				sio[0].port_number = atoi(p1);
+			}
+			if(sio[0].port_number == 0 || sio[1].port_number == 0) {
+				SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
+				HDEVINFO hDevInfo = 0;
+				HKEY hKey = 0;
+				if((hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, NULL, NULL, (DIGCF_PRESENT | DIGCF_DEVICEINTERFACE))) != 0) {
+					for(int i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData); i++) {
+						if((hKey = SetupDiOpenDevRegKey(hDevInfo, &DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE)) != INVALID_HANDLE_VALUE) {
+							char chData[256];
+							DWORD dwType = 0;
+							DWORD dwSize = sizeof(chData);
+							int port_number = 0;
+							
+							if(RegQueryValueEx(hKey, _T("PortName"), NULL, &dwType, (BYTE *)chData, &dwSize) == ERROR_SUCCESS) {
+								if(_strnicmp(chData, "COM", 3) == 0) {
+									port_number = atoi(chData + 3);
+								}
+							}
+							RegCloseKey(hKey);
+							
+							if(sio[0].port_number == port_number || sio[1].port_number == port_number) {
+								continue;
+							}
+							if(sio[0].port_number == 0) {
+								sio[0].port_number = port_number;
+							} else if(sio[1].port_number == 0) {
+								sio[1].port_number = port_number;
+							}
+							if(sio[0].port_number != 0 && sio[1].port_number != 0) {
+								break;
+							}
+						}
+					}
+				}
+			}
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
 				major_version = argv[i][2] - '0';
 				minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
 			}
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-x", 2) == 0) {
+			UMB_TOP = EMS_TOP + EMS_SIZE;
+			support_ems = true;
+#ifdef SUPPORT_XMS
+			support_xms = true;
+#endif
 			arg_offset++;
 		} else {
 			break;
@@ -822,19 +870,22 @@ int main(int argc, char *argv[], char *envp[])
 #else
 		fprintf(stderr, "MS-DOS Player (" CPU_MODEL_NAME(CPU_MODEL) ") for Win32 console\n\n");
 #endif
-		fprintf(stderr, "Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-n[L[,C]]] [-vX.XX] [-x] (command file) [options]\n"
-				"\n"
-				"\t-b\tstay busy during keyboard polling\n"
-				"\t-d\tpretend running under straight DOS, not Windows\n"
-				"\t-e\tuse a reduced environment block\n"
-				"\t-i\tignore invalid instructions\n"
-				"\t-m\trestrict free memory to 0x7FFF paragraphs\n"
-				"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
-				"\t-v\tset the DOS version\n"
+		fprintf(stderr,
+			"Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-n[L[,C]]] [-s[P1[,P2]]] [-vX.XX] [-x]\n"
+			"             (command file) [options]\n"
+			"\n"
+			"\t-b\tstay busy during keyboard polling\n"
+			"\t-d\tpretend running under straight DOS, not Windows\n"
+			"\t-e\tuse a reduced environment block\n"
+			"\t-i\tignore invalid instructions\n"
+			"\t-m\trestrict free memory to 0x7FFF paragraphs\n"
+			"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
+			"\t-s\tenable serial I/O and set host's COM port numbers\n"
+			"\t-v\tset the DOS version\n"
 #ifdef SUPPORT_XMS
-				"\t-x\tenable XMS/EMS\n"
+			"\t-x\tenable XMS/EMS\n"
 #else
-				"\t-x\tenable EMS\n"
+			"\t-x\tenable EMS\n"
 #endif
 		);
 		
@@ -892,8 +943,8 @@ int main(int argc, char *argv[], char *envp[])
 	scr_top = csbi.srWindow.Top;
 	cursor_moved = false;
 	
-	key_buf_char = new FIFO();
-	key_buf_scan = new FIFO();
+	key_buf_char = new FIFO(256);
+	key_buf_scan = new FIFO(256);
 	
 	hardware_init();
 	
@@ -950,7 +1001,9 @@ int main(int argc, char *argv[], char *envp[])
 	
 	hardware_finish();
 	
+	key_buf_char->release();
 	delete key_buf_char;
+	key_buf_scan->release();
 	delete key_buf_scan;
 	
 //	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
@@ -4169,6 +4222,123 @@ inline void pcbios_int_10h_ffh()
 	int_10h_ffh_called = true;
 }
 
+inline void pcbios_int_14h_00h()
+{
+	if(REG16(DX) < 2) {
+		static const unsigned int rate[] = {110, 150, 300, 600, 1200, 2400, 4800, 9600};
+		UINT8 selector = sio_read(REG16(DX), 3);
+		selector &= ~0x3f;
+		selector |= REG8(AL) & 0x1f;
+		UINT16 divisor = 115200 / rate[REG8(AL) >> 5];
+		sio_write(REG16(DX), 3, selector | 0x80);
+		sio_write(REG16(DX), 0, divisor & 0xff);
+		sio_write(REG16(DX), 1, divisor >> 8);
+		sio_write(REG16(DX), 3, selector);
+		REG8(AH) = sio_read(REG16(DX), 5);
+		REG8(AL) = sio_read(REG16(DX), 6);
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
+inline void pcbios_int_14h_01h()
+{
+	if(REG16(DX) < 2) {
+		UINT8 selector = sio_read(REG16(DX), 3);
+		sio_write(REG16(DX), 3, selector & ~0x80);
+		sio_write(REG16(DX), 0, REG8(AL));
+		sio_write(REG16(DX), 3, selector);
+		REG8(AH) = sio_read(REG16(DX), 5);
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
+inline void pcbios_int_14h_02h()
+{
+	if(REG16(DX) < 2) {
+		UINT8 selector = sio_read(REG16(DX), 3);
+		sio_write(REG16(DX), 3, selector & ~0x80);
+		REG8(AL) = sio_read(REG16(DX), 0);
+		sio_write(REG16(DX), 3, selector);
+		REG8(AH) = sio_read(REG16(DX), 5);
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
+inline void pcbios_int_14h_03h()
+{
+	if(REG16(DX) < 2) {
+		REG8(AH) = sio_read(REG16(DX), 5);
+		REG8(AL) = sio_read(REG16(DX), 6);
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
+inline void pcbios_int_14h_04h()
+{
+	if(REG16(DX) < 2) {
+		UINT8 selector = sio_read(REG16(DX), 3);
+		if(REG8(CH) <= 0x03) {
+			selector = (selector & ~0x03) | REG8(CH);
+		}
+		if(REG8(BL) == 0x00) {
+			selector &= ~0x04;
+		} else if(REG8(BL) == 0x01) {
+			selector |= 0x04;
+		}
+		if(REG8(BH) == 0x00) {
+			selector = (selector & ~0x38) | 0x00;
+		} else if(REG8(BH) == 0x01) {
+			selector = (selector & ~0x38) | 0x08;
+		} else if(REG8(BH) == 0x02) {
+			selector = (selector & ~0x38) | 0x18;
+		} else if(REG8(BH) == 0x03) {
+			selector = (selector & ~0x38) | 0x28;
+		} else if(REG8(BH) == 0x04) {
+			selector = (selector & ~0x38) | 0x38;
+		}
+		if(REG8(AL) == 0x00) {
+			selector |= 0x40;
+		} else if(REG8(AL) == 0x01) {
+			selector &= ~0x40;
+		}
+		if(REG8(CL) <= 0x0b) {
+			static const unsigned int rate[] = {110, 150, 300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
+			UINT16 divisor = 115200 / rate[REG8(CL)];
+			sio_write(REG16(DX), 3, selector | 0x80);
+			sio_write(REG16(DX), 0, divisor & 0xff);
+			sio_write(REG16(DX), 1, divisor >> 8);
+		}
+		sio_write(REG16(DX), 3, selector);
+		REG8(AH) = sio_read(REG16(DX), 5);
+		REG8(AL) = sio_read(REG16(DX), 6);
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
+inline void pcbios_int_14h_05h()
+{
+	if(REG16(DX) < 2) {
+		if(REG8(AL) == 0x00) {
+			REG8(BL) = sio_read(REG16(DX), 4);
+			REG8(AH) = sio_read(REG16(DX), 5);
+			REG8(AL) = sio_read(REG16(DX), 6);
+		} else if(REG8(AL) == 0x01) {
+			sio_write(REG16(DX), 4, REG8(BL));
+			REG8(AH) = sio_read(REG16(DX), 5);
+			REG8(AL) = sio_read(REG16(DX), 6);
+		} else {
+			unimplemented_14h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x14, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		}
+	} else {
+		REG8(AH) = 0x80;
+	}
+}
+
 inline void pcbios_int_15h_10h()
 {
 	switch(REG8(AL)) {
@@ -6742,9 +6912,9 @@ inline void msdos_int_21h_51h()
 
 inline void msdos_int_21h_52h()
 {
-	SREG(ES) = (DOS_INFO_BASE >> 4);
+	SREG(ES) = DOS_INFO_TOP >> 4;
 	i386_load_segment_descriptor(ES);
-	REG16(BX) = (DOS_INFO_BASE & 0x0f);
+	REG16(BX) = offsetof(dos_info_t, first_dpb);
 }
 
 inline void msdos_int_21h_54h()
@@ -7057,11 +7227,9 @@ inline void msdos_int_21h_63h()
 	}
 }
 
-inline void msdos_int_21h_65h()
+UINT16 get_extended_country_info(UINT8 func)
 {
-	char tmp[0x10000];
-	
-	switch(REG8(AL)) {
+	switch(func) {
 	case 0x01:
 		if(REG16(CX) >= 5) {
 			UINT8 data[1 + 2 + 2 + 2 + sizeof(country_info_t)];
@@ -7073,68 +7241,110 @@ inline void msdos_int_21h_65h()
 			*(UINT16 *)(data + 3) = get_country_info((country_info_t*)(data + 7));
 			*(UINT16 *)(data + 5) = active_code_page;
 			memcpy(mem + SREG_BASE(ES) + REG16(DI), data, REG16(CX));
-			REG16(AX) = active_code_page;
+//			REG16(AX) = active_code_page;
 		} else {
-			REG16(AX) = 1;
-			m_CF = 1;
+			return(0x08); // insufficient memory
 		}
 		break;
 	case 0x02:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x02;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (UPPERTABLE_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (UPPERTABLE_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x03:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x02;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (LOWERTABLE_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (LOWERTABLE_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x04:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x04;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (FILENAME_UPPERTABLE_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (FILENAME_UPPERTABLE_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x05:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x05;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (FILENAME_TERMINATOR_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (FILENAME_TERMINATOR_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x06:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x06;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (COLLATING_TABLE_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (COLLATING_TABLE_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x07:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x07;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (DBCS_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (DBCS_TOP >> 4);
-		REG16(AX) = active_code_page;
+//		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
+	default:
+		return(0x01); // function number invalid
+	}
+	return(0x00);
+}
+
+inline void msdos_int_21h_65h()
+{
+	char tmp[0x10000];
+	
+	switch(REG8(AL)) {
+	case 0x01:
+	case 0x02:
+	case 0x03:
+	case 0x04:
+	case 0x05:
+	case 0x06:
+	case 0x07:
+		{
+			UINT16 result = get_extended_country_info(REG8(AL));
+			if(result) {
+				REG16(AX) = result;
+				m_CF = 1;
+			} else {
+				REG16(AX) = active_code_page; // FIXME: is this correct???
+			}
+		}
+		break;
 	case 0x20:
+	case 0xa0:
 		memset(tmp, 0, sizeof(tmp));
 		tmp[0] = REG8(DL);
 		my_strupr(tmp);
 		REG8(DL) = tmp[0];
 		break;
 	case 0x21:
+	case 0xa1:
 		memset(tmp, 0, sizeof(tmp));
 		memcpy(tmp, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 		my_strupr(tmp);
 		memcpy(mem + SREG_BASE(DS) + REG16(DX), tmp, REG16(CX));
 		break;
 	case 0x22:
+	case 0xa2:
 		my_strupr((char *)(mem + SREG_BASE(DS) + REG16(DX)));
+		break;
+	case 0x23:
+		// FIXME: need to check multi-byte (kanji) charactre?
+		if(REG8(DL) == 'N' || REG8(DL) == 'n' || (REG8(DL) == 0x82 && REG8(DH) == 0x78) || (REG8(DL) == 0x82 && REG8(DH) == 0x99)) {
+			// 8278h/8299h: multi-byte (kanji) Y and y
+			REG16(AX) = 0x00;
+		} else if(REG8(DL) == 'Y' || REG8(DL) == 'y' || (REG8(DL) == 0x82 && REG8(DH) == 0x6d) || (REG8(DL) == 0x82 && REG8(DH) == 0x8e)) {
+			// 826dh/828eh: multi-byte (kanji) N and n
+			REG16(AX) = 0x01;
+		} else {
+			REG16(AX) = 0x02;
+		}
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -8057,7 +8267,20 @@ inline void msdos_int_2fh_14h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(AL) = 0x01; // nlsfunc.com is not installed, can't install
+		REG8(AL) = 0xff; // nlsfunc.com is installed
+		break;
+	case 0x01:
+	case 0x03:
+		REG8(AL) = 0x00;
+		active_code_page = REG16(BX);
+		msdos_nls_tables_update();
+		break;
+	case 0x02:
+		REG8(AL) = get_extended_country_info(REG16(BP));
+		break;
+	case 0x04:
+		REG8(AL) = 0x00;
+		get_country_info((country_info_t *)(mem + SREG_BASE(ES) + REG16(DI)));
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -8216,9 +8439,9 @@ inline void msdos_int_2fh_43h()
 		REG8(AL) = 0x00;
 		break;
 	case 0x10:
-		REG16(BX) = XMS_OFFSET;
 		SREG(ES) = XMS_TOP >> 4;
 		i386_load_segment_descriptor(ES);
+		REG16(BX) = 0x1c;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9632,9 +9855,9 @@ void msdos_syscall(unsigned num)
 	case 0x11:
 		// PC BIOS - Get Equipment List
 #ifdef SUPPORT_FPU
-		REG16(AX) = 0x22;
+		REG16(AX) = 0x122;
 #else
-		REG16(AX) = 0x20;
+		REG16(AX) = 0x120;
 #endif
 		break;
 	case 0x12:
@@ -9649,9 +9872,17 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x14:
 		// PC BIOS - Serial I/O
-//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0xff;
-		m_CF = 1;
+		switch(REG8(AH)) {
+		case 0x00: pcbios_int_14h_00h(); break;
+		case 0x01: pcbios_int_14h_01h(); break;
+		case 0x02: pcbios_int_14h_02h(); break;
+		case 0x03: pcbios_int_14h_03h(); break;
+		case 0x04: pcbios_int_14h_04h(); break;
+		case 0x05: pcbios_int_14h_05h(); break;
+		default:
+			unimplemented_14h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			break;
+		}
 		break;
 	case 0x15:
 		// PC BIOS
@@ -9890,6 +10121,7 @@ void msdos_syscall(unsigned num)
 			case 0x02: msdos_int_21h_7302h(); break;
 			case 0x03: msdos_int_21h_7303h(); break;
 			// 0x04: set dpb to use for formatting
+			// 0x05: extended absolute disk read/write
 			default:
 				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x7300;
@@ -10295,10 +10527,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		vram_pages = 8;
 	}
 	
+	*(UINT16 *)(mem + 0x400) = 0x3f8; // com1 port address
+	*(UINT16 *)(mem + 0x402) = 0x2f8; // com2 port address
+//	*(UINT16 *)(mem + 0x404) = 0x3e8; // com3 port address
+//	*(UINT16 *)(mem + 0x406) = 0x2e8; // com4 port address
+	*(UINT16 *)(mem + 0x408) = 0x378; // lpt1 port address
+	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
+//	*(UINT16 *)(mem + 0x40c) = 0x3bc; // lpt3 port address
+	*(UINT16 *)(mem + 0x40e) = EXT_BIOS_TOP >> 4;
 #ifdef SUPPORT_FPU
-	*(UINT16 *)(mem + 0x410) = 0x22;
+	*(UINT16 *)(mem + 0x410) = 0x122;
 #else
-	*(UINT16 *)(mem + 0x410) = 0x20;
+	*(UINT16 *)(mem + 0x410) = 0x120;
 #endif
 	*(UINT16 *)(mem + 0x413) = MEMORY_END / 1024;
 	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
@@ -10317,6 +10557,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
+	*(UINT16 *)(mem + EXT_BIOS_TOP) = 1;
 	
 	// initial screen
 	SMALL_RECT rect;
@@ -10329,57 +10570,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 	}
 	
-	// dos info
-	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
-	dos_info->magic_word = 1;
-	dos_info->first_mcb = MEMORY_TOP >> 4;
-	dos_info->first_dpb.w.l = 0;
-	dos_info->first_dpb.w.h = DPB_TOP >> 4;
-	dos_info->first_sft.w.l = 0;
-	dos_info->first_sft.w.h = SFT_TOP >> 4;
-	dos_info->max_sector_len = 512;
-	dos_info->disk_buf_info.w.l = offsetof(dos_info_t, disk_buf_heads);
-	dos_info->disk_buf_info.w.h = DOS_INFO_TOP >> 4;
-	dos_info->cds.w.l = 0;
-	dos_info->cds.w.h = CDS_TOP >> 4;
-	dos_info->fcb_table.w.l = 0;
-	dos_info->fcb_table.w.h = FCB_TABLE_TOP >> 4;
-	dos_info->last_drive = 'Z' - 'A' + 1;
-	dos_info->buffers_x = 20;
-	dos_info->buffers_y = 0;
-	dos_info->boot_drive = 'C' - 'A' + 1;
-	dos_info->nul_device.next_driver = 0xffffffffU;
-	dos_info->nul_device.attributes = 0x8004U;
-	dos_info->nul_device.strategy = 0xffffU;
-	dos_info->nul_device.interrupt = 0xffffU;
-	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
-	dos_info->disk_buf_heads.w.l = 0;
-	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
-	dos_info->first_umb_fcb = UMB_TOP >> 4;
-	dos_info->first_mcb_2 = MEMORY_TOP >> 4;
-	
-	char *env;
-	if((env = getenv("LASTDRIVE")) != NULL) {
-		if(env[0] >= 'A' && env[0] <= 'Z') {
-			dos_info->last_drive = env[0] - 'A' + 1;
-		} else if(env[0] >= 'a' && env[0] <= 'z') {
-			dos_info->last_drive = env[0] - 'a' + 1;
-		}
-	}
-	if((env = getenv("windir")) != NULL) {
-		if(env[0] >= 'A' && env[0] <= 'Z') {
-			dos_info->boot_drive = env[0] - 'A' + 1;
-		} else if(env[0] >= 'a' && env[0] <= 'z') {
-			dos_info->boot_drive = env[0] - 'a' + 1;
-		}
-	}
-#if defined(HAS_I386)
-	dos_info->i386_or_later = 1;
-#else
-	dos_info->i386_or_later = 0;
-#endif
-	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
-	
 	// init mcb
 	int seg = MEMORY_TOP >> 4;
 	
@@ -10391,7 +10581,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, IRET_SIZE >> 4);
 	IRET_TOP = seg << 4;
 	seg += IRET_SIZE >> 4;
-	memset(mem + IRET_TOP, 0xcf, IRET_SIZE);
+	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
 	
 	// dummy xms/ems device
 	msdos_mcb_create(seg++, 'M', -1, XMS_SIZE >> 4);
@@ -10435,6 +10625,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			if(tmp[i] == '=') {
 				tmp[i] = '\0';
 				sprintf(name, ";%s;", tmp);
+				my_strupr(name);
 				strcpy(value, tmp + (value_pos = i + 1));
 				tmp[i] = '=';
 				break;
@@ -10506,33 +10697,121 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(EMB_TOP >> 4, 'Z', 0, (EMB_END >> 4) - (EMB_TOP >> 4) - 1);
 #endif
 	
+	// dos info
+	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
+	dos_info->magic_word = 1;
+	dos_info->first_mcb = MEMORY_TOP >> 4;
+	dos_info->first_dpb.w.l = 0;
+	dos_info->first_dpb.w.h = DPB_TOP >> 4;
+	dos_info->first_sft.w.l = 0;
+	dos_info->first_sft.w.h = SFT_TOP >> 4;
+	dos_info->clock_device.w.l = 22 + 18;
+	dos_info->clock_device.w.h = DEVICE_TOP >> 4;
+	dos_info->con_device.w.l = 22;
+	dos_info->con_device.w.h = DEVICE_TOP >> 4;
+	dos_info->max_sector_len = 512;
+	dos_info->disk_buf_info.w.l = offsetof(dos_info_t, disk_buf_heads);
+	dos_info->disk_buf_info.w.h = DOS_INFO_TOP >> 4;
+	dos_info->cds.w.l = 0;
+	dos_info->cds.w.h = CDS_TOP >> 4;
+	dos_info->fcb_table.w.l = 0;
+	dos_info->fcb_table.w.h = FCB_TABLE_TOP >> 4;
+	dos_info->last_drive = 'Z' - 'A' + 1;
+	dos_info->buffers_x = 20;
+	dos_info->buffers_y = 0;
+	dos_info->boot_drive = 'C' - 'A' + 1;
+	dos_info->nul_device.next_driver.w.l = 0;
+	dos_info->nul_device.next_driver.w.h = XMS_TOP >> 4;
+	dos_info->nul_device.attributes = 0x8004;
+	dos_info->nul_device.strategy = 0xffff;
+	dos_info->nul_device.interrupt = 0xffff;
+	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
+	dos_info->disk_buf_heads.w.l = 0;
+	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
+	dos_info->first_umb_fcb = UMB_TOP >> 4;
+	dos_info->first_mcb_2 = MEMORY_TOP >> 4;
+	
+	char *env;
+	if((env = getenv("LASTDRIVE")) != NULL) {
+		if(env[0] >= 'A' && env[0] <= 'Z') {
+			dos_info->last_drive = env[0] - 'A' + 1;
+		} else if(env[0] >= 'a' && env[0] <= 'z') {
+			dos_info->last_drive = env[0] - 'a' + 1;
+		}
+	}
+	if((env = getenv("windir")) != NULL) {
+		if(env[0] >= 'A' && env[0] <= 'Z') {
+			dos_info->boot_drive = env[0] - 'A' + 1;
+		} else if(env[0] >= 'a' && env[0] <= 'z') {
+			dos_info->boot_drive = env[0] - 'a' + 1;
+		}
+	}
+#if defined(HAS_I386)
+	dos_info->i386_or_later = 1;
+#else
+	dos_info->i386_or_later = 0;
+#endif
+	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
+	
 	// interrupt vector
 	for(int i = 0; i < 0x80; i++) {
 		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// FFFD:0010 irq0
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// fffd:0010 irq0
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
-	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// FFFF:0000 boot
+	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
-	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0000;	// ems
+	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0018;	// xxxx:0018 ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// FFFD:0000 irq12
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffd:0000 irq12
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = 0xfffd;
 	
+	// dummy devices (CON -> CLOCK$ -> NUL -> EMMXXXX0)
+	static const UINT8 device_top[] = {
+		// from Windows 98 SE
+		0x3f, 0x01, 0x01, 0xc9, 0x00, 0xe9, 0x6a, 0x04,
+		0x67, 0x13, 0x00, 0x00, 0xfc, 0x01, 0xcf, 0x00,
+		0x0b, 0x02, 0x5a, 0x03, 0xc9, 0x00,
+	};
+	memcpy(mem + DEVICE_TOP, device_top, sizeof(device_top));
+	
+	device_t *con_device = (device_t *)(mem + DEVICE_TOP + 22);
+	con_device->next_driver.w.l = 22 + 18;
+	con_device->next_driver.w.h = DEVICE_TOP >> 4;
+	con_device->attributes = 0x8013;
+	con_device->strategy = 0xffff;
+	con_device->interrupt = 0xffff;
+	memcpy(con_device->dev_name, "CON     ", 8);
+	
+	device_t *clk_device = (device_t *)(mem + DEVICE_TOP + 22 + 18);
+	clk_device->next_driver.w.l = offsetof(dos_info_t, nul_device);
+	clk_device->next_driver.w.h = DOS_INFO_TOP >> 4;
+	clk_device->attributes = 0x8008;
+	clk_device->strategy = 0xffff;
+	clk_device->interrupt = 0xffff;
+	memcpy(clk_device->dev_name, "CLOCK$  ", 8);
+	
 	// ems (int 67h) and xms (call far)
-	mem[XMS_TOP + 0] = 0xcd;	// int 68h (dummy)
-	mem[XMS_TOP + 1] = 0x68;
-	mem[XMS_TOP + 2] = 0xcf;	// iret
+	device_t *xms_device = (device_t *)(mem + XMS_TOP);
+	xms_device->next_driver.w.l = 0xffff;
+	xms_device->next_driver.w.h = 0xffff;
+	xms_device->attributes = 0xc000;
+	xms_device->strategy = 0xffff;
+	xms_device->interrupt = 0xffff;
+	memcpy(xms_device->dev_name, "EMMXXXX0", 8);
+	
+	mem[XMS_TOP + 0x18] = 0xcd;	// int 68h (dummy)
+	mem[XMS_TOP + 0x19] = 0x68;
+	mem[XMS_TOP + 0x1a] = 0xcf;	// iret
 #ifdef SUPPORT_XMS
 	if(support_xms) {
-		mem[XMS_TOP + 4] = 0xcd;	// int 69h (dummy)
-		mem[XMS_TOP + 5] = 0x69;
-		mem[XMS_TOP + 6] = 0xcb;	// retf
+		mem[XMS_TOP + 0x1c] = 0xcd;	// int 69h (dummy)
+		mem[XMS_TOP + 0x1d] = 0x69;
+		mem[XMS_TOP + 0x1e] = 0xcb;	// retf
 	} else
 #endif
-	mem[XMS_TOP + 4] = 0xcb;	// retf
-	memcpy(mem + XMS_TOP + 0x0a, "EMMXXXX0", 8);
+	mem[XMS_TOP + 0x1c] = 0xcb;	// retf
 	
 	// irq12 (mouse)
 	mem[0xfffd0 + 0x00] = 0xcd;	// int 6ah (dummy)
@@ -10685,12 +10964,15 @@ void hardware_init()
 	i386_set_a20_line(0);
 	
 	ems_init();
+	dma_init();
 	pic_init();
+	pio_init();
 #ifdef PIT_ALWAYS_RUNNING
 	pit_init();
 #else
 	pit_active = 0;
 #endif
+	sio_init();
 	cmos_init();
 	kbd_init();
 }
@@ -10701,6 +10983,7 @@ void hardware_finish()
 	vtlb_free(m_vtlb);
 #endif
 	ems_finish();
+	sio_finish();
 }
 
 void hardware_run()
@@ -10797,9 +11080,15 @@ void hardware_update()
 			pit_run(2, cur_time);
 		}
 		
+		// update sio and raise irq4/3
+		for(int c = 0; c < 2; c++) {
+			sio_update(c);
+		}
+		
 		// update keyboard and mouse
 		static UINT32 prev_tick = 0;
 		UINT32 cur_tick = cur_time / 32;
+		
 		if(prev_tick != cur_tick) {
 			// update keyboard flags
 			UINT8 state;
@@ -10847,6 +11136,7 @@ void hardware_update()
 		
 		// update daily timer counter
 		pcbios_update_daily_timer_counter(cur_time);
+		
 		prev_time = cur_time;
 	}
 }
@@ -10951,6 +11241,258 @@ void ems_unmap_page(int physical)
 			memcpy(ems_handles[handle].buffer + 0x4000 * logical, mem + EMS_TOP + 0x4000 * physical, 0x4000);
 		}
 		ems_pages[physical].mapped = false;
+	}
+}
+
+// dma
+
+void dma_init()
+{
+	for(int c = 0; c < 2; c++) {
+		dma_reset(c);
+	}
+}
+
+void dma_reset(int c)
+{
+	dma[c].low_high = false;
+	dma[c].cmd = dma[c].req = dma[c].tc = 0;
+	dma[c].mask = 0xff;
+}
+
+void dma_write(int c, UINT32 addr, UINT8 data)
+{
+	int ch = (addr >> 1) & 3;
+	UINT8 bit = 1 << (data & 3);
+	
+	switch(addr & 0x0f) {
+	case 0x00: case 0x02: case 0x04: case 0x06:
+		if(dma[c].low_high) {
+			dma[c].ch[ch].bareg.b.h = data;
+		} else {
+			dma[c].ch[ch].bareg.b.l = data;
+		}
+		dma[c].ch[ch].areg.w = dma[c].ch[ch].bareg.w;
+		dma[c].low_high = !dma[c].low_high;
+		break;
+	case 0x01: case 0x03: case 0x05: case 0x07:
+		if(dma[c].low_high) {
+			dma[c].ch[ch].bcreg.b.h = data;
+		} else {
+			dma[c].ch[ch].bcreg.b.l = data;
+		}
+		dma[c].ch[ch].creg.w = dma[c].ch[ch].bcreg.w;
+		dma[c].low_high = !dma[c].low_high;
+		break;
+	case 0x08:
+		// command register
+		dma[c].cmd = data;
+		break;
+	case 0x09:
+		// dma[c].request register
+		if(data & 4) {
+			if(!(dma[c].req & bit)) {
+				dma[c].req |= bit;
+//				dma_run(c, ch);
+			}
+		} else {
+			dma[c].req &= ~bit;
+		}
+		break;
+	case 0x0a:
+		// single mask register
+		if(data & 4) {
+			dma[c].mask |= bit;
+		} else {
+			dma[c].mask &= ~bit;
+		}
+		break;
+	case 0x0b:
+		// mode register
+		dma[c].ch[data & 3].mode = data;
+		break;
+	case 0x0c:
+		dma[c].low_high = false;
+		break;
+	case 0x0d:
+		// clear master
+		dma_reset(c);
+		break;
+	case 0x0e:
+		// clear mask register
+		dma[c].mask = 0;
+		break;
+	case 0x0f:
+		// all mask register
+		dma[c].mask = data & 0x0f;
+		break;
+	}
+}
+
+UINT8 dma_read(int c, UINT32 addr)
+{
+	int ch = (addr >> 1) & 3;
+	UINT8 val = 0xff;
+	
+	switch(addr & 0x0f) {
+	case 0x00: case 0x02: case 0x04: case 0x06:
+		if(dma[c].low_high) {
+			val = dma[c].ch[ch].areg.b.h;
+		} else {
+			val = dma[c].ch[ch].areg.b.l;
+		}
+		dma[c].low_high = !dma[c].low_high;
+		return(val);
+	case 0x01: case 0x03: case 0x05: case 0x07:
+		if(dma[c].low_high) {
+			val = dma[c].ch[ch].creg.b.h;
+		} else {
+			val = dma[c].ch[ch].creg.b.l;
+		}
+		dma[c].low_high = !dma[c].low_high;
+		return(val);
+	case 0x08:
+		// status register
+		val = (dma[c].req << 4) | dma[c].tc;
+		dma[c].tc = 0;
+		return(val);
+	case 0x0d:
+		// temporary register
+		return(dma[c].tmp & 0xff);
+	}
+	return(0xff);
+}
+
+void dma_page_write(int c, int ch, UINT8 data)
+{
+	dma[c].ch[ch].pagereg = data;
+}
+
+UINT8 dma_page_read(int c, int ch)
+{
+	return(dma[c].ch[ch].pagereg);
+}
+
+void dma_run(int c, int ch)
+{
+	UINT8 bit = 1 << ch;
+	
+	if((dma[c].req & bit) && !(dma[c].mask & bit)) {
+		// execute dma
+		while(dma[c].req & bit) {
+			if(ch == 0 && (dma[c].cmd & 0x01)) {
+				// memory -> memory
+				UINT32 saddr = dma[c].ch[0].areg.w | (dma[c].ch[0].pagereg << 16);
+				UINT32 daddr = dma[c].ch[1].areg.w | (dma[c].ch[1].pagereg << 16);
+				
+				if(c == 0) {
+					dma[c].tmp = read_byte(saddr);
+					write_byte(daddr, dma[c].tmp);
+				} else {
+					dma[c].tmp = read_word(saddr << 1);
+					write_word(daddr << 1, dma[c].tmp);
+				}
+				if(!(dma[c].cmd & 0x02)) {
+					if(dma[c].ch[0].mode & 0x20) {
+						dma[c].ch[0].areg.w--;
+						if(dma[c].ch[0].areg.w == 0xffff) {
+							dma[c].ch[0].pagereg--;
+						}
+					} else {
+						dma[c].ch[0].areg.w++;
+						if(dma[c].ch[0].areg.w == 0) {
+							dma[c].ch[0].pagereg++;
+						}
+					}
+				}
+				if(dma[c].ch[1].mode & 0x20) {
+					dma[c].ch[1].areg.w--;
+					if(dma[c].ch[1].areg.w == 0xffff) {
+						dma[c].ch[1].pagereg--;
+					}
+				} else {
+					dma[c].ch[1].areg.w++;
+					if(dma[c].ch[1].areg.w == 0) {
+						dma[c].ch[1].pagereg++;
+					}
+				}
+				
+				// check dma condition
+				if(dma[c].ch[0].creg.w-- == 0) {
+					if(dma[c].ch[0].mode & 0x10) {
+						// self initialize
+						dma[c].ch[0].areg.w = dma[c].ch[0].bareg.w;
+						dma[c].ch[0].creg.w = dma[c].ch[0].bcreg.w;
+					} else {
+//						dma[c].mask |= bit;
+					}
+				}
+				if(dma[c].ch[1].creg.w-- == 0) {
+					// terminal count
+					if(dma[c].ch[1].mode & 0x10) {
+						// self initialize
+						dma[c].ch[1].areg.w = dma[c].ch[1].bareg.w;
+						dma[c].ch[1].creg.w = dma[c].ch[1].bcreg.w;
+					} else {
+						dma[c].mask |= bit;
+					}
+					dma[c].req &= ~bit;
+					dma[c].tc |= bit;
+				}
+			} else {
+				UINT32 addr = dma[c].ch[ch].areg.w | (dma[c].ch[ch].pagereg << 16);
+				
+				if((dma[c].ch[ch].mode & 0x0c) == 0x00) {
+					// verify
+				} else if((dma[c].ch[ch].mode & 0x0c) == 0x04) {
+					// io -> memory
+					if(c == 0) {
+						dma[c].tmp = read_io_byte(dma[c].ch[ch].port);
+						write_byte(addr, dma[c].tmp);
+					} else {
+						dma[c].tmp = read_io_word(dma[c].ch[ch].port);
+						write_word(addr << 1, dma[c].tmp);
+					}
+				} else if((dma[c].ch[ch].mode & 0x0c) == 0x08) {
+					// memory -> io
+					if(c == 0) {
+						dma[c].tmp = read_byte(addr);
+						write_io_byte(dma[c].ch[ch].port, dma[c].tmp);
+					} else {
+						dma[c].tmp = read_word(addr << 1);
+						write_io_word(dma[c].ch[ch].port, dma[c].tmp);
+					}
+				}
+				if(dma[c].ch[ch].mode & 0x20) {
+					dma[c].ch[ch].areg.w--;
+					if(dma[c].ch[ch].areg.w == 0xffff) {
+						dma[c].ch[ch].pagereg--;
+					}
+				} else {
+					dma[c].ch[ch].areg.w++;
+					if(dma[c].ch[ch].areg.w == 0) {
+						dma[c].ch[ch].pagereg++;
+					}
+				}
+				
+				// check dma condition
+				if(dma[c].ch[ch].creg.w-- == 0) {
+					// terminal count
+					if(dma[c].ch[ch].mode & 0x10) {
+						// self initialize
+						dma[c].ch[ch].areg.w = dma[c].ch[ch].bareg.w;
+						dma[c].ch[ch].creg.w = dma[c].ch[ch].bcreg.w;
+					} else {
+						dma[c].mask |= bit;
+					}
+					dma[c].req &= ~bit;
+					dma[c].tc |= bit;
+				} else if((dma[c].ch[ch].mode & 0xc0) == 0x40) {
+					// single mode
+					break;
+				}
+			}
+		}
 	}
 }
 
@@ -11140,6 +11682,41 @@ void pic_update()
 	i386_set_irq_line(INPUT_LINE_IRQ, CLEAR_LINE);
 }
 
+// pio
+
+void pio_init()
+{
+	for(int c = 0; c < 2; c++) {
+		pio[c].stat = 0xde;
+		pio[c].ctrl = 0x0c;
+	}
+}
+
+void pio_write(int c, UINT32 addr, UINT8 data)
+{
+	switch(addr & 3) {
+	case 0:
+		pio[c].data = data;
+		break;
+	case 2:
+		pio[c].ctrl = data;
+		break;
+	}
+}
+
+UINT8 pio_read(int c, UINT32 addr)
+{
+	switch(addr & 3) {
+	case 0:
+		return(pio[c].data);
+	case 1:
+		return(pio[c].stat);
+	case 2:
+		return(pio[c].ctrl);
+	}
+	return(0xff);
+}
+
 // pit
 
 #define PIT_FREQ 1193182ULL
@@ -11320,6 +11897,466 @@ int pit_get_expired_time(int ch)
 	return((val != 0) ? val : 1);
 }
 
+// sio
+
+void sio_init()
+{
+	for(int c = 0; c < 2; c++) {
+		sio[c].send_buffer = new FIFO(SIO_BUFFER_SIZE);
+		sio[c].recv_buffer = new FIFO(SIO_BUFFER_SIZE);
+		
+		sio[c].divisor.w = 12;		// 115200Hz / 9600Baud
+		sio[c].line_ctrl = 0x03;	// 8bit, stop 1bit, non parity
+		sio[c].line_stat_buf = 0x60;	// send/recv buffers are empty
+		sio[c].irq_identify = 0x01;	// no pending irq
+		
+		InitializeCriticalSection(&sio_mt[c].csSendData);
+		InitializeCriticalSection(&sio_mt[c].csRecvData);
+		InitializeCriticalSection(&sio_mt[c].csLineCtrl);
+		InitializeCriticalSection(&sio_mt[c].csLineStat);
+		InitializeCriticalSection(&sio_mt[c].csModemCtrl);
+		InitializeCriticalSection(&sio_mt[c].csModemStat);
+		
+		if(sio[c].port_number != 0) {
+			sio[c].channel = c;
+			sio_mt[c].hThread = CreateThread(NULL, 0, sio_thread, &sio[c], 0, NULL);
+		}
+	}
+}
+
+void sio_finish()
+{
+	for(int c = 0; c < 2; c++) {
+		if(sio_mt[c].hThread != NULL) {
+			WaitForSingleObject(sio_mt[c].hThread, INFINITE);
+			CloseHandle(sio_mt[c].hThread);
+		}
+		DeleteCriticalSection(&sio_mt[c].csSendData);
+		DeleteCriticalSection(&sio_mt[c].csRecvData);
+		DeleteCriticalSection(&sio_mt[c].csLineCtrl);
+		DeleteCriticalSection(&sio_mt[c].csLineStat);
+		DeleteCriticalSection(&sio_mt[c].csModemCtrl);
+		DeleteCriticalSection(&sio_mt[c].csModemStat);
+		
+		sio[c].send_buffer->release();
+		delete sio[c].send_buffer;
+		sio[c].recv_buffer->release();
+		delete sio[c].recv_buffer;
+	}
+}
+
+void sio_write(int c, UINT32 addr, UINT8 data)
+{
+	switch(addr & 7) {
+	case 0:
+		if(sio[c].selector & 0x80) {
+			if(sio[c].divisor.b.l != data) {
+				EnterCriticalSection(&sio_mt[c].csLineCtrl);
+				sio[c].divisor.b.l = data;
+				LeaveCriticalSection(&sio_mt[c].csLineCtrl);
+			}
+		} else {
+			EnterCriticalSection(&sio_mt[c].csSendData);
+			sio[c].send_buffer->write(data);
+			// transmitter holding/shift registers are not empty
+			sio[c].line_stat_buf &= ~0x60;
+			LeaveCriticalSection(&sio_mt[c].csSendData);
+			
+			if(sio[c].irq_enable & 0x02) {
+				sio_update_irq(c);
+			}
+		}
+		break;
+	case 1:
+		if(sio[c].selector & 0x80) {
+			if(sio[c].divisor.b.h != data) {
+				EnterCriticalSection(&sio_mt[c].csLineCtrl);
+				sio[c].divisor.b.h = data;
+				LeaveCriticalSection(&sio_mt[c].csLineCtrl);
+			}
+		} else {
+			if(sio[c].irq_enable != data) {
+				sio[c].irq_enable = data;
+				sio_update_irq(c);
+			}
+		}
+		break;
+	case 3:
+		{
+			UINT8 line_ctrl = data & 0x3f;
+			bool set_brk = ((data & 0x40) != 0);
+			
+			if(sio[c].line_ctrl != line_ctrl) {
+				EnterCriticalSection(&sio_mt[c].csLineCtrl);
+				sio[c].line_ctrl = line_ctrl;
+				LeaveCriticalSection(&sio_mt[c].csLineCtrl);
+			}
+			if(sio[c].set_brk != set_brk) {
+				EnterCriticalSection(&sio_mt[c].csModemCtrl);
+				sio[c].set_brk = set_brk;
+				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+			}
+		}
+		sio[c].selector = data;
+		break;
+	case 4:
+		{
+			bool set_dtr = ((data & 0x01) != 0);
+			bool set_rts = ((data & 0x02) != 0);
+			
+			if(sio[c].set_dtr != set_dtr || sio[c].set_rts != set_rts) {
+				EnterCriticalSection(&sio_mt[c].csModemCtrl);
+				sio[c].set_dtr = set_dtr;
+				sio[c].set_rts = set_rts;
+				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+			}
+		}
+		sio[c].modem_ctrl = data;
+		break;
+	case 7:
+		sio[c].scratch = data;
+		break;
+	}
+}
+
+UINT8 sio_read(int c, UINT32 addr)
+{
+	switch(addr & 7) {
+	case 0:
+		if(sio[c].selector & 0x80) {
+			return(sio[c].divisor.b.l);
+		} else {
+			EnterCriticalSection(&sio_mt[c].csRecvData);
+			UINT8 data = sio[c].recv_buffer->read();
+			// data is not ready
+			sio[c].line_stat_buf &= ~0x01;
+			LeaveCriticalSection(&sio_mt[c].csRecvData);
+			
+			if(sio[c].irq_enable & 0x01) {
+				sio_update_irq(c);
+			}
+			return(data);
+		}
+	case 1:
+		if(sio[c].selector & 0x80) {
+			return(sio[c].divisor.b.h);
+		} else {
+			return(sio[c].irq_enable);
+		}
+	case 2:
+		return(sio[c].irq_identify);
+	case 3:
+		return(sio[c].selector);
+	case 4:
+		return(sio[c].modem_ctrl);
+	case 5:
+		{
+			EnterCriticalSection(&sio_mt[c].csLineStat);
+			UINT8 val = sio[c].line_stat_err | sio[c].line_stat_buf;
+			sio[c].line_stat_err = 0x00;
+			LeaveCriticalSection(&sio_mt[c].csLineStat);
+			
+			bool state_changed = false;
+			
+			if((sio[c].line_stat_buf & 0x60) == 0x00) {
+				EnterCriticalSection(&sio_mt[c].csSendData);
+				if(!sio[c].send_buffer->full()) {
+					// transmitter holding register will be empty first
+					if(sio[c].irq_enable & 0x02) {
+						state_changed = true;
+					}
+					sio[c].line_stat_buf |= 0x20;
+				}
+				LeaveCriticalSection(&sio_mt[c].csSendData);
+			} else if((sio[c].line_stat_buf & 0x60) == 0x20) {
+				// transmitter shift register will be empty later
+				sio[c].line_stat_buf |= 0x40;
+			}
+			if(!(sio[c].line_stat_buf & 0x01)) {
+				EnterCriticalSection(&sio_mt[c].csRecvData);
+				if(!sio[c].recv_buffer->empty()) {
+					// data is ready
+					if(sio[c].irq_enable & 0x01) {
+						state_changed = true;
+					}
+					sio[c].line_stat_buf |= 0x01;
+				}
+				LeaveCriticalSection(&sio_mt[c].csRecvData);
+			}
+			if(state_changed) {
+				sio_update_irq(c);
+			}
+			return(val);
+		}
+	case 6:
+		{
+			EnterCriticalSection(&sio_mt[c].csModemStat);
+			UINT8 val = sio[c].modem_stat;
+			sio[c].modem_stat &= 0xf0;
+			sio[c].prev_modem_stat = sio[c].modem_stat;
+			LeaveCriticalSection(&sio_mt[c].csModemStat);
+			
+			if(sio[c].modem_ctrl & 0x10) {
+				// loop-back
+				val &= 0x0f;
+				val |= (sio[c].modem_ctrl & 0x0c) << 4;
+				val |= (sio[c].modem_ctrl & 0x01) << 5;
+				val |= (sio[c].modem_ctrl & 0x02) << 3;
+			}
+			return(val);
+		}
+	case 7:
+		return(sio[c].scratch);
+	}
+	return(0xff);
+}
+
+void sio_update(int c)
+{
+	if((sio[c].line_stat_buf & 0x60) == 0x00) {
+		EnterCriticalSection(&sio_mt[c].csSendData);
+		if(!sio[c].send_buffer->full()) {
+			// transmitter holding/shift registers will be empty
+			sio[c].line_stat_buf |= 0x60;
+		}
+		LeaveCriticalSection(&sio_mt[c].csSendData);
+	} else if((sio[c].line_stat_buf & 0x60) == 0x20) {
+		// transmitter shift register will be empty
+		sio[c].line_stat_buf |= 0x40;
+	}
+	if(!(sio[c].line_stat_buf & 0x01)) {
+		EnterCriticalSection(&sio_mt[c].csRecvData);
+		if(!sio[c].recv_buffer->empty()) {
+			// data is ready
+			sio[c].line_stat_buf |= 0x01;
+		}
+		LeaveCriticalSection(&sio_mt[c].csRecvData);
+	}
+	sio_update_irq(c);
+}
+
+void sio_update_irq(int c)
+{
+	int level = -1;
+	
+	if(sio[c].irq_enable & 0x08) {
+		EnterCriticalSection(&sio_mt[c].csModemStat);
+		if((sio[c].modem_stat & 0x0f) != 0) {
+			level = 0;
+		}
+		EnterCriticalSection(&sio_mt[c].csModemStat);
+	}
+	if(sio[c].irq_enable & 0x02) {
+		if(sio[c].line_stat_buf & 0x20) {
+			level = 1;
+		}
+	}
+	if(sio[c].irq_enable & 0x01) {
+		if(sio[c].line_stat_buf & 0x01) {
+			level = 2;
+		}
+	}
+	if(sio[c].irq_enable & 0x04) {
+		EnterCriticalSection(&sio_mt[c].csLineStat);
+		if(sio[c].line_stat_err != 0) {
+			level = 3;
+		}
+		LeaveCriticalSection(&sio_mt[c].csLineStat);
+	}
+	if(level != -1) {
+		sio[c].irq_identify = level << 1;
+		pic_req(0, (c == 0) ? 4 : 3, 1);
+	} else {
+		sio[c].irq_identify = 1;
+		pic_req(0, (c == 0) ? 4 : 3, 0);
+	}
+}
+
+DWORD WINAPI sio_thread(void *lpx)
+{
+	volatile sio_t *p = (sio_t *)lpx;
+	sio_mt_t *q = &sio_mt[p->channel];
+	
+	char name[] = "COM1";
+	name[3] = '0' + p->port_number;
+	HANDLE hComm = CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	
+	if(hComm != INVALID_HANDLE_VALUE) {
+		BYTE bytBuffer[SIO_BUFFER_SIZE];
+		
+		EscapeCommFunction(hComm, CLRBREAK);
+		EscapeCommFunction(hComm, CLRDTR);
+		EscapeCommFunction(hComm, CLRRTS);
+		
+		while(!m_halted) {
+			// setup comm port
+			bool comm_state_changed = false;
+			
+			EnterCriticalSection(&q->csLineCtrl);
+			if((p->prev_divisor != p->divisor.w || p->prev_line_ctrl != p->line_ctrl) && p->divisor.w != 0) {
+				p->prev_divisor = p->divisor.w;
+				p->prev_line_ctrl = p->line_ctrl;
+				comm_state_changed = true;
+			}
+			LeaveCriticalSection(&q->csLineCtrl);
+			
+			if(comm_state_changed) {
+				DCB dcb;
+				memset(&dcb, 0, sizeof(DCB));
+				dcb.DCBlength = sizeof(DCB);
+				dcb.BaudRate = min(9600, 115200 / p->prev_divisor);
+				switch(p->prev_line_ctrl & 0x03) {
+				case 0x00: dcb.ByteSize = 5; break;
+				case 0x01: dcb.ByteSize = 6; break;
+				case 0x02: dcb.ByteSize = 7; break;
+				case 0x03: dcb.ByteSize = 8; break;
+				}
+				switch(p->prev_line_ctrl & 0x04) {
+				case 0x00: dcb.StopBits = ONESTOPBIT; break;
+				case 0x04: dcb.StopBits = (dcb.ByteSize == 5) ? ONE5STOPBITS : TWOSTOPBITS; break;
+				}
+				switch(p->prev_line_ctrl & 0x38) {
+				case 0x08: dcb.Parity = ODDPARITY;   break;
+				case 0x18: dcb.Parity = EVENPARITY;  break;
+				case 0x28: dcb.Parity = MARKPARITY;  break;
+				case 0x38: dcb.Parity = SPACEPARITY; break;
+				default:   dcb.Parity = NOPARITY;    break;
+				}
+				SetCommState(hComm, &dcb);
+				
+				// check again to apply all comm state changes
+				Sleep(10);
+				continue;
+			}
+			
+			// set comm pins
+			bool change_brk = false;
+			bool change_rts = false;
+			bool change_dtr = false;
+			
+			EnterCriticalSection(&q->csModemCtrl);
+			if(p->prev_set_brk != p->set_brk) {
+				p->prev_set_brk = p->set_brk;
+				change_brk = true;
+			}
+			if(p->prev_set_rts != p->set_rts) {
+				p->prev_set_rts = p->set_rts;
+				change_rts = true;
+			}
+			if(p->prev_set_dtr != p->set_dtr) {
+				p->prev_set_dtr = p->set_dtr;
+				change_dtr = true;
+			}
+			LeaveCriticalSection(&q->csModemCtrl);
+			
+			if(change_brk) {
+				EscapeCommFunction(hComm, p->prev_set_brk ? SETBREAK : CLRBREAK);
+			}
+			if(change_rts) {
+				EscapeCommFunction(hComm, p->prev_set_rts ? SETRTS : SETRTS);
+			}
+			if(change_dtr) {
+				EscapeCommFunction(hComm, p->prev_set_dtr ? SETDTR : CLRDTR);
+			}
+			
+			// get comm pins
+			DWORD dwModemStat = 0;
+			
+			if(GetCommModemStatus(hComm, &dwModemStat)) {
+				EnterCriticalSection(&q->csModemStat);
+				if(dwModemStat & MS_RLSD_ON) {
+					p->modem_stat |= 0x80;
+				} else {
+					p->modem_stat &= ~0x80;
+				}
+				if(dwModemStat & MS_RING_ON) {
+					p->modem_stat |= 0x40;
+				} else {
+					p->modem_stat &= ~0x40;
+				}
+				if(dwModemStat & MS_DSR_ON) {
+					p->modem_stat |= 0x20;
+				} else {
+					p->modem_stat &= ~0x20;
+				}
+				if(dwModemStat & MS_CTS_ON) {
+					p->modem_stat |= 0x10;
+				} else {
+					p->modem_stat &= ~0x10;
+				}
+				if((p->prev_modem_stat & 0x80) != (p->modem_stat & 0x80)) {
+					p->modem_stat |= 0x08;
+				}
+				if((p->prev_modem_stat & 0x40) && !(p->modem_stat & 0x40)) {
+					p->modem_stat |= 0x04;
+				}
+				if((p->prev_modem_stat & 0x20) != (p->modem_stat & 0x20)) {
+					p->modem_stat |= 0x02;
+				}
+				if((p->prev_modem_stat & 0x10) != (p->modem_stat & 0x10)) {
+					p->modem_stat |= 0x01;
+				}
+				LeaveCriticalSection(&q->csModemStat);
+			}
+			
+			// send data
+			DWORD dwSend = 0;
+			
+			EnterCriticalSection(&q->csSendData);
+			while(!p->send_buffer->empty()) {
+				bytBuffer[dwSend++] = p->send_buffer->read();
+			}
+			LeaveCriticalSection(&q->csSendData);
+			
+			if(dwSend != 0) {
+				DWORD dwWritten = 0;
+				WriteFile(hComm, bytBuffer, dwSend, &dwWritten, NULL);
+			}
+			
+			// get line status and recv data
+			DWORD dwLineStat = 0;
+			COMSTAT comStat;
+			
+			if(ClearCommError(hComm, &dwLineStat, &comStat)) {
+				EnterCriticalSection(&q->csLineStat);
+				if(dwLineStat & CE_BREAK) {
+					p->line_stat_err |= 0x10;
+				}
+				if(dwLineStat & CE_FRAME) {
+					p->line_stat_err |= 0x08;
+				}
+				if(dwLineStat & CE_RXPARITY) {
+					p->line_stat_err |= 0x04;
+				}
+				if(dwLineStat & CE_OVERRUN) {
+					p->line_stat_err |= 0x02;
+				}
+				LeaveCriticalSection(&q->csLineStat);
+				
+				if(comStat.cbInQue != 0) {
+					EnterCriticalSection(&q->csRecvData);
+					DWORD dwRecv = min(comStat.cbInQue, p->recv_buffer->remain());
+					LeaveCriticalSection(&q->csRecvData);
+					
+					if(dwRecv != 0) {
+						DWORD dwRead = 0;
+						if(ReadFile(hComm, bytBuffer, dwRecv, &dwRead, NULL) && dwRead != 0) {
+							EnterCriticalSection(&q->csRecvData);
+							for(int i = 0; i < dwRead; i++) {
+								p->recv_buffer->write(bytBuffer[i]);
+							}
+							LeaveCriticalSection(&q->csRecvData);
+						}
+					}
+				}
+			}
+			Sleep(10);
+		}
+		CloseHandle(hComm);
+	}
+	return 0;
+}
+
 // cmos
 
 void cmos_init()
@@ -11464,16 +12501,30 @@ UINT8 vga_read_status()
 
 // i/o bus
 
+#ifdef ENABLE_DEBUG_IOPORT
+UINT8 read_io_byte_debug(offs_t addr);
+
 UINT8 read_io_byte(offs_t addr)
 {
+	UINT8 val = read_io_byte_debug(addr);
+	if(fdebug != NULL) {
+		fprintf(fdebug, "inb %04X, %02X\n", addr, val);
+	}
+	return(val);
+}
+
+UINT8 read_io_byte_debug(offs_t addr)
+#else
+UINT8 read_io_byte(offs_t addr)
+#endif
+{
 	switch(addr) {
-	case 0x20:
-	case 0x21:
+	case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07:
+	case 0x08: case 0x09: case 0x0a: case 0x0b: case 0x0c: case 0x0d: case 0x0e: case 0x0f:
+		return(dma_read(0, addr));
+	case 0x20: case 0x21:
 		return(pic_read(0, addr));
-	case 0x40:
-	case 0x41:
-	case 0x42:
-	case 0x43:
+	case 0x40: case 0x41: case 0x42: case 0x43:
 		return(pit_read(addr & 0x03));
 	case 0x60:
 		return(kbd_read_data());
@@ -11483,14 +12534,39 @@ UINT8 read_io_byte(offs_t addr)
 		return(kbd_read_status());
 	case 0x71:
 		return(cmos_read(cmos_addr));
+	case 0x81:
+		return(dma_page_read(0, 2));
+	case 0x82:
+		return(dma_page_read(0, 3));
+	case 0x83:
+		return(dma_page_read(0, 1));
+	case 0x87:
+		return(dma_page_read(0, 0));
+	case 0x89:
+		return(dma_page_read(1, 2));
+	case 0x8a:
+		return(dma_page_read(1, 3));
+	case 0x8b:
+		return(dma_page_read(1, 1));
+	case 0x8f:
+		return(dma_page_read(1, 0));
 	case 0x92:
 		return((m_a20_mask >> 19) & 2);
-	case 0xa0:
-	case 0xa1:
+	case 0xa0: case 0xa1:
 		return(pic_read(1, addr));
-	case 0x3ba:
-	case 0x3da:
+	case 0xc0: case 0xc2: case 0xc4: case 0xc6: case 0xc8: case 0xca: case 0xcc: case 0xce:
+	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
+		return(dma_read(1, addr >> 1));
+	case 0x278: case 0x279: case 0x27a:
+		return(pio_read(1, addr));
+	case 0x2f8: case 0x2f9: case 0x2fa: case 0x2fb: case 0x2fc: case 0x2fd: case 0x2fe: case 0x2ff:
+		return(sio_read(1, addr));
+	case 0x378: case 0x379: case 0x37a:
+		return(pio_read(0, addr));
+	case 0x3ba: case 0x3da:
 		return(vga_read_status());
+	case 0x3f8: case 0x3f9: case 0x3fa: case 0x3fb: case 0x3fc: case 0x3fd: case 0x3fe: case 0x3ff:
+		return(sio_read(0, addr));
 	default:
 //		error("inb %4x\n", addr);
 		break;
@@ -11510,15 +12586,20 @@ UINT32 read_io_dword(offs_t addr)
 
 void write_io_byte(offs_t addr, UINT8 val)
 {
+#ifdef ENABLE_DEBUG_IOPORT
+	if(fdebug != NULL) {
+		fprintf(fdebug, "outb %04X, %02X\n", addr, val);
+	}
+#endif
 	switch(addr) {
-	case 0x20:
-	case 0x21:
+	case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07:
+	case 0x08: case 0x09: case 0x0a: case 0x0b: case 0x0c: case 0x0d: case 0x0e: case 0x0f:
+		dma_write(0, addr, val);
+		break;
+	case 0x20: case 0x21:
 		pic_write(0, addr, val);
 		break;
-	case 0x40:
-	case 0x41:
-	case 0x42:
-	case 0x43:
+	case 0x40: case 0x41: case 0x42: case 0x43:
 		pit_write(addr & 0x03, val);
 		break;
 	case 0x60:
@@ -11542,12 +12623,43 @@ void write_io_byte(offs_t addr, UINT8 val)
 	case 0x71:
 		cmos_write(cmos_addr, val);
 		break;
+	case 0x81:
+		dma_page_write(0, 2, val);
+	case 0x82:
+		dma_page_write(0, 3, val);
+	case 0x83:
+		dma_page_write(0, 1, val);
+	case 0x87:
+		dma_page_write(0, 0, val);
+	case 0x89:
+		dma_page_write(1, 2, val);
+	case 0x8a:
+		dma_page_write(1, 3, val);
+	case 0x8b:
+		dma_page_write(1, 1, val);
+	case 0x8f:
+		dma_page_write(1, 0, val);
 	case 0x92:
 		i386_set_a20_line((val >> 1) & 1);
 		break;
-	case 0xa0:
-	case 0xa1:
+	case 0xa0: case 0xa1:
 		pic_write(1, addr, val);
+		break;
+	case 0xc0: case 0xc2: case 0xc4: case 0xc6: case 0xc8: case 0xca: case 0xcc: case 0xce:
+	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
+		dma_write(1, addr >> 1, val);
+		break;
+	case 0x278: case 0x279: case 0x27a:
+		pio_write(1, addr, val);
+		break;
+	case 0x2f8: case 0x2f9: case 0x2fa: case 0x2fb: case 0x2fc: case 0x2fd: case 0x2fe: case 0x2ff:
+		sio_write(1, addr, val);
+		break;
+	case 0x378: case 0x379: case 0x37a:
+		pio_write(0, addr, val);
+		break;
+	case 0x3f8: case 0x3f9: case 0x3fa: case 0x3fb: case 0x3fc: case 0x3fd: case 0x3fe: case 0x3ff:
+		sio_write(0, addr, val);
 		break;
 	default:
 //		error("outb %4x,%2x\n", addr, val);
