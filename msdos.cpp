@@ -780,6 +780,68 @@ DWORD WINAPI vram_thread(LPVOID)
 
 #define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
 
+#if defined(_MSC_VER) && (_MSC_VER >= 1400)
+#define SUPPORT_EMBED
+#endif
+
+#ifdef SUPPORT_EMBED
+bool is_padding(UINT8 *buffer)
+{
+	return (memcmp(buffer, "XPADDING", 8) == 0 && memcmp(buffer + 8, "PADDINGX", 8) == 0) ||
+	       (memcmp(buffer, "PADDINGP", 8) == 0 && memcmp(buffer + 8, "ADDINGXX", 8) == 0) ||
+	       (memcmp(buffer, "ADDINGPA", 8) == 0 && memcmp(buffer + 8, "DDINGXXP", 8) == 0) ||
+	       (memcmp(buffer, "DDINGPAD", 8) == 0 && memcmp(buffer + 8, "DINGXXPA", 8) == 0) ||
+	       (memcmp(buffer, "DINGPADD", 8) == 0 && memcmp(buffer + 8, "INGXXPAD", 8) == 0) ||
+	       (memcmp(buffer, "INGPADDI", 8) == 0 && memcmp(buffer + 8, "NGXXPADD", 8) == 0) ||
+	       (memcmp(buffer, "NGPADDIN", 8) == 0 && memcmp(buffer + 8, "GXXPADDI", 8) == 0) ||
+	       (memcmp(buffer, "GPADDING", 8) == 0 && memcmp(buffer + 8, "XXPADDIN", 8) == 0) ||
+	       (memcmp(buffer, "PADDINGX", 8) == 0 && memcmp(buffer + 8, "XPADDING", 8) == 0) ||
+	       (memcmp(buffer, "ADDINGXX", 8) == 0 && memcmp(buffer + 8, "PADDINGP", 8) == 0) ||
+	       (memcmp(buffer, "DDINGXXP", 8) == 0 && memcmp(buffer + 8, "ADDINGPA", 8) == 0) ||
+	       (memcmp(buffer, "DINGXXPA", 8) == 0 && memcmp(buffer + 8, "DDINGPAD", 8) == 0) ||
+	       (memcmp(buffer, "INGXXPAD", 8) == 0 && memcmp(buffer + 8, "DINGPADD", 8) == 0) ||
+	       (memcmp(buffer, "NGXXPADD", 8) == 0 && memcmp(buffer + 8, "INGPADDI", 8) == 0) ||
+	       (memcmp(buffer, "GXXPADDI", 8) == 0 && memcmp(buffer + 8, "NGPADDIN", 8) == 0) ||
+	       (memcmp(buffer, "XXPADDIN", 8) == 0 && memcmp(buffer + 8, "GPADDING", 8) == 0);
+};
+#endif
+
+void get_sio_port_numbers()
+{
+	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
+	HDEVINFO hDevInfo = 0;
+	HKEY hKey = 0;
+	if((hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, NULL, NULL, (DIGCF_PRESENT | DIGCF_DEVICEINTERFACE))) != 0) {
+		for(int i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData); i++) {
+			if((hKey = SetupDiOpenDevRegKey(hDevInfo, &DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE)) != INVALID_HANDLE_VALUE) {
+				char chData[256];
+				DWORD dwType = 0;
+				DWORD dwSize = sizeof(chData);
+				int port_number = 0;
+				
+				if(RegQueryValueEx(hKey, _T("PortName"), NULL, &dwType, (BYTE *)chData, &dwSize) == ERROR_SUCCESS) {
+					if(_strnicmp(chData, "COM", 3) == 0) {
+						port_number = atoi(chData + 3);
+					}
+				}
+				RegCloseKey(hKey);
+				
+				if(sio_port_number[0] == port_number || sio_port_number[1] == port_number) {
+					continue;
+				}
+				if(sio_port_number[0] == 0) {
+					sio_port_number[0] = port_number;
+				} else if(sio_port_number[1] == 0) {
+					sio_port_number[1] = port_number;
+				}
+				if(sio_port_number[0] != 0 && sio_port_number[1] != 0) {
+					break;
+				}
+			}
+		}
+	}
+}
+
 int main(int argc, char *argv[], char *envp[])
 {
 	int arg_offset = 0;
@@ -787,10 +849,104 @@ int main(int argc, char *argv[], char *envp[])
 	int buf_width = 0, buf_height = 0;
 	BOOL bSuccess, bChangeScreenSize = FALSE;
 	
+#ifdef SUPPORT_EMBED
+	// FIXME: it is invited that this program is built with VC++2005 or later,
+	// and "XPADDINGPADDINGX" is stored at the end of this execution file
+	char dummy_argv_0[] = "msdos.exe";
+	char dummy_argv_1[MAX_PATH];
+	char *dummy_argv[256] = {dummy_argv_0, dummy_argv_1, 0};
+	char new_exec_file[MAX_PATH];
+	bool convert_cmd_file = false;
+	
+	_TCHAR path[MAX_PATH], full[MAX_PATH], *name = NULL;
+	GetModuleFileName(NULL, path, MAX_PATH);
+	GetFullPathName(path, MAX_PATH, full, &name);
+	
+	if(name != NULL && stricmp(name, "msdos.exe") != 0) {
+		// run embedded command file
+		FILE* fp = fopen(full, "rb");
+		fseek(fp, 0, SEEK_END);
+		UINT32 size = ftell(fp), pos = 0;
+		fseek(fp, 0, SEEK_SET);
+		bool prev_padding = false;
+		
+		while(pos < size) {
+			UINT8 buffer[16];
+			fread(buffer, 16, 1, fp);
+			
+			if(prev_padding && memcmp(buffer, "OPTS:", 5) == 0) {
+				// restore flags
+				stay_busy = ((buffer[5] & 0x01) != 0);
+				no_windows = ((buffer[5] & 0x02) != 0);
+				standard_env = ((buffer[5] & 0x04) != 0);
+				ignore_illegal_insn = ((buffer[5] & 0x08) != 0);
+				limit_max_memory = ((buffer[5] & 0x10) != 0);
+				if((buffer[5] & 0x20) != 0) {
+					get_sio_port_numbers();
+				}
+				if((buffer[5] & 0x40) != 0) {
+					UMB_TOP = EMS_TOP + EMS_SIZE;
+					support_ems = true;
+#ifdef SUPPORT_XMS
+					support_xms = true;
+#endif
+				}
+				if(buffer[6] != 0 && buffer[7] != 0) {
+					buf_width = buffer[6];
+					buf_height = buffer[7];
+				}
+				if(buffer[8] != 0) {
+					major_version = buffer[8];
+					minor_version = buffer[9];
+				}
+				if(buffer[10] != 0 || buffer[11] != 0) {
+					int code_page = buffer[10] + buffer[11] * 256;
+					SetConsoleCP(code_page);
+					SetConsoleOutputCP(code_page);
+				}
+				fread(buffer, 16, 1, fp);
+				fseek(fp, -16, SEEK_CUR);
+				
+				// restore command file
+				if(memcmp(buffer, "MZ", 2) == 0) {
+					sprintf(dummy_argv_1, "%s\\MSDOSPLA.EXE", getenv("TEMP"));
+				} else {
+					sprintf(dummy_argv_1, "%s\\MSDOSPLA.COM", getenv("TEMP"));
+				}
+				FILE* fo = fopen(dummy_argv_1, "wb");
+				for(; pos < size; pos++) {
+					fputc(fgetc(fp), fo);
+				}
+				fclose(fo);
+				
+				// adjust argc/argv
+				for(int i = 1; i < argc && (i + 1) < 256; i++) {
+					dummy_argv[i + 1] = argv[i];
+				}
+				argc++;
+				argv = dummy_argv;
+				break;
+			}
+			prev_padding = is_padding(buffer);
+			pos += 16;
+		}
+		fclose(fp);
+	}
+#endif
 	for(int i = 1; i < argc; i++) {
 		if(_strnicmp(argv[i], "-b", 2) == 0) {
 			stay_busy = true;
 			arg_offset++;
+#ifdef SUPPORT_EMBED
+		} else if(_strnicmp(argv[i], "-c", 2) == 0) {
+			if(argv[i][2] != '\0') {
+				strcpy(new_exec_file, &argv[i][2]);
+			} else {
+				strcpy(new_exec_file, "new_exec_file.exe");
+			}
+			convert_cmd_file = true;
+			arg_offset++;
+#endif
 		} else if(_strnicmp(argv[i], "-d", 2) == 0) {
 			no_windows = true;
 			arg_offset++;
@@ -823,38 +979,7 @@ int main(int argc, char *argv[], char *envp[])
 				sio_port_number[0] = atoi(p1);
 			}
 			if(sio_port_number[0] == 0 || sio_port_number[1] == 0) {
-				SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
-				HDEVINFO hDevInfo = 0;
-				HKEY hKey = 0;
-				if((hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, NULL, NULL, (DIGCF_PRESENT | DIGCF_DEVICEINTERFACE))) != 0) {
-					for(int i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData); i++) {
-						if((hKey = SetupDiOpenDevRegKey(hDevInfo, &DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE)) != INVALID_HANDLE_VALUE) {
-							char chData[256];
-							DWORD dwType = 0;
-							DWORD dwSize = sizeof(chData);
-							int port_number = 0;
-							
-							if(RegQueryValueEx(hKey, _T("PortName"), NULL, &dwType, (BYTE *)chData, &dwSize) == ERROR_SUCCESS) {
-								if(_strnicmp(chData, "COM", 3) == 0) {
-									port_number = atoi(chData + 3);
-								}
-							}
-							RegCloseKey(hKey);
-							
-							if(sio_port_number[0] == port_number || sio_port_number[1] == port_number) {
-								continue;
-							}
-							if(sio_port_number[0] == 0) {
-								sio_port_number[0] = port_number;
-							} else if(sio_port_number[1] == 0) {
-								sio_port_number[1] = port_number;
-							}
-							if(sio_port_number[0] != 0 && sio_port_number[1] != 0) {
-								break;
-							}
-						}
-					}
-				}
+				get_sio_port_numbers();
 			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
@@ -874,7 +999,6 @@ int main(int argc, char *argv[], char *envp[])
 			break;
 		}
 	}
-	
 	if(argc < 2 + arg_offset) {
 #ifdef _WIN64
 		fprintf(stderr, "MS-DOS Player (" CPU_MODEL_NAME(CPU_MODEL) ") for Win32-x64 console\n\n");
@@ -882,10 +1006,20 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr, "MS-DOS Player (" CPU_MODEL_NAME(CPU_MODEL) ") for Win32 console\n\n");
 #endif
 		fprintf(stderr,
-			"Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-n[L[,C]]] [-s[P1[,P2]]] [-vX.XX] [-x]\n"
-			"             (command file) [options]\n"
+			"Usage: MSDOS [-b] "
+#ifdef SUPPORT_EMBED
+			"[-c[(new exec file)]] "
+#endif
+			"[-d] [-e] [-i] [-m] [-n[L[,C]]] [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
+#ifdef SUPPORT_EMBED
+	#ifdef _WIN64
+			"\t-c\tconvert command file to 64bit execution file\n"
+	#else
+			"\t-c\tconvert command file to 32bit execution file\n"
+	#endif
+#endif
 			"\t-d\tpretend running under straight DOS, not Windows\n"
 			"\t-e\tuse a reduced environment block\n"
 			"\t-i\tignore invalid instructions\n"
@@ -911,6 +1045,90 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		return(EXIT_FAILURE);
 	}
+#ifdef SUPPORT_EMBED
+	if(convert_cmd_file) {
+		retval = EXIT_FAILURE;
+		if(name != NULL && stricmp(name, "msdos.exe") == 0) {
+			FILE *fp = NULL, *fs = NULL, *fo = NULL;
+			int data = 0;
+			
+			if((fp = fopen(full, "rb")) == NULL) {
+				fprintf(stderr, "Cant't open '%s'\n", name);
+			} else if((fs = fopen(argv[arg_offset + 1], "rb")) == NULL) {
+				if(strchr(argv[arg_offset + 1], ',') != NULL) {
+					fprintf(stderr, "Cant't open '%s'\n", argv[arg_offset + 1]);
+				} else {
+					fprintf(stderr, "Cant't open '%s', please specify command file with extenstion\n", argv[arg_offset + 1]);
+				}
+			} else if((fo = fopen(new_exec_file, "wb")) == NULL) {
+				fprintf(stderr, "Cant't open '%s'\n", new_exec_file);
+			} else {
+				// store msdos.exe
+				while((data = fgetc(fp)) != EOF) {
+					fputc(data, fo);
+				}
+				
+				// store options
+				UINT8 flags = 0;
+				if(stay_busy) {
+					flags |= 0x01;
+				}
+				if(no_windows) {
+					flags |= 0x02;
+				}
+				if(standard_env) {
+					flags |= 0x04;
+				}
+				if(ignore_illegal_insn) {
+					flags |= 0x08;
+				}
+				if(limit_max_memory) {
+					flags |= 0x10;
+				}
+				if(sio_port_number[0] != 0 || sio_port_number[1] != 0) {
+					flags |= 0x20;
+				}
+				if(support_ems) {
+					flags |= 0x40;
+				}
+				int code_page = GetConsoleCP();
+				
+				fwrite("OPTS:", 5, 1, fo);
+				fputc(flags, fo);
+				fputc(buf_width, fo);
+				fputc(buf_height, fo);
+				fputc(major_version, fo);
+				fputc(minor_version, fo);
+				fputc((code_page >> 0) & 0xff, fo);
+				fputc((code_page >> 8) & 0xff, fo);
+				fputc(0, fo);
+				fputc(0, fo);
+				fputc(0, fo);
+				fputc(0, fo);
+				
+				// store command file
+				while((data = fgetc(fs)) != EOF) {
+					fputc(data, fo);
+				}
+				fprintf(stderr, "'%s' is successfully created\n", new_exec_file);
+				retval = EXIT_SUCCESS;
+			}
+			if(fp != NULL) {
+				fclose(fp);
+			}
+			if(fs != NULL) {
+				fclose(fs);
+			}
+			if(fo != NULL) {
+				fclose(fo);
+			}
+		}
+#ifdef _DEBUG
+		_CrtDumpMemoryLeaks();
+#endif
+		return(retval);
+	}
+#endif
 	
 	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
 	
@@ -962,7 +1180,7 @@ int main(int argc, char *argv[], char *envp[])
 	if(msdos_init(argc - (arg_offset + 1), argv + (arg_offset + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
-#if defined(_MSC_VER) && _MSC_VER >= 1400
+#if defined(_MSC_VER) && (_MSC_VER >= 1400)
 		_set_invalid_parameter_handler((_invalid_parameter_handler)ignore_invalid_parameters);
 #endif
 		SetConsoleCtrlHandler(ctrl_handler, TRUE);
@@ -1019,6 +1237,11 @@ int main(int argc, char *argv[], char *envp[])
 	
 //	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 	
+#if defined(_MSC_VER) && (_MSC_VER >= 1400)
+	if(argv == dummy_argv) {
+		DeleteFile(dummy_argv_1);
+	}
+#endif
 #ifdef _DEBUG
 	_CrtDumpMemoryLeaks();
 #endif
@@ -4417,8 +4640,8 @@ inline void pcbios_int_15h_24h()
 
 inline void pcbios_int_15h_49h()
 {
-	REG8(AH) = 0;
-	REG8(BL) = 0;	// DOS/V
+	REG8(AH) = 0x00;
+	REG8(BL) = 0x00; // DOS/V
 }
 
 inline void pcbios_int_15h_50h()
@@ -4429,15 +4652,21 @@ inline void pcbios_int_15h_50h()
 		if(REG8(BH) != 0x00 && REG8(BH) != 0x01) {
 			REG8(AH) = 0x01; // invalid font type in bh
 			m_CF = 1;
-		} else if(REG8(BL) != 0) {
+		} else if(REG8(BL) != 0x00) {
 			REG8(AH) = 0x02; // bl not zero
 			m_CF = 1;
 		} else if(REG16(BP) != 0 && REG16(BP) != 437 && REG16(BP) != 932 && REG16(BP) != 934 && REG16(BP) != 936 && REG16(BP) != 938) {
 			REG8(AH) = 0x04; // invalid code page
 			m_CF = 1;
-		} else {
-			REG8(AH) = 0x86; // finally, this function is not supported
+		} else if(REG8(AL) == 0x01) {
+			REG8(AH) = 0x06; // font is read only
 			m_CF = 1;
+		} else {
+			// dummy font read routine is at fffd:000d
+			SREG(ES) = 0xfffd;
+			i386_load_segment_descriptor(ES);
+			REG16(BX) = 0x0d;
+			REG8(AH) = 0x00; // success
 		}
 		break;
 	default:
@@ -5665,11 +5894,15 @@ inline void msdos_int_21h_2fh()
 inline void msdos_int_21h_30h()
 {
 	// Version Flag / OEM
-	if(REG8(AL) == 1) {
-		REG8(BH) = 0x00;	// not in ROM
+	if(REG8(AL) == 0x01) {
+		REG16(BX) = 0x1000;	// DOS is in HMA
 	} else {
-		REG8(BH) = 0xff;	// OEM = Microsoft
+		// NOTE: EXDEB invites BL shows the machine type (0=PC-98, 1=PC/AT, 2=FMR),
+		// but this is not correct on Windows 98 SE
+//		REG16(BX) = 0xff01;	// OEM = Microsoft, PC/AT
+		REG16(BX) = 0xff00;	// OEM = Microsoft
 	}
+	REG16(CX) = 0x0000;
 	REG8(AL) = major_version;	// 7
 	REG8(AH) = minor_version;	// 10
 }
@@ -5840,7 +6073,7 @@ int get_country_info(country_info_t *ci)
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
-	ci->case_map.w.l = 0x000c; // FFFD:000C
+	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffd:000a
 	ci->case_map.w.h = 0xfffd;
 	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
@@ -8529,7 +8762,7 @@ inline void msdos_int_2fh_4ah()
 	case 0x01:
 	case 0x02:
 		// hma is not used
-		REG16(BX) = 0;
+		REG16(BX) = 0x0000;
 		SREG(ES) = 0xffff;
 		i386_load_segment_descriptor(ES);
 		REG16(DI) = 0xffff;
@@ -8575,12 +8808,13 @@ inline void msdos_int_2fh_4fh()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		REG16(AX) = 0;
-		REG8(DL) = 1;	// major version
-		REG8(DH) = 0;	// minor version
+		// biling is installed
+		REG16(AX) = 0x0000;
+		REG8(DL) = 0x01;	// major version
+		REG8(DH) = 0x00;	// minor version
 		break;
 	case 0x01:
-		REG16(AX) = 0;
+		REG16(AX) = 0x0000;
 		REG16(BX) = active_code_page;
 		break;
 	default:
@@ -10492,6 +10726,11 @@ void msdos_syscall(unsigned num)
 			REG8(AL) = tmp[0];
 		}
 		break;
+	case 0x6d:
+		// dummy interrupt for font read routine pointed by int 15h, ax=5000h
+		REG8(AL) = 0x86; // not supported
+		m_CF = 1;
+		break;
 	case 0x70:
 	case 0x71:
 	case 0x72:
@@ -10879,7 +11118,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
-	// ems (int 67h) and xms (call far)
+	// ems (int 67h) and xms
 	device_t *xms_device = (device_t *)(mem + XMS_TOP);
 	xms_device->next_driver.w.l = 0xffff;
 	xms_device->next_driver.w.h = 0xffff;
@@ -10913,10 +11152,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xfffd0 + 0x08] = 0x6b;
 	mem[0xfffd0 + 0x09] = 0xcf;	// iret
 	
-	// case map routine (call far)
-	mem[0xfffd0 + 0x0c] = 0xcd;	// int 6ch (dummy)
-	mem[0xfffd0 + 0x0d] = 0x6b;
-	mem[0xfffd0 + 0x0e] = 0xcb;	// retf
+	// case map routine
+	mem[0xfffd0 + 0x0a] = 0xcd;	// int 6ch (dummy)
+	mem[0xfffd0 + 0x0b] = 0x6c;
+	mem[0xfffd0 + 0x0c] = 0xcb;	// retf
+	
+	// font read routine
+	mem[0xfffd0 + 0x0d] = 0xcd;	// int 6dh (dummy)
+	mem[0xfffd0 + 0x0e] = 0x6d;
+	mem[0xfffd0 + 0x0f] = 0xcb;	// retf
 	
 	// irq0 routine (system time)
 	mem[0xfffd0 + 0x10] = 0xcd;	// int 1ch

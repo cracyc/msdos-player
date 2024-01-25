@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/21/2016
+								6/22/2016
 
 ----- What's this
 
@@ -31,10 +31,10 @@ For example, compile sample.c with LSI C-86 and execute compiled binary:
 	> msdos lcc sample.c
 	> msdos sample
 
-Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-s[P1[,P2]]] [-vX.XX] [-x]
-             (command file) [options]
+Usage: MSDOS [-b] [-c[(new exec file)]] [-d] [-e] [-i] [-m] [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]
 
 	-b	stay busy during keyboard polling
+	-c	convert command file to 32bit or 64bit execution file
 	-d	pretend running under straight DOS, not Windows
 	-e	use a reduced environment block
 	-i	ignore invalid instructions
@@ -106,6 +106,36 @@ found in the first and second by SetupDiGetClassDevs() API.
 If you specify '-s3,4', the virtual COM1/2 are connected to the host's COM3/4.
 
 NOTE: The maximum baud rate is limited to 9600bps.
+
+
+----- Convert command file to 32bit or 64bit execution file
+
+You can convert a 16bit command file to a single 32bit or 64bit execution file
+by embeding a command file to the msdos.exe.
+
+For exmaple, you can convert LIST.COM by this command:
+
+	> msdos -clist32.exe list.com
+
+and you can simply run list32.exe without msdos.exe.
+
+Other options' value are also stored to a new execution file. For example:
+
+	> msdos -ccommand32.exe -v6.22 -x command.com
+
+the command.com starts with the version 6.22 and XMS/EMS option enabled.
+
+The active code page is also stored. For example:
+
+	> chcp 437
+	> msdos -cSW1US32.exe -s SW1US.exe
+
+the SW1US.exe starts with the code page 437 and serial I/O option enabled.
+
+NOTE: Please make a new execution file name other than msdos.exe.
+
+At the execution time, the embeded command file will be extracted into
+the temp folder and will be removed when the execution is normally finished.
 
 
 ----- Binaries
@@ -227,6 +257,8 @@ INT 15H		PC BIOS
 	2402H	Get A20 Gate Status
 	2403H	A20 Support
 	49H	Get BIOS Type
+	5000H	Get Address of "Read Font" Function
+	5001H	Get Address of "Write Font" Function
 	86H	Wait
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
