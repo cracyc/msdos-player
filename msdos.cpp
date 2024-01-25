@@ -96,13 +96,11 @@ void ignore_invalid_parameters(const wchar_t *, const wchar_t *, const wchar_t *
 }
 #endif
 
-#define USE_THREAD
+#define USE_VRAM_THREAD
 
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 static CRITICAL_SECTION vram_crit_sect;
 #else
-#define EnterCriticalSection(x)
-#define LeaveCriticalSection(x)
 #define vram_flush()
 #endif
 
@@ -123,7 +121,6 @@ bool ignore_illegal_insn = false;
 bool limit_max_memory = false;
 bool no_windows = false;
 bool stay_busy = false;
-UINT32 iops = 0;
 bool support_ems = false;
 #ifdef SUPPORT_XMS
 bool support_xms = false;
@@ -132,14 +129,22 @@ int sio_port_number[4] = {0, 0, 0, 0};
 
 BOOL is_vista_or_later;
 
+#define UPDATE_OPS 16384
+#define REQUEST_HARDWRE_UPDATE() { \
+	update_ops = UPDATE_OPS - 1; \
+}
+UINT32 update_ops = 0;
+UINT32 idle_ops = 0;
+
 inline void maybe_idle()
 {
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
-	if(!stay_busy && iops < 1000 && vram_length_char <= 1 && vram_length_attr <= 1) {
+	if(!stay_busy && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
 		Sleep(10);
+		REQUEST_HARDWRE_UPDATE();
 	}
-	iops = 0;
+	idle_ops = 0;
 }
 
 /* ----------------------------------------------------------------------------
@@ -336,11 +341,18 @@ UINT16 debugger_read_word(offs_t byteaddress)
 	if(byteaddress == 0x41c) {
 		// pointer to first free slot in keyboard buffer
 		// XXX: the buffer itself doesn't actually exist in DOS memory
-		if(key_buf_char != NULL) {
-			if(key_buf_char->count() == 0) {
+		if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+			EnterCriticalSection(&key_buf_crit_sect);
+#endif
+			int count = key_buf_char->count();
+#ifdef USE_SERVICE_THREAD
+			LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+			if(count == 0) {
 				maybe_idle();
 			}
-			return (UINT16)key_buf_char->count();
+			return (UINT16)count;
 		}
 		return 0;
 	}
@@ -388,7 +400,7 @@ UINT32 debugger_read_dword(offs_t byteaddress)
 }
 
 // write accessors
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 void vram_flush_char()
 {
 	if(vram_length_char != 0) {
@@ -420,7 +432,7 @@ void vram_flush()
 
 void write_text_vram_char(offs_t offset, UINT8 data)
 {
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 	static offs_t first_offset_char, last_offset_char;
 	
 	if(vram_length_char != 0) {
@@ -452,7 +464,7 @@ void write_text_vram_char(offs_t offset, UINT8 data)
 
 void write_text_vram_attr(offs_t offset, UINT8 data)
 {
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 	static offs_t first_offset_attr, last_offset_attr;
 	
 	if(vram_length_attr != 0) {
@@ -484,18 +496,24 @@ void write_text_vram_attr(offs_t offset, UINT8 data)
 
 void write_text_vram_byte(offs_t offset, UINT8 data)
 {
+#ifdef USE_VRAM_THREAD
 	EnterCriticalSection(&vram_crit_sect);
+#endif
 	if(offset & 1) {
 		write_text_vram_attr(offset, data);
 	} else {
 		write_text_vram_char(offset, data);
 	}
+#ifdef USE_VRAM_THREAD
 	LeaveCriticalSection(&vram_crit_sect);
+#endif
 }
 
 void write_text_vram_word(offs_t offset, UINT16 data)
 {
+#ifdef USE_VRAM_THREAD
 	EnterCriticalSection(&vram_crit_sect);
+#endif
 	if(offset & 1) {
 		write_text_vram_attr(offset    , (data     ) & 0xff);
 		write_text_vram_char(offset + 1, (data >> 8) & 0xff);
@@ -503,12 +521,16 @@ void write_text_vram_word(offs_t offset, UINT16 data)
 		write_text_vram_char(offset    , (data     ) & 0xff);
 		write_text_vram_attr(offset + 1, (data >> 8) & 0xff);
 	}
+#ifdef USE_VRAM_THREAD
 	LeaveCriticalSection(&vram_crit_sect);
+#endif
 }
 
 void write_text_vram_dword(offs_t offset, UINT32 data)
 {
+#ifdef USE_VRAM_THREAD
 	EnterCriticalSection(&vram_crit_sect);
+#endif
 	if(offset & 1) {
 		write_text_vram_attr(offset    , (data      ) & 0xff);
 		write_text_vram_char(offset + 1, (data >>  8) & 0xff);
@@ -520,7 +542,9 @@ void write_text_vram_dword(offs_t offset, UINT32 data)
 		write_text_vram_char(offset + 2, (data >> 16) & 0xff);
 		write_text_vram_attr(offset + 3, (data >> 24) & 0xff);
 	}
+#ifdef USE_VRAM_THREAD
 	LeaveCriticalSection(&vram_crit_sect);
+#endif
 }
 
 void write_byte(offs_t byteaddress, UINT8 data)
@@ -735,7 +759,7 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 #endif
 }
 
-/*
+#ifdef USE_SERVICE_THREAD
 void i386_call_far(UINT16 selector, UINT32 address)
 {
 #if defined(HAS_I386)
@@ -765,7 +789,7 @@ void i386_call_far(UINT16 selector, UINT32 address)
 	CHANGE_PC(m_pc);
 #endif
 }
-*/
+#endif
 
 UINT16 i386_read_stack()
 {
@@ -970,7 +994,6 @@ void debugger_regs_info(char *buffer)
 #else
 	UINT32 flags = CompressFlags();
 #endif
-	
 #if defined(HAS_I386)
 	if(m_operand_size) {
 		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
@@ -2102,8 +2125,14 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
 	if(dwCtrlType == CTRL_BREAK_EVENT) {
 		if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+			EnterCriticalSection(&key_buf_crit_sect);
+#endif
 			key_buf_char->clear();
 			key_buf_scan->clear();
+#ifdef USE_SERVICE_THREAD
+			LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 		}
 //		key_code = key_recv = 0;
 		return TRUE;
@@ -2139,7 +2168,7 @@ void exit_handler()
 	hardware_release();
 }
 
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 DWORD WINAPI vram_thread(LPVOID)
 {
 	while(!m_halted) {
@@ -2766,6 +2795,11 @@ int main(int argc, char *argv[], char *envp[])
 	scr_top = csbi.srWindow.Top;
 	cursor_moved = false;
 	
+#ifdef USE_SERVICE_THREAD
+	InitializeCriticalSection(&input_crit_sect);
+	InitializeCriticalSection(&key_buf_crit_sect);
+	InitializeCriticalSection(&putch_crit_sect);
+#endif
 	key_buf_char = new FIFO(256);
 	key_buf_scan = new FIFO(256);
 	
@@ -2789,7 +2823,7 @@ int main(int argc, char *argv[], char *envp[])
 		TIMECAPS caps;
 		timeGetDevCaps(&caps, sizeof(TIMECAPS));
 		timeBeginPeriod(caps.wPeriodMin);
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 		InitializeCriticalSection(&vram_crit_sect);
 		CloseHandle(CreateThread(NULL, 4096, vram_thread, NULL, 0, NULL));
 #endif
@@ -2807,7 +2841,7 @@ int main(int argc, char *argv[], char *envp[])
 		}
 #endif
 		hardware_run();
-#ifdef USE_THREAD
+#ifdef USE_VRAM_THREAD
 		vram_flush();
 		DeleteCriticalSection(&vram_crit_sect);
 #endif
@@ -2838,7 +2872,10 @@ int main(int argc, char *argv[], char *envp[])
 		
 		SetConsoleCtrlHandler(ctrl_handler, FALSE);
 	}
-	
+	if(temp_file_created) {
+		DeleteFile(temp_file_path);
+		temp_file_created = false;
+	}
 	hardware_finish();
 	
 	if(key_buf_char != NULL) {
@@ -2851,18 +2888,11 @@ int main(int argc, char *argv[], char *envp[])
 		delete key_buf_scan;
 		key_buf_scan = NULL;
 	}
-	if(temp_file_created) {
-		DeleteFile(temp_file_path);
-		temp_file_created = false;
-	}
-//	if(argv == dummy_argv) {
-//		if(!is_started_from_command_prompt()) {
-//			fprintf(stderr, "\nHit any key to quit...");
-//			while(!_kbhit()) {
-//				Sleep(10);
-//			}
-//		}
-//	}
+#ifdef USE_SERVICE_THREAD
+	DeleteCriticalSection(&input_crit_sect);
+	DeleteCriticalSection(&key_buf_crit_sect);
+	DeleteCriticalSection(&putch_crit_sect);
+#endif
 #ifdef _DEBUG
 	_CrtDumpMemoryLeaks();
 #endif
@@ -2960,6 +2990,9 @@ void clear_scr_buffer(WORD attr)
 
 bool update_console_input()
 {
+#ifdef USE_SERVICE_THREAD
+	EnterCriticalSection(&input_crit_sect);
+#endif
 	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
@@ -3011,25 +3044,30 @@ bool update_console_input()
 					}
 				} else if(ir[i].EventType & KEY_EVENT) {
 					// update keyboard flags in bios data area
-					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
-						mem[0x417] |= 0x04;
+					if(ir[i].Event.KeyEvent.dwControlKeyState & CAPSLOCK_ON) {
+						mem[0x417] |= 0x40;
 					} else {
-						mem[0x417] &= ~0x04;
+						mem[0x417] &= ~0x40;
 					}
-					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_CTRL_PRESSED) {
-						mem[0x418] |= 0x01;
+					if(ir[i].Event.KeyEvent.dwControlKeyState & NUMLOCK_ON) {
+						mem[0x417] |= 0x20;
 					} else {
-						mem[0x418] &= ~0x01;
+						mem[0x417] &= ~0x20;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & SCROLLLOCK_ON) {
+						mem[0x417] |= 0x10;
+					} else {
+						mem[0x417] &= ~0x10;
 					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
 						mem[0x417] |= 0x08;
 					} else {
 						mem[0x417] &= ~0x08;
 					}
-					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_ALT_PRESSED) {
-						mem[0x418] |= 0x02;
+					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
+						mem[0x417] |= 0x04;
 					} else {
-						mem[0x418] &= ~0x02;
+						mem[0x417] &= ~0x04;
 					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
 						if(!(mem[0x417] & 0x03)) {
@@ -3037,6 +3075,16 @@ bool update_console_input()
 						}
 					} else {
 						mem[0x417] &= ~0x03;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_ALT_PRESSED) {
+						mem[0x418] |= 0x02;
+					} else {
+						mem[0x418] &= ~0x02;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_CTRL_PRESSED) {
+						mem[0x418] |= 0x01;
+					} else {
+						mem[0x418] &= ~0x01;
 					}
 					
 					// set scan code of last pressed/release key to kbd_data (in-port 60h)
@@ -3116,12 +3164,18 @@ bool update_console_input()
 							// ignore shift, ctrl, alt, win and menu keys
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && (scn < 0x5b || scn > 0x5e)) {
 								if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+									EnterCriticalSection(&key_buf_crit_sect);
+#endif
 									if(chr == 0) {
 										key_buf_char->write(0x00);
 										key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
 									}
 									key_buf_char->write(chr);
 									key_buf_scan->write(scn);
+#ifdef USE_SERVICE_THREAD
+									LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 								}
 							}
 						} else {
@@ -3132,24 +3186,42 @@ bool update_console_input()
 								}
 							}
 							if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+								EnterCriticalSection(&key_buf_crit_sect);
+#endif
 								key_buf_char->write(chr);
 								key_buf_scan->write(scn);
+#ifdef USE_SERVICE_THREAD
+								LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 							}
 						}
 					} else if(chr == 0x03 && (ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) {
 						// ctrl-break, ctrl-c
 						if(scn == 0x46) {
 							if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+								EnterCriticalSection(&key_buf_crit_sect);
+#endif
 								key_buf_char->write(0x00);
 								key_buf_scan->write(0x00);
+#ifdef USE_SERVICE_THREAD
+								LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 							}
 							ctrl_break_pressed = true;
 							mem[0x471] = 0x80;
 							raise_int_1bh = true;
 						} else {
 							if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+								EnterCriticalSection(&key_buf_crit_sect);
+#endif
 								key_buf_char->write(chr);
 								key_buf_scan->write(scn);
+#ifdef USE_SERVICE_THREAD
+								LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 							}
 							ctrl_c_pressed = (scn == 0x2e);
 						}
@@ -3162,12 +3234,28 @@ bool update_console_input()
 			}
 		}
 	}
+#ifdef USE_SERVICE_THREAD
+	LeaveCriticalSection(&input_crit_sect);
+#endif
 	return(result);
 }
 
 bool update_key_buffer()
 {
-	return(update_console_input() || (key_buf_char != NULL && key_buf_char->count() != 0));
+	if(update_console_input()) {
+		return(true);
+	}
+	if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+		EnterCriticalSection(&key_buf_crit_sect);
+#endif
+		bool empty = key_buf_char->empty();
+#ifdef USE_SERVICE_THREAD
+		LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+		if(!empty) return(true);
+	}
+	return(false);
 }
 
 /* ----------------------------------------------------------------------------
@@ -3443,6 +3531,9 @@ static const struct {
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
 void msdos_putch(UINT8 data);
+#ifdef USE_SERVICE_THREAD
+void msdos_putch_tmp(UINT8 data);
+#endif
 
 // process info
 
@@ -4528,11 +4619,20 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if((key_buf_char != NULL && key_buf_char->count() != 0) || key_recv != 0) {
+	if(key_recv != 0) {
 		return(1);
-	} else {
-		return(_kbhit());
 	}
+	if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+		EnterCriticalSection(&key_buf_crit_sect);
+#endif
+		bool empty = key_buf_char->empty();
+#ifdef USE_SERVICE_THREAD
+		LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+		if(!empty) return(1);
+	}
+	return(_kbhit());
 }
 
 int msdos_getch_ex(int echo)
@@ -4571,13 +4671,29 @@ retry:
 		key_code >>= 16;
 		key_recv >>= 16;
 	} else {
-		while(key_buf_char != NULL && key_buf_char->count() == 0 && !m_halted) {
+		while(key_buf_char != NULL && key_buf_scan != NULL && !m_halted) {
+			if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+				EnterCriticalSection(&key_buf_crit_sect);
+#endif
+				bool empty = key_buf_char->empty();
+#ifdef USE_SERVICE_THREAD
+				LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+				if(!empty) break;
+			}
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
 					if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+						EnterCriticalSection(&key_buf_crit_sect);
+#endif
 						key_buf_char->write(_getch());
-						key_buf_scan->write(0);
+						key_buf_scan->write(0x00);
+#ifdef USE_SERVICE_THREAD
+						LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 					}
 				} else {
 					Sleep(10);
@@ -4593,8 +4709,14 @@ retry:
 			key_char = 0x0d;
 			key_scan = 0;
 		} else if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+			EnterCriticalSection(&key_buf_crit_sect);
+#endif
 			key_char = key_buf_char->read();
 			key_scan = key_buf_scan->read();
+#ifdef USE_SERVICE_THREAD
+			LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 		}
 	}
 	if(echo && key_char) {
@@ -4642,6 +4764,14 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 }
 
 void msdos_putch(UINT8 data)
+#ifdef USE_SERVICE_THREAD
+{
+	EnterCriticalSection(&putch_crit_sect);
+	msdos_putch_tmp(data);
+	LeaveCriticalSection(&putch_crit_sect);
+}
+void msdos_putch_tmp(UINT8 data)
+#endif
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	SMALL_RECT rect;
@@ -4860,10 +4990,16 @@ void msdos_putch(UINT8 data)
 						sprintf(tmp, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
 						int len = strlen(tmp);
 						if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+							EnterCriticalSection(&key_buf_crit_sect);
+#endif
 							for(int i = 0; i < len; i++) {
 								key_buf_char->write(tmp[i]);
 								key_buf_scan->write(0x00);
 							}
+#ifdef USE_SERVICE_THREAD
+							LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 						}
 					}
 				} else if(data == 's') {
@@ -5966,6 +6102,53 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 
 // pc bios
 
+#ifdef USE_SERVICE_THREAD
+void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
+{
+#if defined(HAS_I386)
+	if(m_SF != 0) {
+		m_SF = 0;
+		mem[0xfffd0 + 0x15] = 0x79;	// jns -4
+	} else {
+		m_SF = 1;
+		mem[0xfffd0 + 0x15] = 0x78;	// js -4
+	}
+#else
+	if(m_SignVal < 0) {
+		m_SignVal = 0;
+		mem[0xfffd0 + 0x15] = 0x79;	// jns -4
+	} else {
+		m_SignVal = -1;
+		mem[0xfffd0 + 0x15] = 0x78;	// js -4
+	}
+#endif
+	i386_call_far(0xfffd, 0x0013);
+	in_service = true;
+	service_exit = false;
+	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
+}
+
+void finish_service_loop()
+{
+	if(in_service && service_exit) {
+#if defined(HAS_I386)
+		if(m_SF != 0) {
+			m_SF = 0;
+		} else {
+			m_SF = 1;
+		}
+#else
+		if(m_SignVal < 0) {
+			m_SignVal = 0;
+		} else {
+			m_SignVal = -1;
+		}
+#endif
+		in_service = false;
+	}
+}
+#endif
+
 UINT32 get_ticks_since_midnight(UINT32 cur_msec)
 {
 	static unsigned __int64 start_msec_since_midnight = 0;
@@ -6047,7 +6230,9 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 			mem[ofs++] = 0x07;
 		}
 		
+#ifdef USE_VRAM_THREAD
 		EnterCriticalSection(&vram_crit_sect);
+#endif
 		for(int y = 0; y < clr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
 				SCR_BUF(y,x).Char.AsciiChar = ' ';
@@ -6059,7 +6244,9 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		WriteConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length_char = vram_last_length_char = 0;
 		vram_length_attr = vram_last_length_attr = 0;
+#ifdef USE_VRAM_THREAD
 		LeaveCriticalSection(&vram_crit_sect);
+#endif
 	}
 	COORD co;
 	co.X = 0;
@@ -6299,7 +6486,9 @@ inline void pcbios_int_10h_09h()
 	int end = min(dest + REG16(CX) * 2, pcbios_get_shadow_buffer_address(REG8(BH), 0, scr_height));
 	
 	if(mem[0x462] == REG8(BH)) {
+#ifdef USE_VRAM_THREAD
 		EnterCriticalSection(&vram_crit_sect);
+#endif
 		int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 		while(dest < end) {
 			write_text_vram_char(dest - vram, REG8(AL));
@@ -6307,7 +6496,9 @@ inline void pcbios_int_10h_09h()
 			write_text_vram_attr(dest - vram, REG8(BL));
 			mem[dest++] = REG8(BL);
 		}
+#ifdef USE_VRAM_THREAD
 		LeaveCriticalSection(&vram_crit_sect);
+#endif
 	} else {
 		while(dest < end) {
 			mem[dest++] = REG8(AL);
@@ -6327,14 +6518,18 @@ inline void pcbios_int_10h_0ah()
 	int end = min(dest + REG16(CX) * 2, pcbios_get_shadow_buffer_address(REG8(BH), 0, scr_height));
 	
 	if(mem[0x462] == REG8(BH)) {
+#ifdef USE_VRAM_THREAD
 		EnterCriticalSection(&vram_crit_sect);
+#endif
 		int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 		while(dest < end) {
 			write_text_vram_char(dest - vram, REG8(AL));
 			mem[dest++] = REG8(AL);
 			dest++;
 		}
+#ifdef USE_VRAM_THREAD
 		LeaveCriticalSection(&vram_crit_sect);
+#endif
 	} else {
 		while(dest < end) {
 			mem[dest++] = REG8(AL);
@@ -6362,10 +6557,14 @@ inline void pcbios_int_10h_0eh()
 	} else {
 		int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
 		if(mem[0x462] == REG8(BH)) {
+#ifdef USE_VRAM_THREAD
 			EnterCriticalSection(&vram_crit_sect);
+#endif
 			int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 			write_text_vram_char(dest - vram, REG8(AL));
+#ifdef USE_VRAM_THREAD
 			LeaveCriticalSection(&vram_crit_sect);
+#endif
 			
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(++co.X == scr_width) {
@@ -6852,7 +7051,7 @@ inline void pcbios_int_15h_10h()
 	switch(REG8(AL)) {
 	case 0x00:
 		Sleep(10);
-		hardware_update();
+		REQUEST_HARDWRE_UPDATE();
 		break;
 	default:
 		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -6963,22 +7162,36 @@ inline void pcbios_int_15h_53h()
 	}
 }
 
-inline void pcbios_int_15h_86h()
+
+DWORD WINAPI pcbios_int_15h_86h_thread(LPVOID)
 {
 	UINT32 usec = (REG16(CX) << 16) | REG16(DX);
 	UINT32 msec = usec / 1000;
 	
-	while(msec) {
+	while(msec && !m_halted) {
 		UINT32 tmp = min(msec, 100);
 		if(msec - tmp < 10) {
 			tmp = msec;
 		}
 		Sleep(tmp);
-		
-		if(m_halted) {
-			return;
-		}
 		msec -= tmp;
+	}
+	
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
+inline void pcbios_int_15h_86h()
+{
+	if(!(REG16(CX) == 0 && REG16(DX) == 0)) {
+#ifdef USE_SERVICE_THREAD
+		start_service_loop(pcbios_int_15h_86h_thread);
+#else
+		pcbios_int_15h_86h_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#endif
 	}
 }
 
@@ -7114,7 +7327,14 @@ inline void pcbios_int_15h_e8h()
 void pcbios_update_key_code(bool wait)
 {
 	if(key_buf_char != NULL && key_buf_scan != NULL) {
-		if(key_buf_char->count() == 0) {
+#ifdef USE_SERVICE_THREAD
+		EnterCriticalSection(&key_buf_crit_sect);
+#endif
+		bool empty = key_buf_char->empty();
+#ifdef USE_SERVICE_THREAD
+		LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+		if(empty) {
 			if(!update_key_buffer()) {
 				if(wait) {
 					Sleep(10);
@@ -7125,18 +7345,26 @@ void pcbios_update_key_code(bool wait)
 		}
 	}
 	if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+		EnterCriticalSection(&key_buf_crit_sect);
+#endif
 		if(key_buf_char->count() != 0) {
-			key_code = key_buf_char->read() | (key_buf_scan->read() << 8);
-			key_recv = 0x0000ffff;
+			key_code  = key_buf_char->read() << 0;
+			key_code |= key_buf_scan->read() << 8;
+			key_recv  = 0x0000ffff;
 		}
 		if(key_buf_char->count() != 0) {
-			key_code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
+			key_code |= key_buf_char->read() << 16;
+			key_code |= key_buf_scan->read() << 24;
 			key_recv |= 0xffff0000;
 		}
+#ifdef USE_SERVICE_THREAD
+		LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 	}
 }
 
-inline void pcbios_int_16h_00h()
+DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 {
 	while(key_recv == 0 && !m_halted) {
 		pcbios_update_key_code(true);
@@ -7154,6 +7382,21 @@ inline void pcbios_int_16h_00h()
 	REG16(AX) = key_code & 0xffff;
 	key_code >>= 16;
 	key_recv >>= 16;
+	
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
+inline void pcbios_int_16h_00h()
+{
+#ifdef USE_SERVICE_THREAD
+	start_service_loop(pcbios_int_16h_00h_thread);
+#else
+	pcbios_int_16h_00h_thread(NULL);
+	REQUEST_HARDWRE_UPDATE();
+#endif
 }
 
 inline void pcbios_int_16h_01h()
@@ -7219,8 +7462,14 @@ inline void pcbios_int_16h_03h()
 inline void pcbios_int_16h_05h()
 {
 	if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+		EnterCriticalSection(&key_buf_crit_sect);
+#endif
 		key_buf_char->write(REG8(CL));
 		key_buf_scan->write(REG8(CH));
+#ifdef USE_SERVICE_THREAD
+		LeaveCriticalSection(&key_buf_crit_sect);
+#endif
 	}
 	REG8(AL) = 0x00;
 }
@@ -7363,13 +7612,25 @@ inline void msdos_int_21h_00h()
 	msdos_process_terminate(SREG(CS), retval, 1);
 }
 
-inline void msdos_int_21h_01h()
+DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 {
 	REG8(AL) = msdos_getche();
 	ctrl_break_detected = ctrl_break_pressed;
 	
-	// some seconds may be passed in console
-	hardware_update();
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
+inline void msdos_int_21h_01h()
+{
+#ifdef USE_SERVICE_THREAD
+	start_service_loop(msdos_int_21h_01h_thread);
+#else
+	msdos_int_21h_01h_thread(NULL);
+	REQUEST_HARDWRE_UPDATE();
+#endif
 }
 
 inline void msdos_int_21h_02h()
@@ -7421,21 +7682,45 @@ inline void msdos_int_21h_06h()
 	}
 }
 
-inline void msdos_int_21h_07h()
+DWORD WINAPI msdos_int_21h_07h_thread(LPVOID)
 {
 	REG8(AL) = msdos_getch();
 	
-	// some seconds may be passed in console
-	hardware_update();
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
 }
 
-inline void msdos_int_21h_08h()
+inline void msdos_int_21h_07h()
+{
+#ifdef USE_SERVICE_THREAD
+	start_service_loop(msdos_int_21h_07h_thread);
+#else
+	msdos_int_21h_07h_thread(NULL);
+	REQUEST_HARDWRE_UPDATE();
+#endif
+}
+
+DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 {
 	REG8(AL) = msdos_getch();
 	ctrl_break_detected = ctrl_break_pressed;
 	
-	// some seconds may be passed in console
-	hardware_update();
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
+inline void msdos_int_21h_08h()
+{
+#ifdef USE_SERVICE_THREAD
+	start_service_loop(msdos_int_21h_08h_thread);
+#else
+	msdos_int_21h_08h_thread(NULL);
+	REQUEST_HARDWRE_UPDATE();
+#endif
 }
 
 inline void msdos_int_21h_09h()
@@ -7463,7 +7748,7 @@ inline void msdos_int_21h_09h()
 	ctrl_break_detected = ctrl_break_pressed;
 }
 
-inline void msdos_int_21h_0ah()
+DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 {
 	int ofs = SREG_BASE(DS) + REG16(DX);
 	int max = mem[ofs] - 1;
@@ -7525,8 +7810,22 @@ inline void msdos_int_21h_0ah()
 	mem[ofs + 1] = p;
 	ctrl_break_detected = ctrl_break_pressed;
 	
-	// some seconds may be passed in console
-	hardware_update();
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
+inline void msdos_int_21h_0ah()
+{
+	if(mem[SREG_BASE(DS) + REG16(DX)] != 0x00) {
+#ifdef USE_SERVICE_THREAD
+		start_service_loop(msdos_int_21h_0ah_thread);
+#else
+		msdos_int_21h_0ah_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#endif
+	}
 }
 
 inline void msdos_int_21h_0bh()
@@ -8578,6 +8877,85 @@ inline void msdos_int_21h_3eh()
 	}
 }
 
+DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
+{
+	UINT8 *buf = mem + SREG_BASE(DS) + REG16(DX);
+	int max = REG16(CX);
+	int p = 0;
+	
+	while(max > p) {
+		int chr = msdos_getch();
+		
+		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
+			p = 0;
+			buf[p++] = 0x0d;
+			if(max > p) {
+				buf[p++] = 0x0a;
+			}
+			msdos_putch(0x03);
+			msdos_putch(0x0d);
+			msdos_putch(0x0a);
+			break;
+		} else if(ctrl_break_pressed) {
+			// skip this byte
+		} else if(chr == 0x00) {
+			// skip 2nd byte
+			msdos_getch();
+		} else if(chr == 0x0d) {
+			// carriage return
+			buf[p++] = 0x0d;
+			if(max > p) {
+				buf[p++] = 0x0a;
+			}
+			msdos_putch('\n');
+			break;
+		} else if(chr == 0x08) {
+			// back space
+			if(p > 0) {
+				p--;
+				if(msdos_ctrl_code_check(buf[p])) {
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+				} else {
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+				}
+			}
+		} else if(chr == 0x1b) {
+			// escape
+			while(p > 0) {
+				p--;
+				if(msdos_ctrl_code_check(buf[p])) {
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+				} else {
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+				}
+			}
+		} else {
+			buf[p++] = chr;
+			msdos_putch(chr);
+		}
+	}
+	REG16(AX) = p;
+	
+#ifdef USE_SERVICE_THREAD
+	service_exit = true;
+#endif
+	return(0);
+}
+
 inline void msdos_int_21h_3fh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
@@ -8587,79 +8965,16 @@ inline void msdos_int_21h_3fh()
 		if(file_mode[file_handler[fd].mode].in) {
 			if(file_handler[fd].atty) {
 				// BX is stdin or is redirected to stdin
-				UINT8 *buf = mem + SREG_BASE(DS) + REG16(DX);
-				int max = REG16(CX);
-				int p = 0;
-				
-				while(max > p) {
-					int chr = msdos_getch();
-					
-					if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
-						p = 0;
-						buf[p++] = 0x0d;
-						if(max > p) {
-							buf[p++] = 0x0a;
-						}
-						msdos_putch(0x03);
-						msdos_putch(0x0d);
-						msdos_putch(0x0a);
-						break;
-					} else if(ctrl_break_pressed) {
-						// skip this byte
-					} else if(chr == 0x00) {
-						// skip 2nd byte
-						msdos_getch();
-					} else if(chr == 0x0d) {
-						// carriage return
-						buf[p++] = 0x0d;
-						if(max > p) {
-							buf[p++] = 0x0a;
-						}
-						msdos_putch('\n');
-						break;
-					} else if(chr == 0x08) {
-						// back space
-						if(p > 0) {
-							p--;
-							if(msdos_ctrl_code_check(buf[p])) {
-								msdos_putch(0x08);
-								msdos_putch(0x08);
-								msdos_putch(0x20);
-								msdos_putch(0x20);
-								msdos_putch(0x08);
-								msdos_putch(0x08);
-							} else {
-								msdos_putch(0x08);
-								msdos_putch(0x20);
-								msdos_putch(0x08);
-							}
-						}
-					} else if(chr == 0x1b) {
-						// escape
-						while(p > 0) {
-							p--;
-							if(msdos_ctrl_code_check(buf[p])) {
-								msdos_putch(0x08);
-								msdos_putch(0x08);
-								msdos_putch(0x20);
-								msdos_putch(0x20);
-								msdos_putch(0x08);
-								msdos_putch(0x08);
-							} else {
-								msdos_putch(0x08);
-								msdos_putch(0x20);
-								msdos_putch(0x08);
-							}
-						}
-					} else {
-						buf[p++] = chr;
-						msdos_putch(chr);
-					}
+				if(REG16(CX) != 0) {
+#ifdef USE_SERVICE_THREAD
+					start_service_loop(msdos_int_21h_3fh_thread);
+#else
+					msdos_int_21h_3fh_thread(NULL);
+					REQUEST_HARDWRE_UPDATE();
+#endif
+				} else {
+					REG16(AX) = 0;
 				}
-				REG16(AX) = p;
-				
-				// some seconds may be passed in console
-				hardware_update();
 			} else {
 				REG16(AX) = _read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
@@ -8731,7 +9046,7 @@ inline void msdos_int_21h_42h()
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
 		if(REG8(AL) < 0x03) {
-			static int ptrname[] = { SEEK_SET, SEEK_CUR, SEEK_END };
+			static const int ptrname[] = { SEEK_SET, SEEK_CUR, SEEK_END };
 			_lseek(fd, (REG16(CX) << 16) | REG16(DX), ptrname[REG8(AL)]);
 			UINT32 pos = _tell(fd);
 			REG16(AX) = pos & 0xffff;
@@ -9789,7 +10104,7 @@ inline void msdos_int_21h_5ch()
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
 		if(REG8(AL) == 0 || REG8(AL) == 1) {
-			static int modes[2] = {_LK_LOCK, _LK_UNLCK};
+			static const int modes[2] = {_LK_LOCK, _LK_UNLCK};
 			UINT32 pos = _tell(fd);
 			_lseek(fd, (REG16(CX) << 16) | REG16(DX), SEEK_SET);
 			if(_locking(fd, modes[REG8(AL)], (REG16(SI) << 16) | REG16(DI))) {
@@ -9799,7 +10114,7 @@ inline void msdos_int_21h_5ch()
 			_lseek(fd, pos, SEEK_SET);
 			
 			// some seconds may be passed in _locking()
-			hardware_update();
+			REQUEST_HARDWRE_UPDATE();
 		} else {
 			REG16(AX) = 0x01;
 			m_CF = 1;
@@ -11366,7 +11681,7 @@ inline void msdos_int_2fh_16h()
 		break;
 	case 0x80:
 		Sleep(10);
-		hardware_update();
+		REQUEST_HARDWRE_UPDATE();
 		REG8(AL) = 0x00;
 		break;
 	case 0x83:
@@ -13766,6 +14081,7 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x28:
 		Sleep(10);
+		REQUEST_HARDWRE_UPDATE();
 		break;
 	case 0x29:
 		msdos_int_29h();
@@ -14543,7 +14859,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// psp
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, PSP_SIZE >> 4);
 	current_psp = seg;
-	msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
+	psp_t *psp = msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
+	psp->parent_psp = current_psp;
 	seg += (PSP_SIZE >> 4);
 	
 	// first free mcb in conventional memory
@@ -14570,7 +14887,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0019;	// fffd:0019 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffd:0018 irq0 (system timer)
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
@@ -14728,14 +15045,21 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xfffd0 + 0x11] = 0x6e;
 	mem[0xfffd0 + 0x12] = 0xcb;	// retf
 	
+	// dummy loop to wait BIOS/DOS service is done
+	mem[0xfffd0 + 0x13] = 0xe6;	// out f7h, al
+	mem[0xfffd0 + 0x14] = 0xf7;
+	mem[0xfffd0 + 0x15] = 0x78;	// js/jns -4
+	mem[0xfffd0 + 0x16] = 0xfc;
+	mem[0xfffd0 + 0x17] = 0xcb;	// retf
+	
 	// irq0 routine (system time)
-	mem[0xfffd0 + 0x19] = 0xcd;	// int 1ch
-	mem[0xfffd0 + 0x1a] = 0x1c;
-	mem[0xfffd0 + 0x1b] = 0xea;	// jmp far (IRET_TOP >> 4):0008
-	mem[0xfffd0 + 0x1c] = 0x08;
-	mem[0xfffd0 + 0x1d] = 0x00;
-	mem[0xfffd0 + 0x1e] = ((IRET_TOP >> 4)     ) & 0xff;
-	mem[0xfffd0 + 0x1f] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	mem[0xfffd0 + 0x18] = 0xcd;	// int 1ch
+	mem[0xfffd0 + 0x19] = 0x1c;
+	mem[0xfffd0 + 0x1a] = 0xea;	// jmp far (IRET_TOP >> 4):0008
+	mem[0xfffd0 + 0x1b] = 0x08;
+	mem[0xfffd0 + 0x1c] = 0x00;
+	mem[0xfffd0 + 0x1d] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[0xfffd0 + 0x1e] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
 	// boot routine
 	mem[0xffff0] = 0xf4;	// halt
@@ -14904,29 +15228,25 @@ void hardware_release()
 
 void hardware_run()
 {
-	int ops = 0;
-	
 #ifdef EXPORT_DEBUG_TO_FILE
 	// open debug log file after msdos_init() is done not to use the standard file handlers
 	fp_debug_log = fopen("debug.log", "w");
 #endif
 	while(!m_halted) {
 #if defined(HAS_I386)
-		m_cycles = 1;
 		CPU_EXECUTE_CALL(i386);
+		if(m_eip != m_prev_eip) {
+			idle_ops++;
+		}
 #else
 		CPU_EXECUTE_CALL(CPU_MODEL);
-#endif
-#if defined(HAS_I386)
-		if(m_eip != m_prev_eip) {
-#else
 		if(m_pc != m_prevpc) {
-#endif
-			iops++;
+			idle_ops++;
 		}
-		if(++ops == 16384) {
+#endif
+		if(++update_ops == UPDATE_OPS) {
 			hardware_update();
-			ops = 0;
+			update_ops = 0;
 		}
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
@@ -15682,7 +16002,7 @@ void pit_write(int ch, UINT8 val)
 		}
 		ch = (val >> 6) & 3;
 		if(val & 0x30) {
-			static int modes[8] = {0, 1, 2, 3, 4, 5, 2, 3};
+			static const int modes[8] = {0, 1, 2, 3, 4, 5, 2, 3};
 			pit[ch].mode = modes[(val >> 1) & 7];
 			pit[ch].count_latched = 0;
 			pit[ch].low_read = pit[ch].high_read = 0;
@@ -16756,6 +17076,12 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
 		dma_write(1, (addr - 0xc0) >> 1, val);
 		break;
+#ifdef USE_SERVICE_THREAD
+	case 0xf7:
+		// dummy i/o for BIOS/DOS service
+		finish_service_loop();
+		break;
+#endif
 //	case 0x278: case 0x279: case 0x27a:
 //		pio_write(1, addr, val);
 //		break;

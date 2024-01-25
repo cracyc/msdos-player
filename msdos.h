@@ -139,7 +139,7 @@ class FIFO
 private:
 	int size;
 	int *buf;
-	int cnt, rpt, wpt, stored[3];
+	int cnt, rpt, wpt;
 public:
 	FIFO(int s) {
 		size = s;
@@ -148,7 +148,10 @@ public:
 	}
 	void release()
 	{
-		free(buf);
+		if(buf != NULL) {
+			free(buf);
+			buf = NULL;
+		}
 	}
 	void clear()
 	{
@@ -187,16 +190,6 @@ public:
 	bool empty()
 	{
 		return(cnt == 0);
-	}
-	void store_buffer() {
-		stored[0] = cnt;
-		stored[1] = rpt;
-		stored[2] = wpt;
-	}
-	void restore_buffer() {
-		cnt = stored[0];
-		rpt = stored[1];
-		wpt = stored[2];
 	}
 };
 
@@ -302,6 +295,23 @@ UINT32 debugger_read_io_dword(offs_t addr);
 void debugger_write_io_byte(offs_t addr, UINT8 val);
 void debugger_write_io_word(offs_t addr, UINT16 val);
 void debugger_write_io_dword(offs_t addr, UINT32 val);
+#endif
+
+/* ----------------------------------------------------------------------------
+	service thread
+---------------------------------------------------------------------------- */
+
+#define USE_SERVICE_THREAD
+
+#ifdef USE_SERVICE_THREAD
+CRITICAL_SECTION input_crit_sect;
+CRITICAL_SECTION key_buf_crit_sect;
+CRITICAL_SECTION putch_crit_sect;
+bool in_service = false;
+bool service_exit = false;
+
+void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
+void finish_service_loop();
 #endif
 
 /* ----------------------------------------------------------------------------
