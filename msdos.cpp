@@ -586,8 +586,52 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 
 bool is_started_from_command_prompt()
 {
-	DWORD pl;
-	return(GetConsoleProcessList(&pl, 1) > 1);
+	bool ret = false;
+	
+	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	if(hLibrary) {
+		typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
+		GetConsoleProcessListFunction lpfnGetConsoleProcessList;
+		lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
+		if(lpfnGetConsoleProcessList) {
+			DWORD pl;
+			ret = (lpfnGetConsoleProcessList(&pl, 1) > 1);
+			FreeLibrary(hLibrary);
+			return(ret);
+		}
+		FreeLibrary(hLibrary);
+	}
+	
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if(hSnapshot != INVALID_HANDLE_VALUE) {
+		DWORD dwParentProcessID = 0;
+		PROCESSENTRY32 pe32;
+		pe32.dwSize = sizeof(PROCESSENTRY32);
+		if(Process32First(hSnapshot, &pe32)) {
+			do {
+				if(pe32.th32ProcessID == GetCurrentProcessId()) {
+					dwParentProcessID = pe32.th32ParentProcessID;
+					break;
+				}
+			} while(Process32Next(hSnapshot, &pe32));
+		}
+		CloseHandle(hSnapshot);
+		if(dwParentProcessID != 0) {
+			HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, dwParentProcessID);
+			if(hProcess != NULL) {
+				HMODULE hMod;
+				DWORD cbNeeded;
+				if(EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
+					char module_name[MAX_PATH];
+					if(GetModuleBaseName(hProcess, hMod, module_name, sizeof(module_name))) {
+						ret = (_strnicmp(module_name, "cmd.exe", 7) == 0);
+					}
+				}
+				CloseHandle(hProcess);
+			}
+		}
+	}
+	return(ret);
 }
 
 BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD wServicePackMajor, WORD wServicePackMinor)
@@ -7516,7 +7560,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			break;
 		}
 	}
-	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
+	if((path = getenv("MSDOS_COMSPEC")) != NULL ||
+	   (path = msdos_search_command_com(argv[0], env_path)) != NULL) {
 		strcpy(comspec_path, path);
 	}
 	
@@ -7536,7 +7581,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				tmp[i] = tmp[i] - 'a' + 'A';
 			}
 		}
-		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
+		if(strncmp(tmp, "MSDOS_COMSPEC=", 14) == 0) {
+			// ignore MSDOS_COMSPEC
+		} else if(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
+			// ignore non standard environments
+		} else {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
 			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
