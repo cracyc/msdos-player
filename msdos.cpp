@@ -21523,7 +21523,7 @@ void beep_init()
 {
 	hWaveOut = NULL;
 	ZeroMemory(&wfe, sizeof(wfe));
-	ZeroMemory(&whdr, sizeof(whdr));
+	ZeroMemory(whdr, sizeof(whdr));
 	beep_freq = 0;
 	beep_playing = false;
 }
@@ -21535,15 +21535,26 @@ void beep_finish()
 
 void beep_release()
 {
-	void *buf = (void *)whdr.lpData;
+	void *buf = (void *)whdr[0].lpData;
 	
 	if(hWaveOut != NULL) {
-		if(beep_playing) waveOutReset(hWaveOut);
-		waveOutUnprepareHeader(hWaveOut, &whdr, sizeof(WAVEHDR));
+		if(beep_playing) {
+			whdr[0].dwUser = 1; // stop
+			waveOutReset(hWaveOut);
+		}
+		waveOutUnprepareHeader(hWaveOut, &whdr[0], sizeof(WAVEHDR));
+		waveOutUnprepareHeader(hWaveOut, &whdr[1], sizeof(WAVEHDR));
 		waveOutClose(hWaveOut);
 	}
 	if(buf) {
 		free(buf);
+	}
+}
+
+void CALLBACK WaveOutProc(HWAVEOUT hWaveOut, UINT msg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
+{
+	if(msg == WOM_DONE && whdr[0].dwUser == 0) {
+		waveOutWrite(hWaveOut, (LPWAVEHDR)dwParam1, sizeof(WAVEHDR));
 	}
 }
 
@@ -21566,23 +21577,26 @@ void beep_update()
 			wfe.nBlockAlign = wfe.nChannels * wfe.wBitsPerSample / 8;
 			wfe.nSamplesPerSec = BEEP_SAMPLE_RATE;
 			wfe.nAvgBytesPerSec = wfe.nSamplesPerSec * wfe.nBlockAlign;
-			if(waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfe, 0, 0, CALLBACK_NULL) == MMSYSERR_NOERROR && hWaveOut != NULL) {
-				if((whdr.lpData = (LPSTR)malloc(wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS)) != NULL) {
-					whdr.dwBufferLength = wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS;
-					whdr.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-					whdr.dwLoops = 120 / BEEP_BUFLEN_SECS; // 2min
-					waveOutPrepareHeader(hWaveOut, &whdr, sizeof(WAVEHDR));
+			if(waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfe, (DWORD_PTR)WaveOutProc, 0, CALLBACK_FUNCTION) == MMSYSERR_NOERROR && hWaveOut != NULL) {
+				if((whdr[0].lpData = (LPSTR)malloc(wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS * 2)) != NULL) {
+					whdr[1].lpData = (LPSTR)((BYTE *)whdr[0].lpData + wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS);
+					for(int i = 0; i < 2; i++) {
+						whdr[i].dwBufferLength = wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS;
+						whdr[i].dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
+						whdr[i].dwLoops = 1;
+						waveOutPrepareHeader(hWaveOut, &whdr[i], sizeof(WAVEHDR));
+					}
 				}
 			}
 		}
 		if(beep_freq != freq) {
-			if(whdr.lpData != NULL) {
-				int num = (int)(whdr.dwBufferLength / (BEEP_SAMPLE_RATE / freq) + 0.5);
-				int len = (1024 * whdr.dwBufferLength) / num;
+			if(whdr[0].lpData != NULL) {
+				int num = (int)(wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS * 2 / (BEEP_SAMPLE_RATE / freq) + 0.5);
+				int len = (1024 * wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS * 2) / num;
 				int half = len / 2, val = len, remain;
-				BYTE *lpWave = (BYTE *)whdr.lpData;
+				BYTE *lpWave = (BYTE *)whdr[0].lpData;
 				
-				for(int i = 0; i < whdr.dwBufferLength; i++) {
+				for(int i = 0; i < wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS * 2; i++) {
 					if(val < half) {
 						if((remain = half - val) < 1024) {
 							lpWave[i] = 128 + ((128 * remain) >> 10) - 64;
@@ -21605,13 +21619,16 @@ void beep_update()
 		}
 		if(!beep_playing) {
 			if(hWaveOut != NULL) {
-				waveOutWrite(hWaveOut, &whdr, sizeof(WAVEHDR));
+				whdr[0].dwUser = 0; // play
+				waveOutWrite(hWaveOut, &whdr[0], sizeof(WAVEHDR));
+				waveOutWrite(hWaveOut, &whdr[1], sizeof(WAVEHDR));
 			}
 			beep_playing = true;
 		}
 	} else {
 		if(beep_playing) {
 			if(hWaveOut != NULL) {
+				whdr[0].dwUser = 1; // stop
 				waveOutReset(hWaveOut);
 			}
 			beep_playing = false;

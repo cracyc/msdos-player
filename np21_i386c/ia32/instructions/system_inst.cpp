@@ -381,7 +381,9 @@ MOV_CdRd(void)
 				if (src & 0xfffff800) {
 					EXCEPTION(GP_EXCEPTION, 0);
 				}
-				ia32_warning("MOV_CdRd: CR4 <- 0x%08x", src);
+				if ((src & ~reg) != CPU_CR4_DE) { // XXX: debug extention‚ÍŒx‚µ‚È‚¢
+					ia32_warning("MOV_CdRd: CR4 <- 0x%08x", src);
+				}
 			}
 
 			reg = CPU_CR4;

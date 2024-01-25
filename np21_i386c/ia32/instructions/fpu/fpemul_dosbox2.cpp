@@ -213,6 +213,7 @@ static void FPU_PREP_PUSH(void){
 static void FPU_FPOP(void){
 	FPU_STAT.tag[FPU_STAT_TOP] = TAG_Empty;
 	FPU_STAT.int_regvalid[FPU_STAT_TOP] = 0;
+	FPU_STAT.mmxenable = 0;
 	//maybe set zero in it as well
 	FPU_STAT_TOP = ((FPU_STAT_TOP+1)&7);
 //	LOG(LOG_FPU,LOG_ERROR)("popped from %d  %g off the stack",top,fpu.regs[top].d64);
@@ -340,7 +341,11 @@ static void FPU_ST80(UINT32 addr,UINT reg)
 		// Elvira wants the 8 and tcalc doesn't
 		mant80final |= QWORD_CONST(0x8000000000000000);
 		//Ca-cyber doesn't like this when result is zero.
-		exp80final += (BIAS80 - BIAS64);
+		if((exp80final & 0x7ff) == 0x7ff) {
+			exp80final = 0x7fff;
+		} else {
+			exp80final += (BIAS80 - BIAS64);
+		}
 	}
 	test.begin = ((SINT16)(sign80)<<15)| (SINT16)(exp80final);
 	test.eind.ll = mant80final;
@@ -439,6 +444,7 @@ static void FPU_FBLD(UINT32 addr,UINT store_to)
 	temp += ( (in&0xf) * base );
 	if(in&0x80) temp *= -1.0;
 	FPU_STAT.reg[store_to].d64 = temp;
+	FPU_STAT.int_regvalid[store_to] = 0;
 }
 
 
@@ -1258,6 +1264,7 @@ static void FPU_FLDZ(void){
 	FPU_STAT.tag[FPU_STAT_TOP] = TAG_Zero;
 	FPU_STAT.int_reg[FPU_STAT_TOP].ul64.m12 = 0;
 	FPU_STAT.int_regvalid[FPU_STAT_TOP] = 1;
+	FPU_STAT.mmxenable = 0;
 }
 
 
@@ -1304,6 +1311,7 @@ FPU_FINIT(void)
 		//FPU_STAT.reg[i].ll = 0;
 	}
 	FPU_STAT.tag[8] = TAG_Valid; // is only used by us
+	FPU_STAT.mmxenable = 0;
 }
 void DB2_FPU_FINIT(void){
 	int i;
@@ -1973,6 +1981,7 @@ DB2_ESC5(void)
 		case 0:	/* FFREE */
 			TRACEOUT(("FFREE"));
 			FPU_STAT.tag[FPU_ST(sub)]=TAG_Empty;
+			FPU_STAT.mmxenable = 0;
 			break;
 		case 1: /* FXCH */
 			TRACEOUT(("FXCH"));
@@ -2142,6 +2151,7 @@ DB2_ESC7(void)
 		case 0: /* FFREEP */
 			TRACEOUT(("FFREEP"));
 			FPU_STAT.tag[FPU_ST(sub)]=TAG_Empty;
+			FPU_STAT.mmxenable = 0;
 			FPU_FPOP();
 			break;
 		case 1: /* FXCH */

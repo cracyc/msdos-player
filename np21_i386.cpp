@@ -278,9 +278,9 @@ void CPU_RESET()
 	strcpy(i386cpuid.cpu_vendor, CPU_VENDOR_NEKOPRO);
 	strcpy(i386cpuid.cpu_brandstring, CPU_BRAND_STRING_NEKOPRO2);
 
-	i386cpuid.fpu_type = FPU_TYPE_SOFTFLOAT;
+//	i386cpuid.fpu_type = FPU_TYPE_SOFTFLOAT;
 //	i386cpuid.fpu_type = FPU_TYPE_DOSBOX;
-//	i386cpuid.fpu_type = FPU_TYPE_DOSBOX2;
+	i386cpuid.fpu_type = FPU_TYPE_DOSBOX2;
 	fpu_initialize();
 
 	UINT32 PREV_CPU_ADRSMASK = CPU_ADRSMASK;

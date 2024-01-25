@@ -561,7 +561,7 @@ void kbd_write_command(UINT8 val);
 
 WAVEFORMATEX wfe;
 HWAVEOUT hWaveOut;
-WAVEHDR whdr;
+WAVEHDR whdr[2];
 double beep_freq;
 bool beep_playing;
 
