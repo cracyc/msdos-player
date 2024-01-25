@@ -3565,6 +3565,12 @@ void msdos_putch(UINT8 data);
 #ifdef USE_SERVICE_THREAD
 void msdos_putch_tmp(UINT8 data);
 #endif
+char *msdos_short_path(char *path);
+bool msdos_is_valid_drive(int drv);
+bool msdos_is_removable_drive(int drv);
+bool msdos_is_cdrom_drive(int drv);
+bool msdos_is_remote_drive(int drv);
+bool msdos_is_subst_drive(int drv);
 
 // process info
 
@@ -3659,12 +3665,38 @@ void msdos_dta_info_free(UINT16 psp_seg)
 
 void msdos_cds_update(int drv)
 {
-	cds_t *cds = (cds_t *)(mem + CDS_TOP);
+	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
 	
-	memset(mem + CDS_TOP, 0, CDS_SIZE);
-	sprintf(cds->path_name, "%c:\\", 'A' + drv);
-	cds->drive_attrib = 0x4000;	// physical drive
-	cds->physical_drive_number = drv;
+	memset(cds, 0, 88);
+	
+	if(msdos_is_valid_drive(drv)) {
+		char path[MAX_PATH];
+		if(msdos_is_remote_drive(drv)) {
+			cds->drive_attrib = 0xc000;	// network drive
+		} else if(msdos_is_subst_drive(drv)) {
+			cds->drive_attrib = 0x5000;	// subst drive
+		} else {
+			cds->drive_attrib = 0x4000;	// physical drive
+		}
+		if(_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
+			strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
+		}
+	}
+	if(cds->path_name[0] == '\0') {
+		sprintf(cds->path_name, "%c:\\", 'A' + drv);
+	}
+	cds->dpb_ptr.w.h = DPB_TOP >> 4;
+	cds->dpb_ptr.w.l = sizeof(dpb_t) * drv;
+	cds->word_1 = cds->word_2 = 0xffff;
+	cds->word_3 = 0xffff; // stored user data from INT 21/AX=5F03h if this is network drive
+	cds->bs_offset = 2;
+}
+
+void msdos_cds_update(int drv, char *path)
+{
+	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
+	
+	strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 }
 
 // nls information tables
@@ -4276,6 +4308,52 @@ int msdos_is_prn_path(char *path)
 		}
 	}
 	return(0);
+}
+
+bool msdos_is_valid_drive(int drv)
+{
+	return(drv >= 0 && drv < 26 && (GetLogicalDrives() & (1 << drv)) != 0);
+}
+
+bool msdos_is_removable_drive(int drv)
+{
+	char volume[] = "A:\\";
+	
+	volume[0] = 'A' + drv;
+	
+	return(GetDriveType(volume) == DRIVE_REMOVABLE);
+}
+
+bool msdos_is_cdrom_drive(int drv)
+{
+	char volume[] = "A:\\";
+	
+	volume[0] = 'A' + drv;
+	
+	return(GetDriveType(volume) == DRIVE_CDROM);
+}
+
+bool msdos_is_remote_drive(int drv)
+{
+	char volume[] = "A:\\";
+	
+	volume[0] = 'A' + drv;
+	
+	return(GetDriveType(volume) == DRIVE_REMOTE);
+}
+
+bool msdos_is_subst_drive(int drv)
+{
+	char device[] = "A:", path[MAX_PATH];
+	
+	device[0] = 'A' + drv;
+	
+	if(QueryDosDevice(device, path, MAX_PATH)) {
+		if(strncmp(path, "\\??\\", 4) == 0) {
+			return(true);
+		}
+	}
+	return(false);
 }
 
 bool msdos_is_existing_file(char *path)
@@ -9475,7 +9553,7 @@ inline void msdos_int_21h_29h()
 		}
 	}
 	
-	if(drv == 0 || (drv > 0 && drv <= 26 && (GetLogicalDrives() & ( 1 << (drv - 1) )))) {
+	if(drv == 0 || msdos_is_valid_drive(drv - 1)) {
 		if(memchr(fcb + 1, '?', 8 + 3)) {
 			REG8(AL) = 0x01;
 		} else {
@@ -10052,9 +10130,21 @@ inline void msdos_int_21h_3ah(int lfn)
 
 inline void msdos_int_21h_3bh(int lfn)
 {
-	if(_chdir(msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn))) {
+	char *path = msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn);
+	
+	if(_chdir(path)) {
 		REG16(AX) = 3;	// must be 3 (path not found)
 		m_CF = 1;
+	} else {
+		int drv = _getdrive() - 1;
+		if(path[1] == ':') {
+			if(path[0] >= 'A' && path[0] <= 'Z') {
+				drv = path[0] - 'A';
+			} else if(path[0] >= 'a' && path[0] <= 'z') {
+				drv = path[0] - 'a';
+			}
+		}
+		msdos_cds_update(drv, path);
 	}
 }
 
@@ -10467,10 +10557,8 @@ inline void msdos_int_21h_44h()
 {
 	static UINT16 iteration_count = 0;
 	
-	process_t *process = msdos_process_info_get(current_psp);
-	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
-	
-	UINT32 val = DRIVE_NO_ROOT_DIR;
+	process_t *process;
+	int fd, drv;
 	
 	switch(REG8(AL)) {
 	case 0x00:
@@ -10481,6 +10569,8 @@ inline void msdos_int_21h_44h()
 	case 0x05:
 	case 0x06:
 	case 0x07:
+		process = msdos_process_info_get(current_psp);
+		fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 		if(fd >= process->max_files || !file_handler[fd].valid) {
 			REG16(AX) = 0x06;
 			m_CF = 1;
@@ -10489,25 +10579,12 @@ inline void msdos_int_21h_44h()
 		break;
 	case 0x08:
 	case 0x09:
-		if(REG8(BL) >= ('Z' - 'A' + 1)) {
-			// invalid drive number
+		drv = (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
+		if(!msdos_is_valid_drive(drv)) {
+			// invalid drive
 			REG16(AX) = 0x0f;
 			m_CF = 1;
 			return;
-		} else {
-			if(REG8(BL) == 0) {
-				val = GetDriveType(NULL);
-			} else {
-				char tmp[8];
-				sprintf(tmp, "%c:\\", 'A' + REG8(BL) - 1);
-				val = GetDriveType(tmp);
-			}
-			if(val == DRIVE_NO_ROOT_DIR) {
-				// no drive
-				REG16(AX) = 0x0f;
-				m_CF = 1;
-				return;
-			}
 		}
 		break;
 	}
@@ -10544,7 +10621,7 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x08: // check removable drive
-		if(val == DRIVE_REMOVABLE || val == DRIVE_CDROM) {
+		if(msdos_is_removable_drive(drv) || msdos_is_cdrom_drive(drv)) {
 			// removable drive
 			REG16(AX) = 0x00;
 		} else {
@@ -10553,12 +10630,15 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x09: // check remote drive
-		if(val == DRIVE_REMOTE) {
+		if(msdos_is_remote_drive(drv)) {
 			// remote drive
 			REG16(DX) = 0x1000;
+		} else if(msdos_is_subst_drive(drv)) {
+			// subst drive
+			REG16(DX) = 0x8000;
 		} else {
 			// local drive
-			REG16(DX) = 0x00;
+			REG16(DX) = 0x0000;
 		}
 		break;
 	case 0x0a: // check remote handle
@@ -10574,6 +10654,26 @@ inline void msdos_int_21h_44h()
 			// select code page
 			active_code_page = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2);
 			msdos_nls_tables_update();
+		} else if(REG8(CL) == 0x4c) {
+			// start code-page preparation
+			int ids[3] = {437, 0, 0}; // 437: US English
+			int count = 1, offset = 0;
+			if(active_code_page != 437) {
+				ids[count++] = active_code_page;
+			}
+			if(system_code_page != 437 && system_code_page != active_code_page) {
+				ids[count++] = system_code_page;
+			}
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = 0;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = 2 + 2 * count;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = count;
+			for(int i = 0; i < count; i++) {
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = ids[i];
+			}
+		} else if(REG8(CL) == 0x4d) {
+			// end code-page preparation
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 2;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = active_code_page;
 		} else if(REG8(CL) == 0x65) {
 			// get iteration (retry) count
 			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX)) = iteration_count;
@@ -10599,7 +10699,27 @@ inline void msdos_int_21h_44h()
 					}
 				}
 			}
+		} else if(REG8(CL) == 0x6b) {
+			// query prepare list
+			int ids[3] = {437, 0, 0}; // 437: US English
+			int count = 1, offset = 0;
+			if(active_code_page != 437) {
+				ids[count++] = active_code_page;
+			}
+			if(system_code_page != 437 && system_code_page != active_code_page) {
+				ids[count++] = system_code_page;
+			}
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = 2 * (2 + 2 * count);
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = count;
+			for(int i = 0; i < count; i++) {
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = ids[i];
+			}
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = count;
+			for(int i = 0; i < count; i++) {
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2 * (offset++)) = ids[i];
+			}
 		} else if(REG8(CL) == 0x7f) {
+			// get display information
 			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;
 			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;
 			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;
@@ -10797,23 +10917,17 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x0e: // get logical drive map
-		{
-			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
-			if(!(GetLogicalDrives() & bits)) {
-				REG16(AX) = 0x0f; // invalid drive
-				m_CF = 1;
-			} else {
-				REG8(AL) = 0;
-			}
+		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else {
+			REG8(AL) = 0;
 		}
 		break;
 	case 0x0f: // set logical drive map
-		{
-			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
-			if(!(GetLogicalDrives() & bits)) {
-				REG16(AX) = 0x0f; // invalid drive
-				m_CF = 1;
-			}
+		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
 		}
 		break;
 	case 0x10: // query generic ioctrl capability (handle)
@@ -11524,45 +11638,48 @@ inline void msdos_int_21h_5fh()
 {
 	switch(REG8(AL)) {
 	case 0x05:
-		{
-			DWORD drives = GetLogicalDrives();
-			UINT16 count = 0;
-			for(int i = 0; i < 26; i++) {
-				if(drives & (1 << i)) {
-					char volume[] = "A:\\";
-					volume[0] = 'A' + i;
-					if(GetDriveType(volume) == DRIVE_REMOTE) {
-						count++;
-					}
-				}
+		REG16(BP) = 0;
+		for(int i = 0; i < 26; i++) {
+			if(msdos_is_remote_drive(i)) {
+				REG16(BP)++;
 			}
-			REG16(BP) = count;
 		}
 	case 0x02:
-		{
-			DWORD drives = GetLogicalDrives();
-			for(int i = 0, index = 0; i < 26; i++) {
-				if(drives & (1 << i)) {
-					char volume[] = "A:\\";
+		for(int i = 0, index = 0; i < 26; i++) {
+			if(msdos_is_remote_drive(i)) {
+				if(index == REG16(BX)) {
+					char volume[] = "A:";
 					volume[0] = 'A' + i;
-					if(GetDriveType(volume) == DRIVE_REMOTE) {
-						if(index == REG16(BX)) {
-							DWORD dwSize = 128;
-							volume[2] = '\0';
-							strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), volume);
-							WNetGetConnection(volume, (char *)(mem + SREG_BASE(ES) + REG16(DI)), &dwSize);
-							REG8(BH) = 0x00; // valid
-							REG8(BL) = 0x04; // disk drive
-							REG16(CX) = 0x00; // LANtastic
-							return;
-						}
-						index++;
-					}
+					DWORD dwSize = 128;
+					strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), volume);
+					WNetGetConnection(volume, (char *)(mem + SREG_BASE(ES) + REG16(DI)), &dwSize);
+					REG8(BH) = 0x00; // valid
+					REG8(BL) = 0x04; // disk drive
+					REG16(CX) = 0x00; // LANtastic
+					return;
 				}
+				index++;
 			}
 		}
 		REG16(AX) = 0x12; // no more files
 		m_CF = 1;
+		break;
+	case 0x07:
+		if(msdos_is_valid_drive(REG8(DL))) {
+			msdos_cds_update(REG8(DL));
+		} else {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		}
+		break;
+	case 0x08:
+		if(msdos_is_valid_drive(REG8(DL))) {
+			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * REG8(DL));
+			cds->drive_attrib = 0x0000;
+		} else {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		}
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -12313,24 +12430,28 @@ inline void msdos_int_21h_71aah()
 	}
 	switch(REG8(BH)) {
 	case 0x00:
-		if(DefineDosDevice(0, drv, (char *)(mem + SREG_BASE(DS) + REG16(DX))) == 0) {
-			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
-			if(GetLogicalDrives() & bits) {
-				REG16(AX) = 0x0f; // invalid drive
-			} else {
-				REG16(AX) = 0x03; // path not found
-			}
+		if(msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else if(DefineDosDevice(0, drv, (char *)(mem + SREG_BASE(DS) + REG16(DX))) == 0) {
+			REG16(AX) = 0x03; // path not found
 			m_CF = 1;
 		}
 		break;
 	case 0x01:
-		if(DefineDosDevice(DDD_REMOVE_DEFINITION, drv, NULL) == 0) {
+		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else if(DefineDosDevice(DDD_REMOVE_DEFINITION, drv, NULL) == 0) {
 			REG16(AX) = 0x0f; // invalid drive
 			m_CF = 1;
 		}
 		break;
 	case 0x02:
-		if(QueryDosDevice(drv, path, MAX_PATH) == 0) {
+		if(!msdos_is_valid_drive((REG8(BL) ? REG8(BL) : _getdrive()) - 1)) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else if(QueryDosDevice(drv, path, MAX_PATH) == 0) {
 			REG16(AX) = 0x0f; // invalid drive
 			m_CF = 1;
 		} else if(strncmp(path, "\\??\\", 4) != 0) {
@@ -12350,13 +12471,8 @@ inline void msdos_int_21h_71aah()
 
 inline void msdos_int_21h_7300h()
 {
-	if(REG8(AL) == 0) {
-		REG8(AL) = REG8(CL);
-		REG8(AH) = 0;
-	} else {
-		REG16(AX) = 0x01;
-		m_CF = 1;
-	}
+	REG8(AL) = REG8(CL);
+	REG8(AH) = 0;
 }
 
 inline void msdos_int_21h_7302h()
@@ -12715,6 +12831,25 @@ inline void msdos_int_2fh_05h()
 	}
 }
 
+inline void msdos_int_2fh_06h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// ASSIGN is not installed
+		break;
+	case 0x01:
+		// this call is available from within MIRROR.COM even if ASSIGN is not installed
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_2fh_11h()
 {
 	switch(REG8(AL)) {
@@ -13048,18 +13183,13 @@ inline void msdos_int_2fh_15h()
 		if(REG16(BX) == 0x0000) {
 #if 0
 			// MSCDEX is installed
-			DWORD dwDrives = GetLogicalDrives();
 			REG16(BX) = 0;
 			for(int i = 0, n = 0; i < 26; i++) {
-				if(dwDrives & (1 << i)) {
-					char volume[] = "A:\\";
-					volume[0] = 'A' + i;
-					if(GetDriveType(volume) == DRIVE_CDROM) {
-						if(REG16(BX) == 0) {
-							REG16(CX) = i;
-						}
-						REG16(BX)++;
+				if(msdos_is_cdrom_drive(i)) {
+					if(REG16(BX) == 0) {
+						REG16(CX) = i;
 					}
+					REG16(BX)++;
 				}
 			}
 #else
@@ -13072,25 +13202,14 @@ inline void msdos_int_2fh_15h()
 		}
 		break;
 	case 0x0b:
-		// this function is called in DOSSHELL
-		{
-			char volume[] = "A:\\";
-			volume[0] = 'A' + REG8(CL);
-			REG16(AX) = (GetDriveType(volume) == DRIVE_CDROM) ? 0x5ad8 : 0x0000;
-			REG16(BX) = 0xadad;
-		}
+		// this call is available from within DOSSHELL even if MSCDEX is not installed
+		REG16(AX) = msdos_is_cdrom_drive(REG8(CL)) ? 0x5ad8 : 0x0000;
+		REG16(BX) = 0xadad;
 		break;
 	case 0x0d:
-		{
-			DWORD dwDrives = GetLogicalDrives();
-			for(int i = 0, n = 0; i < 26; i++) {
-				if(dwDrives & (1 << i)) {
-					char volume[] = "A:\\";
-					volume[0] = 'A' + i;
-					if(GetDriveType(volume) == DRIVE_CDROM) {
-						mem[SREG_BASE(ES) + REG16(BX) + (n++)] = i;
-					}
-				}
+		for(int i = 0, n = 0; i < 26; i++) {
+			if(msdos_is_cdrom_drive(i)) {
+				mem[SREG_BASE(ES) + REG16(BX) + (n++)] = i;
 			}
 		}
 		break;
@@ -13154,6 +13273,7 @@ inline void msdos_int_2fh_16h()
 	case 0x15:
 	case 0x81:
 	case 0x82:
+	case 0x84:
 	case 0x86:
 	case 0x87:
 	case 0x89:
@@ -13260,15 +13380,28 @@ inline void msdos_int_2fh_43h()
 #ifdef SUPPORT_XMS
 		if(support_xms) {
 			REG8(AL) = 0x80;
-		} else
+		}
 #endif
-		REG8(AL) = 0x00;
+		break;
+	case 0x08:
+#ifdef SUPPORT_XMS
+		if(support_xms) {
+			REG8(AL) = 0x43;
+			REG8(BL) = 0x01; // IBM PC/AT
+			REG8(BH) = 0x01; // Fast AT A20 switch time
+		}
+#endif
 		break;
 	case 0x10:
 		SREG(ES) = XMS_TOP >> 4;
 		i386_load_segment_descriptor(ES);
 		REG16(BX) = 0x15;
 		break;
+	case 0xe0:
+		// DOS Protected Mode Services (DPMS) v1.0 is not installed
+		if(REG16(BX) == 0x0000 && REG16(CX) == 0x4450 && REG16(DX) == 0x4d53) {
+			break;
+		}
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -13547,6 +13680,20 @@ inline void msdos_int_2fh_4bh()
 	}
 }
 
+inline void msdos_int_2fh_4dh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// KKCFUNC is not installed ???
+		break;
+	default:
+//		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01; // invalid function
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_2fh_4fh()
 {
 	switch(REG8(AL)) {
@@ -13574,6 +13721,26 @@ inline void msdos_int_2fh_55h()
 	case 0x00:
 	case 0x01:
 //		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_56h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// INTERLNK is not installed
+		break;
+	case 0x01:
+		// this call is available from within SCANDISK even if INTERLNK is not installed
+//		if(msdos_is_remote_drive(REG8(BH))) {
+//			REG8(AL) = 0x00;
+//		}
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -13668,6 +13835,9 @@ inline void msdos_int_2fh_b7h()
 	case 0x00:
 		// APPEND is not installed
 //		REG8(AL) = 0x00;
+		break;
+	case 0x06:
+		REG16(BX) = 0x0000;
 		break;
 	case 0x07:
 	case 0x11:
@@ -15132,15 +15302,10 @@ UINT16 msdos_get_equipment()
 		equip |= (3 << 14);	// number of printer ports (NOTE: this number is 3 on Windows 98 SE though only LPT1 exists)
 		
 		// check only A: and B: if it is floppy drive
-		DWORD dwDrives = GetLogicalDrives();
 		int n = 0;
 		for(int i = 0; i < 2; i++) {
-			if(dwDrives & (1 << i)) {
-				char volume[] = "A:\\";
-				volume[0] = 'A' + i;
-				if(GetDriveType(volume) == DRIVE_REMOVABLE) {
-					n++;
-				}
+			if(msdos_is_valid_drive(i) && msdos_is_removable_drive(i)) {
+				n++;
 			}
 		}
 		if(n != 0) {
@@ -15457,6 +15622,7 @@ void msdos_syscall(unsigned num)
 		case 0x35: break; // Word Perfect Third Party Interface?
 		case 0x36: break; // Word Perfect Third Party Interface
 		case 0x70: break; // SNAP? (Simple Network Application Protocol)
+		case 0xb0: break; // Microsoft Real-Time Compression Interface (MRCI)
 		case 0xb1: break; // PCI BIOS v2.0c+
 		case 0xb4: break; // Intel Plug-and-Play Auto-Configuration
 		default:
@@ -15752,6 +15918,7 @@ void msdos_syscall(unsigned num)
 		// multiplex interrupt
 		switch(REG8(AH)) {
 		case 0x05: msdos_int_2fh_05h(); break;
+		case 0x06: msdos_int_2fh_06h(); break;
 		case 0x11: msdos_int_2fh_11h(); break;
 		case 0x12: msdos_int_2fh_12h(); break;
 		case 0x13: msdos_int_2fh_13h(); break;
@@ -15766,8 +15933,10 @@ void msdos_syscall(unsigned num)
 		case 0x48: msdos_int_2fh_48h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
 		case 0x4b: msdos_int_2fh_4bh(); break;
+		case 0x4d: msdos_int_2fh_4dh(); break;
 		case 0x4f: msdos_int_2fh_4fh(); break;
 		case 0x55: msdos_int_2fh_55h(); break;
+		case 0x56: msdos_int_2fh_56h(); break;
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
@@ -16721,9 +16890,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + DISK_BUF_TOP + 10) = 0x01;		// number of FATs
 	*(UINT32 *)(mem + DISK_BUF_TOP + 13) = 0xffffffff;	// pointer to DPB
 	
-	// current directory structure
-	msdos_cds_update(_getdrive() - 1);
-	
 	// fcb table
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
@@ -16731,6 +16897,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// drive parameter block
 	for(int i = 0; i < 2; i++) {
 		// may be a floppy drive
+		cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * i);
+		sprintf(cds->path_name, "%c:\\", 'A' + i);
+		cds->drive_attrib = 0x4000;	// physical drive
+		cds->dpb_ptr.w.l = sizeof(dpb_t) * i;
+		cds->dpb_ptr.w.h = DPB_TOP >> 4;
+		cds->word_1 = cds->word_2 = cds->word_3 = 0xffff;
+		cds->bs_offset = 2;
+		
 		dpb_t *dpb = (dpb_t *)(mem + DPB_TOP + sizeof(dpb_t) * i);
 		dpb->drive_num = i;
 		dpb->unit_num = i;
@@ -16738,6 +16912,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		dpb->next_dpb_seg = /*(i == 25) ? 0xffff : */DPB_TOP >> 4;
 	}
 	for(int i = 2; i < 26; i++) {
+		msdos_cds_update(i);
 		UINT16 seg, ofs;
 		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}

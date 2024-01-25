@@ -694,7 +694,7 @@ void kbd_write_command(UINT8 val);
 #define DISK_BUF_TOP	(SFT_TOP + SFT_SIZE)
 #define DISK_BUF_SIZE	0x20
 #define CDS_TOP		(DISK_BUF_TOP + DISK_BUF_SIZE)
-#define CDS_SIZE	0x80
+#define CDS_SIZE	0x8F0	/* 88 * 26 */
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
 #define SDA_TOP		(FCB_TABLE_TOP + FCB_TABLE_SIZE)
@@ -999,7 +999,11 @@ typedef struct {
 typedef struct {
 	char path_name[67];
 	UINT16 drive_attrib;
-	UINT8 physical_drive_number;
+	PAIR32 dpb_ptr;
+	UINT16 word_1;
+	UINT16 word_2;
+	UINT16 word_3;
+	UINT16 bs_offset;
 } cds_t;
 #pragma pack()
 

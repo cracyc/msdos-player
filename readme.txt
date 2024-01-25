@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/7/2017
+								6/9/2017
 
 ----- What's this
 
@@ -654,6 +654,8 @@ INT 21H		MS-DOS System Call
 	5E00H	Get Machine Name
 	5F02H	Get Redirection List Entry
 	5F05H	Get Extended Redirection List Entry
+	5F07H	Enable Drive
+	5F08H	Disable Drive
 	60H	Canonicalize Filename Or Path
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
@@ -767,6 +769,7 @@ INT 2FH		Multiplex Interrupt
 	1A00H	ANSI.SYS - Installation Check
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 	4300H	XMS - Installation Check
+	4308H	HIMEM.SYS - Get A20 Handler Number
 	4310H	XMS - Get Driver Address
 	4810H	Read Input Line From Console
 	4A01H	DOS 5.0+ - Query Free HMA Space
