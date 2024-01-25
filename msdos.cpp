@@ -163,6 +163,7 @@ bool support_xms = false;
 #endif
 int sio_port_number[4] = {0, 0, 0, 0};
 
+BOOL is_winxp_or_later;
 BOOL is_xp_64_or_later;
 BOOL is_vista_or_later;
 
@@ -2467,20 +2468,32 @@ bool get_console_font_size(int *width, int *height)
 {
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
-	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
-	if(hLibrary) {
-		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
-		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
-		if(lpfnGetCurrentConsoleFont) { // Windows XP or later
-			CONSOLE_FONT_INFO fi;
-			if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi) != 0) {
-				*width  = fi.dwFontSize.X;
-				*height = fi.dwFontSize.Y;
-				result = true;
+	if(is_winxp_or_later) {
+		HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
+		if(hLibrary) {
+			typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+			GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+			if(lpfnGetCurrentConsoleFont) { // Windows XP or later
+				CONSOLE_FONT_INFO fi;
+				if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi) != 0) {
+					*width  = fi.dwFontSize.X;
+					*height = fi.dwFontSize.Y;
+					result = true;
+				}
 			}
+			FreeLibrary(hLibrary);
 		}
-		FreeLibrary(hLibrary);
+	} else {
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		RECT rect;
+		if(GetConsoleScreenBufferInfo(hStdout, &csbi) && GetClientRect(get_console_window_handle(), &rect)) {
+			int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+			int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+			*width  = rect.right / cols;
+			*height = rect.bottom / rows;
+			result = true;
+		}
 	}
 	return(result);
 }
@@ -2493,6 +2506,12 @@ bool set_console_font_size(int width, int height)
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
 	if(hLibrary) {
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		RECT rect;
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+		int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+		
 		typedef BOOL (WINAPI* GetConsoleFontInfoFunction)(HANDLE, BOOL, DWORD, PCONSOLE_FONT_INFO);
 		typedef DWORD (WINAPI* GetNumberOfConsoleFontsFunction)(VOID);
 		typedef COORD (WINAPI* GetConsoleFontSizeFunction)(HANDLE, DWORD);
@@ -2509,7 +2528,7 @@ bool set_console_font_size(int width, int height)
 		GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
 		SetCurrentConsoleFontExFunction lpfnSetCurrentConsoleFontEx = reinterpret_cast<SetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "SetCurrentConsoleFontEx"));
 		
-		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont && lpfnGetCurrentConsoleFont) { // Windows XP or later
+		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont) { // Windows 2000 or later
 			DWORD dwFontNum = lpfnGetNumberOfConsoleFonts();
 			if(dwFontNum) {
 				CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
@@ -2517,12 +2536,23 @@ bool set_console_font_size(int width, int height)
 				for(int i = 0; i < dwFontNum; i++) {
 					fonts[i].dwFontSize = lpfnGetConsoleFontSize(hStdout, fonts[i].nFont);
 					if(fonts[i].dwFontSize.X == width && fonts[i].dwFontSize.Y == height) {
-						lpfnSetConsoleFont(hStdout, fonts[i].nFont);
-						CONSOLE_FONT_INFO fi;
-						if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
-							if(fi.dwFontSize.X == width && fi.dwFontSize.Y == height) {
-								result = true;
-								break;
+						if(lpfnSetConsoleFont(hStdout, fonts[i].nFont)) {
+							if(is_winxp_or_later && lpfnGetCurrentConsoleFont) { // Windows XP or later
+								CONSOLE_FONT_INFO fi;
+								if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
+									if(fonts[i].dwFontSize.X == fi.dwFontSize.X && fonts[i].dwFontSize.Y == fi.dwFontSize.Y) {
+										result = true;
+										break;
+									}
+								}
+							} else {
+								Sleep(10);
+								if(GetClientRect(get_console_window_handle(), &rect)) {
+									if(fonts[i].dwFontSize.X * cols == rect.right && fonts[i].dwFontSize.Y * rows == rect.bottom) {
+										result = true;
+										break;
+									}
+								}
 							}
 						}
 					}
@@ -3037,6 +3067,7 @@ int main(int argc, char *argv[], char *envp[])
 		return(retval);
 	}
 	
+	is_winxp_or_later = is_greater_windows_version(5, 1, 0, 0);
 	is_xp_64_or_later = is_greater_windows_version(5, 2, 0, 0);
 	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
 	
