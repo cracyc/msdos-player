@@ -1,7 +1,7 @@
 MS-DOS Player for Win32-x64 console
-								8/23/2017
+								8/25/2017
 
------ What's this
+----- What's This
 
 This is MS-DOS emulator running on Win32-x64 command prompt.
 16bit MS-DOS compatible commands can be executed on Win32-x64 envrionment.
@@ -22,7 +22,7 @@ NOTE: This emulator DOES NOT support graphic/sound hardwares and DOES NOT
 aim to support game softwares. I recommend DOSBOx for this purpose.
 
 
------ Windows 10 command prompt [IMPORTANT]
+----- Windows 10 Command Prompt [IMPORTANT]
 
 Win32 console APIs are used to support INT 10H services on MS-DOS Player,
 but they seem not work correctly on Windows 10's enhanced command prompt.
@@ -31,7 +31,7 @@ Please open the "Command Prompt" Properties by right-clicking on title bar
 and check "Use legacy console (requires relaunch)".
 
 
------ How to use
+----- How To Use
 
 Start a command prompt and run this emulator with a target command file
 and any options.
@@ -99,7 +99,7 @@ by adding numbers to '-s' option, for example '-s3,4,1,2'.
 NOTE: The maximum baud rate is limited to 9600bps.
 
 
------ Environment variable table
+----- Environment Variable Table
 
 Basically, the environment variable table on the host Windows is copied to
 the table on the virtual machine (hereinafter, referred to as "virtual table"),
@@ -276,7 +276,7 @@ NOTE: MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TZ) are not copied to the virtual
 table, but MSDOS_PATH is copied to, because some softwares may refer it.
 
 
------ Recommended configurations
+----- Recommended Configurations
 
 Create C:\DOS and C:\TEMP folders.
 Copy COMMAND.COM (I recommend the Windows 98's COMMAND.COM Version 7.10) and
@@ -289,20 +289,7 @@ MSDOS_PATH = C:\DOS
 MSDOS_TEMP = C:\TEMP
 
 
------ Win32/64 child process
-
-When we run a Win32/64 program on usual MS-DOS environment, we will see
-an error message "This program cannot be run in DOS mode."
-
-When a Win32/64 program file is called by INT 21H, AX=4B00H, INT 2EH, or
-INT 2FH, AX=AE01H services, for example the case we run it on COMMAND.COM,
-it is executed as a Win32/64 child process by system() Win32 API and
-waits until the child process is terminated.
-In this time, any characters output to the console by this child process
-is not hooked by INT 29H service (DOS Fast Character I/O).
-
-
------ Convert command file to 32bit or 64bit execution file
+----- Convert Command File To 32bit Or 64bit Execution File
 
 You can convert a 16bit command file to a single 32bit or 64bit execution file
 by embeding a command file to the msdos.exe.
@@ -398,7 +385,7 @@ They are very similar to DEBUG command, and some break point functions
 (*) break does not occur when DOS service/BIOS emulation codes access.
 
 
------ Supported hardwares
+----- Supported Hardwares
 
 This emulator provides a very simple IBM PC-like hardware emulation:
 
@@ -416,7 +403,7 @@ NOTE:
 - Serial I/O is implemented and can be connected to the host's COM ports.
 
 
------ Memory map
+----- Memory Map
 
 000000H -	Conventional Memory (736KB)
 0B8000H -	VGA Text Video RAM (32KB)
@@ -432,7 +419,7 @@ NOTE:
 100000H -	Upper Memory (15MB/31MB)
 
 
------ Supported system calls
+----- Supported System Calls
 
 INT 08H		PC BIOS - System Timer
 
@@ -441,13 +428,13 @@ INT 10H		PC BIOS - Video
 	00H	Set Video Mode
 	01H	Set Text-Mode Cursor Shape
 	02H	Set Cursor Position
-	03H	Get Cursor Position and Size
+	03H	Get Cursor Position And Size
 	05H	Select Active Display Page
 	06H	Scroll Up Window
 	07H	Scroll Down Window
-	08H	Read Character and Attribute at Cursor Position
-	09H	Write Character and Attribute at Cursor Position
-	0AH	Write Character Only at Cursor Position
+	08H	Read Character And Attribute At Cursor Position
+	09H	Write Character And Attribute At Cursor Position
+	0AH	Write Character Only At Cursor Position
 	0CH	Write Graphics Pixel
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
@@ -464,21 +451,21 @@ INT 10H		PC BIOS - Video
 	1130H	Get Font Information
 	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
-	1310H	Read Characters and Standard Attributes
-	1311H	Read Characters and Extended Attributes
-	1312H	Write Characters and Standard Attributes (???)
-	1313H	Write Characters and Extended Attributes (???)
-	1320H	Write Characters and Standard Attributes
-	1321H	Write Characters and Extended Attributes
+	1310H	Read Characters And Standard Attributes
+	1311H	Read Characters And Extended Attributes
+	1312H	Write Characters And Standard Attributes (???)
+	1313H	Write Characters And Extended Attributes (???)
+	1320H	Write Characters And Standard Attributes
+	1321H	Write Characters And Extended Attributes
 	1A00H	Get Display Combination Code
 	1BH	Perform Gray-Scale Summing
 	8200H	Get/Set Scroll Mode
 	8300H	Get Video RAM Address
 	90H	Get Physical Workstation Display Mode
 	91H	Get Physical Workstation Adapter Type
-	EFH	Get Video Adapter Type and Mode (*1)
+	EFH	Get Video Adapter Type And Mode (*1)
 	FEH	Get Shadow Buffer
-	FFH	Update Screen from Shadow Buffer
+	FFH	Update Screen From Shadow Buffer
 
 INT 11H		PC BIOS - Get Equipment List
 
@@ -487,7 +474,7 @@ INT 12H		PC BIOS - Get Memory Size
 INT 13H		PC BIOS - Disk I/O
 
 	00H	Reset Disk System
-	01H	Get Status of Last Operation
+	01H	Get Status Of Last Operation
 	02H	Read Sectors Into Memory
 	03H	Write Disk Sectors (*2)
 	04H	Verify Disk Sectors
@@ -501,8 +488,8 @@ INT 13H		PC BIOS - Disk I/O
 INT 14H		PC BIOS - Serial I/O
 
 	00H	Initialize Port
-	01H	Write Character to Port
-	02H	Read Character from Port
+	01H	Write Character To Port
+	02H	Read Character From Port
 	03H	Get Port Status
 	04H	Extended Initialize
 	0500H	Read Modem Control Register
@@ -518,13 +505,13 @@ INT 15H		PC BIOS
 	2402H	Get A20 Gate Status
 	2403H	A20 Support
 	49H	Get BIOS Type
-	5000H	Get Address of "Read Font" Function
-	5001H	Get Address of "Write Font" Function
+	5000H	Get Address Of "Read Font" Function
+	5001H	Get Address Of "Write Font" Function
 	84H	Joystick Support (*3)
 	86H	Wait
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
-	89H	Switch to Protected Mode
+	89H	Switch To Protected Mode
 	8AH	Get Big Memory Size
 	C200H	Pointing Device BIOS Interface (PS) - Enable/Disable
 	C201H	Pointing Device BIOS Interface (PS) - Reset
@@ -536,19 +523,21 @@ INT 15H		PC BIOS
 	C207H	Pointing Device BIOS Interface (PS) - Set Device Handler Addr
 	C208H	Pointing Device BIOS Interface (PS) - Write To Pointer Port
 	C209H	Pointing Device BIOS Interface (PS) - Read From Pointer Port
-	C9H	Get CPU Type and Mask Revision
+	C9H	Get CPU Type And Mask Revision
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
-	E801H	Get Memory Size for >64M Configurations
+	E801H	Get Memory Size For >64M Configurations
 
 INT 16H		PC BIOS - Keyboard
 
 	00H	Get Keystroke
-	01H	Check for Keystroke
+	01H	Check For Keystroke
 	02H	Get Shift Flags
-	05H	Store Keystroke in Keyboard Buffer
-	10H	Get Keystroke
-	11H	Check for Keystroke
+	05H	Store Keystroke In Keyboard Buffer
+	09H	Get Keyboard Functionality
+	0AH	Get Keyboard ID
+	10H	Get Enhanced Keystroke
+	11H	Check For Enhanced Keystroke
 	12H	Get Extended Shift States
 
 INT 17H		PC BIOS - Printer
@@ -556,12 +545,12 @@ INT 17H		PC BIOS - Printer
 	00H	Write Character
 	01H	Initialize Port
 	02H	Get Status
-	03H	AX (Japanese AT) Printer - Output String without Conversion
+	03H	AX (Japanese AT) Printer - Output String Without Conversion
 	5000H	AX (Japanese AT) Printer - Set Printer Country Code
 	5001H	AX (Japanese AT) Printer - Get Printer Country Code
-	51H	AX (Japanese AT) Printer - JIS to Shift-JIS Conversion
-	52H	AX (Japanese AT) Printer - Shift-JIS to JIS Conversion
-	84H	AX (Japanese AT) Printer - Output Character without Conversion
+	51H	AX (Japanese AT) Printer - JIS To Shift-JIS Conversion
+	52H	AX (Japanese AT) Printer - Shift-JIS To JIS Conversion
+	84H	AX (Japanese AT) Printer - Output Character Without Conversion
 	85H	AX (Japanese AT) Printer - Enable/Disable Character Conversion
 
 INT 1AH		PC BIOS - Timer
@@ -583,39 +572,39 @@ INT 21H		MS-DOS System Call
 	05H	(Printer Output)
 	06H	Direct Console I/O
 	07H	Direct Console Input
-	08H	Console Input without Echo
+	08H	Console Input Without Echo
 	09H	Print String
 	0AH	Buffered Keyboard Input
 	0BH	Check Console Status
-	0CH	Character Input with Buffer Flush
+	0CH	Character Input With Buffer Flush
 	0DH	Disk Reset
 	0EH	Select Disk
-	0FH	Open File with FCB
-	10H	Close File with FCB
-	11H	Search First Entry with FCB
-	12H	Search Next Entry with FCB
-	13H	Delete File with FCB
-	14H	Sequential Read with FCB
-	15H	Sequential Write with FCB
-	16H	Create New File with FCB
-	17H	Rename File with FCB
-	18H	Null Function for CP/M Compatibility
+	0FH	Open File With FCB
+	10H	Close File With FCB
+	11H	Search First Entry With FCB
+	12H	Search Next Entry With FCB
+	13H	Delete File With FCB
+	14H	Sequential Read With FCB
+	15H	Sequential Write With FCB
+	16H	Create New File With FCB
+	17H	Rename File With FCB
+	18H	Null Function For CP/M Compatibility
 	19H	Current Disk
 	1AH	Set Disk Transfer Address
-	1BH	Get Allocation Information for Default Drive
-	1CH	Get Allocation Information for Specified Drive
-	1DH	Null Function for CP/M Compatibility
-	1EH	Null Function for CP/M Compatibility
-	1FH	Get Drive Parameter Block for Default Drive
-	20H	Null Function for CP/M Compatibility
-	21H	Random Read with FCB
-	22H	Randome Write with FCB
-	23H	Get File Size with FCB
-	24H	Set Relative Record Field with FCB
+	1BH	Get Allocation Information For Default Drive
+	1CH	Get Allocation Information For Specified Drive
+	1DH	Null Function For CP/M Compatibility
+	1EH	Null Function For CP/M Compatibility
+	1FH	Get Drive Parameter Block For Default Drive
+	20H	Null Function For CP/M Compatibility
+	21H	Random Read With FCB
+	22H	Randome Write With FCB
+	23H	Get File Size With FCB
+	24H	Set Relative Record Field With FCB
 	25H	Set Vector
 	26H	Create New Program Segment Prefix
-	27H	Random Block Read with FCB
-	28H	Random Block Write with FCB
+	27H	Random Block Read With FCB
+	28H	Random Block Write With FCB
 	29H	Parse File Name
 	2AH	Get Date
 	2BH	Set Date
@@ -632,7 +621,7 @@ INT 21H		MS-DOS System Call
 	3305H	Get Boot Drive
 	3306H	Get True Version Number (*5)
 	3307H	Windows95 - Set/Clear DOS_FLAG
-	34H	Get Address of InDOS Flag
+	34H	Get Address Of InDOS Flag
 	35H	Get Vector
 	36H	Get Disk Free Space
 	3700H	Get Switch Character
@@ -646,9 +635,9 @@ INT 21H		MS-DOS System Call
 	3CH	Create File
 	3DH	Open File Handle
 	3EH	Close File Handle
-	3FH	Read from File or Device
-	40H	Write to File or Device
-	41H	Erase File from Directory
+	3FH	Read From File Or Device
+	40H	Write To File Or Device
+	41H	Erase File From Directory
 	42H	Move File Read/Write Pointer
 	4300H	Get File Attribute
 	4301H	Set File Attribute
@@ -660,19 +649,19 @@ INT 21H		MS-DOS System Call
 	4406H	Get Input Status
 	4407H	Get Output Status
 	4408H	Device Removable Query
-	4409H	Device Local or Remote Query
-	440AH	Handle Local or Remote Query
+	4409H	Device Local Or Remote Query
+	440AH	Handle Local Or Remote Query
 	440CH	Generic Character Device Request
 	440DH	Generic Block Device Request
 	4410H	Query Generic IOCTRL Capability (Handle)
 	4411H	Query Generic IOCTRL Capability (Drive)
 	45H	Duplicate File Handle
-	46H	Force Duplicate of Handle
+	46H	Force Duplicate Of Handle
 	47H	Get Current Directory
 	48H	Allocate Memory
 	49H	Free Allocated Memory
 	4AH	Modify Allocated Memory Blocks
-	4B00H	Load and Execute Program
+	4B00H	Load And Execute Program
 	4B01H	Load Program
 	4B03H	Load Overlay
 	4CH	Terminate Process
@@ -682,16 +671,16 @@ INT 21H		MS-DOS System Call
 	50H	Set Program Segment Prefix Address
 	51H	Get Program Segment Prefix Address
 	52H	Get DOS Info Table
-	53H	Translate BIOS Parameter Block to Drive Param Bock
+	53H	Translate BIOS Parameter Block To Drive Param Bock
 	54H	Get Verify State
 	55H	Create Child Program Segment Prefix
 	56H	Rename File
-	5700H	Get Last Written Date and Time
-	5701H	Set Last Written Date and Time
-	5704H	Windows95 - Get Last Access Date and Time
-	5705H	Windows95 - Set Last Access Date and Time
-	5706H	Windows95 - Get Creation Date and Time
-	5707H	Windows95 - Set Creation Date and Time
+	5700H	Get Last Written Date And Time
+	5701H	Set Last Written Date And Time
+	5704H	Windows95 - Get Last Access Date And Time
+	5705H	Windows95 - Set Last Access Date And Time
+	5706H	Windows95 - Get Creation Date And Time
+	5707H	Windows95 - Set Creation Date And Time
 	5800H	Get Memory Allocation Strategy
 	5801H	Set Memory Allocation Strategy
 	5802H	Get UMB Link State
@@ -701,7 +690,7 @@ INT 21H		MS-DOS System Call
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
 	5D00H	Server Function Call
-	5D06H	Get Address of DOS Swappable Data Area
+	5D06H	Get Address Of DOS Swappable Data Area
 	5D0AH	Set Extended Error Information
 	5E00H	Get Machine Name
 	5F02H	Get Redirection List Entry
@@ -740,7 +729,7 @@ INT 21H		MS-DOS System Call
 	7139H	Windows95 - LFN - Create Subdirectory
 	713AH	Windows95 - LFN - Remove Subdirectory
 	713BH	Windows95 - LFN - Change Current Directory
-	7141H	Windows95 - LFN - Erase File from Directory
+	7141H	Windows95 - LFN - Erase File From Directory
 	7143H	Windows95 - LFN - Get/Set File Attribute
 	7147H	Windows95 - LFN - Get Current Directory
 	714EH	Windows95 - LFN - Find First Matching File
@@ -750,15 +739,15 @@ INT 21H		MS-DOS System Call
 	716CH	Windows95 - LFN - Extended Open/Create
 	71A0H	Windows95 - LFN - Get Volume Information
 	71A1H	Windows95 - LFN - Terminate Directory Search
-	71A6H	Windows95 - LFN - Get File Information by Handle
+	71A6H	Windows95 - LFN - Get File Information By Handle
 	71A7H	Windows95 - LFN - Convert File Time/DOS Time
 	71A8H	Windows95 - LFN - Generate Short File Name
 	71A9H	Windows95 - LFN - Extended Server Open/Create
 	71AAH	Windows95 - LFN - Create/Terminate/Query SUBST
 	7300H	Windows95 - FAT32 - Get Drive Locking
 	7302H	Windows95 - FAT32 - Get Extended DPB
-	7303H	Windows95 - FAT32 - Get Extended Free Space on Drive
-	DBH	Novell NetWare - Workstation - Get Number of Local Drives
+	7303H	Windows95 - FAT32 - Get Extended Free Space On Drive
+	DBH	Novell NetWare - Workstation - Get Number Of Local Drives
 	DCH	Novell NetWare - Connection Services - Get Connection Number
 
 INT 23H		Ctrl-Break Address
@@ -769,38 +758,38 @@ INT 25H		Absolute Disk Read
 
 INT 26H		Absolute Disk Write (*2)
 
-INT 27H		Terminate and Stay Resident
+INT 27H		Terminate And Stay Resident
 
 INT 28H		DOS Idle
 
 INT 29H		DOS Fast Character I/O
 
-INT 2EH		Pass Command to Command Interpreter for Execution
+INT 2EH		Pass Command To Command Interpreter For Execution
 
 INT 2FH		Multiplex Interrupt
 
 	0500H	DOS 3.0+ Critical Error Handler - Installation Check
-	0502H	DOS 3.0+ Critical Error Handler - Expand Error into String
+	0502H	DOS 3.0+ Critical Error Handler - Expand Error Into String
 	1200H	DOS 3.0+ internal - Installation Check
 	1202H	DOS 3.0+ internal - Get Interrupt Address
 	1203H	DOS 3.0+ Internal - Get DOS Data Segment
 	1204H	DOS 3.0+ internal - Normalize Path Separator
-	1205H	DOS 3.0+ internal - Output Character to Standard Output
-	120DH	DOS 3.0+ internal - Get Date and Time
+	1205H	DOS 3.0+ internal - Output Character To Standard Output
+	120DH	DOS 3.0+ internal - Get Date And Time
 	1211H	DOS 3.0+ internal - Normalize ASCIZ Filename
-	1212H	DOS 3.0+ internal - Get Length of ASCIZ String
+	1212H	DOS 3.0+ internal - Get Length Of ASCIZ String
 	1213H	DOS 3.0+ internal - Uppercase Character
 	1214H	DOS 3.0+ internal - Compare Far Pointers
 	1216H	DOS 3.0+ internal - Get System File Table Entry
 	1217H	DOS 3.0+ internal - Get Current Directory Structure For Drive
 	121AH	DOS 3.0+ internal - Get File's Drive
-	121BH	DOS 3.0+ internal - Set Year/Length of February
+	121BH	DOS 3.0+ internal - Set Year/Length Of February
 	121EH	DOS 3.0+ internal - Compare Filenames
 	121FH	DOS 3.0+ internal - Build Current Directory Structure
 	1220H	DOS 3.0+ internal - Get Job File Table Entry
 	1221H	DOS 3.0+ internal - Canonicalize File Name
 	1222H	DOS 3.0+ internal - Set Extended Error Info
-	1225H	DOS 3.0+ internal - Get Length of ASCIZ String
+	1225H	DOS 3.0+ internal - Get Length Of ASCIZ String
 	1226H	DOS 3.3+ internal - Open File
 	1227H	DOS 3.3+ internal - Close File
 	1228H	DOS 3.3+ internal - Move File Pointer
@@ -809,7 +798,7 @@ INT 2FH		Multiplex Interrupt
 	122CH	DOS 3.3+ internal - Get Device Chain
 	122DH	DOS 3.3+ internal - Get Extended Error Code
 	122EH	DOS 4.0+ internal - Get Error Table Addresses
-	122FH	DOS 4.0+ internal - Set DOS Version Number to Return
+	122FH	DOS 4.0+ internal - Set DOS Version Number To Return
 	1400H	NLSFUNC.COM - Installation Check
 	1401H	NLSFUNC.COM - Change Code Page
 	1402H	NLSFUNC.COM - Get Extended Country Info
@@ -819,7 +808,7 @@ INT 2FH		Multiplex Interrupt
 	150DH	CD-ROM v2.00+ - Get CD-ROM Drive Letters
 	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
-	160AH	Windows - Identify Windows Version and Type (*6)
+	160AH	Windows - Identify Windows Version And Type (*6)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1A00H	ANSI.SYS - Installation Check
@@ -832,7 +821,7 @@ INT 2FH		Multiplex Interrupt
 	4A01H	DOS 5.0+ - Query Free HMA Space
 	4A02H	DOS 5.0+ - Allocate HMA Space
 	4A03H	Windows95 - (De)Allocate HMA Memory Block
-	4A04H	Windows95 - Get Start of HMA Memory Chain
+	4A04H	Windows95 - Get Start Of HMA Memory Chain
 	AD00H	DISPLAY.SYS - Installation Check
 	AD01H	DISPLAY.SYS - Set Active Code Page
 	AD02H	DISPLAY.SYS - Get Active Code Page
@@ -844,10 +833,10 @@ INT 2FH		Multiplex Interrupt
 
 INT 33H		Mouse
 
-	0000H	Reset Driver and Rest Status
+	0000H	Reset Driver And Rest Status
 	0001H	Show Mouse Cursor
 	0002H	Hide Mouse Cursor
-	0003H	Return Position and Button Status
+	0003H	Return Position And Button Status
 	0004H	Position Mouse Cursor
 	0005H	Return Button Press Data
 	0006H	Return Button Release Data
@@ -858,7 +847,7 @@ INT 33H		Mouse
 	000BH	Read Motion Counters
 	000CH	Define Interrupt Sub Routine Parameters
 	000FH	Define Mickey/Pixel Ratio
-	0011H	Get Number of Buttons
+	0011H	Get Number Of Buttons
 	0014H	Exchange Interrupt Sub Routines
 	0015H	Return Driver Storage Requirements
 	0016H	Save Driver State
@@ -872,9 +861,9 @@ INT 33H		Mouse
 	001FH	Disable Mouse Driver
 	0020H	Enable Mouse Driver
 	0021H	Software Reset
-	0022H	Set Language for Messages
-	0023H	Get Language for Messages
-	0024H	Get Software Version, Moouse Type, and IRQ Number (*7)
+	0022H	Set Language For Messages
+	0023H	Get Language For Messages
+	0024H	Get Software Version, Moouse Type, And IRQ Number (*7)
 	0025H	Get General Driver Information
 	0026H	Get Maximum Virtual Coordinates
 	0027H	Get Screen/Cursor Masks And Mickey Counts
@@ -886,23 +875,25 @@ INT 33H		Mouse
 	004DH	Return Pointer To Copyright String
 	006DH	Get Version String
 
+INT 65H-66H	(Used For Dummy LIM EMS/XMS Service Routines)
+
 INT 67H		LIM EMS
 
 	40H	LIM EMS - Get Manager Status
 	41H	LIM EMS - Get Page Frame Segment
-	42H	LIM EMS - Get Number of Pages
-	43H	LIM EMS - Get Handle and Allocate Memory
+	42H	LIM EMS - Get Number Of Pages
+	43H	LIM EMS - Get Handle And Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
-	45H	LIM EMS - Release Handle and Memory
+	45H	LIM EMS - Release Handle And Memory
 	46H	LIM EMS - Get EMM Version (*8)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
-	4BH	LIM EMS - Get Number of EMM Handles
+	4BH	LIM EMS - Get Number Of EMM Handles
 	4CH	LIM EMS - Get Pages Owned By Handle
-	4DH	LIM EMS - Get Pages for All Handles
+	4DH	LIM EMS - Get Pages For All Handles
 	4E00H	LIM EMS - Get Page Map
 	4E01H	LIM EMS - Set Page Map
-	4E02H	LIM EMS - Get and Set Page Map
+	4E02H	LIM EMS - Get And Set Page Map
 	4E03H	LIM EMS - Get Page Map Array Size
 	4F00H	LIM EMS 4.0 - Get Partial Page Map
 	4F01H	LIM EMS 4.0 - Set Partial Page Map
@@ -913,7 +904,7 @@ INT 67H		LIM EMS
 	5300H	LIM EMS 4.0 - Get Handle Name
 	5301H	LIM EMS 4.0 - Set Handle Name
 	5400H	LIM EMS 4.0 - Get Handle Directory
-	5401H	LIM EMS 4.0 - Search for Named Handle
+	5401H	LIM EMS 4.0 - Search For Named Handle
 	5402H	LIM EMS 4.0 - Get Total Handles
 	55H	LIM EMS 4.0 - Alter Page Map And Jump
 	56H	LIM EMS 4.0 - Alter Page Map And Call
@@ -932,7 +923,7 @@ INT 67H		LIM EMS
 	7000H	EMS - Get Page Frame Status (NEC PC-9801 Only ???)
 	7001H	EMS - Enable/Disable Page Frame (NEC PC-9801 Only ???)
 
-INT 68H-6FH	Used for Dummy BIOS/DOS/Driver Service Routines
+INT 68H-6FH	(Used For Dummy BIOS/DOS/Driver Service Routines)
 
 CALL FAR XMS
 
@@ -971,16 +962,42 @@ CALL FAR XMS
 (*9) XMS Version: 3.95
 
 
------ INT 29H limitations
+----- INT 29H Limitations
 
-When INT 21H/2FH service outputs a character to console, INT 29H is called.
+When INT 21H/2FH service outputs a character to console, INT 29H service
+(DOS Fast Character I/O) is called.
 
-If INT 21H/2FH service that outputs a character to console is called
+If INT 21H/2FH service that outputs a character to console is called again
 in INT 29H handler, INT 29H is not called again to prevent an infinite loop.
 
+In usual, the virtual CPU is running while waiting inputs from console in
+INT 21H, AH=01H/0AH/3FH service and a timer interrupt can be raised.
 If INT 29H handler is hooked by your software, the virtual CPU is suspended
-and a timer interrupt never be raised while waiting inputs from console in
-INT 21H, AH=01H/0AH/3FH service.
+while waiting inputs from console, and a timer interrupt never be raised.
+
+
+----- Win32/64 Child Process
+
+When we run a Win32/64 program on usual MS-DOS environment, we will see
+an error message "This program cannot be run in DOS mode."
+
+When a Win32/64 program file is called by INT 21H, AX=4B00H, INT 2EH, or
+INT 2FH, AX=AE01H services, for example the case we run it on COMMAND.COM,
+it is executed as a Win32/64 child process by Win32 system() API and
+waits until the child process is terminated.
+In this time, any characters output to the console by this Win32/64 child
+process is not hooked by INT 29H service.
+
+When you run a Win32/64 program with pipe, it may not work as you invite.
+For example, you may run Win32/64 version of more.com with pipe as follows:
+
+> msdos command.com
+> type foo.txt | more (more.com is Win32/64 program in C:\Windows\System32)
+
+MS-DOS Player starts more.com as a Win32/64 child process and will wait until
+the child process is terminated.
+While waiting until the child process is terminated, the virtual CPU is
+suspended and outputs of "type foo.txt" never be sent to the child process.
 
 
 --- License

@@ -9,11 +9,15 @@
 #define _MSDOS_H_
 
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x501
+//#define _WIN32_WINNT 0x400	// Windows NT 4.0
+#define _WIN32_WINNT 0x500	// Windows 2000
+//#define _WIN32_WINNT 0x501	// Windows XP
 #endif
 #include <windows.h>
 #include <winioctl.h>
-#include <tchar.h>
+#ifdef _MBCS
+#include <mbstring.h>
+#endif
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
