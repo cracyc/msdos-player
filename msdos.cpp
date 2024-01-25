@@ -2468,25 +2468,11 @@ long get_section_in_exec_file(FILE *fp, const char *name)
 	return(0);
 }
 
-bool is_started_from_command_prompt()
+bool is_started_from(const char *name)
 {
-	bool result = false;
-	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
-	
-	if(hLibrary) {
-		typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
-		GetConsoleProcessListFunction lpfnGetConsoleProcessList;
-		lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
-		if(lpfnGetConsoleProcessList) { // Windows XP or later
-			DWORD pl;
-			result = (lpfnGetConsoleProcessList(&pl, 1) > 1);
-			FreeLibrary(hLibrary);
-			return(result);
-		}
-		FreeLibrary(hLibrary);
-	}
-	
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	bool result = false;
+	
 	if(hSnapshot != INVALID_HANDLE_VALUE) {
 		DWORD dwParentProcessID = 0;
 		PROCESSENTRY32 pe32;
@@ -2508,7 +2494,7 @@ bool is_started_from_command_prompt()
 				if(EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
 					char module_name[MAX_PATH];
 					if(GetModuleBaseNameA(hProcess, hMod, module_name, sizeof(module_name))) {
-						result = (_strnicmp(module_name, "cmd.exe", 7) == 0);
+						result = (_strnicmp(module_name, name, strlen(name)) == 0);
 					}
 				}
 				CloseHandle(hProcess);
@@ -2516,6 +2502,29 @@ bool is_started_from_command_prompt()
 		}
 	}
 	return(result);
+}
+
+bool is_started_from_console()
+{
+	bool result = false;
+	
+	if(is_winxp_or_later) {
+		HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
+		
+		if(hLibrary) {
+			typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
+			GetConsoleProcessListFunction lpfnGetConsoleProcessList;
+			lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
+			if(lpfnGetConsoleProcessList) { // Windows XP or later
+				DWORD pl;
+				result = (lpfnGetConsoleProcessList(&pl, 1) > 1);
+				FreeLibrary(hLibrary);
+				return(result);
+			}
+			FreeLibrary(hLibrary);
+		}
+	}
+	return is_started_from("cmd.exe") || is_started_from("powershell.exe");
 }
 
 BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD wServicePackMajor, WORD wServicePackMinor)
@@ -2607,7 +2616,7 @@ HDC get_console_window_device_context()
 void set_default_console_font_info(CONSOLE_FONT_INFOEX *fi)
 {
 	fi->cbSize = sizeof(CONSOLE_FONT_INFOEX);
-//	fi->nFont = 0;
+	fi->nFont = 0;
 	fi->dwFontSize.X = 8;
 	fi->dwFontSize.Y = 18;
 	fi->FontFamily = 0;
@@ -2629,6 +2638,11 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
 			if(lpfnGetCurrentConsoleFontEx) {
 				if(lpfnGetCurrentConsoleFontEx(hStdout, FALSE, fi)) {
+					if(is_started_from("cmd.exe")) {
+						char mbs[LF_FACESIZE];
+						WideCharToMultiByte(CP_THREAD_ACP, 0, fi->FaceName, wcslen(fi->FaceName) + 1, mbs, LF_FACESIZE,NULL,NULL);
+						mbstowcs(fi->FaceName, mbs, LF_FACESIZE);
+					}
 					result = true;
 				}
 			}
@@ -2642,6 +2656,7 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			if(lpfnGetCurrentConsoleFont) { // Windows XP or later
 				CONSOLE_FONT_INFO fi_tmp;
 				if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi_tmp)) {
+					fi->nFont = fi_tmp.nFont;
 					fi->dwFontSize.X = fi_tmp.dwFontSize.X;
 					fi->dwFontSize.Y = fi_tmp.dwFontSize.Y;
 					result = true;
@@ -2679,8 +2694,7 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			if(lpfnSetCurrentConsoleFontEx && lpfnGetCurrentConsoleFontEx) {
 				if(lpfnSetCurrentConsoleFontEx(hStdout, FALSE, fi)) {
 					CONSOLE_FONT_INFOEX fi_tmp;
-					fi_tmp.cbSize = sizeof(CONSOLE_FONT_INFOEX);
-					if(lpfnGetCurrentConsoleFontEx(hStdout, FALSE, &fi_tmp)) {
+					if(get_console_font_info(&fi_tmp)) {
 						if(wcscmp(fi->FaceName, fi_tmp.FaceName) == 0 && fi->dwFontSize.X == fi_tmp.dwFontSize.X && fi->dwFontSize.Y == fi_tmp.dwFontSize.Y) {
 							result = true;
 						}
@@ -3071,7 +3085,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		);
 		
-		if(!is_started_from_command_prompt()) {
+		if(!is_started_from_console()) {
 			fprintf(stderr, "\nStart this program from a command prompt!\n\nHit any key to quit...");
 			while(!_kbhit()) {
 				Sleep(10);
@@ -4468,7 +4482,10 @@ int msdos_lead_byte_check(UINT8 code)
 
 int msdos_ctrl_code_check(UINT8 code)
 {
-	return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+	if(active_code_page == 932) {
+		return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+	}
+	return 0;
 }
 
 int msdos_kanji_2nd_byte_check(UINT8 *buf, int n)
@@ -11643,8 +11660,13 @@ inline void msdos_int_21h_40h()
 inline void msdos_int_21h_41h(int lfn)
 {
 	if(remove(msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn))) {
-		CPU_AX = msdos_maperr(_doserrno);
-		CPU_SET_C_FLAG(1);
+		// When the file is currently open, this function does not fail. (In DR-DOS case, it fails)
+		// In this time, the file is deleted but the handle is not closed.
+		// Here I only clear the sharing violation error though the file cannot be deleted.
+		if(_doserrno != ERROR_SHARING_VIOLATION) {
+			CPU_AX = msdos_maperr(_doserrno);
+			CPU_SET_C_FLAG(1);
+		}
 	}
 }
 

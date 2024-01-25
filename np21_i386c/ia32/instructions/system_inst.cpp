@@ -1147,7 +1147,8 @@ WRMSR(void)
 void
 RDTSC(void)
 {
-#ifdef _WIN32
+//#if defined(SUPPORT_IA32_HAXM)&&defined(_WIN32)
+#if 0
 	LARGE_INTEGER li = {0};
 	LARGE_INTEGER qpf;
 	QueryPerformanceCounter(&li);
@@ -1157,16 +1158,31 @@ RDTSC(void)
 	CPU_EDX = li.HighPart;
 	CPU_EAX = li.LowPart;
 #else
-	UINT64 tsc_tmp;
-	if(CPU_REMCLOCK != -1){
-		tsc_tmp = CPU_MSR_TSC - CPU_REMCLOCK;
+	if(/*np2cfg.consttsc*/0){
+		// CPUクロックに依存しないカウンタ値にする
+		UINT64 tsc_tmp;
+		if(CPU_REMCLOCK != -1){
+			tsc_tmp = CPU_MSR_TSC - CPU_REMCLOCK; //* pccore.maxmultiple / pccore.multiple;
+		}else{
+			tsc_tmp = CPU_MSR_TSC;
+		}
+		CPU_EDX = ((tsc_tmp >> 32) & 0xffffffff);
+		CPU_EAX = (tsc_tmp & 0xffffffff);
 	}else{
-		tsc_tmp = CPU_MSR_TSC;
+		// CPUクロックに依存するカウンタ値にする
+		static UINT64 tsc_last = 0;
+		static UINT64 tsc_cur = 0;
+		UINT64 tsc_tmp;
+		if(CPU_REMCLOCK != -1){
+			tsc_tmp = CPU_MSR_TSC - CPU_REMCLOCK; //* pccore.maxmultiple / pccore.multiple;
+		}else{
+			tsc_tmp = CPU_MSR_TSC;
+		}
+		tsc_cur += (tsc_tmp - tsc_last); //* pccore.multiple / pccore.maxmultiple;
+		tsc_last = tsc_tmp;
+		CPU_EDX = ((tsc_cur >> 32) & 0xffffffff);
+		CPU_EAX = (tsc_cur & 0xffffffff);
 	}
-	//tsc_tmp /= 1000;
-	tsc_tmp = (tsc_tmp >> 8); // XXX: ????
-	CPU_EDX = ((tsc_tmp >> 32) & 0xffffffff);
-	CPU_EAX = (tsc_tmp & 0xffffffff);
 #endif
 //	ia32_panic("RDTSC: not implemented yet!");
 }

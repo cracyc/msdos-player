@@ -306,7 +306,6 @@ exec_allstep(void)
 	static int remclock_mul = 1000;
 	int remclockb = 0;
 	int remclkcnt = 0x100;
-	int repflag = 0;
 	static int latecount = 0;
 	static int latecount2 = 0;
 	static int hltflag = 0;
@@ -418,9 +417,6 @@ exec_allstep(void)
 		}
 
 		/* rep */
-#if defined(SUPPORT_ASYNC_CPU)
-		repflag = CPU_ECX;
-#endif
 		CPU_WORKCLOCK(5);
 	#if defined(DEBUG)
 		if (!cpu_debug_rep_cont) {
@@ -567,7 +563,7 @@ cpucontinue:
 		// îÒìØä˙CPUèàóù
 		if(np2cfg.asynccpu){
 #define LATECOUNTER_THRESHOLD	6
-#define LATECOUNTER_THRESHOLDM	6
+#define LATECOUNTER_THRESHOLDM	2
 			int realclock = 0;
 			if(CPU_STAT_HLT){
 				hltflag = pccore.multiple;
@@ -594,6 +590,7 @@ cpucontinue:
 									nevent_changeclock(oldmultiple, pccore.multiple);
 		
 									sound_changeclock();
+									pcm86_changeclock();
 									beep_changeclock();
 									mpu98ii_changeclock();
 #if defined(SUPPORT_SMPU98)
@@ -626,6 +623,7 @@ cpucontinue:
 									nevent_changeclock(oldmultiple, pccore.multiple);
 		
 									sound_changeclock();
+									pcm86_changeclock();
 									beep_changeclock();
 									mpu98ii_changeclock();
 #if defined(SUPPORT_SMPU98)
