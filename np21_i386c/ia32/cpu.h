@@ -165,8 +165,13 @@ typedef union {
 	UINT32	d;
 } REG32;
 
-typedef struct {
+typedef union {
 	UINT8	b[10];
+	UINT16	w[5];
+	struct {
+		UINT32	l[2];
+		UINT16	h;
+	} d;
 } REG80;
 
 //#ifdef __cplusplus
@@ -304,16 +309,13 @@ typedef struct {
 
 typedef struct {
 	UINT16		control; // 制御レジスター
-#ifdef USE_FPU_ASM
-	UINT16		cw_mask_all; // 制御レジスターmask
-#endif
 	UINT16		status; // ステータスレジスター
 	UINT16		op; // オペコードレジスター
 	UINT16		tag; // タグワードレジスター
 
 	FPU_PTR		inst; // ラスト命令ポインタレジスター
 	FPU_PTR		data; // ラストデータポインタレジスター
-} FPU_REGS;
+} FPU_REGS_S;
 
 #if 0
 
@@ -367,16 +369,8 @@ typedef union {
         SINT16 ext;
     } ul;
     SINT64 ll;
+	UINT8 b[10];
 } FP_REG;
-
-typedef struct {
-    UINT32 m1;
-    UINT32 m2;
-    UINT16 m3;
-	
-    UINT16 d1;
-    UINT32 d2;
-} FP_P_REG;
 
 typedef union {
     struct {
@@ -409,21 +403,13 @@ typedef union {
 } XMM_REG;
 
 typedef struct {
-#ifdef USE_FPU_ASM
-	unsigned int top;
-#else
 	UINT8		top;
-#endif
 	UINT8		pc;
 	UINT8		rc;
 	UINT8		dmy[1];
-//
-//#if defined(USE_FPU_ASM)
-//	FP_P_REG	p_reg[FPU_REG_NUM+1]; // R0 to R7	
-//#else
-	FP_REG		reg[FPU_REG_NUM+1]; // R0 to R7	
-//#endif
-	FP_TAG		tag[FPU_REG_NUM+1]; // R0 to R7
+
+	FP_REG		reg[FPU_REG_NUM+1]; // R0 to R7 + α
+	FP_TAG		tag[FPU_REG_NUM+1]; // R0 to R7 + α
 	FP_RND		round;
 #ifdef SUPPORT_FPU_DOSBOX2 // XXX: 整数間だけ正確にするため用
 	FP_INT_REG	int_reg[FPU_REG_NUM+1];
@@ -435,7 +421,7 @@ typedef struct {
 #ifdef USE_MMX
 	UINT8		mmxenable;
 #endif
-} FPU_STAT;
+} FPU_STAT_S;
 
 #endif
 
@@ -447,8 +433,8 @@ typedef struct {
 	CPU_INST	cpu_inst_default;
 
 #if defined(USE_FPU)
-	FPU_REGS	fpu_regs;
-	FPU_STAT	fpu_stat;
+	FPU_REGS_S	fpu_regs;
+	FPU_STAT_S	fpu_stat;
 #endif
 
 	/* protected by cpu shut */
@@ -492,7 +478,10 @@ typedef struct {
 	UINT32 cpu_brandid; // ブランドID
 	UINT32 cpu_feature_ecx; // ECX機能フラグ
 	UINT32 cpu_eflags_mask; // EFLAGSマスク(1のところがマスク状態)
-	UINT32 reserved[31]; // 将来の拡張のためにとりあえず32bit*31個用意しておく
+
+	UINT8 allow_movCS; // mov cs,xxを許可する
+	UINT8 reserved8[3]; // 将来の拡張のためにとりあえず
+	UINT32 reserved[30]; // 将来の拡張のためにとりあえず32bit*31個用意しておく
 	
 	UINT8 fpu_type; // FPU種類
 } I386CPUID;
@@ -1349,7 +1338,10 @@ void dbg_printf(const char *str, ...);
 
 #define	FP_TOP_SHIFT	11
 #define	FP_TOP_GET()	((FPU_STATUSWORD & FP_TOP_FLAG) >> FP_TOP_SHIFT)
-#define	FP_TOP_SET(v)	((FPU_STATUSWORD & ~FP_TOP_FLAG) | ((v) << FP_TOP_SHIFT))
+#define	FP_TOP_SET(v)	 \
+do { \
+	FPU_STATUSWORD = ((FPU_STATUSWORD & ~FP_TOP_FLAG) | (((v) & 0x7) << FP_TOP_SHIFT)); \
+} while (/*CONSTCOND*/0)
 
 #define	FPU_STAT_TOP_INC() \
 do { \

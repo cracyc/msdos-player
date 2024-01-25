@@ -861,7 +861,7 @@ void SSE2_MOVSDmem2xmm(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	double data2buf[2];
+	SSEREG data2buf;
 	double *data1, *data2;
 	
 	SSE2_check_NM_EXCEPTION();
@@ -876,8 +876,8 @@ void SSE2_MOVSDmem2xmm(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT64*)(data2buf+ 0)) = cpu_vmemoryread_q(CPU_INST_SEGREG_INDEX, maddr+ 0);
-		data2 = data2buf;
+		data2buf.q[0] = cpu_vmemoryread_q(CPU_INST_SEGREG_INDEX, maddr+ 0);
+		data2 = data2buf.f64;
 		*(UINT64*)(data1+1) = 0;
 	}
 	data1[0] = data2[0];
@@ -1195,7 +1195,7 @@ void SSE2_PACKSSDW(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	INT32 srcreg2buf[4];
+	SSEREG srcreg2buf;
 	INT32 *srcreg1;
 	INT32 *srcreg2;
 	INT16 *dstreg;
@@ -1215,10 +1215,12 @@ void SSE2_PACKSSDW(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(srcreg2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(srcreg2buf+1)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
+		srcreg2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		srcreg2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		srcreg2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		srcreg2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
 		srcreg1 = (INT32*)(&(FPU_STAT.xmm_reg[idx]));
-		srcreg2 = (INT32*)(&srcreg2buf);
+		srcreg2 = (INT32*)(srcreg2buf.d);
 		dstreg = (INT16*)(&(FPU_STAT.xmm_reg[idx]));
 	}
 	for(i=0;i<4;i++){
@@ -1248,7 +1250,7 @@ void SSE2_PACKSSWB(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	INT16 srcreg2buf[8];
+	SSEREG srcreg2buf;
 	INT16 *srcreg1;
 	INT16 *srcreg2;
 	INT8 *dstreg;
@@ -1268,10 +1270,12 @@ void SSE2_PACKSSWB(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(srcreg2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(srcreg2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
+		srcreg2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		srcreg2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		srcreg2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		srcreg2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
 		srcreg1 = (INT16*)(&(FPU_STAT.xmm_reg[idx]));
-		srcreg2 = (INT16*)(&srcreg2buf);
+		srcreg2 = (INT16*)(srcreg2buf.w);
 		dstreg = (INT8*)(&(FPU_STAT.xmm_reg[idx]));
 	}
 	for(i=0;i<8;i++){
@@ -1301,7 +1305,7 @@ void SSE2_PACKUSWB(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	INT16 srcreg2buf[8];
+	SSEREG srcreg2buf;
 	INT16 *srcreg1;
 	INT16 *srcreg2;
 	UINT8 *dstreg;
@@ -1321,10 +1325,12 @@ void SSE2_PACKUSWB(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(srcreg2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(srcreg2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
+		srcreg2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		srcreg2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		srcreg2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		srcreg2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
 		srcreg1 = (INT16*)(&(FPU_STAT.xmm_reg[idx]));
-		srcreg2 = (INT16*)(&srcreg2buf);
+		srcreg2 = (INT16*)(srcreg2buf.w);
 		dstreg = (UINT8*)(&(FPU_STAT.xmm_reg[idx]));
 	}
 	for(i=0;i<8;i++){
@@ -1784,7 +1790,7 @@ void SSE2_PMULHUW(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	UINT16 data2buf[8];
+	SSEREG data2buf;
 	UINT16 *data1, *data2;
 	int i;
 	
@@ -1800,11 +1806,11 @@ void SSE2_PMULHUW(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(data2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
-		*((UINT32*)(data2buf+4)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+8);
-		*((UINT32*)(data2buf+6)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+12);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		data2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		data2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
+		data2 = data2buf.w;
 	}
 	for(i=0;i<8;i++){
 		data1[i] = (UINT16)((((UINT32)data2[i] * (UINT32)data1[i]) >> 16) & 0xffff);
@@ -1815,7 +1821,7 @@ void SSE2_PMULHW(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	SINT16 data2buf[8];
+	SSEREG data2buf;
 	SINT16 *data1, *data2;
 	int i;
 	
@@ -1831,11 +1837,11 @@ void SSE2_PMULHW(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(data2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
-		*((UINT32*)(data2buf+4)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+8);
-		*((UINT32*)(data2buf+6)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+12);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		data2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		data2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
+		data2 = (SINT16*)(data2buf.w);
 	}
 	for(i=0;i<8;i++){
 		data1[i] = (SINT16)((((SINT32)data2[i] * (SINT32)data1[i]) >> 16) & 0xffff);
@@ -1846,7 +1852,7 @@ void SSE2_PMULLW(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	SINT16 data2buf[8];
+	SSEREG data2buf;
 	SINT16 *data1, *data2;
 	int i;
 	
@@ -1862,11 +1868,11 @@ void SSE2_PMULLW(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(data2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
-		*((UINT32*)(data2buf+4)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+8);
-		*((UINT32*)(data2buf+6)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+12);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 4);
+		data2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 8);
+		data2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr + 12);
+		data2 = (SINT16*)(data2buf.w);
 	}
 	for(i=0;i<8;i++){
 		data1[i] = (SINT16)((((SINT32)data2[i] * (SINT32)data1[i])) & 0xffff);

@@ -274,6 +274,7 @@ void CPU_RESET()
 	i386cpuid.cpu_feature_ex = CPU_FEATURES_EX_ALL;
 	i386cpuid.cpu_feature_ecx = CPU_FEATURES_ECX_ALL;
 	i386cpuid.cpu_eflags_mask = CPU_EFLAGS_MASK;
+	i386cpuid.allow_movCS = 0;
 	i386cpuid.cpu_brandid = CPU_BRAND_ID_NEKOPRO2;
 	strcpy(i386cpuid.cpu_vendor, CPU_VENDOR_NEKOPRO);
 	strcpy(i386cpuid.cpu_brandstring, CPU_BRAND_STRING_NEKOPRO2);

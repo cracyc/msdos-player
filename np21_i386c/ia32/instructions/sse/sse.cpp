@@ -104,9 +104,9 @@ float SSE_ROUND(float val){
 	switch(rndbit){
 	case 0:	
 		floorval = (float)floor(val);
-		if (val - floorval > 0.5){
+		if (val - floorval > 0.5f){
 			return (floorval + 1); // Ø‚èã‚°
-		}else if (val - floorval < 0.5){
+		}else if (val - floorval < 0.5f){
 			return (floorval); // Ø‚èÌ‚Ä
 		}else{
 			if(floor(floorval / 2) == floorval/2){
@@ -666,7 +666,7 @@ void SSE_MOVAPSmem2xmm(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	float data2buf[4];
+	SSEREG data2buf;
 	float *data1, *data2;
 	int i;
 	
@@ -682,11 +682,11 @@ void SSE_MOVAPSmem2xmm(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+ 0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
-		*((UINT32*)(data2buf+ 1)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
-		*((UINT32*)(data2buf+ 2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 8);
-		*((UINT32*)(data2buf+ 3)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+12);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
+		data2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 8);
+		data2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+12);
+		data2 = data2buf.f32;
 	}
 	for(i=0;i<4;i++){
 		data1[i] = data2[i];
@@ -729,7 +729,7 @@ void SSE_MOVHPSmem2xmm(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	float data2buf[4];
+	SSEREG data2buf;
 	float *data1, *data2;
 	int i;
 	
@@ -746,9 +746,9 @@ void SSE_MOVHPSmem2xmm(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+ 2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
-		*((UINT32*)(data2buf+ 3)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
-		data2 = data2buf;
+		data2buf.d[2] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
+		data2buf.d[3] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
+		data2 = data2buf.f32;
 		for(i=2;i<4;i++){
 			data1[i] = data2[i];
 		}
@@ -785,7 +785,7 @@ void SSE_MOVLPSmem2xmm(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	float data2buf[4];
+	SSEREG data2buf;
 	float *data1, *data2;
 	int i;
 	
@@ -802,9 +802,9 @@ void SSE_MOVLPSmem2xmm(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+ 0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
-		*((UINT32*)(data2buf+ 1)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 4);
+		data2 = data2buf.f32;
 		for(i=0;i<2;i++){
 			data1[i] = data2[i];
 		}
@@ -860,7 +860,7 @@ void SSE_MOVSSmem2xmm(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	float data2buf[4];
+	SSEREG data2buf;
 	float *data1, *data2;
 	
 	SSE_check_NM_EXCEPTION();
@@ -875,8 +875,8 @@ void SSE_MOVSSmem2xmm(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+ 0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+ 0);
+		data2 = data2buf.f32;
 	}
 	data1[0] = data2[0];
 	*(UINT32*)(data1+1) = *(UINT32*)(data1+2) = *(UINT32*)(data1+3) = 0;
@@ -1239,7 +1239,7 @@ void SSE_PMULHUW(void)
 {
 	UINT32 op;
 	UINT idx, sub;
-	UINT16 data2buf[4];
+	SSEREG data2buf;
 	UINT16 *data1, *data2;
 	int i;
 	
@@ -1255,9 +1255,9 @@ void SSE_PMULHUW(void)
 	} else {
 		UINT32 maddr;
 		maddr = calc_ea_dst((op));
-		*((UINT32*)(data2buf+0)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
-		*((UINT32*)(data2buf+2)) = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
-		data2 = data2buf;
+		data2buf.d[0] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr);
+		data2buf.d[1] = cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, maddr+4);
+		data2 = data2buf.w;
 	}
 	for(i=0;i<4;i++){
 		data1[i] = (UINT16)((((UINT32)data2[i] * (UINT32)data1[i]) >> 16) & 0xffff);
