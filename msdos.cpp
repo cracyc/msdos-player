@@ -4276,6 +4276,7 @@ void msdos_putch_fast(UINT8 data, unsigned int_num, UINT8 reg_ah);
 void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah);
 #endif
 const char *msdos_short_path(const char *path);
+const char *msdos_short_full_path(const char *path);
 const char *msdos_short_full_dir(const char *path);
 bool msdos_is_valid_drive(int drv);
 bool msdos_is_removable_drive(int drv);
@@ -4851,6 +4852,35 @@ bool msdos_match_volume_label(const char *path, const char *volume)
 	}
 }
 
+void msdos_init_fcb_in_psp(fcb_t *fcb, const char *argv)
+{
+	fcb->drive = 0;
+	memset(fcb->file_name, 0x20, 11);
+	fcb->current_block = fcb->record_size = 0;
+	
+	if(argv) {
+		if(strlen(argv) >= 2 && argv[1] == ':') {
+			if(argv[0] >= 'a' && argv[0] <= 'z') {
+				fcb->drive = argv[0] - 'a' + 1;
+			} else if(argv[0] >= 'A' && argv[0] <= 'Z') {
+				fcb->drive = argv[0] - 'A' + 1;
+			}
+		}
+		char tmp[MAX_PATH], *name, *ext;
+		strcpy(tmp, msdos_short_full_path(argv));
+		if((name = strrchr(tmp, '\\')) != NULL) {
+			name++;
+		} else {
+			name = tmp;
+		}
+		if((ext = strrchr(name, '.')) != NULL) {
+			*ext++ = '\0';
+			memcpy(fcb->file_name + 8, ext, min(strlen(ext), 3));
+		}
+		memcpy(fcb->file_name, name, min(strlen(name), 8));
+	}
+}
+
 const char *msdos_fcb_path(fcb_t *fcb)
 {
 	static char tmp[MAX_PATH];
@@ -4919,20 +4949,23 @@ const char *msdos_short_name(WIN32_FIND_DATAA *fd)
 const char *msdos_short_full_path(const char *path)
 {
 	static char tmp[MAX_PATH];
-	char full[MAX_PATH], *name;
+	char full[MAX_PATH], *name = NULL;
 	
 	// Full works with non-existent files, but Short does not
-	GetFullPathNameA(path, MAX_PATH, full, &name);
-	*tmp = '\0';
-	if(GetShortPathNameA(full, tmp, MAX_PATH) == 0 && name > path) {
-		name[-1] = '\0';
-		DWORD len = GetShortPathNameA(full, tmp, MAX_PATH);
-		if(len == 0) {
+	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
+		if(GetShortPathNameA(full, tmp, MAX_PATH) == 0) {
 			strcpy(tmp, full);
-		} else {
-			tmp[len++] = '\\';
-			strcpy(tmp + len, name);
+			if(name != NULL && name > full) {
+				name[-1] = '\0';
+				DWORD len = GetShortPathNameA(full, tmp, MAX_PATH);
+				if(len != 0) {
+					tmp[len++] = '\\';
+					strcpy(tmp + len, name);
+				}
+			}
 		}
+	} else {
+		strcpy(tmp, path);
 	}
 	my_strupr(tmp);
 	return(tmp);
@@ -4941,14 +4974,13 @@ const char *msdos_short_full_path(const char *path)
 const char *msdos_short_full_dir(const char *path)
 {
 	static char tmp[MAX_PATH];
-	char full[MAX_PATH], *name;
+	char *sep = NULL;
 	
-	GetFullPathNameA(path, MAX_PATH, full, &name);
-	name[-1] = '\0';
-	if(GetShortPathNameA(full, tmp, MAX_PATH) == 0) {
-		strcpy(tmp, full);
+	strcpy(tmp, msdos_short_full_path(path));
+	
+	if((sep = strrchr(tmp, '\\')) != NULL) {
+		sep[0] = '\0';
 	}
-	my_strupr(tmp);
 	return(tmp);
 }
 
@@ -14585,16 +14617,33 @@ inline void msdos_int_2eh()
 	
 	param_block_t *param = (param_block_t *)(mem + WORK_TOP);
 	param->env_seg = 0;
-	param->cmd_line.w.l = 44;
+	param->cmd_line.w.l = 56;
 	param->cmd_line.w.h = (WORK_TOP >> 4);
 	param->fcb1.w.l = 24;
 	param->fcb1.w.h = (WORK_TOP >> 4);
-	param->fcb2.w.l = 24;
+	param->fcb2.w.l = 40;
 	param->fcb2.w.h = (WORK_TOP >> 4);
 	
-	memset(mem + WORK_TOP + 24, 0x20, 20);
+	char argv[2][MAX_PATH];
+	int argc = 0;
+	strcpy(tmp, opt);
+	token = my_strtok(tmp, " ");
+	for(; token && argc < 2;) {
+		if(strlen(token) != 0) {
+			strcpy(argv[argc++], token);
+		}
+		token = my_strtok(NULL, " ");
+	}
+	for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
+		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+		if(i < argc) {
+			msdos_init_fcb_in_psp(fcb, argv[i]);
+		} else {
+			msdos_init_fcb_in_psp(fcb, NULL);
+		}
+	}
 	
-	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 44);
+	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	cmd_line->len = strlen(opt);
 	strcpy(cmd_line->cmd, opt);
 	cmd_line->cmd[cmd_line->len] = 0x0d;
@@ -15685,16 +15734,34 @@ inline void msdos_int_2fh_aeh()
 			
 			param_block_t *param = (param_block_t *)(mem + WORK_TOP);
 			param->env_seg = 0;
-			param->cmd_line.w.l = 44;
+			param->cmd_line.w.l = 56;
 			param->cmd_line.w.h = (WORK_TOP >> 4);
 			param->fcb1.w.l = 24;
 			param->fcb1.w.h = (WORK_TOP >> 4);
-			param->fcb2.w.l = 24;
+			param->fcb2.w.l = 40;
 			param->fcb2.w.h = (WORK_TOP >> 4);
 			
-			memset(mem + WORK_TOP + 24, 0x20, 20);
+			char tmp[MAX_PATH], argv[2][MAX_PATH];
+			int argc = 0;
+			memset(tmp, 0, sizeof(tmp));
+			memcpy(tmp, mem + CPU_DS_BASE + CPU_BX + 2, mem[CPU_DS_BASE + CPU_BX + 1]);
+			char *token = my_strtok(tmp, " ");
+			for(; token && argc < 2;) {
+				if(strlen(token) != 0) {
+					strcpy(argv[argc++], token);
+				}
+				token = my_strtok(NULL, " ");
+			}
+			for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
+				fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+				if(i < argc) {
+					msdos_init_fcb_in_psp(fcb, argv[i]);
+				} else {
+					msdos_init_fcb_in_psp(fcb, NULL);
+				}
+			}
 			
-			cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 44);
+			cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 			cmd_line->len = mem[CPU_DS_BASE + CPU_BX + 1];
 			memcpy(cmd_line->cmd, mem + CPU_DS_BASE + CPU_BX + 2, cmd_line->len);
 			cmd_line->cmd[cmd_line->len] = 0x0d;
@@ -19396,20 +19463,28 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// param block
 	// + 0: param block (22bytes)
-	// +24: fcb1/2 (20bytes)
-	// +44: command tail (128bytes)
+	// +24: fcb1 (16bytes)
+	// +40: fcb2 (16bytes)
+	// +56: command tail (128bytes)
 	param_block_t *param = (param_block_t *)(mem + WORK_TOP);
 	param->env_seg = 0;
-	param->cmd_line.w.l = 44;
+	param->cmd_line.w.l = 56;
 	param->cmd_line.w.h = (WORK_TOP >> 4);
 	param->fcb1.w.l = 24;
 	param->fcb1.w.h = (WORK_TOP >> 4);
-	param->fcb2.w.l = 24;
+	param->fcb2.w.l = 40;
 	param->fcb2.w.h = (WORK_TOP >> 4);
 	
-	memset(mem + WORK_TOP + 24, 0x20, 20);
+	for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
+		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+		if(i + 1 < argc) {
+			msdos_init_fcb_in_psp(fcb, argv[i + 1]);
+		} else {
+			msdos_init_fcb_in_psp(fcb, NULL);
+		}
+	}
 	
-	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 44);
+	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	if(argc > 1) {
 		sprintf(cmd_line->cmd, " %s", argv[1]);
 		for(int i = 2; i < argc; i++) {

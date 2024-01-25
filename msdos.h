@@ -752,7 +752,8 @@ typedef struct {
 	UINT8 reserved_3[2];
 	UINT8 ex_fcb[7];
 	UINT8 fcb1[16];
-	UINT8 fcb2[20];
+	UINT8 fcb2[16];
+	UINT8 reserved_4[4];
 	UINT8 buffer[128];
 } psp_t;
 #pragma pack()
