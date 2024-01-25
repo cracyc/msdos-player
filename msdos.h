@@ -90,6 +90,7 @@ public:
 
 #if defined(HAS_IA32)
 //	#define CPU_MODEL ia32
+	#define SUPPORT_FPU
 #elif defined(HAS_I86)
 	#define CPU_MODEL i8086
 #elif defined(HAS_I186)
@@ -549,6 +550,12 @@ UINT8 crtc_addr = 0;
 UINT8 crtc_regs[16] = {0};
 UINT8 crtc_changed[16] = {0};
 
+#ifdef SUPPORT_GRAPHIC_SCREEN
+// vram
+static UINT32 vga_read(UINT32 addr, int size);
+static void vga_write(UINT32 addr, UINT32 data, int size);
+#endif
+
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
@@ -610,6 +617,7 @@ UINT8 crtc_changed[16] = {0};
 #ifdef SUPPORT_GRAPHIC_SCREEN
 #define MEMORY_END	0xa0000
 #define VGA_VRAM_TOP	0xa0000
+#define VGA_VRAM_LAST	0xbffff
 #else
 #define MEMORY_END	0xb8000
 #endif
@@ -1026,10 +1034,11 @@ static const struct {
 	int mode;
 	int in;
 	int out;
+	const char *str;
 } file_mode[] = {
-	{ _O_RDONLY | _O_BINARY, 1, 0 },
-	{ _O_WRONLY | _O_BINARY, 0, 1 },
-	{ _O_RDWR   | _O_BINARY, 1, 1 },
+	{ _O_RDONLY | _O_BINARY, 1, 0, "r"  },
+	{ _O_WRONLY | _O_BINARY, 0, 1, "w"  },
+	{ _O_RDWR   | _O_BINARY, 1, 1, "rw" },
 };
 
 typedef struct {

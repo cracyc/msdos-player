@@ -247,7 +247,8 @@ inline void CPU_IRQ_LINE(BOOL state)
 void CPU_INIT()
 {
 	CPU_INITIALIZE();
-	CPU_ADRSMASK = 0x000fffff;
+	CPU_ADRSMASK = ~0;
+//	CPU_ADRSMASK = ~(1 << 20);
 	irq_pending = false;
 }
 
@@ -468,26 +469,36 @@ void CPU_LOAD_TR(UINT16 selector)
 	load_tr(selector);
 }
 
-UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 {
-	if(CPU_STAT_PM) {
-		UINT32 addr = seg_base + ofs;
-		
-		if(CPU_STAT_PAGING) {
-			UINT32 pde_addr = CPU_STAT_PDE_BASE + ((addr >> 20) & 0xffc);
-			UINT32 pde = read_dword(pde_addr & CPU_ADRSMASK);
-			/* XXX: check */
-			UINT32 pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((addr >> 10) & 0xffc);
-			UINT32 pte = read_dword(pte_addr & CPU_ADRSMASK);
-			/* XXX: check */
-			addr = (pte & CPU_PTE_BASEADDR_MASK) + (addr & CPU_PAGE_MASK);
-		}
-		return addr;
+	if(CPU_STAT_PM && CPU_STAT_PAGING) {
+		UINT32 pde_addr = CPU_STAT_PDE_BASE + ((addr >> 20) & 0xffc);
+		UINT32 pde = read_dword(pde_addr & CPU_ADRSMASK);
+		/* XXX: check */
+		UINT32 pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((addr >> 10) & 0xffc);
+		UINT32 pte = read_dword(pte_addr & CPU_ADRSMASK);
+		/* XXX: check */
+		addr = (pte & CPU_PTE_BASEADDR_MASK) + (addr & CPU_PAGE_MASK);
 	}
-	return seg_base + (ofs & 0xffff);
+	return addr;
 }
 
 #ifdef USE_DEBUGGER
+UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
+{
+	if(CPU_STAT_PM && !CPU_STAT_VM86) {
+		UINT32 seg_base = 0;
+		if(seg) {
+			UINT32 base = (seg & 4) ? CPU_LDTR_BASE : CPU_GDTR_BASE;
+			UINT32 v1 = read_dword(CPU_TRANS_PAGING_ADDR(base + (seg & ~7) + 0) & CPU_ADRSMASK);
+			UINT32 v2 = read_dword(CPU_TRANS_PAGING_ADDR(base + (seg & ~7) + 4) & CPU_ADRSMASK);
+			seg_base = (v2 & 0xff000000) | ((v2 & 0xff) << 16) | ((v1 >> 16) & 0xffff);
+		}
+		return seg_base + ofs;
+	}
+	return (seg << 4) + ofs;
+}
+
 UINT32 CPU_GET_PREV_PC()
 {
 	return CPU_PREV_PC;
@@ -495,6 +506,6 @@ UINT32 CPU_GET_PREV_PC()
 
 UINT32 CPU_GET_NEXT_PC()
 {
-	return CPU_TRANS_ADDR(CS_BASE, CPU_EIP);
+	return CPU_TRANS_CODE_ADDR(CPU_CS, CPU_EIP);
 }
 #endif

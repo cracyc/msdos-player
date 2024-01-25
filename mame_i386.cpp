@@ -490,14 +490,24 @@ void CPU_LOAD_TR(UINT16 selector)
 	m_task.flags = seg.flags;
 }
 
-UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 {
-	UINT32 addr = seg_base + ofs;
 	translate_address(0, TRANSLATE_READ, &addr, NULL);
 	return addr;
 }
 
 #ifdef USE_DEBUGGER
+UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
+{
+	if(PROTECTED_MODE && !V8086_MODE) {
+		I386_SREG pseg;
+		pseg.selector = seg;
+		i386_load_protected_mode_segment(&pseg, NULL);
+		return pseg.base + ofs;
+	}
+	return (seg << 4) + ofs;
+}
+
 UINT32 CPU_GET_PREV_PC()
 {
 	return m_prev_pc;

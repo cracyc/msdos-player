@@ -84,7 +84,8 @@ ia32_initreg(void)
 	LOAD_SEGREG(CPU_CS_INDEX, 0xf000);
 	CPU_STAT_CS_BASE = 0xffff0000;
 	CPU_EIP = 0xfff0;
-	CPU_ADRSMASK = 0x000fffff;
+//	CPU_ADRSMASK = 0x000fffff;
+	CPU_ADRSMASK = ~0;
 
 	tlb_init();
 	fpu_initialize();
@@ -110,7 +111,8 @@ void
 ia32a20enable(BOOL enable)
 {
 
-	CPU_ADRSMASK = (enable)?0xffffffff:0x00ffffff;
+//	CPU_ADRSMASK = (enable)?0xffffffff:0x00ffffff;
+	CPU_ADRSMASK = (enable)?(~0):(~(1 << 20));
 }
 
 //#pragma optimize("", off)

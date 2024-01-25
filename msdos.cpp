@@ -24,6 +24,7 @@ void exit_handler();
 	#define ENABLE_DEBUG_SYSCALL
 	#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
+	#define ENABLE_DEBUG_OPEN_FILE
 	
 	#ifdef EXPORT_DEBUG_TO_FILE
 		FILE* fp_debug_log = NULL;
@@ -1421,12 +1422,12 @@ void debugger_main()
 					if(num >= 2) {
 						dasm_seg = debugger_get_seg(params[1], dasm_seg);
 						dasm_ofs = debugger_get_ofs(params[1]);
-						dasm_adr = CPU_TRANS_ADDR(dasm_seg << 4, dasm_ofs);
+						dasm_adr = CPU_TRANS_CODE_ADDR(dasm_seg, dasm_ofs);
 					}
 					if(num == 3) {
 						UINT32 end_seg = debugger_get_seg(params[2], dasm_seg);
 						UINT32 end_ofs = debugger_get_ofs(params[2]);
-						UINT32 end_adr = CPU_TRANS_ADDR(end_seg << 4, end_ofs);
+						UINT32 end_adr = CPU_TRANS_CODE_ADDR(end_seg, end_ofs);
 						
 						while(dasm_adr <= end_adr) {
 							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
@@ -1640,7 +1641,7 @@ void debugger_main()
 					bool found = false;
 					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
 						if(break_point_ptr->table[i].status == 0 || (break_point_ptr->table[i].seg == seg && break_point_ptr->table[i].ofs == ofs)) {
-							break_point_ptr->table[i].addr = CPU_TRANS_ADDR(seg << 4, ofs);
+							break_point_ptr->table[i].addr = CPU_TRANS_CODE_ADDR(seg, ofs);
 							break_point_ptr->table[i].seg = seg;
 							break_point_ptr->table[i].ofs = ofs;
 							break_point_ptr->table[i].status = 1;
@@ -1858,7 +1859,7 @@ void debugger_main()
 						
 						UINT32 seg = debugger_get_seg(params[1], CPU_CS);
 						UINT32 ofs = debugger_get_ofs(params[1]);
-						break_point.table[0].addr = CPU_TRANS_ADDR(seg << 4, ofs);
+						break_point.table[0].addr = CPU_TRANS_CODE_ADDR(seg, ofs);
 						break_point.table[0].seg = seg;
 						break_point.table[0].ofs = ofs;
 						break_point.table[0].status = 1;
@@ -4343,8 +4344,10 @@ const char *msdos_remove_double_quote(const char *path)
 	static char tmp[MAX_PATH];
 	
 	if(strlen(path) >= 2 && path[0] == '"' && path[strlen(path) - 1] == '"') {
-		memset(tmp, 0, sizeof(tmp));
-		memcpy(tmp, path + 1, strlen(path) - 2);
+//		memset(tmp, 0, sizeof(tmp));
+//		memcpy(tmp, path + 1, strlen(path) - 2);
+		strcpy(tmp, path + 1);
+		tmp[strlen(tmp) - 1] = '\0';
 	} else {
 		strcpy(tmp, path);
 	}
@@ -6652,6 +6655,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			}
 		}
 	}
+#ifdef ENABLE_DEBUG_OPEN_FILE
+	if(fp_debug_log != NULL) {
+		fprintf(fp_debug_log, "process_exec\tfd=%d\tr\t%s\n", fd, cmd);
+	}
+#endif
 	if(fd == -1) {
 		// we can not find command.com in the path, so open comspec_path
 		if(_stricmp(command, "COMMAND.COM") == 0 || _stricmp(command, "COMMAND") == 0) {
@@ -6730,7 +6738,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	if(header->mz == 0x4d5a || header->mz == 0x5a4d) {
 		// memory allocation
 		int header_size = header->header_size * 16;
-		int load_size = header->pages * 512 - header_size;
+		int load_size = (header->pages & 0x7ff) * 512 - header_size;
 		if(header_size + load_size < 512) {
 			load_size = 512 - header_size;
 		}
@@ -8609,10 +8617,22 @@ inline void pcbios_int_15h_87h()
 	// copy extended memory (from DOSBox)
 	int len = CPU_CX * 2;
 	int ofs = CPU_ES_BASE + CPU_SI;
-	int src = (*(UINT32 *)(mem + ofs + 0x12) & 0xffffff); // + (mem[ofs + 0x16] << 24);
-	int dst = (*(UINT32 *)(mem + ofs + 0x1a) & 0xffffff); // + (mem[ofs + 0x1e] << 24);
+#if defined(HAS_I386)
+	int src = (*(UINT32 *)(mem + ofs + 0x12) & 0xffffff) + ((UINT32)mem[ofs + 0x16] << 24);
+	int dst = (*(UINT32 *)(mem + ofs + 0x1a) & 0xffffff) + ((UINT32)mem[ofs + 0x1e] << 24);
+#else
+	int src = (*(UINT32 *)(mem + ofs + 0x12) & 0xffffff); // + ((UINT32)mem[ofs + 0x16] << 24);
+	int dst = (*(UINT32 *)(mem + ofs + 0x1a) & 0xffffff); // + ((UINT32)mem[ofs + 0x1e] << 24);
+#endif
+#if 1
+	UINT8 *buffer = (UINT8 *)malloc(len);
+	memcpy(buffer, mem + src, len);
+	memcpy(mem + dst, buffer, len);
+	free(buffer);
+#else
 	memcpy(mem + dst, mem + src, len);
-	CPU_AX = 0x00;
+#endif
+	CPU_AH = 0x00;
 }
 
 inline void pcbios_int_15h_88h()
@@ -8637,7 +8657,11 @@ inline void pcbios_int_15h_89h()
 	CPU_GDTR_BASE  = *(UINT32 *)(mem + CPU_ES_BASE + CPU_SI + 0x08 + 0x02) & 0xffffff;
 	CPU_IDTR_LIMIT = *(UINT16 *)(mem + CPU_ES_BASE + CPU_SI + 0x10);
 	CPU_IDTR_BASE  = *(UINT32 *)(mem + CPU_ES_BASE + CPU_SI + 0x10 + 0x02) & 0xffffff;
+#if defined(HAS_I386)
+	CPU_SET_CR0(CPU_CR0 | 1);
+#else
 	CPU_MSW |= 1;
+#endif
 	CPU_LOAD_SREG(CPU_DS_INDEX, 0x0018);
 	CPU_LOAD_SREG(CPU_ES_INDEX, 0x0020);
 	CPU_LOAD_SREG(CPU_SS_INDEX, 0x0028);
@@ -11191,8 +11215,14 @@ inline void msdos_int_21h_3ch()
 	
 	if(msdos_is_device_path(path)) {
 		fd = msdos_open_device(path, _O_WRONLY | _O_BINARY, &sio_port, &lpt_port);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_3ch\tfd=%d\tw\t%s\n", fd, path);
+#endif
 	} else {
 		fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_3ch\tfd=%d\trw\t%s\n", fd, path);
+#endif
 	}
 	if(fd != -1) {
 		if(attr == -1) {
@@ -11222,6 +11252,9 @@ inline void msdos_int_21h_3dh()
 		} else {
 			fd = msdos_open(path, file_mode[mode].mode);
 		}
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_3dh\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+#endif
 		if(fd != -1) {
 			CPU_AX = fd;
 			msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_device_info(path), current_psp, sio_port, lpt_port);
@@ -11369,28 +11402,32 @@ inline void msdos_int_21h_3fh()
 					CPU_AX = 0;
 				}
 			} else {
+				if(CPU_CX != 0) {
 #if defined(HAS_I386)
-				if(CPU_STAT_PM && (CPU_CR0 & CPU_CR0_PG)) {
-					UINT32 offset = CPU_DX;
-					int count = CPU_CX;
-					int total = 0;
-					int page_count = min(count, 0x1000 - ((CPU_DS_BASE + CPU_DX) & 0xfff));
-					
-					while(count > 0) {
-						// Mr.cracyc's original code considered the page fault
-						int page_total = msdos_read(fd, mem + CPU_TRANS_ADDR(CPU_DS_BASE, offset), page_count);
-						total += page_total;
-						if(page_total != page_count) {
-							break;
+					if(CPU_STAT_PM && (CPU_CR0 & CPU_CR0_PG)) {
+						UINT32 addr = CPU_DS_BASE + CPU_DX;
+						int count = CPU_CX;
+						int total = 0;
+						int page_count = min(count, 0x1000 - (addr & 0xfff));
+						
+						while(count > 0) {
+							// Mr.cracyc's original code considered the page fault
+							int page_total = msdos_read(fd, mem + CPU_TRANS_PAGING_ADDR(addr), page_count);
+							total += page_total;
+							if(page_total != page_count) {
+								break;
+							}
+							addr += page_total;
+							count  -= page_total;
+							page_count = min(count, 0x1000);
 						}
-						offset += page_total;
-						count  -= page_total;
-						page_count = min(count, 0x1000);
-					}
-					CPU_AX = total;
-				} else
+						CPU_AX = total;
+					} else
 #endif
-				CPU_AX = msdos_read(fd, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
+					CPU_AX = msdos_read(fd, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
+				} else {
+					CPU_AX = 0;
+				}
 			}
 		} else {
 			CPU_AX = 0x05;
@@ -12334,7 +12371,10 @@ inline void msdos_int_21h_4ah()
 	int max_paragraphs;
 	
 	if(mcb->mz == 'M' || mcb->mz == 'Z') {
-		if(msdos_mem_realloc(CPU_ES, CPU_BX, &max_paragraphs)) {
+		if(!msdos_mem_realloc(CPU_ES, CPU_BX, &max_paragraphs)) {
+			// from DOSBox
+			CPU_AX = CPU_ES;
+		} else {
 			CPU_AX = 0x08;
 			CPU_BX = max_paragraphs > 0x7fff && limit_max_memory ? 0x7fff : max_paragraphs;
 			CPU_SET_C_FLAG(1);
@@ -12353,29 +12393,36 @@ inline void msdos_int_21h_4bh()
 	switch(CPU_AL) {
 	case 0x00:
 	case 0x01:
-		if(msdos_process_exec(command, param, CPU_AL)) {
+		if(msdos_process_exec(command, (param_block_t *)(mem + CPU_ES_BASE + CPU_BX), CPU_AL)) {
 			CPU_AX = 0x02;
 			CPU_SET_C_FLAG(1);
 		}
 		break;
 	case 0x03:
 		{
-			int fd;
-			if((fd = _open(command, _O_RDONLY | _O_BINARY)) == -1) {
+			int fd = _open(command, _O_RDONLY | _O_BINARY);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+			fprintf(fp_debug_log, "int21h_4b03h\tfd=%d\tr\t%s\n", fd, command);
+#endif
+			if(fd == -1) {
 				CPU_AX = 0x02;
 				CPU_SET_C_FLAG(1);
 				break;
 			}
-			int size = _read(fd, file_buffer, sizeof(file_buffer));
+			int file_size = _read(fd, file_buffer, sizeof(file_buffer));
 			_close(fd);
 			
-			UINT16 *overlay = (UINT16 *)param;
+			UINT16 *overlay = (UINT16 *)(mem + CPU_ES_BASE + CPU_BX);
 			
 			// check exe header
 			exe_header_t *header = (exe_header_t *)file_buffer;
-			int header_size = 0;
 			if(header->mz == 0x4d5a || header->mz == 0x5a4d) {
-				header_size = header->header_size * 16;
+				int header_size = header->header_size * 16;
+				int load_size = (header->pages & 0x7ff) * 512 - header_size;
+				if(header_size + load_size < 512) {
+					load_size = 512 - header_size;
+				}
+				load_size = min(load_size, file_size - header_size);
 				// relocation
 				int start_seg = overlay[1];
 				for(int i = 0; i < header->relocations; i++) {
@@ -12383,8 +12430,10 @@ inline void msdos_int_21h_4bh()
 					int seg = *(UINT16 *)(file_buffer + header->relocation_table + i * 4 + 2);
 					*(UINT16 *)(file_buffer + header_size + (seg << 4) + ofs) += start_seg;
 				}
+				memcpy(mem + (overlay[0] << 4), file_buffer + header_size, load_size);
+			} else {
+				memcpy(mem + (overlay[0] << 4), file_buffer, file_size);
 			}
-			memcpy(mem + (overlay[0] << 4), file_buffer + header_size, size - header_size);
 		}
 		break;
 	case 0x04:
@@ -12758,6 +12807,9 @@ inline void msdos_int_21h_5ah()
 	
 	if(GetTempFileNameA(path, "TMP", 0, tmp)) {
 		int fd = _open(tmp, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_5ah\tfd=%d\trw\t%s\n", fd, tmp);
+#endif
 		
 		SetFileAttributesA(tmp, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
 		CPU_AX = fd;
@@ -12785,10 +12837,16 @@ inline void msdos_int_21h_5bh()
 	
 	if(msdos_is_device_path(path) || msdos_is_existing_file(path)) {
 		// already exists
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", -1, path);
+#endif
 		CPU_AX = 0x50;
 		CPU_SET_C_FLAG(1);
 	} else {
 		int fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+		fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", fd, path);
+#endif
 		
 		if(fd != -1) {
 			SetFileAttributesA(path, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
@@ -13077,9 +13135,10 @@ UINT16 get_extended_country_info(UINT8 func)
 	case 0x01:
 		if(CPU_CX >= 5) {
 			UINT8 data[1 + 2 + 2 + 2 + sizeof(country_info_t)];
-			if(CPU_CX > sizeof(data))		// cx = actual transfer size
+			if(CPU_CX > sizeof(data)) {		// cx = actual transfer size
 				CPU_CX = sizeof(data);
-			ZeroMemory(data, sizeof(data));
+			}
+			memset(data, 0, sizeof(data));
 			data[0] = 0x01;
 			*(UINT16 *)(data + 1) = CPU_CX - 3;
 			*(UINT16 *)(data + 3) = get_country_info((country_info_t*)(data + 7));
@@ -13330,6 +13389,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else {
 					fd = msdos_open(path, file_mode[mode].mode);
 				}
+#ifdef ENABLE_DEBUG_OPEN_FILE
+				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+#endif
 				if(fd != -1) {
 					CPU_AX = fd;
 					CPU_CX = 1;
@@ -13350,6 +13412,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else {
 					fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 				}
+#ifdef ENABLE_DEBUG_OPEN_FILE
+				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+#endif
 				if(fd != -1) {
 					if(attr == -1) {
 						attr = msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY;
@@ -13364,6 +13429,9 @@ inline void msdos_int_21h_6ch(int lfn)
 					CPU_SET_C_FLAG(1);
 				}
 			} else {
+#ifdef ENABLE_DEBUG_OPEN_FILE
+				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+#endif
 				CPU_AX = 0x50;
 				CPU_SET_C_FLAG(1);
 			}
@@ -13371,6 +13439,9 @@ inline void msdos_int_21h_6ch(int lfn)
 			// file not exists
 			if(CPU_DL & 0x10) {
 				int fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+#ifdef ENABLE_DEBUG_OPEN_FILE
+				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+#endif
 				
 				if(fd != -1) {
 					SetFileAttributesA(path, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
@@ -13383,6 +13454,9 @@ inline void msdos_int_21h_6ch(int lfn)
 					CPU_SET_C_FLAG(1);
 				}
 			} else {
+#ifdef ENABLE_DEBUG_OPEN_FILE
+				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+#endif
 				CPU_AX = 0x02;
 				CPU_SET_C_FLAG(1);
 			}
@@ -13439,7 +13513,7 @@ inline void msdos_int_21h_7141h()
 	/* wild card and matching attributes... */
 	char tmp[MAX_PATH * 2];
 	// copy search pathname (and quick check overrun)
-	ZeroMemory(tmp, sizeof(tmp));
+	memset(tmp, 0, sizeof(tmp));
 	tmp[MAX_PATH - 1] = '\0';
 	tmp[MAX_PATH] = 1;
 	strncpy(tmp, (char *)(mem + CPU_DS_BASE + CPU_DX), MAX_PATH);
@@ -16543,7 +16617,7 @@ inline void msdos_int_67h_deh()
 			UINT32 new_cr0 = CPU_CR0 & 0x7ffffffe;
 			CPU_SET_CR0(new_cr0);
 
-			UINT32 stack = CPU_TRANS_ADDR(CPU_SS_BASE, CPU_ESP + 8);
+			UINT32 stack = CPU_TRANS_PAGING_ADDR(CPU_SS_BASE + CPU_ESP + 8);
 			UINT32 *stkptr = (UINT32 *)(mem + stack);
 
 			stkptr[2] &= ~(0x200);
@@ -17826,6 +17900,10 @@ void msdos_syscall(unsigned num)
 			default:
 				// NORTON UTILITIES 5.0+
 				if(CPU_AH == 0xfe && CPU_DI == 0x4e55) {
+					break;
+				}
+				// Borland C++ DPMILOAD.EXE is not installed
+				if((CPU_AX == 0xfb42 && CPU_BX == 0x0014) || (CPU_AX == 0xfb43 && CPU_BX == 0x0100)) {
 					break;
 				}
 				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);

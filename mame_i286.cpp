@@ -685,18 +685,31 @@ void CPU_WRITE_STACK(UINT16 value)
 	WriteWord(((m_base[SS] + ((sp - 2) & 0xffff)) & AMASK), value);
 }
 
-UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 {
-#if defined(HAS_I286)
-	// FIXME: Protected Mode
-	if(PM) {
-		return seg_base + ofs;
-	}
-#endif
-	return seg_base + (ofs & 0xffff);
+	return addr;
 }
 
 #ifdef USE_DEBUGGER
+UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
+{
+#if defined(HAS_I286)
+	if(PM) {
+		UINT32 seg_base = 0;
+		if(seg) {
+			UINT32 base = (seg & 4) ? m_ldtr.base : m_gdtr.base;
+			UINT16 desc[3];
+			desc[0] = read_word((base + (seg & ~7) + 0) & AMASK);
+			desc[1] = read_word((base + (seg & ~7) + 2) & AMASK);
+			desc[2] = read_word((base + (seg & ~7) + 4) & AMASK);
+			seg_base = (desc[1] & 0xffff) | ((desc[2] & 0xff) << 16);
+		}
+		return seg_base + ofs;
+	}
+#endif
+	return (seg << 4) + ofs;
+}
+
 UINT32 CPU_GET_PREV_PC()
 {
 	return m_prevpc;

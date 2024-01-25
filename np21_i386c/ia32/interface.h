@@ -45,7 +45,8 @@
 
 #define CPU_isEI		(CPU_FLAG & I_FLAG)
 #define CPU_isDI		(!CPU_isEI)
-#define	CPU_A20EN(en)		CPU_ADRSMASK = (en)?0xffffffff:0x000fffff;
+//#define	CPU_A20EN(en)		CPU_ADRSMASK = (en)?0xffffffff:0x000fffff;
+#define	CPU_A20EN(en)		CPU_ADRSMASK = (en)?(~0):(~(1 << 20));
 
 #define CPU_INITIALIZE()		i386c_initialize()
 #define	CPU_DEINITIALIZE()
