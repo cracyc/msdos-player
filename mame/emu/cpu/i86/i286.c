@@ -58,6 +58,7 @@ union i80286basicregs
 	INT32   m_AuxVal, m_OverVal, m_SignVal, m_ZeroVal, m_CarryVal, m_DirVal; /* 0 or non-0 valued flags */
 	UINT8   m_ParityVal;
 	UINT8   m_TF, m_IF;     /* 0 or 1 valued flags */
+	UINT8   m_MF;         /* V30 mode flag */
 	INT8    m_nmi_state;
 	INT8    m_irq_state;
 	INT8    m_test_state;

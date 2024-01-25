@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								10/17/2015
+								10/20/2015
 
 ----- What's this
 
@@ -66,8 +66,8 @@ If you want to change the version number, please specify the option '-vX.XX'.
 
 This archive contains 8 executable binaries:
 
-	i86_x86 	Emulates 8086 and supports both 32bit/64bit Windows
-	i86_x64 	Emulates 8086 and supports only 64bit Windows
+	i86_x86 	Emulates 8086  and supports both 32bit/64bit Windows
+	i86_x64		Emulates 8086  and supports only 64bit Windows
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
 	i286_x64	Emulates 80286 and supports only 64bit Windows
 	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
@@ -79,9 +79,9 @@ This archive contains 8 executable binaries:
 If you don't need the protected mode or mnemonics added with 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
-You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4 or MediaGX.
-Replace "HAS_I486" with for example "HAS_PENTIUM" in source/msdos.vcproj.
-See also source/msdos.cpp, line 91-126.
+The VC++ project file "msdos.vcproj" also has the configurations for 80186,
+V30, Pentium/PRO/MMX/2/3/4 and MediaGX.
+You can build all binaries for several cpu models by running build8_all.bat.
 
 
 ----- Supported hardwares
@@ -117,9 +117,13 @@ INT 10H		PC BIOS - Video
 	0AH	Write Character Only at Cursor Position
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
+	1101H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
+	1102H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
+	1104H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
 	1111H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
 	1112H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
 	1114H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
+	1118H	Set Video Mode to 80x50 (Set V-TEXT Vertically Long Mode)
 	1130H	Get Font Information
 	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
@@ -197,7 +201,10 @@ INT 21H		MS-DOS System Call
 	11H	Search First Entry with FCB
 	12H	Search Next Entry with FCB
 	13H	Delete File with FCB
+	14H	Sequential Read with FCB
+	15H	Sequential Write with FCB
 	16H	Create New File with FCB
+	17H	Rename File with FCB
 	18H	Null Function for CP/M Compatibility
 	19H	Current Disk
 	1AH	Set Disk Transfer Address
@@ -209,8 +216,12 @@ INT 21H		MS-DOS System Call
 	20H	Null Function for CP/M Compatibility
 	21H	Random Read with FCB
 	22H	Randome Write with FCB
+	23H	Get File Size with FCB
+	24H	Set Relative Record Field with FCB
 	25H	Set Vector
 	26H	Create New Program Segment Prefix
+	27H	Random Block Read with FCB
+	28H	Random Block Write with FCB
 	29H	Parse File Name
 	2AH	Get Date
 	2BH	Set Date

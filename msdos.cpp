@@ -94,14 +94,16 @@ inline void maybe_idle()
 	#define CPU_MODEL i8086
 #elif defined(HAS_I186)
 	#define CPU_MODEL i80186
+#elif defined(HAS_V30)
+	#define CPU_MODEL v30
 #elif defined(HAS_I286)
 	#define CPU_MODEL i80286
 #elif defined(HAS_I386)
 	#define CPU_MODEL i386
 #else
-	#if defined(HAS_I386SX)
-		#define CPU_MODEL i386SX
-	#else
+//	#if defined(HAS_I386SX)
+//		#define CPU_MODEL i386SX
+//	#else
 		#if defined(HAS_I486)
 			#define CPU_MODEL i486
 		#else
@@ -123,7 +125,7 @@ inline void maybe_idle()
 			#define SUPPORT_RDTSC
 		#endif
 		#define SUPPORT_FPU
-	#endif
+//	#endif
 	#define HAS_I386
 #endif
 
@@ -2967,7 +2969,7 @@ inline void pcbios_irq0()
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight();
 }
 
-int get_text_vram_address(int page)
+int pcbios_get_text_vram_address(int page)
 {
 	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		return TEXT_VRAM_TOP;
@@ -2976,10 +2978,10 @@ int get_text_vram_address(int page)
 	}
 }
 
-int get_shadow_buffer_address(int page)
+int pcbios_get_shadow_buffer_address(int page)
 {
 	if(!int_10h_feh_called) {
-		return get_text_vram_address(page);
+		return pcbios_get_text_vram_address(page);
 	} else if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		return SHADOW_BUF_TOP;
 	} else {
@@ -2987,34 +2989,28 @@ int get_shadow_buffer_address(int page)
 	}
 }
 
-inline int get_shadow_buffer_address(int page, int x, int y)
+int pcbios_get_shadow_buffer_address(int page, int x, int y)
 {
-	return get_shadow_buffer_address(page) + (x + y * scr_width) * 2;
+	return pcbios_get_shadow_buffer_address(page) + (x + y * scr_width) * 2;
 }
 
-inline void pcbios_int_10h_00h(int height)
+void pcbios_set_console_size(int width, int height, bool clr_screen)
 {
 	// clear the existing screen, not just the new one
 	int clr_height = max(height, scr_height);
 	
-	if(scr_width != 80 || scr_height != height) {
-		change_console_size(80, height);
-		mem[0x44a] = 80;
-		mem[0x484] = height - 1;
+	if(scr_width != width || scr_height != height) {
+		change_console_size(width, height);
 	}
-	mem[0x449] = REG8(AL) & 0x7f;
 	mem[0x462] = 0;
 	*(UINT16 *)(mem + 0x44e) = 0;
 	
-	text_vram_top_address = get_text_vram_address(0);
-	text_vram_end_address = text_vram_top_address + scr_width * height * 2;
-	shadow_buffer_top_address = get_shadow_buffer_address(0);
-	shadow_buffer_end_address = shadow_buffer_top_address + scr_width * height * 2;
+	text_vram_top_address = pcbios_get_text_vram_address(0);
+	text_vram_end_address = text_vram_top_address + width * height * 2;
+	shadow_buffer_top_address = pcbios_get_shadow_buffer_address(0);
+	shadow_buffer_end_address = shadow_buffer_top_address + width * height * 2;
 	
-	if(REG8(AL) & 0x80) {
-		mem[0x487] |= 0x80;
-	} else {
-		mem[0x487] &= ~0x80;
+	if(clr_screen) {
 		for(int ofs = shadow_buffer_top_address; ofs < shadow_buffer_end_address;) {
 			mem[ofs++] = 0x20;
 			mem[ofs++] = 0x07;
@@ -3040,6 +3036,25 @@ inline void pcbios_int_10h_00h(int height)
 	SetConsoleCursorPosition(hStdout, co);
 	cursor_moved = true;
 	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+}
+
+inline void pcbios_int_10h_00h()
+{
+	switch(REG8(AL) & 0x7f) {
+	case 0x70: // v-text mode
+	case 0x71: // extended cga v-text mode
+		pcbios_set_console_size(scr_width, scr_height, !(REG8(AL) & 0x80));
+		break;
+	default:
+		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
+		break;
+	}
+	if(REG8(AL) & 0x80) {
+		mem[0x487] |= 0x80;
+	} else {
+		mem[0x487] &= ~0x80;
+	}
+	mem[0x449] = REG8(AL) & 0x7f;
 }
 
 inline void pcbios_int_10h_01h()
@@ -3108,13 +3123,13 @@ inline void pcbios_int_10h_05h()
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
 		ReadConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
-		for(int y = 0, ofs = get_shadow_buffer_address(mem[0x462]); y < scr_height; y++) {
+		for(int y = 0, ofs = pcbios_get_shadow_buffer_address(mem[0x462]); y < scr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
 				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar;
 				mem[ofs++] = SCR_BUF(y,x).Attributes;
 			}
 		}
-		for(int y = 0, ofs = get_shadow_buffer_address(REG8(AL)); y < scr_height; y++) {
+		for(int y = 0, ofs = pcbios_get_shadow_buffer_address(REG8(AL)); y < scr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
 				SCR_BUF(y,x).Char.AsciiChar = mem[ofs++];
 				SCR_BUF(y,x).Attributes = mem[ofs++];
@@ -3132,9 +3147,9 @@ inline void pcbios_int_10h_05h()
 	mem[0x462] = REG8(AL);
 	*(UINT16 *)(mem + 0x44e) = REG8(AL) * VIDEO_REGEN;
 	int regen = min(scr_width * scr_height * 2, 0x8000);
-	text_vram_top_address = get_text_vram_address(mem[0x462]);
+	text_vram_top_address = pcbios_get_text_vram_address(mem[0x462]);
 	text_vram_end_address = text_vram_top_address + regen;
-	shadow_buffer_top_address = get_shadow_buffer_address(mem[0x462]);
+	shadow_buffer_top_address = pcbios_get_shadow_buffer_address(mem[0x462]);
 	shadow_buffer_end_address = shadow_buffer_top_address + regen;
 }
 
@@ -3155,14 +3170,14 @@ inline void pcbios_int_10h_06h()
 	
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= bottom; y++) {
-			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
+			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
 				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar = ' ';
 				mem[ofs++] = SCR_BUF(y,x).Attributes = REG8(BH);
 			}
 		}
 	} else {
 		for(int y = REG8(CH), y2 = min(REG8(CH) + REG8(AL), bottom + 1); y <= bottom; y++, y2++) {
-			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
+			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
 				if(y2 <= bottom) {
 					SCR_BUF(y,x) = SCR_BUF(y2,x);
 				} else {
@@ -3194,14 +3209,14 @@ inline void pcbios_int_10h_07h()
 	
 	if(REG8(AL) == 0) {
 		for(int y = REG8(CH); y <= bottom; y++) {
-			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
+			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
 				mem[ofs++] = SCR_BUF(y,x).Char.AsciiChar = ' ';
 				mem[ofs++] = SCR_BUF(y,x).Attributes = REG8(BH);
 			}
 		}
 	} else {
 		for(int y = bottom, y2 = max(REG8(CH) - 1, bottom - REG8(AL)); y >= REG8(CH); y--, y2--) {
-			for(int x = REG8(CL), ofs = get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
+			for(int x = REG8(CL), ofs = pcbios_get_shadow_buffer_address(mem[0x462], REG8(CL), y); x <= right; x++) {
 				if(y2 >= REG8(CH)) {
 					SCR_BUF(y,x) = SCR_BUF(y2,x);
 				} else {
@@ -3232,7 +3247,7 @@ inline void pcbios_int_10h_08h()
 		REG8(AL) = scr_char[0];
 		REG8(AH) = scr_attr[0];
 	} else {
-		REG16(AX) = *(UINT16 *)(mem + get_shadow_buffer_address(REG8(BH), co.X, co.Y));
+		REG16(AX) = *(UINT16 *)(mem + pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y));
 	}
 }
 
@@ -3243,12 +3258,12 @@ inline void pcbios_int_10h_09h()
 	co.X = mem[0x450 + (REG8(BH) % vram_pages) * 2];
 	co.Y = mem[0x451 + (REG8(BH) % vram_pages) * 2];
 	
-	int dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y);
-	int end = min(dest + REG16(CX) * 2, get_shadow_buffer_address(REG8(BH), 0, scr_height));
+	int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
+	int end = min(dest + REG16(CX) * 2, pcbios_get_shadow_buffer_address(REG8(BH), 0, scr_height));
 	
 	if(mem[0x462] == REG8(BH)) {
 		EnterCriticalSection(&vram_crit_sect);
-		int vram = get_shadow_buffer_address(REG8(BH));
+		int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 		while(dest < end) {
 			write_text_vram_char(dest - vram, REG8(AL));
 			mem[dest++] = REG8(AL);
@@ -3271,12 +3286,12 @@ inline void pcbios_int_10h_0ah()
 	co.X = mem[0x450 + (REG8(BH) % vram_pages) * 2];
 	co.Y = mem[0x451 + (REG8(BH) % vram_pages) * 2];
 	
-	int dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y);
-	int end = min(dest + REG16(CX) * 2, get_shadow_buffer_address(REG8(BH), 0, scr_height));
+	int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
+	int end = min(dest + REG16(CX) * 2, pcbios_get_shadow_buffer_address(REG8(BH), 0, scr_height));
 	
 	if(mem[0x462] == REG8(BH)) {
 		EnterCriticalSection(&vram_crit_sect);
-		int vram = get_shadow_buffer_address(REG8(BH));
+		int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 		while(dest < end) {
 			write_text_vram_char(dest - vram, REG8(AL));
 			mem[dest++] = REG8(AL);
@@ -3308,10 +3323,10 @@ inline void pcbios_int_10h_0eh()
 		WriteConsole(hStdout, &REG8(AL), 1, &num, NULL);
 		cursor_moved = true;
 	} else {
-		int dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y);
+		int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
 		if(mem[0x462] == REG8(BH)) {
 			EnterCriticalSection(&vram_crit_sect);
-			int vram = get_shadow_buffer_address(REG8(BH));
+			int vram = pcbios_get_shadow_buffer_address(REG8(BH));
 			write_text_vram_char(dest - vram, REG8(AL));
 			LeaveCriticalSection(&vram_crit_sect);
 			
@@ -3343,14 +3358,20 @@ inline void pcbios_int_10h_0fh()
 inline void pcbios_int_10h_11h()
 {
 	switch(REG8(AL)) {
+	case 0x01:
 	case 0x11:
-		pcbios_int_10h_00h(28);
+		pcbios_set_console_size(80, 28, true);
 		break;
+	case 0x02:
 	case 0x12:
-		pcbios_int_10h_00h(50);
+		pcbios_set_console_size(80, 50, true);
 		break;
+	case 0x04:
 	case 0x14:
-		pcbios_int_10h_00h(25);
+		pcbios_set_console_size(80, 25, true);
+		break;
+	case 0x18:
+		pcbios_set_console_size(80, 50, true);
 		break;
 	case 0x30:
 		SREG(ES) = 0;
@@ -3364,9 +3385,11 @@ inline void pcbios_int_10h_11h()
 
 inline void pcbios_int_10h_12h()
 {
-	if(REG8(BL) == 0x10) {
+	switch(REG8(BL)) {
+	case 0x10:
 		REG16(BX) = 0x0003;
 		REG16(CX) = 0x0009;
+		break;
 	}
 }
 
@@ -3455,7 +3478,7 @@ inline void pcbios_int_10h_13h()
 				}
 			}
 		} else {
-			for(int i = 0, src = get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
+			for(int i = 0, src = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
 				mem[ofs++] = mem[src++];
 				mem[ofs++] = mem[src++];
 				if(REG8(AL) == 0x11) {
@@ -3485,7 +3508,7 @@ inline void pcbios_int_10h_13h()
 			WriteConsoleOutputCharacter(hStdout, scr_char, len, co, &num);
 			WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
 		} else {
-			for(int i = 0, dest = get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
+			for(int i = 0, dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
 				mem[dest++] = mem[ofs++];
 				mem[dest++] = mem[ofs++];
 				if(REG8(AL) == 0x21) {
@@ -3571,8 +3594,8 @@ inline void pcbios_int_10h_ffh()
 		
 		co.X = (REG16(DI) >> 1) % scr_width;
 		co.Y = (REG16(DI) >> 1) / scr_width;
-		int ofs = get_shadow_buffer_address(0, co.X, co.Y);
-		int end = min(ofs + REG16(CX) * 2, get_shadow_buffer_address(0, 0, scr_height));
+		int ofs = pcbios_get_shadow_buffer_address(0, co.X, co.Y);
+		int end = min(ofs + REG16(CX) * 2, pcbios_get_shadow_buffer_address(0, 0, scr_height));
 		int len;
 		for(len = 0; ofs < end; len++) {
 			scr_char[len] = mem[ofs++];
@@ -3761,7 +3784,7 @@ inline void pcbios_int_15h_cah()
 	}
 }
 
-UINT32 get_key_code(bool clear_buffer)
+UINT32 pcbios_get_key_code(bool clear_buffer)
 {
 	UINT32 code = 0;
 	
@@ -3794,7 +3817,7 @@ UINT32 get_key_code(bool clear_buffer)
 inline void pcbios_int_16h_00h()
 {
 	while(key_code == 0 && !m_halted) {
-		key_code = get_key_code(true);
+		key_code = pcbios_get_key_code(true);
 	}
 	if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
 		if(REG8(AH) == 0x10) {
@@ -3812,7 +3835,7 @@ inline void pcbios_int_16h_01h()
 	UINT32 key_code_tmp = key_code;
 	
 	if(key_code_tmp == 0) {
-		key_code_tmp = get_key_code(false);
+		key_code_tmp = pcbios_get_key_code(false);
 	}
 	if((key_code_tmp & 0xffff) == 0x0000 || (key_code_tmp & 0xffff) == 0xe000) {
 		if(REG8(AH) == 0x11) {
@@ -4150,9 +4173,9 @@ inline void msdos_int_21h_0fh()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
-	
 	char *path = msdos_fcb_path(fcb);
 	HANDLE hFile = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	
 	if(hFile == INVALID_HANDLE_VALUE) {
 		REG8(AL) = 0xff;
 	} else {
@@ -4327,13 +4350,51 @@ inline void msdos_int_21h_13h()
 	}
 }
 
+inline void msdos_int_21h_14h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	process_t *process = msdos_process_info_get(current_psp);
+	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
+	DWORD num = 0;
+	
+	memset(mem + dta_laddr, 0, fcb->record_size);
+	if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
+		REG8(AL) = 1;
+	} else {
+		UINT32 position = fcb->current_block * fcb->record_size + fcb->cur_record + num;
+		fcb->current_block = (position & 0xffffff) / fcb->record_size;
+		fcb->cur_record = (position & 0xffffff) % fcb->record_size;
+		REG8(AL) = (num == fcb->record_size) ? 0 : 3;
+	}
+}
+
+inline void msdos_int_21h_15h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	process_t *process = msdos_process_info_get(current_psp);
+	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
+	DWORD num = 0;
+	
+	if(!WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
+		REG8(AL) = 1;
+	} else {
+		fcb->file_size = GetFileSize(fcb->handle, NULL);
+		UINT32 position = fcb->current_block * fcb->record_size + fcb->cur_record + num;
+		fcb->current_block = (position & 0xffffff) / fcb->record_size;
+		fcb->cur_record = (position & 0xffffff) % fcb->record_size;
+		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
+	}
+}
+
 inline void msdos_int_21h_16h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
-	
 	char *path = msdos_fcb_path(fcb);
 	HANDLE hFile = CreateFile(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, ext_fcb->flag == 0xff ? ext_fcb->attribute : FILE_ATTRIBUTE_NORMAL, NULL);
+	
 	if(hFile == INVALID_HANDLE_VALUE) {
 		REG8(AL) = 0xff;
 	} else {
@@ -4343,6 +4404,22 @@ inline void msdos_int_21h_16h()
 		fcb->file_size = 0;
 		fcb->handle = hFile;
 		fcb->cur_record = 0;
+	}
+}
+
+inline void msdos_int_21h_17h()
+{
+	ext_fcb_t *ext_fcb_src = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb_src = (fcb_t *)(ext_fcb_src + (ext_fcb_src->flag == 0xff ? 1 : 0));
+	char *path_src = msdos_fcb_path(fcb_src);
+	ext_fcb_t *ext_fcb_dst = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX) + 16);
+	fcb_t *fcb_dst = (fcb_t *)(ext_fcb_dst + (ext_fcb_dst->flag == 0xff ? 1 : 0));
+	char *path_dst = msdos_fcb_path(fcb_dst);
+	
+	if(rename(path_src, path_dst)) {
+		REG8(AL) = 0xff;
+	} else {
+		REG8(AL) = 0;
 	}
 }
 
@@ -4442,13 +4519,13 @@ inline void msdos_int_21h_21h()
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 		memset(mem + dta_laddr, 0, fcb->record_size);
-		DWORD num;
+		DWORD num = 0;
 		if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
 			REG8(AL) = 1;
 		} else {
-			REG8(AL) = num == fcb->record_size ? 0 : 3;
 			fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
 			fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
+			REG8(AL) = (num == fcb->record_size) ? 0 : 3;
 		}
 	}
 }
@@ -4463,13 +4540,37 @@ inline void msdos_int_21h_22h()
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
-		DWORD num;
+		DWORD num = 0;
 		WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL);
 		fcb->file_size = GetFileSize(fcb->handle, NULL);
 		fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
 		fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
-		REG8(AL) = num == fcb->record_size ? 0 : 1;
+		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
 	}
+}
+
+inline void msdos_int_21h_23h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	char *path = msdos_fcb_path(fcb);
+	HANDLE hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	
+	if(hFile == INVALID_HANDLE_VALUE) {
+		REG8(AL) = 0xff;
+	} else {
+		UINT32 size = GetFileSize(hFile, NULL);
+		fcb->rand_record = size / fcb->record_size + ((size % fcb->record_size) != 0);
+		REG8(AL) = 0;
+	}
+}
+
+inline void msdos_int_21h_24h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	
+	fcb->rand_record = fcb->current_block * fcb->record_size + fcb->cur_record;
 }
 
 inline void msdos_int_21h_25h()
@@ -4488,6 +4589,49 @@ inline void msdos_int_21h_26h()
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
 	psp->parent_psp = 0;
+}
+
+inline void msdos_int_21h_27h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	
+	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+		REG8(AL) = 1;
+	} else {
+		process_t *process = msdos_process_info_get(current_psp);
+		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
+		memset(mem + dta_laddr, 0, fcb->record_size * REG16(CX));
+		DWORD num = 0;
+		if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size * REG16(CX), &num, NULL) || num == 0) {
+			REG8(AL) = 1;
+		} else {
+			fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
+			fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
+			REG8(AL) = (num == fcb->record_size) ? 0 : 3;
+			REG16(CX) = num / fcb->record_size + ((num % fcb->record_size) != 0);
+		}
+	}
+}
+
+inline void msdos_int_21h_28h()
+{
+	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
+	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	
+	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+		REG8(AL) = 0xff;
+	} else {
+		process_t *process = msdos_process_info_get(current_psp);
+		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
+		DWORD num = 0;
+		WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size * REG16(CX), &num, NULL);
+		fcb->file_size = GetFileSize(fcb->handle, NULL);
+		fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
+		fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
+		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
+		REG16(CX) = num / fcb->record_size + ((num % fcb->record_size) != 0);
+	}
 }
 
 inline void msdos_int_21h_29h()
@@ -6673,7 +6817,7 @@ void msdos_syscall(unsigned num)
 		}
 		m_CF = 0;
 		switch(REG8(AH)) {
-		case 0x00: pcbios_int_10h_00h(25); break;
+		case 0x00: pcbios_int_10h_00h(); break;
 		case 0x01: pcbios_int_10h_01h(); break;
 		case 0x02: pcbios_int_10h_02h(); break;
 		case 0x03: pcbios_int_10h_03h(); break;
@@ -6823,10 +6967,10 @@ void msdos_syscall(unsigned num)
 		case 0x11: msdos_int_21h_11h(); break;
 		case 0x12: msdos_int_21h_12h(); break;
 		case 0x13: msdos_int_21h_13h(); break;
-		// 0x14: sequential read with fcb
-		// 0x15: sequential write with fcb
+		case 0x14: msdos_int_21h_14h(); break;
+		case 0x15: msdos_int_21h_15h(); break;
 		case 0x16: msdos_int_21h_16h(); break;
-		// 0x17: rename file with fcb
+		case 0x17: msdos_int_21h_17h(); break;
 		case 0x18: msdos_int_21h_18h(); break;
 		case 0x19: msdos_int_21h_19h(); break;
 		case 0x1a: msdos_int_21h_1ah(); break;
@@ -6838,12 +6982,12 @@ void msdos_syscall(unsigned num)
 		case 0x20: msdos_int_21h_20h(); break;
 		case 0x21: msdos_int_21h_21h(); break;
 		case 0x22: msdos_int_21h_22h(); break;
-		// 0x23: get file size with fcb
-		// 0x24: set relative record field with fcb
+		case 0x23: msdos_int_21h_23h(); break;
+		case 0x24: msdos_int_21h_24h(); break;
 		case 0x25: msdos_int_21h_25h(); break;
 		case 0x26: msdos_int_21h_26h(); break;
-		// 0x27: random block read with fcb
-		// 0x28: random block write with fcb
+		case 0x27: msdos_int_21h_27h(); break;
+		case 0x28: msdos_int_21h_28h(); break;
 		case 0x29: msdos_int_21h_29h(); break;
 		case 0x2a: msdos_int_21h_2ah(); break;
 		case 0x2b: msdos_int_21h_2bh(); break;

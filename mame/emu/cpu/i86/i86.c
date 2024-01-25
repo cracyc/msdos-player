@@ -122,6 +122,11 @@ static CPU_INIT( i80186 )
 	CPU_INIT_CALL(i8086);
 }
 
+static CPU_INIT( v30 )
+{
+	CPU_INIT_CALL(i8086);
+}
+
 static CPU_RESET( i8086 )
 {
 	memset(&m_regs, 0, sizeof(m_regs));
@@ -154,12 +159,18 @@ static CPU_RESET( i8086 )
 
 static CPU_RESET( i8088 )
 {
-	CPU_INIT_CALL(i8086);
+	CPU_RESET_CALL(i8086);
 }
 
 static CPU_RESET( i80186 )
 {
-	CPU_INIT_CALL(i8086);
+	CPU_RESET_CALL(i8086);
+}
+
+static CPU_RESET( v30 )
+{
+	CPU_RESET_CALL(i8086);
+	SetMD(1);
 }
 
 /* ASG 971222 -- added these interface functions */
@@ -256,5 +267,31 @@ static CPU_EXECUTE( i80186 )
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
 	TABLE186;
+}
+
+//#include "i86.h"
+
+#undef PREFIX
+#define PREFIX(name) v30##name
+#define PREFIXV30(name) v30##name
+
+#define I80186
+#include "instrv30.h"
+#include "tablev30.h"
+
+#include "instr86.c"
+#include "instrv30.c"
+#undef I80186
+
+static CPU_EXECUTE( v30 )
+{
+	if (m_halted)
+	{
+		return;
+	}
+
+	m_seg_prefix = FALSE;
+	m_prevpc = m_pc;
+	TABLEV30;
 }
 
