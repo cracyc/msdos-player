@@ -29,6 +29,9 @@
 
 #include "dec_arith.h"
 
+// from DOSBox
+#define SETFLAGBIT(FLAG, TEST) if (TEST) CPU_FLAGL |= FLAG; else CPU_FLAGL &= ~FLAG
+
 
 /*
  * decimal arithmetic
@@ -45,6 +48,7 @@ DAA(void)
 #endif
 
 	CPU_WORKCLOCK(3);
+#if 0
 	if ((CPU_FLAGL & A_FLAG) || (CPU_AL & 0x0f) > 9) {
 		CPU_FLAGL |= A_FLAG;
 		CPU_FLAGL |= (((UINT16)CPU_AL + 6) >> 8) & 1; /* C_FLAG */
@@ -56,6 +60,30 @@ DAA(void)
 	}
 	CPU_FLAGL &= A_FLAG | C_FLAG;
 	CPU_FLAGL |= szpcflag[CPU_AL] & (S_FLAG | Z_FLAG | P_FLAG);
+#else
+	// from DOSBox
+	if (((CPU_AL & 0x0f) > 0x09) || (CPU_FLAGL & A_FLAG)) {
+		if ((CPU_AL > 0x99) || (CPU_FLAGL & C_FLAG)) {
+			CPU_AL += 0x60;
+			SETFLAGBIT(C_FLAG, true);
+		} else {
+			SETFLAGBIT(C_FLAG, false);
+		}
+		CPU_AL += 0x06;
+		SETFLAGBIT(A_FLAG, true);
+	} else {
+		if ((CPU_AL > 0x99) || (CPU_FLAGL & C_FLAG)) {
+			CPU_AL += 0x60;
+			SETFLAGBIT(C_FLAG, true);
+		} else {
+			SETFLAGBIT(C_FLAG, false);
+		}
+		SETFLAGBIT(A_FLAG, false);
+	}
+	SETFLAGBIT(S_FLAG, (CPU_AL & 0x80));
+	SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+	SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+#endif
 
 #if defined(IA32_CPU_ENABLE_XC)
 	__R = CPU_AL;
@@ -100,6 +128,7 @@ DAS(void)
 #endif
 
 	CPU_WORKCLOCK(3);
+#if 0
 	if ((CPU_FLAGL & A_FLAG) || (CPU_AL & 0x0f) > 9) {
 		CPU_FLAGL |= A_FLAG;
 		CPU_FLAGL |= (((UINT16)CPU_AL - 6) >> 8) & 1; /* C_FLAG */
@@ -111,6 +140,32 @@ DAS(void)
 	}
 	CPU_FLAGL &= A_FLAG | C_FLAG;
 	CPU_FLAGL |= szpcflag[CPU_AL] & (S_FLAG | Z_FLAG | P_FLAG);
+#else
+	// from DOSBox
+	UINT8 osigned = CPU_AL & 0x80;
+	if (((CPU_AL & 0x0f) > 9) || (CPU_FLAGL & A_FLAG)) {
+		if ((CPU_AL > 0x99) || (CPU_FLAGL & C_FLAG)) {
+			CPU_AL -= 0x60;
+			SETFLAGBIT(C_FLAG, true);
+		} else {
+			SETFLAGBIT(C_FLAG, (CPU_AL <= 0x05));
+		}
+		CPU_AL -= 6;
+		SETFLAGBIT(A_FLAG, true);
+	} else {
+		if ((CPU_AL > 0x99) || (CPU_FLAGL & C_FLAG)) {
+			CPU_AL -= 0x60;
+			SETFLAGBIT(C_FLAG, true);
+		} else {
+			SETFLAGBIT(C_FLAG, false);
+		}
+		SETFLAGBIT(A_FLAG, false);
+	}
+	SETFLAGBIT(O_FLAG, osigned && ((CPU_AL & 0x80) == 0));
+	SETFLAGBIT(S_FLAG, (CPU_AL & 0x80));
+	SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+	SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+#endif
 
 #if defined(IA32_CPU_ENABLE_XC)
 	__R = CPU_AL;
@@ -158,6 +213,7 @@ AAA(void)
 #endif
 
 	CPU_WORKCLOCK(3);
+#if 0
 	if ((CPU_FLAGL & A_FLAG) || (CPU_AL & 0x0f) > 9) {
 		CPU_AL += 6;
 		CPU_AH++;
@@ -166,6 +222,30 @@ AAA(void)
 		CPU_FLAGL &= ~(A_FLAG | C_FLAG);
 	}
 	CPU_AL &= 0x0f;
+#else
+	// from DOSBox
+	SETFLAGBIT(S_FLAG, ((CPU_AL >= 0x7a) && (CPU_AL <= 0xf9)));
+	if ((CPU_AL & 0xf) > 9) {
+		SETFLAGBIT(O_FLAG, (CPU_AL & 0xf0) == 0x70);
+		CPU_AX += 0x106;
+		SETFLAGBIT(C_FLAG, true);
+		SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+		SETFLAGBIT(A_FLAG, true);
+	} else if (CPU_FLAGL & A_FLAG) {
+		CPU_AX += 0x106;
+		SETFLAGBIT(O_FLAG, false);
+		SETFLAGBIT(C_FLAG, true);
+		SETFLAGBIT(Z_FLAG, false);
+		SETFLAGBIT(A_FLAG, true);
+	} else {
+		SETFLAGBIT(O_FLAG, false);
+		SETFLAGBIT(C_FLAG, false);
+		SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+		SETFLAGBIT(A_FLAG, false);
+	}
+	SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+	CPU_AL &= 0x0f;
+#endif
 
 #if defined(IA32_CPU_ENABLE_XC)
 	__R = CPU_AL;
@@ -218,6 +298,7 @@ AAS(void)
 #endif
 
 	CPU_WORKCLOCK(3);
+#if 0
 	if ((CPU_FLAGL & A_FLAG) || (CPU_AL & 0x0f) > 9) {
 		CPU_AL -= 6;
 		CPU_AH--;
@@ -226,6 +307,30 @@ AAS(void)
 		CPU_FLAGL &= ~(A_FLAG | C_FLAG);
 	}
 	CPU_AL &= 0x0f;
+#else
+	// from DOSBox
+	if ((CPU_AL & 0x0f) > 9) {
+		SETFLAGBIT(S_FLAG, (CPU_AL > 0x85));
+		CPU_AX -= 0x106;
+		SETFLAGBIT(O_FLAG, false);
+		SETFLAGBIT(C_FLAG, true);
+		SETFLAGBIT(A_FLAG, true);
+	} else if (CPU_FLAGL & A_FLAG) {
+		SETFLAGBIT(O_FLAG, ((CPU_AL >= 0x80) && (CPU_AL <= 0x85)));
+		SETFLAGBIT(S_FLAG, (CPU_AL < 0x06) || (CPU_AL > 0x85));
+		CPU_AX -= 0x106;
+		SETFLAGBIT(C_FLAG, true);
+		SETFLAGBIT(A_FLAG, true);
+	} else {
+		SETFLAGBIT(S_FLAG, (CPU_AL >= 0x80));
+		SETFLAGBIT(O_FLAG, false);
+		SETFLAGBIT(C_FLAG, false);
+		SETFLAGBIT(A_FLAG ,false);
+	}
+	SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+	SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+	CPU_AL &= 0x0f;
+#endif
 
 #if defined(IA32_CPU_ENABLE_XC)
 	__R = CPU_AL;
@@ -267,15 +372,27 @@ void
 AAM(void)
 {
 	UINT8 base;
-	UINT8 al;
+//	UINT8 al;
 
 	CPU_WORKCLOCK(16);
 	GET_PCBYTE(base);
 	if (base != 0) {
+#if 0
 		al = CPU_AL;
 		CPU_AH = al / base;
 		CPU_AL = al % base;
 		CPU_FLAGL = szpcflag[CPU_AL];
+#else
+		// from DOSBox
+		CPU_AH = CPU_AL / base;
+		CPU_AL = CPU_AL % base;
+		SETFLAGBIT(S_FLAG, (CPU_AL & 0x80));
+		SETFLAGBIT(Z_FLAG, (CPU_AL == 0));
+		SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+		SETFLAGBIT(C_FLAG, false);
+		SETFLAGBIT(O_FLAG, false);
+		SETFLAGBIT(A_FLAG, false);
+#endif
 		return;
 	}
 	EXCEPTION(DE_EXCEPTION, 0);
@@ -288,8 +405,22 @@ AAD(void)
 
 	CPU_WORKCLOCK(14);
 	GET_PCBYTE(base);
+#if 0
 	CPU_AL += (UINT8)(CPU_AH * base);
 	CPU_AH = 0;
 	CPU_FLAGL &= ~(S_FLAG | Z_FLAG | P_FLAG);
 	CPU_FLAGL |= szpcflag[CPU_AL];
+#else
+	// from DOSBox
+	UINT16 ax1 = CPU_AH * base;
+	UINT16 ax2 = ax1 + CPU_AL;
+	CPU_AL = (UINT8) ax2;
+	CPU_AH = 0;
+	SETFLAGBIT(C_FLAG, false);
+	SETFLAGBIT(O_FLAG, false);
+	SETFLAGBIT(A_FLAG, false);
+	SETFLAGBIT(S_FLAG, CPU_AL >= 0x80);
+	SETFLAGBIT(Z_FLAG, CPU_AL == 0);
+	SETFLAGBIT(P_FLAG, (szpcflag[CPU_AL] & P_FLAG));
+#endif
 }

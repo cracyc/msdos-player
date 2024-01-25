@@ -205,6 +205,7 @@ static void FPU_PUSH(double in){
 }
 
 static void FPU_PREP_PUSH(void){
+	FPU_SET_C1(FPU_STAT_TOP == 0 ? 1 : 0);
 	FPU_STAT_TOP = (FPU_STAT_TOP - 1) & 7;
 	FPU_STAT.tag[FPU_STAT_TOP] = TAG_Valid;
 }
@@ -295,9 +296,23 @@ static void FPU_FLD80(UINT32 addr, UINT reg)
 		}
 	}
 
-	if(test.eind.l.lower == 0 && (UINT32)test.eind.l.upper == (UINT32)0x80000000UL && (test.begin&0x7fff) == 0x7fff) {
-		//Detect INF and -INF (score 3.11 when drawing a slur.)
-		result.d64 = sign?-HUGE_VAL:HUGE_VAL;
+	if((test.begin & 0x7fff) == 0x7fff) {
+		switch(test.eind.l.upper & 0xc0000000UL)
+		{
+		case 0x80000000UL:
+			if(test.eind.l.lower == 0 && (UINT32)test.eind.l.upper == (UINT32)0x80000000UL) {
+				//Detect INF and -INF (score 3.11 when drawing a slur.)
+				result.d64 = sign?-HUGE_VAL:HUGE_VAL;
+			} else {
+				// Detect Signalling NaN
+				result.ll = 0xfff8000000000000LL;
+			}
+			break;
+		case 0xc0000000UL:
+			// Detect Quiet NaN
+			result.ll = 0x7ff8000000000000LL;
+			break;
+		}
 	}
 	FPU_STAT.reg[reg].d64 = result.d64;
 	//return result.d64;
@@ -709,7 +724,8 @@ static void FPU_FST(UINT st, UINT other){
 
 static void FPU_FCOM(UINT st, UINT other){
 	if(((FPU_STAT.tag[st] != TAG_Valid) && (FPU_STAT.tag[st] != TAG_Zero)) || 
-		((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero))){
+		((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero)) || 
+		(_isnan(FPU_STAT.reg[st].d64) || _isnan(FPU_STAT.reg[other].d64))){
 		FPU_SET_C3(1);
 		FPU_SET_C2(1);
 		FPU_SET_C0(1);
@@ -736,7 +752,8 @@ static void FPU_FCOM(UINT st, UINT other){
 }
 static void FPU_FCOMI(UINT st, UINT other){
 	if(((FPU_STAT.tag[st] != TAG_Valid) && (FPU_STAT.tag[st] != TAG_Zero)) || 
-		((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero))){
+		((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero)) || 
+		(_isnan(FPU_STAT.reg[st].d64) || _isnan(FPU_STAT.reg[other].d64))){
 		CPU_FLAGL = (CPU_FLAGL & ~Z_FLAG) | Z_FLAG;
 		CPU_FLAGL = (CPU_FLAGL & ~P_FLAG) | P_FLAG;
 		CPU_FLAGL = (CPU_FLAGL & ~C_FLAG) | C_FLAG;
@@ -905,6 +922,16 @@ static void FPU_FXAM(void){
 		FPU_SET_C3(1);FPU_SET_C2(0);FPU_SET_C0(1);
 		return;
 	}
+	if(_isnan(FPU_STAT.reg[FPU_STAT_TOP].d64))
+	{
+		FPU_SET_C3(0);FPU_SET_C2(0);FPU_SET_C0(1);
+		return;
+	}
+	if(!_finite(FPU_STAT.reg[FPU_STAT_TOP].d64))
+	{
+		FPU_SET_C3(0);FPU_SET_C2(1);FPU_SET_C0(1);
+		return;
+	}
 	if(FPU_STAT.reg[FPU_STAT_TOP].d64 == 0.0)		//zero or normalized number.
 	{ 
 		FPU_SET_C3(1);FPU_SET_C2(0);FPU_SET_C0(0);
@@ -943,10 +970,11 @@ static void FPU_FSCALE(void){
 
 static void FPU_FSTENV(UINT32 addr)
 {
-	descriptor_t *sdp = &CPU_CS_DESC;	
+//	descriptor_t *sdp = &CPU_CS_DESC;	
 	FPU_SET_TOP(FPU_STAT_TOP);
 	
-	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000))
+//	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000))
+	switch ((CPU_CR0 & 1) | (CPU_INST_OP32 ? 0x100 : 0x000))
 	{
 	case 0x000: case 0x001:
 		fpu_memorywrite_w(addr+0,FPU_CTRLWORD);
@@ -966,9 +994,10 @@ static void FPU_FSTENV(UINT32 addr)
 
 static void FPU_FLDENV(UINT32 addr)
 {
-	descriptor_t *sdp = &CPU_CS_DESC;	
+//	descriptor_t *sdp = &CPU_CS_DESC;	
 	
-	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000)) {
+//	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000)) {
+	switch ((CPU_CR0 & 1) | (CPU_INST_OP32 ? 0x100 : 0x000)) {
 	case 0x000: case 0x001:
 		FPU_SetCW(fpu_memoryread_w(addr+0));
 		FPU_STATUSWORD = fpu_memoryread_w(addr+2);
@@ -991,10 +1020,11 @@ static void FPU_FSAVE(UINT32 addr)
 	UINT start;
 	UINT i;
 	
-	descriptor_t *sdp = &CPU_CS_DESC;
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	
 	FPU_FSTENV(addr);
-	start = ((SEG_IS_32BIT(sdp))?28:14);
+//	start = ((SEG_IS_32BIT(sdp))?28:14);
+	start = ((CPU_INST_OP32)?28:14);
 	for(i = 0;i < 8;i++){
 		FPU_ST80(addr+start,FPU_ST(i));
 		start += 10;
@@ -1007,10 +1037,11 @@ static void FPU_FRSTOR(UINT32 addr)
 	UINT start;
 	UINT i;
 	
-	descriptor_t *sdp = &CPU_CS_DESC;
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	
 	FPU_FLDENV(addr);
-	start = ((SEG_IS_32BIT(sdp))?28:14);
+//	start = ((SEG_IS_32BIT(sdp))?28:14);
+	start = ((CPU_INST_OP32)?28:14);
 	for(i = 0;i < 8;i++){
 		FPU_FLD80(addr+start, FPU_ST(i));
 		start += 10;
@@ -1021,7 +1052,7 @@ static void FPU_FXSAVE(UINT32 addr){
 	UINT start;
 	UINT i;
 	
-	descriptor_t *sdp = &CPU_CS_DESC;
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	
 	//FPU_FSTENV(addr);
 	FPU_SET_TOP(FPU_STAT_TOP);
@@ -1058,7 +1089,7 @@ static void FPU_FXRSTOR(UINT32 addr){
 	UINT start;
 	UINT i;
 	
-	descriptor_t *sdp = &CPU_CS_DESC;
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	
 	//FPU_FLDENV(addr);
 	FPU_SetCW(fpu_memoryread_w(addr+0));
@@ -1561,11 +1592,13 @@ DB2_ESC1(void)
 				
 			case 0x6:	/* FDECSTP */
 				TRACEOUT(("FDECSTP"));
+				FPU_SET_C1(0);
 				FPU_STAT_TOP = (FPU_STAT_TOP - 1) & 7;
 				break;
 				
 			case 0x7:	/* FINCSTP */
 				TRACEOUT(("FINCSTP"));
+				FPU_SET_C1(0);
 				FPU_STAT_TOP = (FPU_STAT_TOP + 1) & 7;
 				break;
 			}

@@ -282,6 +282,18 @@ flag floatx80_is_signaling_nan( floatx80 a )
 }
 
 /*----------------------------------------------------------------------------
+| Returns 1 if the double-extended-precision floating-point value `a' is an
+| infinity; otherwise returns 0.
+*----------------------------------------------------------------------------*/
+
+flag floatx80_is_inf( floatx80 a )
+{
+
+    return ( ( a.high & 0x7FFF ) == 0x7FFF ) && ( a.low == 0x8000000000000000LL );
+
+}
+
+/*----------------------------------------------------------------------------
 | Returns the result of converting the double-extended-precision floating-
 | point NaN `a' to the canonical NaN format.  If `a' is a signaling NaN, the
 | invalid exception is raised.

@@ -211,7 +211,9 @@ char floatx80_lt( floatx80, floatx80 );
 char floatx80_eq_signaling( floatx80, floatx80 );
 char floatx80_le_quiet( floatx80, floatx80 );
 char floatx80_lt_quiet( floatx80, floatx80 );
+char floatx80_is_nan( floatx80 a );
 char floatx80_is_signaling_nan( floatx80 );
+char floatx80_is_inf( floatx80 a );
 
 #endif
 

@@ -2112,9 +2112,12 @@ static void I386OP(shld16_i8)()         // Opcode 0x0f a4
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
-			// ppro and above should be (dst >> (32-shift))
-			dst = (upper << (shift-16)) | (upper >> (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & 1) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
+			}
+			dst = (upper << (shift-16)) | (dst >> (32-shift));
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2133,8 +2136,12 @@ static void I386OP(shld16_i8)()         // Opcode 0x0f a4
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
-			dst = (upper << (shift-16)) | (upper >> (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & 1) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
+			}
+			dst = (upper << (shift-16)) | (dst >> (32-shift));
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2158,8 +2165,12 @@ static void I386OP(shld16_cl)()         // Opcode 0x0f a5
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
-			dst = (upper << (shift-16)) | (upper >> (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & 1) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
+			}
+			dst = (upper << (shift-16)) | (dst >> (32-shift));
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2178,8 +2189,12 @@ static void I386OP(shld16_cl)()         // Opcode 0x0f a5
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
-			dst = (upper << (shift-16)) | (upper >> (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & 1) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
+			}
+			dst = (upper << (shift-16)) | (dst >> (32-shift));
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2203,8 +2218,12 @@ static void I386OP(shrd16_i8)()         // Opcode 0x0f ac
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
-			dst = (upper >> (shift-16)) | (upper << (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & (1 << 15)) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
+			}
+			dst = (upper >> (shift-16)) | (dst << (32-shift));
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2223,8 +2242,12 @@ static void I386OP(shrd16_i8)()         // Opcode 0x0f ac
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
-			dst = (upper >> (shift-16)) | (upper << (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & (1 << 15)) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
+			}
+			dst = (upper >> (shift-16)) | (dst << (32-shift));
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2248,8 +2271,12 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
-			dst = (upper >> (shift-16)) | (upper << (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & (1 << 15)) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
+			}
+			dst = (upper >> (shift-16)) | (dst << (32-shift));
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2268,8 +2295,12 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
-			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
-			dst = (upper >> (shift-16)) | (upper << (32-shift));
+			if( shift == 16 ) {
+				m_CF = (dst & (1 << 15)) ? 1 : 0;
+			} else {
+				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
+			}
+			dst = (upper >> (shift-16)) | (dst << (32-shift));
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {

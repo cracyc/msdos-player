@@ -570,6 +570,20 @@ do { \
 		(d) >>= (c); \
 		(d) &= 0xffff; \
 		CPU_FLAGL |= szpflag_w[(UINT16)(d)] | A_FLAG; \
+	} else if ((c) > 15) { \
+		CPU_OV = 0; \
+		if ((c) == 17) { \
+			CPU_OV = (((s) >> 15) ^ (s)) & 1; \
+		} \
+		if ((c) == 16) { \
+			CPU_FLAGL = (UINT8)(((d) >> 15) & 1); /*C_FLAG*/ \
+		} else { \
+			CPU_FLAGL = (UINT8)(((s) >> ((c) - 17)) & 1); /*C_FLAG*/ \
+		} \
+		(d) = ((d) << 16) | (s); \
+		(d) >>= (c) - 16; \
+		(d) &= 0xffff; \
+		CPU_FLAGL |= szpflag_w[(UINT16)(d)] | A_FLAG; \
 	} \
 } while (/*CONSTCOND*/ 0)
 
@@ -607,6 +621,20 @@ do { \
 		CPU_FLAGL = (UINT8)(((d) >> (16 - (c))) & 1); /*C_FLAG*/\
 		(d) = ((d) << 16) | (s); \
 		(d) <<= (c); \
+		(d) >>= 16; \
+		CPU_FLAGL |= szpflag_w[(d)] | A_FLAG; \
+	} else if ((c) > 15) { \
+		CPU_OV = 0; \
+		if ((c) == 17) { \
+			CPU_OV = ((s) ^ ((s) << 1)) & 0x8000; \
+		} \
+		if ((c) == 16) { \
+			CPU_FLAGL = (UINT8)((d) & 1); /*C_FLAG*/\
+		} else { \
+			CPU_FLAGL = (UINT8)(((s) >> (32 - (c))) & 1); /*C_FLAG*/\
+		} \
+		(d) |= (s) << 16; \
+		(d) <<= (c) - 16; \
 		(d) >>= 16; \
 		CPU_FLAGL |= szpflag_w[(d)] | A_FLAG; \
 	} \
