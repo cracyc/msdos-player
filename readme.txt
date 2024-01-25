@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/25/2017
+								8/26/2017
 
 ----- What's This
 
@@ -20,15 +20,6 @@ file converters, compilers, assemblers, debuggers, and text editors.
 
 NOTE: This emulator DOES NOT support graphic/sound hardwares and DOES NOT
 aim to support game softwares. I recommend DOSBOx for this purpose.
-
-
------ Windows 10 Command Prompt [IMPORTANT]
-
-Win32 console APIs are used to support INT 10H services on MS-DOS Player,
-but they seem not work correctly on Windows 10's enhanced command prompt.
-
-Please open the "Command Prompt" Properties by right-clicking on title bar
-and check "Use legacy console (requires relaunch)".
 
 
 ----- How To Use

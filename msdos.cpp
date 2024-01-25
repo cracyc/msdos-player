@@ -2439,8 +2439,33 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 	return(false);
 }
 
-bool get_console_font_size(HANDLE hStdout, int *width, int *height)
+HWND get_console_window_handle()
 {
+	static HWND hwndFound = 0;
+	
+	if(hwndFound == 0) {
+		// https://support.microsoft.com/en-us/help/124103/how-to-obtain-a-console-window-handle-hwnd
+		char pszNewWindowTitle[1024];
+		char pszOldWindowTitle[1024];
+		
+		GetConsoleTitleA(pszOldWindowTitle, 1024);
+		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
+		SetConsoleTitleA(pszNewWindowTitle);
+		Sleep(100);
+		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
+		SetConsoleTitleA(pszOldWindowTitle);
+	}
+	return hwndFound;
+}
+
+HDC get_console_window_device_context()
+{
+	return GetDC(get_console_window_handle());
+}
+
+bool get_console_font_size(int *width, int *height)
+{
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
@@ -2460,9 +2485,10 @@ bool get_console_font_size(HANDLE hStdout, int *width, int *height)
 	return(result);
 }
 
-bool set_console_font_size(HANDLE hStdout, int width, int height)
+bool set_console_font_size(int width, int height)
 {
 	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
@@ -2472,48 +2498,54 @@ bool set_console_font_size(HANDLE hStdout, int width, int height)
 		typedef COORD (WINAPI* GetConsoleFontSizeFunction)(HANDLE, DWORD);
 		typedef BOOL (WINAPI* SetConsoleFontFunction)(HANDLE, DWORD);
 		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+		typedef BOOL (WINAPI* GetCurrentConsoleFontExFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFOEX);
+		typedef BOOL (WINAPI* SetCurrentConsoleFontExFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFOEX);
 		
 		GetConsoleFontInfoFunction lpfnGetConsoleFontInfo = reinterpret_cast<GetConsoleFontInfoFunction>(::GetProcAddress(hLibrary, "GetConsoleFontInfo"));
 		GetNumberOfConsoleFontsFunction lpfnGetNumberOfConsoleFonts = reinterpret_cast<GetNumberOfConsoleFontsFunction>(::GetProcAddress(hLibrary, "GetNumberOfConsoleFonts"));
 		GetConsoleFontSizeFunction lpfnGetConsoleFontSize = reinterpret_cast<GetConsoleFontSizeFunction>(::GetProcAddress(hLibrary, "GetConsoleFontSize"));
 		SetConsoleFontFunction lpfnSetConsoleFont = reinterpret_cast<SetConsoleFontFunction>(::GetProcAddress(hLibrary, "SetConsoleFont"));
 		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+		GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
+		SetCurrentConsoleFontExFunction lpfnSetCurrentConsoleFontEx = reinterpret_cast<SetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "SetCurrentConsoleFontEx"));
 		
-		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont) {
-			static const int offsets[] = {0, +1, -1, +2, -2, +3, -3};
+		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont && lpfnGetCurrentConsoleFont) { // Windows XP or later
 			DWORD dwFontNum = lpfnGetNumberOfConsoleFonts();
-			CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
-			lpfnGetConsoleFontInfo(hStdout, FALSE, dwFontNum, fonts);
-			for(int i = 0; i < dwFontNum; i++) {
-				fonts[i].dwFontSize = lpfnGetConsoleFontSize(hStdout, fonts[i].nFont);
-			}
-			for(int h = 0; h < 5; h++) { // 0, +1, -1, +2, -2
-				int height_tmp = height + offsets[h];
-				for(int w = 0; w < 7; w++) { // 0, +1, -1, +2, -2, +3, -3
-					int width_tmp = width + offsets[w];
-					for(int i = 0; i < dwFontNum; i++) {
-						if(fonts[i].dwFontSize.X == width_tmp && fonts[i].dwFontSize.Y == height_tmp) {
-							lpfnSetConsoleFont(hStdout, fonts[i].nFont);
-							if(lpfnGetCurrentConsoleFont) { // Windows XP or later
-								CONSOLE_FONT_INFO fi;
-								if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
-									if(fi.dwFontSize.X == width_tmp && fi.dwFontSize.Y == height_tmp) {
-										result = true;
-									}
-								}
-							} else {
+			if(dwFontNum) {
+				CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
+				lpfnGetConsoleFontInfo(hStdout, FALSE, dwFontNum, fonts);
+				for(int i = 0; i < dwFontNum; i++) {
+					fonts[i].dwFontSize = lpfnGetConsoleFontSize(hStdout, fonts[i].nFont);
+					if(fonts[i].dwFontSize.X == width && fonts[i].dwFontSize.Y == height) {
+						lpfnSetConsoleFont(hStdout, fonts[i].nFont);
+						CONSOLE_FONT_INFO fi;
+						if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
+							if(fi.dwFontSize.X == width && fi.dwFontSize.Y == height) {
 								result = true;
+								break;
 							}
 						}
-						if(result) {
-							*(UINT16 *)(mem + 0x485) = height_tmp;
-							goto exit_loop;
+					}
+				}
+				free(fonts);
+			} else if(lpfnGetCurrentConsoleFontEx && lpfnSetCurrentConsoleFontEx) {
+				// for Windows10 enhanced command prompt
+				CONSOLE_FONT_INFOEX fi_old, fi_new;
+				fi_old.cbSize = sizeof(CONSOLE_FONT_INFOEX);
+				if(lpfnGetCurrentConsoleFontEx(hStdout, FALSE, &fi_old)) {
+					fi_new = fi_old;
+					fi_new.dwFontSize.X = width;
+					fi_new.dwFontSize.Y = height;
+					if(lpfnSetCurrentConsoleFontEx(hStdout, FALSE, &fi_new)) {
+						lpfnGetCurrentConsoleFontEx(hStdout, FALSE, &fi_new);
+						if(fi_new.dwFontSize.X == width && fi_new.dwFontSize.Y == height) {
+							result = true;
+						} else {
+							lpfnSetCurrentConsoleFontEx(hStdout, FALSE, &fi_old);
 						}
 					}
 				}
 			}
-exit_loop:
-			free(fonts);
 		}
 		FreeLibrary(hLibrary);
 	}
@@ -3011,13 +3043,15 @@ int main(int argc, char *argv[], char *envp[])
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
-	int font_width = 10, font_height = 18; // default in english mode
+	UINT input_cp = GetConsoleCP();
+	UINT output_cp = GetConsoleOutputCP();
+	int multibyte_cp = _getmbcp();
 	
 	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	GetConsoleCursorInfo(hStdout, &ci);
 	ci_old = ci_new = ci;
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
-	get_console_font_success = get_console_font_size(hStdout, &font_width, &font_height);
+	get_console_font_success = get_console_font_size(&font_width, &font_height);
 	
 	for(int y = 0; y < SCR_BUF_WIDTH; y++) {
 		for(int x = 0; x < SCR_BUF_HEIGHT; x++) {
@@ -3110,24 +3144,48 @@ int main(int argc, char *argv[], char *envp[])
 		timeEndPeriod(caps.wPeriodMin);
 		
 		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
-		if(get_console_font_success) {
-			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-			set_console_font_size(hStdout, font_width, font_height);
-		}
+		hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+		
+		// restore console settings
+		_setmbcp(multibyte_cp);
+		SetConsoleCP(input_cp);
+		SetConsoleOutputCP(multibyte_cp);
+		
 		if(get_console_info_success) {
-			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(restore_console_on_exit) {
 				// window can't be bigger than buffer,
 				// buffer can't be smaller than window,
 				// so make a tiny window,
 				// set the required buffer,
 				// then set the required window
+				CONSOLE_SCREEN_BUFFER_INFO cur_csbi;
 				SMALL_RECT rect;
-				SET_RECT(rect, 0, csbi.srWindow.Top, 0, csbi.srWindow.Top);
+				GetConsoleScreenBufferInfo(hStdout, &cur_csbi);
+				int min_width  = min(cur_csbi.srWindow.Right - cur_csbi.srWindow.Left + 1, csbi.srWindow.Right - csbi.srWindow.Left + 1);
+				int min_height = min(cur_csbi.srWindow.Bottom - cur_csbi.srWindow.Top + 1, csbi.srWindow.Bottom - csbi.srWindow.Top + 1);
+				
+				SET_RECT(rect, 0, cur_csbi.srWindow.Top, min_width - 1, cur_csbi.srWindow.Top + min_height - 1);
 				SetConsoleWindowInfo(hStdout, TRUE, &rect);
 				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
-				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+					SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				}
+			}
+		}
+		if(get_console_font_success) {
+			set_console_font_size(font_width, font_height);
+		}
+		if(get_console_info_success) {
+			if(restore_console_on_exit) {
+				SMALL_RECT rect;
+				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
+				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
+				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+					SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				}
 			}
 			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			SetConsoleCursorInfo(hStdout, &ci);
@@ -3207,13 +3265,19 @@ void change_console_size(int width, int height)
 	// so make a tiny window,
 	// set the required buffer,
 	// then set the required window
-	SET_RECT(rect, 0, csbi.srWindow.Top, 0, csbi.srWindow.Top);
+	int min_width  = min(csbi.srWindow.Right - csbi.srWindow.Left + 1, width);
+	int min_height = min(csbi.srWindow.Bottom - csbi.srWindow.Top + 1, height);
+	
+	SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
 	SetConsoleWindowInfo(hStdout, TRUE, &rect);
 	co.X = width;
 	co.Y = height;
 	SetConsoleScreenBufferSize(hStdout, co);
 	SET_RECT(rect, 0, 0, width - 1, height - 1);
-	SetConsoleWindowInfo(hStdout, TRUE, &rect);
+	if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+		SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+		SetConsoleWindowInfo(hStdout, TRUE, &rect);
+	}
 	
 	scr_width = scr_buf_size.X = width;
 	scr_height = scr_buf_size.Y = height;
@@ -6989,8 +7053,11 @@ int pcbios_get_shadow_buffer_address(int page, int x, int y)
 
 bool pcbios_set_font_size(int width, int height)
 {
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	return(set_console_font_size(hStdout, width, height));
+	if(set_console_font_size(width, height)) {
+		*(UINT16 *)(mem + 0x485) = height;
+		return(true);
+	}
+	return(false);
 }
 
 void pcbios_set_console_size(int width, int height, bool clr_screen)
@@ -7062,7 +7129,10 @@ inline void pcbios_int_10h_00h()
 	case 0x71: // extended cga v-text mode
 		pcbios_set_console_size(scr_width, scr_height, !(REG8(AL) & 0x80));
 		break;
-	default:
+	case 0x73:
+	case 0x03:
+		change_console_size(80, 25); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(REG8(AL) & 0x80));
 		break;
 	}
@@ -7335,25 +7405,6 @@ inline void pcbios_int_10h_0ah()
 	}
 }
 
-HDC get_console_window_device_context()
-{
-	static HWND hwndFound = 0;
-	
-	if(hwndFound == 0) {
-		// https://support.microsoft.com/en-us/help/124103/how-to-obtain-a-console-window-handle-hwnd
-		char pszNewWindowTitle[1024];
-		char pszOldWindowTitle[1024];
-		
-		GetConsoleTitleA(pszOldWindowTitle, 1024);
-		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
-		SetConsoleTitleA(pszNewWindowTitle);
-		Sleep(100);
-		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
-		SetConsoleTitleA(pszOldWindowTitle);
-	}
-	return GetDC(hwndFound);
-}
-
 inline void pcbios_int_10h_0ch()
 {
 	HDC hdc = get_console_window_device_context();
@@ -7461,45 +7512,63 @@ inline void pcbios_int_10h_11h()
 	switch(REG8(AL)) {
 	case 0x00:
 	case 0x10:
-		if(REG8(BH) != 0 && pcbios_set_font_size(8, REG8(BH))) {
+		if(REG8(BH)) {
+			change_console_size(80, 25); // for Windows10
+			if(!pcbios_set_font_size(font_width, (int)REG8(BH))) {
+				for(int h = min(font_height, (int)REG8(BH)); h <= max(font_height, (int)REG8(BH)); h++) {
+					if(h != (int)REG8(BH)) {
+						if(pcbios_set_font_size(font_width, h)) {
+							break;
+						}
+					}
+				}
+			}
 			pcbios_set_console_size(80, (25 * 16) / REG8(BH), true);
-		} else {
-			m_CF = 1; // never failed in real PC BIOS
 		}
 		break;
 	case 0x01:
 	case 0x11:
-//		if(pcbios_set_font_size(8, 14)) {
-		if(pcbios_set_font_size(8, 12)) {
-			pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
-		} else {
-			m_CF = 1; // never failed in real PC BIOS
+		change_console_size(80, 28); // for Windows10
+		if(!pcbios_set_font_size(font_width, 14)) {
+			for(int h = min(font_height, 14); h <= max(font_height, 14); h++) {
+				if(h != 14) {
+					if(pcbios_set_font_size(font_width, h)) {
+						break;
+					}
+				}
+			}
 		}
+		pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
 		break;
 	case 0x02:
 	case 0x12:
-		if(pcbios_set_font_size(8, 8)) {
-			pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
-		} else {
-			m_CF = 1; // never failed in real PC BIOS
+		change_console_size(80, 25); // for Windows10
+		if(!pcbios_set_font_size(8, 8)) {
+			bool success = false;
+			for(int y = 8; y <= 14; y++) {
+				for(int x = min(font_width, 6); x <= max(font_width, 8); x++) {
+					if(pcbios_set_font_size(x, y)) {
+						success = true;
+						break;
+					}
+				}
+			}
+			if(!success) {
+				pcbios_set_font_size(font_width, font_height);
+			}
 		}
+		pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
 		break;
 	case 0x04:
 	case 0x14:
-//		if(pcbios_set_font_size(8, 16)) {
-		if(pcbios_set_font_size(8, 18)) {
-			pcbios_set_console_size(80, 25, true);
-		} else {
-			m_CF = 1; // never failed in real PC BIOS
-		}
+		change_console_size(80, 25); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(80, 25, true);
 		break;
 	case 0x18:
-//		if(pcbios_set_font_size(8, 16)) {
-		if(pcbios_set_font_size(8, 18)) {
-			pcbios_set_console_size(80, 50, true);
-		} else {
-			m_CF = 1; // never failed in real PC BIOS
-		}
+		change_console_size(80, 25); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(80, 25, true);
 		break;
 	case 0x30:
 		SREG(ES) = 0;
@@ -8556,14 +8625,12 @@ inline void pcbios_int_15h_c2h()
 	switch(REG8(AL)) {
 	case 0x00:
 		if(REG8(BH) == 0x00) {
-//			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 			pic[1].imr |= 0x10; // disable irq12
 			mouse.enabled_ps2 = false;
 			REG8(AH) = 0x00; // successful
 		} else if(REG8(BH) == 0x01) {
-			if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
-				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
-			}
+			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~(ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE));
 			pic[1].imr &= ~0x10; // enable irq12
 			mouse.enabled_ps2 = true;
 			REG8(AH) = 0x00; // successful
@@ -8576,7 +8643,7 @@ inline void pcbios_int_15h_c2h()
 		REG8(BH) = 0x00; // device id
 		REG8(BL) = 0xaa; // mouse
 	case 0x05:
-//		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 		pic[1].imr |= 0x10; // disable irq12
 		mouse.enabled_ps2 = false;
 		sampling_rate = 5;
@@ -14963,9 +15030,7 @@ inline void msdos_int_33h_0001h()
 		mouse.hidden--;
 	}
 	if(mouse.hidden == 0) {
-		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
-		}
+		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~(ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE));
 		pic[1].imr &= ~0x10; // enable irq12
 	}
 }
@@ -14973,7 +15038,7 @@ inline void msdos_int_33h_0001h()
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-//	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 	pic[1].imr |= 0x10; // disable irq12
 }
 
@@ -17816,8 +17881,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
 //	CONSOLE_FONT_INFO cfi;
 //	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
-	int font_width = 10, font_height = 18; // default in english mode
-	get_console_font_size(hStdout, &font_width, &font_height);
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
 	text_vram_top_address = TEXT_VRAM_TOP;

@@ -1223,6 +1223,8 @@ DWORD dwConsoleMode = 0;
 
 CONSOLE_CURSOR_INFO ci_old;
 CONSOLE_CURSOR_INFO ci_new;
+int font_width = 10;
+int font_height = 18;
 
 CHAR_INFO scr_buf[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 char scr_char[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
