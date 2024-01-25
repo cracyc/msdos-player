@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/7/2016
+								6/8/2016
 
 ----- What's this
 
@@ -270,6 +270,7 @@ INT 21H		MS-DOS System Call
 	3305H	Get Boot Drive
 	3306H	Get True Version Number (*3)
 	3307H	Windows95 - Set/Clear DOS_FLAG
+	34H	Get Address of InDOS Flag
 	35H	Get Vector
 	36H	Get Disk Free Space
 	3700H	Get Switch Character
@@ -333,6 +334,7 @@ INT 21H		MS-DOS System Call
 	5AH	Create Unique File
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
+	5D06H	Get Address of DOS Swappable Data Area
 	60H	Canonicalize Filename Or Path
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address

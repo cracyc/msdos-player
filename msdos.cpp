@@ -324,7 +324,7 @@ void vram_flush_char()
 {
 	if(vram_length_char != 0) {
 		DWORD num;
-		WriteConsoleOutputCharacter(hStdout, scr_char, vram_length_char, vram_coord_char, &num);
+		WriteConsoleOutputCharacter(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length_char, vram_coord_char, &num);
 		vram_length_char = vram_last_length_char = 0;
 	}
 }
@@ -333,7 +333,7 @@ void vram_flush_attr()
 {
 	if(vram_length_attr != 0) {
 		DWORD num;
-		WriteConsoleOutputAttribute(hStdout, scr_attr, vram_length_attr, vram_coord_attr, &num);
+		WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, vram_length_attr, vram_coord_attr, &num);
 		vram_length_attr = vram_last_length_attr = 0;
 	}
 }
@@ -377,7 +377,7 @@ void write_text_vram_char(offs_t offset, UINT8 data)
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_char[0] = data;
-	WriteConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
+	WriteConsoleOutputCharacter(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
 #endif
 }
 
@@ -409,7 +409,7 @@ void write_text_vram_attr(offs_t offset, UINT8 data)
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_attr[0] = data;
-	WriteConsoleOutputAttribute(hStdout, scr_attr, 1, co, &num);
+	WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, 1, co, &num);
 #endif
 }
 
@@ -485,7 +485,7 @@ void write_word(offs_t byteaddress, UINT16 data)
 			COORD co;
 			co.X = data & 0xff;
 			co.Y = (data >> 8) + scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -816,10 +816,10 @@ int main(int argc, char *argv[], char *envp[])
 	
 	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
 	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
-	hStdin = GetStdHandle(STD_INPUT_HANDLE);
-	hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	
 	bSuccess = GetConsoleScreenBufferInfo(hStdout, &csbi);
 	GetConsoleCursorInfo(hStdout, &ci);
 	
@@ -886,6 +886,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		
 		if(bSuccess) {
+			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(restore_console_on_exit) {
 				// window can't be bigger than buffer,
 				// buffer can't be smaller than window,
@@ -928,6 +929,7 @@ int main(int argc, char *argv[], char *envp[])
 
 void change_console_size(int width, int height)
 {
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	SMALL_RECT rect;
 	COORD co;
@@ -1007,6 +1009,7 @@ void clear_scr_buffer(WORD attr)
 
 bool update_key_buffer_tmp()
 {
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
 	INPUT_RECORD ir[16];
@@ -1171,6 +1174,24 @@ process_t *msdos_process_info_get(UINT16 psp_seg)
 	return(NULL);
 }
 
+void msdos_sda_update(int psp_seg)
+{
+	sda_t *sda = (sda_t *)(mem + SDA_TOP);
+	
+	for(int i = 0; i < MAX_PROCESS; i++) {
+		if(process[i].psp == psp_seg) {
+			sda->switchar = process[i].switchar;
+			sda->current_dta.w.l = process[i].dta.w.l;
+			sda->current_dta.w.h = process[i].dta.w.h;
+			sda->current_psp = process[i].psp;
+			break;
+		}
+	}
+	sda->malloc_strategy = malloc_strategy;
+	sda->return_code = retval;
+	sda->current_drive = _getdrive();
+}
+
 // dta info
 
 void msdos_dta_info_init()
@@ -1234,6 +1255,20 @@ void msdos_upper_table_update()
 		c[0] = 0x80 + i;
 		DWORD rc = CharUpperBuffA((LPSTR)c, 1);
 		mem[UPPERTABLE_TOP + 2 + i] = (rc == 1 && c[0]) ? c[0] : 0x80 + i;
+	}
+}
+
+// lowercase table (func 6503h)
+void msdos_lower_table_update()
+{
+	*(UINT16 *)(mem + LOWERTABLE_TOP) = 0x80;
+	for(unsigned i = 0; i < 0x80; ++i) {
+		UINT8 c[4];
+		*(UINT32 *)c = 0;				// reset internal conversion state
+		CharLowerBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage) 
+		c[0] = 0x80 + i;
+		DWORD rc = CharLowerBuffA((LPSTR)c, 1);
+		mem[LOWERTABLE_TOP + 2 + i] = (rc == 1 && c[0]) ? c[0] : 0x80 + i;
 	}
 }
 
@@ -1316,6 +1351,7 @@ void msdos_nls_tables_init()
 {
 	system_code_page = active_code_page = _getmbcp();
 	msdos_upper_table_update();
+	msdos_lower_table_update();
 	msdos_filename_terminator_table_init();
 	msdos_filename_upper_table_init();
 	msdos_collating_table_update();
@@ -1326,7 +1362,8 @@ void msdos_nls_tables_update()
 {
 	msdos_dbcs_table_update();
 	msdos_upper_table_update();
-	// msdos_collating_table_update();
+	msdos_lower_table_update();
+//	msdos_collating_table_update();
 }
 
 int msdos_lead_byte_check(UINT8 code)
@@ -2070,8 +2107,18 @@ retry:
 		key_code >>= 16;
 	} else {
 		while(key_buf_char->count() == 0 && !m_halted) {
-			if(!update_key_buffer()) {
-				Sleep(10);
+			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
+				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
+				if(_kbhit()) {
+					key_buf_char->write(_getch());
+					key_buf_scan->write(0);
+				} else {
+					Sleep(10);
+				}
+			} else {
+				if(!update_key_buffer()) {
+					Sleep(10);
+				}
 			}
 		}
 		if(m_halted) {
@@ -2147,6 +2194,7 @@ void msdos_putch(UINT8 data)
 		msdos_write(fd, &data, 1);
 		return;
 	}
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	
 	// output to console
 	tmp[p++] = data;
@@ -3125,6 +3173,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	process->parent_ds = SREG(DS);
 	
 	current_psp = psp_seg;
+	msdos_sda_update(current_psp);
 	
 	if(al == 0x00) {
 		int_10h_feh_called = int_10h_ffh_called = false;
@@ -3197,6 +3246,7 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	
 	current_psp = psp->parent_psp;
 	retval = ret;
+	msdos_sda_update(current_psp);
 }
 
 // drive
@@ -3342,6 +3392,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	shadow_buffer_top_address = pcbios_get_shadow_buffer_address(0);
 	shadow_buffer_end_address = shadow_buffer_top_address + width * height * 2;
 	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	if(clr_screen) {
 		for(int ofs = shadow_buffer_top_address; ofs < shadow_buffer_end_address;) {
 			mem[ofs++] = 0x20;
@@ -3394,6 +3445,7 @@ inline void pcbios_int_10h_01h()
 	mem[0x460] = REG8(CL);
 	mem[0x461] = REG8(CH);
 	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_CURSOR_INFO ci;
 	GetConsoleCursorInfo(hStdout, &ci);
 //	ci.bVisible = !(REG8(CH) & 0x60) && REG8(CH) <= REG8(CL);
@@ -3414,6 +3466,7 @@ inline void pcbios_int_10h_02h()
 		
 		// some programs hide the cursor by moving it off screen
 		static bool hidden = false;
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		CONSOLE_CURSOR_INFO ci;
 		GetConsoleCursorInfo(hStdout, &ci);
 		
@@ -3451,6 +3504,7 @@ inline void pcbios_int_10h_05h()
 	if(mem[0x462] != REG8(AL)) {
 		vram_flush();
 		
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
 		ReadConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
@@ -3493,6 +3547,7 @@ inline void pcbios_int_10h_06h()
 	}
 	vram_flush();
 	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
 	ReadConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
@@ -3532,6 +3587,7 @@ inline void pcbios_int_10h_07h()
 	}
 	vram_flush();
 	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
 	ReadConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
@@ -3572,6 +3628,7 @@ inline void pcbios_int_10h_08h()
 	co.Y = mem[0x451 + (REG8(BH) % vram_pages) * 2];
 	
 	if(mem[0x462] == REG8(BH)) {
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		co.Y += scr_top;
 		vram_flush();
 		ReadConsoleOutputCharacter(hStdout, scr_char, 1, co, &num);
@@ -3652,7 +3709,7 @@ inline void pcbios_int_10h_0eh()
 		if(REG8(AL) == 10) {
 			vram_flush();
 		}
-		WriteConsole(hStdout, &REG8(AL), 1, &num, NULL);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), &REG8(AL), 1, &num, NULL);
 		cursor_moved = true;
 	} else {
 		int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
@@ -3662,6 +3719,7 @@ inline void pcbios_int_10h_0eh()
 			write_text_vram_char(dest - vram, REG8(AL));
 			LeaveCriticalSection(&vram_crit_sect);
 			
+			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(++co.X == scr_width) {
 				co.X = 0;
 				if(++co.Y == scr_height) {
@@ -3740,6 +3798,7 @@ inline void pcbios_int_10h_13h()
 	case 0x00:
 	case 0x01:
 		if(mem[0x462] == REG8(BH)) {
+			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			SetConsoleCursorPosition(hStdout, co);
@@ -3770,6 +3829,7 @@ inline void pcbios_int_10h_13h()
 	case 0x02:
 	case 0x03:
 		if(mem[0x462] == REG8(BH)) {
+			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			SetConsoleCursorPosition(hStdout, co);
@@ -3799,6 +3859,7 @@ inline void pcbios_int_10h_13h()
 	case 0x10:
 	case 0x11:
 		if(mem[0x462] == REG8(BH)) {
+			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			ReadConsoleOutputCharacter(hStdout, scr_char, REG16(CX), co, &num);
 			ReadConsoleOutputAttribute(hStdout, scr_attr, REG16(CX), co, &num);
 			for(int i = 0; i < num; i++) {
@@ -3829,6 +3890,7 @@ inline void pcbios_int_10h_13h()
 	case 0x20:
 	case 0x21:
 		if(mem[0x462] == REG8(BH)) {
+			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			int len = min(REG16(CX), scr_width * scr_height);
 			for(int i = 0; i < len; i++) {
 				scr_char[i] = mem[ofs++];
@@ -3983,6 +4045,7 @@ inline void pcbios_int_10h_feh()
 inline void pcbios_int_10h_ffh()
 {
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		COORD co;
 		DWORD num;
 		
@@ -4645,6 +4708,7 @@ inline void msdos_int_21h_0eh()
 	if(REG8(DL) < 26) {
 		_chdrive(REG8(DL) + 1);
 		msdos_cds_update(REG8(DL));
+		msdos_sda_update(current_psp);
 	}
 	REG8(AL) = 26; // zdrive
 }
@@ -4919,6 +4983,7 @@ inline void msdos_int_21h_1ah()
 	
 	process->dta.w.l = REG16(DX);
 	process->dta.w.h = SREG(DS);
+	msdos_sda_update(current_psp);
 }
 
 inline void msdos_int_21h_1bh()
@@ -5348,6 +5413,13 @@ inline void msdos_int_21h_33h()
 	}
 }
 
+inline void msdos_int_21h_34h()
+{
+	SREG(ES) = SDA_TOP >> 4;
+	i386_load_segment_descriptor(ES);
+	REG16(BX) = offsetof(sda_t, indos_flag);;
+}
+
 inline void msdos_int_21h_35h()
 {
 	REG16(BX) = *(UINT16 *)(mem + 4 * REG8(AL) + 0);
@@ -5386,6 +5458,7 @@ inline void msdos_int_21h_37h()
 			process_t *process = msdos_process_info_get(current_psp);
 			REG8(AL) = 0x00;
 			process->switchar = REG8(DL);
+			msdos_sda_update(current_psp);
 		}
 		break;
 	case 0x02:
@@ -5657,17 +5730,17 @@ inline void msdos_int_21h_40h()
 				UINT32 pos = _tell(fd);
 				_lseek(fd, 0, SEEK_END);
 				UINT32 size = _tell(fd);
-				REG16(AX) = 0;
 				if(pos < size) {
 					_lseek(fd, pos, SEEK_SET);
 					SetEndOfFile((HANDLE)_get_osfhandle(fd));
 				} else {
 					for(UINT32 i = size; i < pos; i++) {
 						UINT8 tmp = 0;
-						REG16(AX) += msdos_write(fd, &tmp, 1);
+						msdos_write(fd, &tmp, 1);
 					}
 					_lseek(fd, pos, SEEK_SET);
 				}
+				REG16(AX) = 0;
 			}
 		} else {
 			REG16(AX) = 0x05;
@@ -6532,6 +6605,7 @@ inline void msdos_int_21h_50h()
 			process->psp = REG16(BX);
 		}
 		current_psp = REG16(BX);
+		msdos_sda_update(current_psp);
 	}
 }
 
@@ -6644,6 +6718,7 @@ inline void msdos_int_21h_58h()
 		case 0x0081:
 		case 0x0082:
 			malloc_strategy = REG16(BX);
+			msdos_sda_update(current_psp);
 			break;
 		default:
 			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -6680,45 +6755,12 @@ inline void msdos_int_21h_58h()
 
 inline void msdos_int_21h_59h()
 {
-	REG16(AX) = error_code;
-	switch(error_code) {
-	case  4: // Too many open files
-	case  8: // Insufficient memory
-		REG8(BH) = 1; // Out of resource
-		break;
-	case  5: // Access denied
-		REG8(BH) = 3; // Authorization
-		break;
-	case  7: // Memory control block destroyed
-		REG8(BH) = 4; // Internal
-		break;
-	case  2: // File not found
-	case  3: // Path not found
-	case 15: // Invaid drive specified
-	case 18: // No more files
-		REG8(BH) = 8; // Not found
-		break;
-	case 32: // Sharing violation
-	case 33: // Lock violation
-		REG8(BH) = 10; // Locked
-		break;
-//	case 16: // Removal of current directory attempted
-	case 19: // Attempted write on protected disk
-	case 21: // Drive not ready
-//	case 29: // Write failure
-//	case 30: // Read failure
-//	case 82: // Cannot create subdirectory
-		REG8(BH) = 11; // Media
-		break;
-	case 80: // File already exists
-		REG8(BH) = 12; // Already exist
-		break;
-	default:
-		REG8(BH) = 13; // Unknown
-		break;
-	}
-	REG8(BL) = 1; // Retry
-	REG8(CH) = 1; // Unknown
+	sda_t *sda = (sda_t *)(mem + SDA_TOP);
+	
+	REG16(AX) = sda->extended_error_code;
+	REG8(BH) = sda->error_class;
+	REG8(BL) = sda->suggested_action;
+	REG8(CH) = sda->locus_of_last_error;
 }
 
 inline void msdos_int_21h_5ah()
@@ -6805,7 +6847,13 @@ inline void msdos_int_21h_5dh()
 {
 	switch(REG8(AL)) {
 	case 0x06: // get address of dos swappable data area
-	case 0x0b: // get dos swappable data reas
+		SREG(DS) = (SDA_TOP >> 4);
+		i386_load_segment_descriptor(DS);
+		REG16(SI) = offsetof(sda_t, crit_error_flag);
+		REG16(CX) = 0x80;
+		REG16(DX) = 0x1a;
+		break;
+	case 0x0b: // get dos swappable data areas
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6907,6 +6955,13 @@ inline void msdos_int_21h_65h()
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x02;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (UPPERTABLE_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (UPPERTABLE_TOP >> 4);
+		REG16(AX) = active_code_page;
+		REG16(CX) = 0x05;
+		break;
+	case 0x03:
+		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x02;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (LOWERTABLE_TOP & 0x0f);
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (LOWERTABLE_TOP >> 4);
 		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
@@ -7688,9 +7743,8 @@ inline void msdos_int_29h()
 	msdos_putch(REG8(AL));
 #else
 	DWORD num;
-	
 	vram_flush();
-	WriteConsole(hStdout, &REG8(AL), 1, &num, NULL);
+	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), &REG8(AL), 1, &num, NULL);
 	cursor_moved = true;
 #endif
 }
@@ -9334,7 +9388,7 @@ void msdos_syscall(unsigned num)
 		case 0x31: msdos_int_21h_31h(); break;
 		case 0x32: msdos_int_21h_32h(); break;
 		case 0x33: msdos_int_21h_33h(); break;
-		// 0x34: get address of indos flag
+		case 0x34: msdos_int_21h_34h(); break;
 		case 0x35: msdos_int_21h_35h(); break;
 		case 0x36: msdos_int_21h_36h(); break;
 		case 0x37: msdos_int_21h_37h(); break;
@@ -9447,7 +9501,46 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		if(m_CF) {
-			error_code = REG16(AX);
+			sda_t *sda = (sda_t *)(mem + SDA_TOP);
+			sda->extended_error_code = REG16(AX);
+			switch(sda->extended_error_code) {
+			case  4: // Too many open files
+			case  8: // Insufficient memory
+				sda->error_class = 1; // Out of resource
+				break;
+			case  5: // Access denied
+				sda->error_class = 3; // Authorization
+				break;
+			case  7: // Memory control block destroyed
+				sda->error_class = 4; // Internal
+				break;
+			case  2: // File not found
+			case  3: // Path not found
+			case 15: // Invaid drive specified
+			case 18: // No more files
+				sda->error_class = 8; // Not found
+				break;
+			case 32: // Sharing violation
+			case 33: // Lock violation
+				sda->error_class = 10; // Locked
+				break;
+//			case 16: // Removal of current directory attempted
+			case 19: // Attempted write on protected disk
+			case 21: // Drive not ready
+//			case 29: // Write failure
+//			case 30: // Read failure
+//			case 82: // Cannot create subdirectory
+				sda->error_class = 11; // Media
+				break;
+			case 80: // File already exists
+				sda->error_class = 12; // Already exist
+				break;
+			default:
+				sda->error_class = 13; // Unknown
+				break;
+			}
+			sda->suggested_action = 1; // Retry
+			sda->locus_of_last_error = 1; // Unknown
 		}
 		break;
 	case 0x22:
@@ -9619,7 +9712,7 @@ void msdos_syscall(unsigned num)
 	// update cursor position
 	if(cursor_moved) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi;
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 		if(!restore_console_on_exit) {
 			scr_top = csbi.srWindow.Top;
 		}
@@ -9668,6 +9761,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memset(mem, 0, sizeof(mem));
 	
 	// bios data area
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
 	CONSOLE_FONT_INFO cfi;
