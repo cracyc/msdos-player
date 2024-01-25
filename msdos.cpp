@@ -349,16 +349,21 @@ UINT16 debugger_read_word(offs_t byteaddress)
 #ifdef USE_SERVICE_THREAD
 			EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			int count = key_buf_char->count();
+			int count = min(key_buf_char->count(), 15);
+			// write to top of key buffer
+			for(int i = 0; i < count; i++) {
+				mem[0x41e + 2 * i + 0] = key_buf_char->read_not_remove(i);
+				mem[0x41e + 2 * i + 1] = key_buf_scan->read_not_remove(i);
+			}
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
 			if(count == 0) {
 				maybe_idle();
 			}
-			return (UINT16)count;
+			return (UINT16)(0x1e + 2 * count);
 		}
-		return 0;
+		return 0x1e;
 	}
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
@@ -4818,6 +4823,9 @@ retry:
 #endif
 			key_char = key_buf_char->read();
 			key_scan = key_buf_scan->read();
+			// write to bottom of key buffer
+			mem[0x43c] = (UINT8)key_char;
+			mem[0x43d] = (UINT8)key_scan;
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -6282,6 +6290,9 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 
 int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int force_update)
 {
+	if(!(drive_num >= 0 && drive_num < 26)) {
+		return(0);
+	}
 	*seg = DPB_TOP >> 4;
 	*ofs = sizeof(dpb_t) * drive_num;
 	dpb_t *dpb = (dpb_t *)(mem + (*seg << 4) + *ofs);
@@ -6332,16 +6343,16 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 			}
 			res = 1;
 		}
-		dpb->drive_num = drive_num;
-		dpb->unit_num = drive_num;
-		dpb->next_dpb_ofs = *ofs + sizeof(dpb_t);
-		dpb->next_dpb_seg = *seg;
 		dpb->info_sector = 0xffff;
 		dpb->backup_boot_sector = 0xffff;
 		dpb->free_clusters = 0xffff;
 		dpb->free_search_cluster = 0xffffffff;
 		CloseHandle(hFile);
 	}
+	dpb->drive_num = drive_num;
+	dpb->unit_num = drive_num;
+	dpb->next_dpb_ofs = (drive_num == 25) ? 0xffff : *ofs + sizeof(dpb_t);
+	dpb->next_dpb_seg = (drive_num == 25) ? 0xffff : *seg;
 	return(res);
 }
 
@@ -7663,14 +7674,24 @@ void pcbios_update_key_code(bool wait)
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
 		if(key_buf_char->count() != 0) {
-			key_code  = key_buf_char->read() << 0;
-			key_code |= key_buf_scan->read() << 8;
+			int key_char = key_buf_char->read();
+			int key_scan = key_buf_scan->read();
+			key_code  = key_char << 0;
+			key_code |= key_scan << 8;
 			key_recv  = 0x0000ffff;
+			// write to bottom of key buffer
+			mem[0x43c] = (UINT8)key_char;
+			mem[0x43d] = (UINT8)key_scan;
 		}
 		if(key_buf_char->count() != 0) {
-			key_code |= key_buf_char->read() << 16;
-			key_code |= key_buf_scan->read() << 24;
+			int key_char = key_buf_char->read();
+			int key_scan = key_buf_scan->read();
+			key_code |= key_char << 16;
+			key_code |= key_scan << 24;
 			key_recv |= 0xffff0000;
+			// write to bottom of key buffer
+			mem[0x43c] = (UINT8)key_char;
+			mem[0x43d] = (UINT8)key_scan;
 		}
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
@@ -8829,7 +8850,7 @@ inline void msdos_int_21h_1bh()
 
 inline void msdos_int_21h_1ch()
 {
-	int drive_num = REG8(DL) ? (REG8(DL) - 1) : (_getdrive() - 1);
+	int drive_num = (REG8(DL) == 0) ? (_getdrive() - 1) : (REG8(DL) - 1);
 	UINT16 seg, ofs;
 	
 	if(msdos_drive_param_block_update(drive_num, &seg, &ofs, 1)) {
@@ -13314,8 +13335,8 @@ inline void msdos_int_67h_4fh()
 //				return;
 //			}
 			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 0) = segment;
-			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 2) = ems_pages[physical & 3].handle;
-			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 4) = ems_pages[physical & 3].mapped ? ems_pages[physical & 3].page : 0xffff;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 2) = ems_pages[physical & 3].mapped ? ems_pages[physical & 3].handle : 0xffff;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 4) = ems_pages[physical & 3].mapped ? ems_pages[physical & 3].page   : 0xffff;
 		}
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x01) {
@@ -13331,16 +13352,10 @@ inline void msdos_int_67h_4fh()
 //				REG8(AH) = 0x8b;
 //				return;
 //			} else
-			if(!(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated)) {
-				REG8(AH) = 0x83;
-				return;
-			} else if(logical == 0xffff) {
-				ems_unmap_page(physical & 3);
-			} else if(logical < ems_handles[handle].pages) {
+			if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && logical < ems_handles[handle].pages) {
 				ems_map_page(physical & 3, handle, logical);
 			} else {
-				REG8(AH) = 0x8a;
-				return;
+				ems_unmap_page(physical & 3);
 			}
 		}
 		REG8(AH) = 0x00;
@@ -15246,6 +15261,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	*(UINT16 *)(mem + 0x410) = msdos_get_equipment();
 	*(UINT16 *)(mem + 0x413) = MEMORY_END >> 10;
+	*(UINT16 *)(mem + 0x41a) = 0x1e;
+	*(UINT16 *)(mem + 0x41c) = 0x1e;
 	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
 	*(UINT16 *)(mem + 0x44a) = csbi.dwSize.X;
 	*(UINT16 *)(mem + 0x44c) = regen;
@@ -15259,6 +15276,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x465) = 0x09;
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
 	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
+	*(UINT16 *)(mem + 0x480) = 0x1e;
+	*(UINT16 *)(mem + 0x482) = 0x3e;
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
@@ -15626,7 +15645,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->first_dpb.w.h = DPB_TOP >> 4;
 	dos_info->first_sft.w.l = 0;
 	dos_info->first_sft.w.h = SFT_TOP >> 4;
-	dos_info->clock_device.w.l = 22 + 18 * 3;	// CLOCK$ is the 3rd device in IO.SYS
+	dos_info->clock_device.w.l = 22 + 18 * 3;	// CLOCK$ is the 4th device in IO.SYS
 	dos_info->clock_device.w.h = DEVICE_TOP >> 4;
 	dos_info->con_device.w.l = 22 + 18 * 0;		// CON is the 1st device in IO.SYS
 	dos_info->con_device.w.h = DEVICE_TOP >> 4;
@@ -15804,6 +15823,20 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// fcb table
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
+	
+	// drive parameter block
+	for(int i = 0; i < 26; i++) {
+#if 0
+		UINT16 seg, ofs;
+		msdos_drive_param_block_update(i, &seg, &ofs, 1);
+#else
+		dpb_t *dpb = (dpb_t *)(mem + DPB_TOP + sizeof(dpb_t) * i);
+		dpb->drive_num = i;
+		dpb->unit_num = i;
+		dpb->next_dpb_ofs = (i == 25) ? 0xffff : sizeof(dpb_t) * (i + 1);
+		dpb->next_dpb_seg = (i == 25) ? 0xffff : DPB_TOP >> 4;
+#endif
+	}
 	
 	// nls stuff
 	msdos_nls_tables_init();

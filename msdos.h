@@ -177,6 +177,16 @@ public:
 		}
 		return(val);
 	}
+	int read_not_remove(int pt) {
+		if(pt >= 0 && pt < cnt) {
+			pt += rpt;
+			if(pt >= size) {
+				pt -= size;
+			}
+			return buf[pt];
+		}
+		return 0;
+	}
 	int count() {
 		return(cnt);
 	}
@@ -601,7 +611,7 @@ void kbd_write_command(UINT8 val);
 #else
 #define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
 #endif
-#define DPB_SIZE	0x400
+#define DPB_SIZE	0x600
 #define SFT_TOP		(DPB_TOP + DPB_SIZE)
 #define SFT_SIZE	0x4b0	/* 6 + 0x3b * 20 */
 #define DISK_BUF_TOP	(SFT_TOP + SFT_SIZE)

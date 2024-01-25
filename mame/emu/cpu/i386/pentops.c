@@ -166,7 +166,7 @@ static void PENTIUMOP(rsm)()
 
 	m_CPL = (m_sreg[SS].flags >> 13) & 3; // cpl == dpl of ss
 
-	for(int i = 0; i < GS; i++)
+	for(int i = 0; i <= GS; i++)
 	{
 		if(PROTECTED_MODE && !V8086_MODE)
 		{
