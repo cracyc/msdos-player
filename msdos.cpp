@@ -4283,6 +4283,8 @@ bool msdos_is_removable_drive(int drv);
 bool msdos_is_cdrom_drive(int drv);
 bool msdos_is_remote_drive(int drv);
 bool msdos_is_subst_drive(int drv);
+const char *msdos_comspec_value(int env_seg);
+const char *msdos_comspec_path(int env_seg);
 
 // process info
 
@@ -4719,6 +4721,7 @@ const char *msdos_trimmed_path(const char *path, int lfn = 0, int dir = 0);
 const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 {
 	static char tmp[MAX_PATH];
+	psp_t *psp = (psp_t *)(mem + (current_psp << 4));
 	
 	if(lfn) {
 		strcpy(tmp, path);
@@ -4739,9 +4742,9 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 		}
 		*dst = '\0';
 	}
-	if(_stricmp(tmp, "C:\\COMMAND.COM") == 0) {
+	if(_stricmp(tmp, msdos_comspec_value(psp->env_seg)) == 0) {
 		// redirect C:\COMMAND.COM to comspec_path
-		strcpy(tmp, comspec_path);
+		strcpy(tmp, msdos_comspec_path(psp->env_seg));
 	} else if(is_vista_or_later && _access(tmp, 0) != 0 && !dir) {
 		// redirect new files (without wildcards) in C:\ to %TEMP%, since C:\ is not usually writable
 		static int root_drive_protected = -1;
@@ -4859,15 +4862,16 @@ void msdos_init_fcb_in_psp(fcb_t *fcb, const char *argv)
 	fcb->current_block = fcb->record_size = 0;
 	
 	if(argv) {
-		if(strlen(argv) >= 2 && argv[1] == ':') {
-			if(argv[0] >= 'a' && argv[0] <= 'z') {
-				fcb->drive = argv[0] - 'a' + 1;
-			} else if(argv[0] >= 'A' && argv[0] <= 'Z') {
-				fcb->drive = argv[0] - 'A' + 1;
+		const char *path = msdos_remove_double_quote(argv);
+		char tmp[MAX_PATH], *name, *ext;
+		if(strlen(path) >= 2 && path[1] == ':') {
+			if(path[0] >= 'a' && path[0] <= 'z') {
+				fcb->drive = path[0] - 'a' + 1;
+			} else if(path[0] >= 'A' && path[0] <= 'Z') {
+				fcb->drive = path[0] - 'A' + 1;
 			}
 		}
-		char tmp[MAX_PATH], *name, *ext;
-		strcpy(tmp, msdos_short_full_path(argv));
+		strcpy(tmp, msdos_short_full_path(path));
 		if((name = strrchr(tmp, '\\')) != NULL) {
 			name++;
 		} else {
@@ -6759,6 +6763,32 @@ void msdos_env_set(int env_seg, const char *name, const char *value)
 	}
 }
 
+const char *msdos_comspec_value(int env_seg)
+{
+	static char tmp[MAX_PATH];
+	const char *env = msdos_env_get(env_seg, "COMSPEC");
+	
+	if(env != NULL && stricmp(env, "C:\\COMMAND.COM") != 0) {
+		strcpy(tmp, env);
+	} else {
+		strcpy(tmp, "C:\\COMMAND.COM");
+	}
+	return(tmp);
+}
+
+const char *msdos_comspec_path(int env_seg)
+{
+	static char tmp[MAX_PATH];
+	const char *env = msdos_env_get(env_seg, "COMSPEC");
+	
+	if(env != NULL && stricmp(env, "C:\\COMMAND.COM") != 0) {
+		strcpy(tmp, env);
+	} else {
+		strcpy(tmp, comspec_path);
+	}
+	return(tmp);
+}
+
 // process
 
 psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 env_seg)
@@ -6841,6 +6871,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	memset(opt, 0, sizeof(opt));
 	memcpy(opt, mem + opt_ofs + 1, opt_len);
 	
+	psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
+	
 	if(strlen(cmd) >= 5 && _stricmp(&cmd[strlen(cmd) - 4], ".BAT") == 0) {
 		// this is a batch file, run command.com
 		char tmp[MAX_PATH];
@@ -6853,12 +6885,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		opt_len = strlen(opt);
 		mem[opt_ofs] = opt_len;
 		sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-		strcpy(command, comspec_path);
+		strcpy(command, msdos_comspec_path(parent_psp->env_seg));
 		strcpy(name_tmp, "COMMAND.COM");
 	} else {
-		if(_stricmp(cmd, "C:\\COMMAND.COM") == 0) {
+		if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
 			// redirect C:\COMMAND.COM to comspec_path
-			strcpy(command, comspec_path);
+			strcpy(command, msdos_comspec_path(parent_psp->env_seg));
 		} else {
 			strcpy(command, cmd);
 		}
@@ -6869,7 +6901,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		strcpy(name_tmp, name);
 		
 		// check command.com
-		if((_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "COMMAND") == 0) && _access(comspec_path, 0) != 0) {
+		if((_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "COMMAND") == 0) && _access(msdos_comspec_path(parent_psp->env_seg), 0) != 0) {
 			// we can not load command.com, so run program directly if "command /c (program)" is specified
 			if(opt_len == 0) {
 //				process_t *current_process = msdos_process_info_get(current_psp);
@@ -6994,12 +7026,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					opt_len = strlen(opt);
 					mem[opt_ofs] = opt_len;
 					sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-					strcpy(path, comspec_path);
+					strcpy(path, msdos_comspec_path(parent_psp->env_seg));
 					strcpy(name_tmp, "COMMAND.COM");
 					fd = _open(path, _O_RDONLY | _O_BINARY);
 				} else {
 					// search path in parent environments
-					psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
 					const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
 					if(env != NULL) {
 						char env_path[4096];
@@ -7033,7 +7064,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 									opt_len = strlen(opt);
 									mem[opt_ofs] = opt_len;
 									sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-									strcpy(path, comspec_path);
+									strcpy(path, msdos_comspec_path(parent_psp->env_seg));
 									strcpy(name_tmp, "COMMAND.COM");
 									fd = _open(path, _O_RDONLY | _O_BINARY);
 									break;
@@ -7054,7 +7085,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	if(fd == -1) {
 		// we can not find command.com in the path, so open comspec_path
 		if(_stricmp(command, "COMMAND.COM") == 0 || _stricmp(command, "COMMAND") == 0) {
-			strcpy(command, comspec_path);
+			strcpy(command, msdos_comspec_path(parent_psp->env_seg));
 			strcpy(path, command);
 			fd = _open(path, _O_RDONLY | _O_BINARY);
 		}
@@ -7113,7 +7144,6 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		}
 	}
 	if(param->env_seg == 0) {
-		psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
 		memcpy(mem + (env_seg << 4), mem + (parent_psp->env_seg << 4), ENV_SIZE);
 	} else {
 		memcpy(mem + (env_seg << 4), mem + (param->env_seg << 4), ENV_SIZE);
