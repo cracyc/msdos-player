@@ -184,6 +184,8 @@ bool support_ems = false;
 bool support_xms = false;
 #endif
 int sio_port_number[4] = {0, 0, 0, 0};
+bool ansi_sys = true;
+bool box_line = false;
 
 BOOL is_winxp_or_later;
 BOOL is_xp_64_or_later;
@@ -421,7 +423,7 @@ UINT32 debugger_read_dword(UINT32 byteaddress)
 
 // write accessors
 
-#if 0
+#if 1
 static const CHAR box_drawings_char[] = {
 	/*0x00*/ 0,
 	/*0x01*/ '+',	// BOX DRAWINGS DOUBLE DOWN AND RIGHT
@@ -467,7 +469,8 @@ COORD shift_coord(COORD origin, DWORD pos)
 
 BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, DWORD nLength, COORD dwWriteCoord, LPDWORD lpNumberOfCharsWritten)
 {
-	if(is_win10_or_later && active_code_page == 932) {
+//	if(is_win10_or_later && active_code_page == 932) {
+	if(box_line) {
 		DWORD written = 0, written_tmp;
 		
 		for(DWORD pos = 0, start_pos = 0; pos < nLength; pos++) {
@@ -2913,7 +2916,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[16];
+			UINT8 buffer[17];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -2935,24 +2938,26 @@ int main(int argc, char *argv[], char *envp[])
 				support_xms = true;
 			}
 #endif
-			if((buffer[1] != 0 || buffer[2] != 0) && (buffer[3] != 0 || buffer[4] != 0)) {
-				buf_width  = buffer[1] | (buffer[2] << 8);
-				buf_height = buffer[3] | (buffer[4] << 8);
+			ansi_sys = ((buffer[1] & 0x01) != 0);
+			box_line = ((buffer[1] & 0x02) != 0);
+			if((buffer[2] != 0 || buffer[3] != 0) && (buffer[4] != 0 || buffer[5] != 0)) {
+				buf_width  = buffer[2] | (buffer[3] << 8);
+				buf_height = buffer[4] | (buffer[5] << 8);
 			}
-			if(buffer[5] != 0) {
-				dos_major_version = buffer[5];
-				dos_minor_version = buffer[6];
+			if(buffer[6] != 0) {
+				dos_major_version = buffer[6];
+				dos_minor_version = buffer[7];
 			}
-			if(buffer[7] != 0) {
-				win_major_version = buffer[7];
-				win_minor_version = buffer[8];
+			if(buffer[8] != 0) {
+				win_major_version = buffer[8];
+				win_minor_version = buffer[9];
 			}
-			if((code_page = buffer[9] | (buffer[10] << 8)) != 0) {
+			if((code_page = buffer[10] | (buffer[11] << 8)) != 0) {
 				set_input_code_page(code_page);
 				set_output_code_page(code_page);
 			}
-			int name_len = buffer[11];
-			int file_len = buffer[12] | (buffer[13] << 8) | (buffer[14] << 16) | (buffer[15] << 24);
+			int name_len = buffer[12];
+			int file_len = buffer[13] | (buffer[14] << 8) | (buffer[15] << 16) | (buffer[16] << 24);
 			
 			// restore command file name
 			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
@@ -3084,6 +3089,12 @@ int main(int argc, char *argv[], char *envp[])
 			support_xms = true;
 #endif
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-a", 2) == 0) {
+			ansi_sys = false;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-l", 2) == 0) {
+			box_line = true;
+			arg_offset++;
 		} else {
 			break;
 		}
@@ -3104,7 +3115,8 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		fprintf(stderr,
 			"Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
-			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] (command) [options]\n"
+			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] [-a] [-l]\n"
+			"             (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -3128,6 +3140,8 @@ int main(int argc, char *argv[], char *envp[])
 #else
 			"\t-x\tenable LIM EMS\n"
 #endif
+			"\t-a\tdisable ANSI.SYS\n"
+			"\t-l\tdraw box lines with ank characters\n"
 		);
 		
 		if(!is_started_from_console()) {
@@ -3201,6 +3215,7 @@ int main(int argc, char *argv[], char *envp[])
 					
 					// store options
 					UINT8 flags = 0;
+					UINT8 flags2 = 0;
 					if(stay_busy) {
 						flags |= 0x01;
 					}
@@ -3227,8 +3242,14 @@ int main(int argc, char *argv[], char *envp[])
 						flags |= 0x80;
 					}
 #endif
-					
+					if(ansi_sys) {
+						flags2 |= 0x01;
+					}
+					if(box_line) {
+						flags2 |= 0x02;
+					}
 					fputc(flags, fo);
+					fputc(flags2, fo);
 					fputc((buf_width  >> 0) & 0xff, fo);
 					fputc((buf_width  >> 8) & 0xff, fo);
 					fputc((buf_height >> 0) & 0xff, fo);
@@ -4593,6 +4614,9 @@ int msdos_symbol_code_check(UINT8 code, unsigned int_num, UINT8 reg_ah)
  ------------------------------------------------------------------------
 */
 //	if(active_code_page == 437) {
+		if(code == 0x1b && ansi_sys) {
+			return 0;
+		}
 		if(int_num == 0x21) {
 			if(reg_ah == 0x02) {
 				return (code == 0x1a || code == 0x1b || code == 0xff);
@@ -15071,8 +15095,13 @@ inline void msdos_int_2fh_1ah()
 {
 	switch(CPU_AL) {
 	case 0x00:
-		// ANSI.SYS is installed
-		CPU_AL = 0xff;
+		if(ansi_sys) {
+			// ANSI.SYS is installed
+			CPU_AL = 0xff;
+		} else {
+			CPU_AX = 0x01;
+			CPU_SET_C_FLAG(1);
+		}
 		break;
 	case 0x01:
 		if(CPU_CL == 0x5f) {

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/24/2020
+								5/2/2021
 
 ----- What's This
 
@@ -36,7 +36,8 @@ For example, compile a sample.c with LSI C-86 and execute the compiled binary:
 ----- Options
 
 Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
-             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] (command) [options]
+             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] [-a] [-l]
+             (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -50,6 +51,8 @@ Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-v	set the DOS version
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
+	-a	disable ANSI.SYS
+	-l	draw box lines with ank characters
 
 ISH.COM contains any invalid instructions and it cause an error.
 Please specify the option '-i' to ignore the invalid instructions.
