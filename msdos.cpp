@@ -2871,8 +2871,10 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
 			"\t-v\tset the DOS version\n"
 			"\t-w\tset the Windows version\n"
-#ifdef SUPPORT_XMS
-			"\t-x\tenable XMS and LIM EMS\n"
+#if defined(SUPPORT_VCPI)
+			"\t-x\tenable LIM EMS, VCPI, and XMS\n"
+#elif defined(SUPPORT_XMS)
+			"\t-x\tenable LIM EMS and XMS\n"
 #else
 			"\t-x\tenable LIM EMS\n"
 #endif
@@ -4737,7 +4739,20 @@ bool msdos_is_existing_file(const char *path)
 	
 	if((hFind = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		FindClose(hFind);
-		return(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY));
+		return((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0);
+	}
+	return(false);
+}
+
+bool msdos_is_existing_dir(const char *path)
+{
+	// http://d.hatena.ne.jp/yu-hr/20100317/1268826458
+	WIN32_FIND_DATAA fd;
+	HANDLE hFind;
+	
+	if((hFind = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+		FindClose(hFind);
+		return((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
 	}
 	return(false);
 }
@@ -12429,7 +12444,10 @@ inline void msdos_int_21h_56h(int lfn)
 	strcpy(src, msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn));
 	strcpy(dst, msdos_trimmed_path((char *)(mem + SREG_BASE(ES) + REG16(DI)), lfn));
 	
-	if(rename(src, dst)) {
+	if(msdos_is_existing_file(dst) || msdos_is_existing_dir(dst)) {
+		REG16(AX) = 0x05; // access denied
+		m_CF = 1;
+	} else if(rename(src, dst)) {
 		REG16(AX) = errno;
 		m_CF = 1;
 	}
@@ -12603,7 +12621,6 @@ inline void msdos_int_21h_5bh()
 {
 	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	
-//	if(msdos_is_existing_file(path)) {
 	if(msdos_is_device_path(path) || msdos_is_existing_file(path)) {
 		// already exists
 		REG16(AX) = 0x50;
@@ -16234,7 +16251,148 @@ inline void msdos_int_67h_70h()
 
 inline void msdos_int_67h_deh()
 {
+#if defined(SUPPORT_VCPI)
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		REG8(AH) = 0x00;
+		REG16(BX) = 0x0100;
+	} else if(REG8(AL) == 0x01) {
+		REG8(AH) = 0x00;
+		// from DOSBox
+		for(int ct = 0; ct < 0xff; ct++) {
+			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x00) = 0x67;		// access bits
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x01) = ct * 0x10;	// mapping
+			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x03) = 0x00;
+		}
+		for(int ct = 0xff; ct < 0x100; ct++) {
+			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x00) = 0x67;		// access bits
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x01) = (ct - 0xff) * 0x10 + 0x1100;	// mapping
+			*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + ct * 4 + 0x03) = 0x00;
+		}
+		REG16(DI) += 0x400;		// advance pointer by 0x100*4
+		
+		// Set up three descriptor table entries
+		UINT32 cbseg_low  = (DUMMY_TOP & 0x00ffff) << 16;
+		UINT32 cbseg_high = (DUMMY_TOP & 0x1f0000) >> 16;
+		// Descriptor 1 (code segment, callback segment)
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x0000ffff | cbseg_low ;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = 0x00009a00 | cbseg_high;
+		// Descriptor 2 (data segment, full access)
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x08) = 0x0000ffff;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c) = 0x00009200;
+		// Descriptor 3 (full access)
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x10) = 0x0000ffff;
+		*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x14) = 0x00009200;
+		// Offset in code segment of protected mode entry point
+		REG32(EBX) = 0x2a; // fffc:002a
+	} else if(REG8(AL) == 0x02) {
+		REG8(AH) = 0x00;
+		REG32(EDX) = (MAX_MEM - 1) & 0xfffff000;
+	} else if(REG8(AL) == 0x03) {
+		REG8(AH) = 0x00;
+		REG32(EDX) = 0;
+		for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+			if(emb_handle->handle == 0) {
+				REG32(EDX) += emb_handle->size_kb;
+			}
+		}
+		REG32(EDX) /= 4;
+	} else if(REG8(AL) == 0x04) {
+		emb_handle_t *emb_handle = msdos_xms_alloc_emb_handle(4);
+		if(emb_handle != NULL) {
+			REG8(AH) = 0x00;
+			REG32(EDX) = emb_handle->address;
+		}
+	} else if(REG8(AL) == 0x05) {
+		for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+			if(emb_handle->handle != 0 && emb_handle->address == REG32(EDX)) {
+				REG8(AH) = 0x00;
+				msdos_xms_free_emb_handle(emb_handle);
+				break;
+			}
+		}
+	} else if(REG8(AL) == 0x06) {
+		REG8(AH) = 0x00;
+		REG32(EDX) = REG16(CX) << 12;
+	} else if(REG8(AL) == 0x07) {
+		REG8(AH) = 0x00;
+		REG32(EBX) = m_cr[0];
+	} else if(REG8(AL) == 0x08) {
+		REG8(AH) = 0x00;
+		for(int i = 0; i < 8; i++) {
+			*(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i) = m_dr[i];
+		}
+	} else if(REG8(AL) == 0x09) {
+		REG8(AH) = 0x00;
+		for(int i = 0; i < 8; i++) {
+			m_dr[i] = *(UINT32 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i);
+		}
+	} else if(REG8(AL) == 0x0a) {
+		REG8(AH) = 0x00;
+		REG16(BX) = pic[0].icw2;
+		REG16(CX) = pic[1].icw2;
+	} else if(REG8(AL) == 0x0b) {
+		REG8(AH) = 0x00;
+		pic[0].icw2 = REG8(BL);
+		pic[1].icw2 = REG8(CL);
+	} else if(REG8(AL) == 0x0c) {
+		// from DOSBox
+		m_IF = 0;
+		m_CPL = 0;
+		
+		// Read data from ESI (linear address)
+		UINT32 new_cr3      = *(UINT32 *)(mem + REG32(ESI) + 0x00);
+		UINT32 new_gdt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x04);
+		UINT32 new_idt_addr = *(UINT32 *)(mem + REG32(ESI) + 0x08);
+		UINT16 new_ldt      = *(UINT16 *)(mem + REG32(ESI) + 0x0c);
+		UINT16 new_tr       = *(UINT16 *)(mem + REG32(ESI) + 0x0e);
+		UINT32 new_eip      = *(UINT32 *)(mem + REG32(ESI) + 0x10);
+		UINT16 new_cs       = *(UINT16 *)(mem + REG32(ESI) + 0x14);
+		
+		// Get GDT and IDT entries
+		UINT16 new_gdt_limit = *(UINT16 *)(mem + new_gdt_addr + 0);
+		UINT32 new_gdt_base  = *(UINT32 *)(mem + new_gdt_addr + 2);
+		UINT16 new_idt_limit = *(UINT16 *)(mem + new_idt_addr + 0);
+		UINT32 new_idt_base  = *(UINT32 *)(mem + new_idt_addr + 2);
+		
+		// Switch to protected mode, paging enabled if necessary
+		if(new_cr3 != 0) {
+			m_cr[0] |= 0x80000000;
+		}
+		m_cr[3] = new_cr3;
+		
+		*(UINT8 *)(mem + new_gdt_base + (new_tr & 0xfff8) + 5) &= 0xfd;
+		
+		// Load tables and initialize segment registers
+		m_gdtr.limit = new_gdt_limit;
+		m_gdtr.base = new_gdt_base;
+		m_idtr.limit = new_idt_limit;
+		m_idtr.base = new_idt_base;
+		
+		SREG(DS) = 0x00;
+		SREG(ES) = 0x00;
+		SREG(FS) = 0x00;
+		SREG(GS) = 0x00;
+		i386_load_segment_descriptor(DS);
+		i386_load_segment_descriptor(ES);
+		i386_load_segment_descriptor(FS);
+		i386_load_segment_descriptor(GS);
+		
+//		i386_set_a20_line(1);
+		
+		/* Switch to protected mode */
+		m_VM = m_NT = 0;
+		m_IOP1 = m_IOP2 = 1;
+		
+		i386_jmp_far(new_cs, new_eip);
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+#else
 	REG8(AH) = 0x84;
+#endif
 }
 
 #ifdef SUPPORT_XMS
@@ -16370,8 +16528,8 @@ inline void msdos_call_xms_00h()
 {
 #if defined(HAS_I386)
 	REG16(AX) = 0x0300; // V3.00 (XMS Version)
-//	REG16(BX) = 0x0395; // V3.95 (Driver Revision in BCD)
-	REG16(BX) = 0x035f; // V3.95 (Driver Revision)
+	REG16(BX) = 0x0395; // V3.95 (Driver Revision in BCD)
+//	REG16(BX) = 0x035f; // V3.95 (Driver Revision)
 #else
 	REG16(AX) = 0x0200; // V2.00 (XMS Version)
 	REG16(BX) = 0x0270; // V2.70 (Driver Revision)
@@ -18475,6 +18633,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
 	mem[DUMMY_TOP + 0x28] = 0x29;
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
+	
+	// VCPI entry point
+	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 65h
+	mem[DUMMY_TOP + 0x2b] = 0x65;
+	mem[DUMMY_TOP + 0x2c] = 0xcb;	// retf
 	
 	// boot routine
 	mem[0xffff0 + 0x00] = 0xf4;	// halt to exit MS-DOS Player

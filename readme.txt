@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/26/2017
+								8/28/2017
 
 ----- What's This
 
@@ -913,6 +913,20 @@ INT 67H		LIM EMS
 	5B02H	LIM EMS 4.0 - Get Alternate Map Save Array Size
 	7000H	EMS - Get Page Frame Status (NEC PC-9801 Only ???)
 	7001H	EMS - Enable/Disable Page Frame (NEC PC-9801 Only ???)
+	DE00H	VCPI - Installation Check
+	DE01H	VCPI - Get Protected Mode Interface
+	DE02H	VCPI - Get Max Physical Memory Address
+	DE03H	VCPI - Get Number Of Free 4KB Pages
+	DE04H	VCPI - Allocate 4KB Page
+	DE05H	VCPI - Free 4KB Page
+	DE06H	VCPI - Get Physical Address Of Page In First MB
+	DE07H	VCPI - Read CR0
+	DE08H	VCPI - Read Debug Registers
+	DE09H	VCPI - Write Debug Registers
+	DE0AH	VCPI - Get 8259 Interrupt Vector Mapping
+	DE0BH	VCPI - Set 8259 Interrupt Vector Mapping
+	DE0CH	VCPI - Switch To Protected Mode
+
 
 INT 68H-6FH	(Used For Dummy BIOS/DOS/Driver Service Routines)
 
@@ -1012,6 +1026,8 @@ INT 15H AX=C209H (Read From Pointer Port)
 INT 21H AX=4402H (Read From Character Device Control Channel),
 INT 33H AX=001FH (Disable Mouse Driver),
 INT 33H AX=0020H (Enable Mouse Driver),
+INT 67H AX=DE01H (Get Protected Mode Interface),
+INT 67H AX=DE0CH (Switch To Protected Mode),
 and some DOS info block improvements are based on DOSBox.
 
 Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk), and Mr.Jason Hood.

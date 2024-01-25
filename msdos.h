@@ -672,7 +672,7 @@ UINT8 crtc_changed[16] = {0};
 ---------------------------------------------------------------------------- */
 
 #if defined(HAS_I386)
-//#define SUPPORT_VCPI
+#define SUPPORT_VCPI
 #endif
 #if defined(HAS_I286) || defined(HAS_I386)
 #define SUPPORT_XMS
@@ -740,8 +740,8 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 // text vram size: 80x25x2 = 4000 = 0fa0h
 // fffa0h-fffefh can be used for dummy routines
 #define DUMMY_TOP	0xfffc0
-#define EMB_TOP		0x10fff0
-//#define EMB_TOP	0x128000 // MEM.EXE invites this value???
+//#define EMB_TOP	0x10fff0
+#define EMB_TOP		0x110000 // align to 4KB
 #define EMB_END		MAX_MEM
 
 UINT32 IRET_TOP = 0;
