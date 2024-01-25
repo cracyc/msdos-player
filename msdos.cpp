@@ -4027,6 +4027,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	process->parent_int_10h_feh_called = int_10h_feh_called;
 	process->parent_int_10h_ffh_called = int_10h_ffh_called;
 	process->parent_ds = SREG(DS);
+	process->parent_es = SREG(ES);
 	
 	current_psp = psp_seg;
 	msdos_sda_update(current_psp);
@@ -4055,6 +4056,9 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		param->ss = ss;
 		param->ip = ip;
 		param->cs = cs;
+		
+		// the AX value to be passed to the child program is put on top of the child's stack
+		*(UINT16 *)(mem + (ss << 4) + sp) = REG16(AX);
 	}
 	return(0);
 }
@@ -4089,7 +4093,9 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 		REG16(AX) = ret;
 	}
 	SREG(DS) = current_process->parent_ds;
+	SREG(ES) = current_process->parent_es;
 	i386_load_segment_descriptor(DS);
+	i386_load_segment_descriptor(ES);
 	
 	if(mem_free) {
 		int mcb_seg;
@@ -10186,7 +10192,7 @@ inline void msdos_int_67h_43h()
 	} else if(REG16(BX) == 0) {
 		REG8(AH) = 0x89;
 	} else {
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(!ems_handles[i].allocated) {
 				ems_allocate_pages(i, REG16(BX));
 				REG8(AH) = 0x00;
@@ -10202,7 +10208,7 @@ inline void msdos_int_67h_44h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(!(REG16(BX) == 0xffff || REG16(BX) < ems_handles[REG16(DX)].pages)) {
 		REG8(AH) = 0x8a;
@@ -10221,7 +10227,7 @@ inline void msdos_int_67h_45h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else {
 		ems_release_pages(REG16(DX));
@@ -10246,7 +10252,7 @@ inline void msdos_int_67h_47h()
 	
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-//	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 //		REG8(AH) = 0x83;
 	} else if(process->ems_pages_stored) {
 		REG8(AH) = 0x8d;
@@ -10268,7 +10274,7 @@ inline void msdos_int_67h_48h()
 	
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-//	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 //		REG8(AH) = 0x83;
 	} else if(!process->ems_pages_stored) {
 		REG8(AH) = 0x8e;
@@ -10292,7 +10298,7 @@ inline void msdos_int_67h_4bh()
 	} else {
 		REG8(AH) = 0x00;
 		REG16(BX) = 0;
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				REG16(BX)++;
 			}
@@ -10304,7 +10310,7 @@ inline void msdos_int_67h_4ch()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else {
 		REG8(AH) = 0x00;
@@ -10319,7 +10325,7 @@ inline void msdos_int_67h_4dh()
 	} else {
 		REG8(AH) = 0x00;
 		REG16(BX) = 0;
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 0) = i;
 				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 2) = ems_handles[i].pages;
@@ -10347,7 +10353,7 @@ inline void msdos_int_67h_4eh()
 				UINT16 handle = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 0);
 				UINT16 page   = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 2);
 				
-				if(handle < MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
 					ems_map_page(i, handle, page);
 				} else {
 					ems_unmap_page(i);
@@ -10398,7 +10404,7 @@ inline void msdos_int_67h_4fh()
 //				REG8(AH) = 0x8b;
 //				return;
 //			} else
-			if(!(handle < MAX_EMS_HANDLES && ems_handles[handle].allocated)) {
+			if(!(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated)) {
 				REG8(AH) = 0x83;
 				return;
 			} else if(logical == 0xffff) {
@@ -10424,7 +10430,7 @@ inline void msdos_int_67h_50h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
 		for(int i = 0; i < REG16(CX); i++) {
@@ -10458,7 +10464,7 @@ inline void msdos_int_67h_51h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG16(BX) > MAX_EMS_PAGES) {
 		REG8(AH) = 0x87;
@@ -10474,8 +10480,8 @@ inline void msdos_int_67h_52h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
-		REG8(AH) = 0x83;
+//	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00) {
 		REG8(AL) = 0x00; // handle is volatile
 		REG8(AH) = 0x00;
@@ -10498,13 +10504,13 @@ inline void msdos_int_67h_53h()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
-	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
 		REG8(AH) = 0x83;
 	} else if(REG8(AL) == 0x00) {
 		memcpy(mem + SREG_BASE(ES) + REG16(DI), ems_handles[REG16(DX)].name, 8);
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x01) {
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
 				REG8(AH) = 0xa1;
 				return;
@@ -10523,7 +10529,7 @@ inline void msdos_int_67h_54h()
 	if(!support_ems) {
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00) {
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
 				memcpy(mem + SREG_BASE(ES) + REG16(DI) + 10 * i + 2, ems_handles[i].name, 10);
 			} else {
@@ -10535,7 +10541,7 @@ inline void msdos_int_67h_54h()
 		REG8(AL) = MAX_EMS_HANDLES;
 	} else if(REG8(AL) == 0x01) {
 		REG8(AH) = 0xa0; // not found
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
 				REG8(AH) = 0x00;
 				REG16(DX) = i;
@@ -10572,7 +10578,7 @@ inline void msdos_int_67h_57h_tmp()
 		src_addr = (src_seg << 4) + src_ofs;
 		src_addr_max = MAX_MEM;
 	} else {
-		if(!(src_handle < MAX_EMS_HANDLES && ems_handles[src_handle].allocated)) {
+		if(!(src_handle >= 1 && src_handle <= MAX_EMS_HANDLES && ems_handles[src_handle].allocated)) {
 			REG8(AH) = 0x83;
 			return;
 		} else if(!(src_seg < ems_handles[src_handle].pages)) {
@@ -10588,7 +10594,7 @@ inline void msdos_int_67h_57h_tmp()
 		dest_addr = (dest_seg << 4) + dest_ofs;
 		dest_addr_max = MAX_MEM;
 	} else {
-		if(!(dest_handle < MAX_EMS_HANDLES && ems_handles[dest_handle].allocated)) {
+		if(!(dest_handle >= 1 && dest_handle <= MAX_EMS_HANDLES && ems_handles[dest_handle].allocated)) {
 			REG8(AH) = 0x83;
 			return;
 		} else if(!(dest_seg < ems_handles[dest_handle].pages)) {
@@ -10681,7 +10687,7 @@ inline void msdos_int_67h_5ah()
 //	} else if(REG16(BX) == 0) {
 //		REG8(AH) = 0x89;
 	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(!ems_handles[i].allocated) {
 				ems_allocate_pages(i, REG16(BX));
 				REG8(AH) = 0x00;
@@ -11947,6 +11953,12 @@ void msdos_syscall(unsigned num)
 		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
 		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
 		// 0x5d: LIM EMS 4.0 - Enable/Disable OS Function Set Functions (for DOS Kernel)
+		// 0x60: EEMS - Get Physical Window Array
+		// 0x61: EEMS - Generic Accelerator Card Support
+		// 0x68: EEMS - Get Address of All Pge Frames om System
+		// 0x69: EEMS - Map Page into Frame
+		// 0x6a: EEMS - Page Mapping
+		// 0xde: VCPI
 		case 0xde: msdos_int_67h_deh(); break;
 		default:
 			unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -12838,7 +12850,7 @@ void ems_finish()
 
 void ems_release()
 {
-	for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+	for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 		if(ems_handles[i].buffer != NULL) {
 			free(ems_handles[i].buffer);
 			ems_handles[i].buffer = NULL;

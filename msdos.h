@@ -272,7 +272,7 @@ typedef struct {
 	bool mapped;
 } ems_page_t;
 
-ems_handle_t ems_handles[MAX_EMS_HANDLES] = {0};
+ems_handle_t ems_handles[MAX_EMS_HANDLES + 1] = {0};
 ems_page_t ems_pages[4];
 int free_ems_pages;
 
@@ -919,6 +919,7 @@ typedef struct {
 	bool parent_int_10h_feh_called;
 	bool parent_int_10h_ffh_called;
 	UINT16 parent_ds;
+	UINT16 parent_es;
 	struct {
 		UINT16 handle;
 		UINT16 page;
