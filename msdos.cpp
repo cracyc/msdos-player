@@ -149,8 +149,13 @@ inline void maybe_idle()
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
 	if(!stay_busy && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
+#if 1
+//		YieldProcessor();
+		_mm_pause();
+#else
 		Sleep(10);
 		REQUEST_HARDWRE_UPDATE();
+#endif
 	}
 	idle_ops = 0;
 }
@@ -829,6 +834,24 @@ UINT16 i386_read_stack()
 #else
 	UINT16 sp = m_regs.w[SP] + 2;
 	return ReadWord(((m_base[SS] + ((sp - 2) & 0xffff)) & AMASK));
+#endif
+}
+
+void i386_write_stack(UINT16 value)
+{
+#if defined(HAS_I386)
+	UINT32 ea, new_esp;
+	if( STACK_32BIT ) {
+		new_esp = REG32(ESP) + 2;
+		ea = i386_translate(SS, new_esp - 2, 0);
+	} else {
+		new_esp = REG16(SP) + 2;
+		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0);
+	}
+	WRITE16(ea, value);
+#else
+	UINT16 sp = m_regs.w[SP] + 2;
+	WriteWord(((m_base[SS] + ((sp - 2) & 0xffff)) & AMASK), value);
 #endif
 }
 
@@ -3427,6 +3450,9 @@ static const struct {
 	{"UTC+12",				0x0000, "UTC", ""   },		// (UTC+12:00) GMT-12
 };
 
+// FIXME: consider to build on non-Japanese environment :-(
+// message_japanese string must be in shift-jis
+
 static const struct {
 	UINT16 code;
 	char *message_english;
@@ -3507,13 +3533,13 @@ static const struct {
 	{0x58,	"Network data fault", "ネットワークデータのエラーです."},
 	{0x59,	"Function not supported by network", "ファンクションはネットワークでサポートされていません."},
 	{0x5A,	"Required system component not installe", "必要なシステム コンポーネントが組み込まれていません."},
-/*
+#ifdef SUPPORT_MSCDEX
 	{0x64,	"Unknown error", "不明なエラーです."},
 	{0x65,	"Not ready", "準備ができていません."},
 	{0x66,	"EMS memory no longer valid", "EMS メモリはもう有効ではありません."},
 	{0x67,	"CDROM not High Sierra or ISO-9660 format", "CDROM は High Sierra または ISO-9660 フォーマットではありません."},
 	{0x68,	"Door open", "レバーが閉まっていません."
-*/
+#endif
 	{0xB0,	"Volume is not locked", "ボリュームがロックされていません."},
 	{0xB1,	"Volume is locked in drive", "ボリュームがロックされています."},
 	{0xB2,	"Volume is not removable", "ボリュームは取り外しできません."},
@@ -13302,8 +13328,14 @@ inline void msdos_int_2fh_11h()
 	switch(REG8(AL)) {
 	case 0x00:
 		if(i386_read_stack() == 0xdada) {
+#ifdef SUPPORT_MSCDEX
+			// MSCDEX is installed
+			REG8(AL) = 0xff;
+			i386_write_stack(0xadad);
+#else
 			// MSCDEX is not installed
 //			REG8(AL) = 0x00;
+#endif
 		} else {
 			// Network Redirector is not installed
 //			REG8(AL) = 0x00;
@@ -13672,7 +13704,7 @@ inline void msdos_int_2fh_15h()
 	switch(REG8(AL)) {
 	case 0x00: // CD-ROM - Installation Check
 		if(REG16(BX) == 0x0000) {
-#if 0
+#ifdef SUPPORT_MSCDEX
 			// MSCDEX is installed
 			REG16(BX) = 0;
 			for(int i = 0, n = 0; i < 26; i++) {

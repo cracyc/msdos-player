@@ -663,6 +663,7 @@ void kbd_write_command(UINT8 val);
 #define SUPPORT_XMS
 //#define SUPPORT_HMA
 #endif
+//#define SUPPORT_MSCDEX
 
 #define VECTOR_TOP	0
 #define VECTOR_SIZE	0x400
