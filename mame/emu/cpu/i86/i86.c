@@ -230,10 +230,10 @@ static void set_test_line(int state)
 
 static CPU_EXECUTE( i8086 )
 {
-//	if (m_halted)
-//	{
-//		return;
-//	}
+	if (m_halted)
+	{
+		return;
+	}
 
 #ifdef USE_DEBUGGER
 	if(now_debugging) {
@@ -294,10 +294,10 @@ static CPU_DISASSEMBLE( i8086 )
 
 static CPU_EXECUTE( i80186 )
 {
-//	if (m_halted)
-//	{
-//		return;
-//	}
+	if (m_halted)
+	{
+		return;
+	}
 
 #ifdef USE_DEBUGGER
 	if(now_debugging) {
@@ -350,10 +350,10 @@ static CPU_EXECUTE( i80186 )
 
 static CPU_EXECUTE( v30 )
 {
-//	if (m_halted)
-//	{
-//		return;
-//	}
+	if (m_halted)
+	{
+		return;
+	}
 
 #ifdef USE_DEBUGGER
 	if(now_debugging) {

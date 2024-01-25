@@ -34,8 +34,13 @@
 #include <psapi.h>
 #include <setupapi.h>
 #include <winsock.h>
+#include <intrin.h>
 
 #ifdef _DEBUG
+// _malloca is defined in both intrin.h and crtdbg.h
+#ifdef _malloca
+#undef _malloca
+#endif
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 #define calloc(c, s) _calloc_dbg(c, s, _NORMAL_BLOCK, __FILE__, __LINE__)
@@ -1276,9 +1281,9 @@ typedef struct {
 		return(val);
 	}
 	UINT16 status, status_alt;
-	UINT16 status_irq, status_irq_alt;
+	UINT16 status_irq, status_irq_alt, status_irq_ps2;
 	UINT16 call_mask;
-	PAIR32 call_addr, call_addr_alt[8];
+	PAIR32 call_addr, call_addr_alt[8], call_addr_ps2;
 	// dummy
 	UINT16 sensitivity[3];
 	UINT16 display_page;

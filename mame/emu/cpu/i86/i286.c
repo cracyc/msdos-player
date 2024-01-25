@@ -207,10 +207,10 @@ static void set_irq_line(int irqline, int state)
 
 static CPU_EXECUTE( i80286 )
 {
-//	if (m_halted)
-//	{
-//		return;
-//	}
+	if (m_halted)
+	{
+		return;
+	}
 
 	/* run until we're out */
 //	while(m_icount>0)

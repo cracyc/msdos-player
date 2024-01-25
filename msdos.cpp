@@ -135,6 +135,7 @@ bool support_xms = false;
 #endif
 int sio_port_number[4] = {0, 0, 0, 0};
 
+BOOL is_xp_64_or_later;
 BOOL is_vista_or_later;
 
 #define UPDATE_OPS 16384
@@ -144,18 +145,37 @@ BOOL is_vista_or_later;
 UINT32 update_ops = 0;
 UINT32 idle_ops = 0;
 
+inline BOOL is_sse2_ready()
+{
+	static int result = -1;
+	int cpu_info[4];
+	
+	if(result == -1) {
+		result = 0;
+		__cpuid(cpu_info, 0);
+		if(cpu_info[0] >= 1){
+			__cpuid(cpu_info, 1);
+			if(cpu_info[3] & (1 << 26)) {
+				result = 1;
+			}
+		}
+	}
+	return(result == 1);
+}
+
 inline void maybe_idle()
 {
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
 	if(!stay_busy && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
-#if 1
-//		YieldProcessor();
-		_mm_pause();
-#else
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
-#endif
+		if(is_sse2_ready()) {
+			_mm_pause();	// SSE2 pause
+		} else if(is_xp_64_or_later) {
+			Sleep(0);	// switch to other thread that is ready to run, without checking priority
+		} else {
+			Sleep(1);
+			REQUEST_HARDWRE_UPDATE();
+		}
 	}
 	idle_ops = 0;
 }
@@ -713,6 +733,10 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 /* Highly useful macro for compile-time knowledge of an array size */
 #define ARRAY_LENGTH(x)     (sizeof(x) / sizeof(x[0]))
 
+// flag to exit MS-DOS Player
+// this is set when the first process is terminated and jump to FFFF:0000 HALT
+int m_exit = 0;
+
 #if defined(HAS_I386)
 	static CPU_TRANSLATE(i386);
 	#include "mame/lib/softfloat/softfloat.c"
@@ -939,7 +963,7 @@ bool telnet_gets(char *str, int n)
 	telnet_command("\033[12l"); // local echo on
 	telnet_command("\033[2l");  // key unlock
 	
-	while(!m_halted) {
+	while(!m_exit) {
 		int len = recv(cli_socket, buffer, sizeof(buffer), 0);
 		
 		if(len > 0 && buffer[0] != 0xff) {
@@ -948,7 +972,7 @@ bool telnet_gets(char *str, int n)
 					str[ptr] = 0;
 					telnet_command("\033[2h");  // key lock
 					telnet_command("\033[12h"); // local echo off
-					return(!m_halted);
+					return(!m_exit);
 				} else if(buffer[i] == 0x08) {
 					if(ptr > 0) {
 						telnet_command("\033[0K"); // erase from cursor position
@@ -973,14 +997,14 @@ bool telnet_gets(char *str, int n)
 		}
 		Sleep(10);
 	}
-	return(!m_halted);
+	return(!m_exit);
 }
 
 bool telnet_kbhit()
 {
 	char buffer[1024];
 	
-	if(!m_halted) {
+	if(!m_exit) {
 		int len = recv(cli_socket, buffer, sizeof(buffer), 0);
 		
 		if(len > 0) {
@@ -1175,11 +1199,11 @@ void debugger_main()
 	now_debugging = true;
 	Sleep(100);
 	
-	if(!m_halted && !now_suspended) {
+	if(!m_exit && !now_suspended) {
 		telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 		telnet_printf("waiting until cpu is suspended...\n");
 	}
-	while(!m_halted && !now_suspended) {
+	while(!m_exit && !now_suspended) {
 		if(telnet_disconnected()) {
 			break;
 		}
@@ -1210,7 +1234,7 @@ void debugger_main()
 	UINT32 dasm_seg = SREG(CS);
 	UINT32 dasm_ofs = m_eip;
 	
-	while(!m_halted) {
+	while(!m_exit) {
 		telnet_printf("- ");
 		command[0] = '\0';
 		
@@ -1241,7 +1265,7 @@ void debugger_main()
 			fprintf(fp_debugger, "%s\n", command);
 		}
 		
-		if(!m_halted && command[0] != 0) {
+		if(!m_exit && command[0] != 0) {
 			char *params[32], *token = NULL;
 			int num = 0;
 			
@@ -1792,7 +1816,7 @@ void debugger_main()
 					now_suspended = false;
 					
 					telnet_command("\033[2l"); // key unlock
-					while(!m_halted && !now_suspended) {
+					while(!m_exit && !now_suspended) {
 						if(telnet_kbhit()) {
 							break;
 						}
@@ -1803,12 +1827,12 @@ void debugger_main()
 					
 					if(!(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit)) {
 						Sleep(100);
-						if(!m_halted && !now_suspended) {
+						if(!m_exit && !now_suspended) {
 							telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 							telnet_printf("waiting until cpu is suspended...\n");
 						}
 					}
-					while(!m_halted && !now_suspended) {
+					while(!m_exit && !now_suspended) {
 						if(telnet_disconnected()) {
 							break;
 						}
@@ -1887,7 +1911,7 @@ void debugger_main()
 						now_going = false;
 						now_suspended = false;
 						
-						while(!m_halted && !now_suspended) {
+						while(!m_exit && !now_suspended) {
 							if(telnet_disconnected()) {
 								break;
 							}
@@ -1912,12 +1936,12 @@ void debugger_main()
 					
 					if(!(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit)) {
 						Sleep(100);
-						if(!m_halted && !now_suspended) {
+						if(!m_exit && !now_suspended) {
 							telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 							telnet_printf("waiting until cpu is suspended...\n");
 						}
 					}
-					while(!m_halted && !now_suspended) {
+					while(!m_exit && !now_suspended) {
 						if(telnet_disconnected()) {
 							break;
 						}
@@ -2113,7 +2137,7 @@ DWORD WINAPI debugger_thread(LPVOID)
 		svr_addr.sin_family = AF_INET;
 		svr_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 		
-		while(!m_halted && port < 10000) {
+		while(!m_exit && port < 10000) {
 			svr_addr.sin_port = htons(port);
 			if((bind_stat = bind(svr_socket, (struct sockaddr *)&svr_addr, sizeof(svr_addr))) == 0) {
 				break;
@@ -2149,7 +2173,7 @@ DWORD WINAPI debugger_thread(LPVOID)
 				CreateProcess(NULL, command, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
 			}
 			
-			while(!m_halted) {
+			while(!m_exit) {
 				if((cli_socket = accept(svr_socket, (struct sockaddr *) &cli_addr, &cli_addr_len)) != INVALID_SOCKET) {
 					u_long val = 1;
 					ioctlsocket(cli_socket, FIONBIO, &val);
@@ -2216,7 +2240,7 @@ void exit_handler()
 #ifdef USE_VRAM_THREAD
 DWORD WINAPI vram_thread(LPVOID)
 {
-	while(!m_halted) {
+	while(!m_exit) {
 		EnterCriticalSection(&vram_crit_sect);
 		if(vram_length_char != 0 && vram_length_char == vram_last_length_char) {
 			vram_flush_char();
@@ -2801,6 +2825,7 @@ int main(int argc, char *argv[], char *envp[])
 		return(retval);
 	}
 	
+	is_xp_64_or_later = is_greater_windows_version(5, 2, 0, 0);
 	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -2842,6 +2867,8 @@ int main(int argc, char *argv[], char *envp[])
 	scr_buf_pos.X = scr_buf_pos.Y = 0;
 	scr_top = csbi.srWindow.Top;
 	cursor_moved = false;
+	
+	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 	
 #ifdef USE_SERVICE_THREAD
 	InitializeCriticalSection(&input_crit_sect);
@@ -4970,7 +4997,7 @@ retry:
 		key_code >>= 16;
 		key_recv >>= 16;
 	} else {
-		while(key_buf_char != NULL && key_buf_scan != NULL && !m_halted) {
+		while(key_buf_char != NULL && key_buf_scan != NULL && !m_exit) {
 			if(key_buf_char != NULL && key_buf_scan != NULL) {
 #ifdef USE_SERVICE_THREAD
 				EnterCriticalSection(&key_buf_crit_sect);
@@ -5002,7 +5029,7 @@ retry:
 				}
 			}
 		}
-		if(m_halted) {
+		if(m_exit) {
 			// insert CR to terminate input loops
 			key_char = 0x0d;
 			key_scan = 0;
@@ -5130,7 +5157,7 @@ void msdos_putch(UINT8 data)
 			REG8(AL) = data;
 			
 			// run cpu until call int 29h routine is done
-			while(!m_halted && tmp_pc != m_pc) {
+			while(!m_exit && tmp_pc != m_pc) {
 				try {
 					hardware_run_cpu();
 				} catch(...) {
@@ -7141,8 +7168,8 @@ inline void pcbios_int_10h_0eh()
 	DWORD num;
 	COORD co;
 	
-	co.X = mem[0x450 + (REG8(BH) % vram_pages) * 2];
-	co.Y = mem[0x451 + (REG8(BH) % vram_pages) * 2];
+	co.X = mem[0x450 + mem[0x462] * 2];
+	co.Y = mem[0x451 + mem[0x462] * 2];
 	
 	if(REG8(AL) == 7) {
 		//MessageBeep(-1);
@@ -7153,31 +7180,29 @@ inline void pcbios_int_10h_0eh()
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), &REG8(AL), 1, &num, NULL);
 		cursor_moved = true;
 	} else {
-		int dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y);
-		if(mem[0x462] == REG8(BH)) {
+		int dest = pcbios_get_shadow_buffer_address(mem[0x462], co.X, co.Y);
 #ifdef USE_VRAM_THREAD
-			EnterCriticalSection(&vram_crit_sect);
+		EnterCriticalSection(&vram_crit_sect);
 #endif
-			int vram = pcbios_get_shadow_buffer_address(REG8(BH));
-			write_text_vram_char(dest - vram, REG8(AL));
+		int vram = pcbios_get_shadow_buffer_address(mem[0x462]);
+		write_text_vram_char(dest - vram, REG8(AL));
 #ifdef USE_VRAM_THREAD
-			LeaveCriticalSection(&vram_crit_sect);
+		LeaveCriticalSection(&vram_crit_sect);
 #endif
-			
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-			if(++co.X == scr_width) {
-				co.X = 0;
-				if(++co.Y == scr_height) {
-					vram_flush();
-					WriteConsole(hStdout, "\n", 1, &num, NULL);
-					cursor_moved = true;
-				}
-			}
-			if(!cursor_moved) {
-				co.Y += scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+		
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+		if(++co.X == scr_width) {
+			co.X = 0;
+			if(++co.Y == scr_height) {
+				vram_flush();
+				WriteConsole(hStdout, "\n", 1, &num, NULL);
 				cursor_moved = true;
 			}
+		}
+		if(!cursor_moved) {
+			co.Y += scr_top;
+			SetConsoleCursorPosition(hStdout, co);
+			cursor_moved = true;
 		}
 		mem[dest] = REG8(AL);
 	}
@@ -7195,25 +7220,29 @@ inline void pcbios_int_10h_11h()
 	switch(REG8(AL)) {
 	case 0x01:
 	case 0x11:
-		pcbios_set_console_size(80, 28, true);
+//		pcbios_set_console_size(80, 28, true);
 		break;
 	case 0x02:
 	case 0x12:
-		pcbios_set_console_size(80, 50, true);
+//		pcbios_set_console_size(80, 50, true);
 		break;
 	case 0x04:
 	case 0x14:
-		pcbios_set_console_size(80, 25, true);
+//		pcbios_set_console_size(80, 25, true);
 		break;
-	case 0x18:
-		pcbios_set_console_size(80, 50, true);
-		break;
+//	case 0x18:
+//		pcbios_set_console_size(80, 50, true);
+//		break;
 	case 0x30:
 		SREG(ES) = 0;
 		i386_load_segment_descriptor(ES);
 		REG16(BP) = 0;
 		REG16(CX) = mem[0x485];
 		REG8(DL) = mem[0x484];
+		break;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
 		break;
 	}
 }
@@ -8095,7 +8124,7 @@ DWORD WINAPI pcbios_int_15h_86h_thread(LPVOID)
 	UINT32 usec = (REG16(CX) << 16) | REG16(DX);
 	UINT32 msec = usec / 1000;
 	
-	while(msec && !m_halted) {
+	while(msec && !m_exit) {
 		UINT32 tmp = min(msec, 100);
 		if(msec - tmp < 10) {
 			tmp = msec;
@@ -8194,6 +8223,154 @@ inline void pcbios_int_15h_8ah()
 	UINT32 size = MAX_MEM - 0x100000;
 	REG16(AX) = size & 0xffff;
 	REG16(DX) = size >> 16;
+}
+
+#ifdef EXT_BIOS_TOP
+inline void pcbios_int_15h_c1h()
+{
+	SREG(ES) = EXT_BIOS_TOP >> 4;
+	i386_load_segment_descriptor(ES);
+}
+#endif
+
+void pcbios_read_from_ps2_mouse(UINT16 *data_1st, UINT16 *data_2nd, UINT16 *data_3rd)
+{
+	// from DOSBox DoPS2Callback()
+	UINT16 mdat = 0x08;
+	INT16 xdiff = mouse.position.x - mouse.prev_position.x;
+	INT16 ydiff = mouse.prev_position.y - mouse.position.y;
+	
+	if(mouse.buttons[0].status) {
+		mdat |= 0x01;
+	}
+	if(mouse.buttons[1].status) {
+		mdat |= 0x02;
+	}
+	mouse.prev_position.x = mouse.position.x;
+	mouse.prev_position.y = mouse.position.y;
+	if((xdiff > 0xff) || (xdiff < -0xff)) {
+		mdat |= 0x40;	// x overflow
+	}
+	if((ydiff > 0xff) || (ydiff < -0xff)) {
+		mdat |= 0x80;	// y overflow
+	}
+	xdiff %= 256;
+	ydiff %= 256;
+	if(xdiff < 0) {
+		xdiff = (0x100 + xdiff);
+		mdat |= 0x10;
+	}
+	if(ydiff < 0) {
+		ydiff = (0x100 + ydiff);
+		mdat |= 0x20;
+	}
+	*data_1st = (UINT16)mdat;
+	*data_2nd = (UINT16)(xdiff % 256);
+	*data_3rd = (UINT16)(ydiff % 256);
+}
+
+inline void pcbios_int_15h_c2h()
+{
+	static UINT8 enabled = 0;
+	static UINT8 sampling_rate = 5;
+	static UINT8 resolution = 2;
+	static UINT8 scaling = 1;
+	
+	switch(REG8(AL)) {
+	case 0x00:
+		if(REG8(BH) == 0x00 || REG8(BH) == 0x01) {
+			enabled = REG8(BH);
+			REG8(AH) = 0x00; // successful
+		} else {
+			REG8(AH) = 0x01; // invalid function
+			m_CF = 1;
+		}
+		break;
+	case 0x01:
+		REG8(BH) = 0x00; // device id
+		REG8(BL) = 0xaa; // mouse
+	case 0x05:
+		enabled = 0;
+		sampling_rate = 5;
+		resolution = 2;
+		scaling = 1;
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x02:
+		sampling_rate = REG8(BH);
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x03:
+		resolution = REG8(BH);
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x04:
+		REG8(BH) = 0x00; // device id
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x06:
+		switch(REG8(BH)) {
+		case 0x00:
+			REG8(BL) = 0x00;
+			if(mouse.buttons[1].status) {
+				REG8(BL) |= 0x01;
+			}
+			if(mouse.buttons[0].status) {
+				REG8(BL) |= 0x04;
+			}
+			if(scaling == 2) {
+				REG8(BL) |= 0x10;
+			}
+			REG8(CL) = resolution;
+			switch(sampling_rate) {
+			case 0:  REG8(DL) =  10; break;
+			case 1:  REG8(DL) =  20; break;
+			case 2:  REG8(DL) =  40; break;
+			case 3:  REG8(DL) =  60; break;
+			case 4:  REG8(DL) =  80; break;
+//			case 5:  REG8(DL) = 100; break;
+			case 6:  REG8(DL) = 200; break;
+			default: REG8(DL) = 100; break;
+			}
+			REG8(AH) = 0x00; // successful
+			break;
+		case 0x01:
+		case 0x02:
+			scaling = REG8(BH);
+			REG8(AH) = 0x00; // successful
+			break;
+		default:
+			unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG8(AH) = 0x01; // invalid function
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x07: // set device handler addr
+		mouse.call_addr_ps2.w.l = REG16(BX);
+		mouse.call_addr_ps2.w.h = SREG(ES);
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x08:
+		REG8(AH) = 0x00; // successful
+		break;
+	case 0x09:
+		{
+			UINT16 data_1st, data_2nd, data_3rd;
+			pcbios_read_from_ps2_mouse(&data_1st, &data_2nd, &data_3rd);
+			REG8(BL) = (UINT8)(data_1st & 0xff);
+			REG8(CL) = (UINT8)(data_2nd & 0xff);
+			REG8(DL) = (UINT8)(data_3rd & 0xff);
+		}
+		REG8(AH) = 0x00; // successful
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//		REG8(AH) = 0x86;
+		REG8(AH) = 0x01; // invalid function
+		m_CF = 1;
+		break;
+	}
 }
 
 #if defined(HAS_I386)
@@ -8351,7 +8528,7 @@ void pcbios_update_key_code(bool wait)
 
 DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 {
-	while(key_recv == 0 && !m_halted) {
+	while(key_recv == 0 && !m_exit) {
 		pcbios_update_key_code(true);
 	}
 	if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
@@ -16429,13 +16606,18 @@ void msdos_syscall(unsigned num)
 		case 0x89: pcbios_int_15h_89h(); break;
 		case 0x8a: pcbios_int_15h_8ah(); break;
 		case 0xc0: // PS/2 ???
+#ifndef EXT_BIOS_TOP
 		case 0xc1:
-		case 0xc2:
+#endif
 		case 0xc3: // PS50+ ???
 		case 0xc4:
 			REG8(AH) = 0x86;
 			m_CF = 1;
 			break;
+#ifdef EXT_BIOS_TOP
+		case 0xc1: pcbios_int_15h_c1h(); break;
+#endif
+		case 0xc2: pcbios_int_15h_c2h(); break;
 #if defined(HAS_I386)
 		case 0xc9: pcbios_int_15h_c9h(); break;
 #endif
@@ -17067,6 +17249,21 @@ void msdos_syscall(unsigned num)
 				mem[DUMMY_TOP + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
 				break;
 			}
+		}
+		if(mouse.status_irq_ps2 && mouse.call_addr_ps2.dw) {
+			UINT16 data_1st, data_2nd, data_3rd;
+			pcbios_read_from_ps2_mouse(&data_1st, &data_2nd, &data_3rd);
+			i386_push16(data_1st);
+			i386_push16(data_2nd);
+			i386_push16(data_3rd);
+			i386_push16(0x0000);
+			
+			mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
+			mem[DUMMY_TOP + 0x03] = mouse.call_addr_ps2.w.l & 0xff;
+			mem[DUMMY_TOP + 0x04] = mouse.call_addr_ps2.w.l >> 8;
+			mem[DUMMY_TOP + 0x05] = mouse.call_addr_ps2.w.h & 0xff;
+			mem[DUMMY_TOP + 0x06] = mouse.call_addr_ps2.w.h >> 8;
+			break;
 		}
 		// invalid call addr :-(
 		mem[DUMMY_TOP + 0x02] = 0x90;	// nop
@@ -17975,7 +18172,7 @@ void hardware_run()
 #ifdef USE_DEBUGGER
 	m_int_num = -1;
 #endif
-	while(!m_halted) {
+	while(!m_exit) {
 		hardware_run_cpu();
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
@@ -18074,9 +18271,16 @@ void hardware_update()
 			}
 			
 			// raise irq12 if mouse status is changed
-			if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
+			if((mouse.status & 0x1f) && mouse.call_addr_ps2.dw) {
+				mouse.status_irq = 0; // ???
+				mouse.status_irq_alt = 0; // ???
+				mouse.status_irq_ps2 = mouse.status & 0x1f;
+				mouse.status = 0;
+				pic_req(1, 4, 1);
+			} else if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
 				mouse.status_irq = mouse.status & mouse.call_mask;
 				mouse.status_irq_alt = 0; // ???
+				mouse.status_irq_ps2 = 0; // ???
 				mouse.status &= ~mouse.call_mask;
 				pic_req(1, 4, 1);
 			} else {
@@ -18084,6 +18288,7 @@ void hardware_update()
 					if((mouse.status_alt & (1 << i)) && mouse.call_addr_alt[i].dw) {
 						mouse.status_irq = 0; // ???
 						mouse.status_irq_alt = 0;
+						mouse.status_irq_ps2 = 0; // ???
 						for(int j = 0; j < 8; j++) {
 							if((mouse.status_alt & (1 << j)) && mouse.call_addr_alt[i].dw == mouse.call_addr_alt[j].dw) {
 								mouse.status_irq_alt |=  (1 << j);
@@ -19360,7 +19565,7 @@ DWORD WINAPI sio_thread(void *lpx)
 //		EscapeCommFunction(hComm, SETRTS);
 //		EscapeCommFunction(hComm, SETDTR);
 		
-		while(!m_halted) {
+		while(!m_exit) {
 			// setup comm port
 			bool comm_state_changed = false;
 			

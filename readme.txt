@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/27/2017
+								8/11/2017
 
 ----- What's this
 
@@ -442,13 +442,6 @@ INT 10H		PC BIOS - Video
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
-	1101H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
-	1102H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
-	1104H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
-	1111H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
-	1112H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
-	1114H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
-	1118H	Set Video Mode to 80x50 (Set V-TEXT Vertically Long Mode)
 	1130H	Get Font Information
 	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
@@ -514,6 +507,16 @@ INT 15H		PC BIOS
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
 	8AH	Get Big Memory Size
+	C200H	Pointing Device BIOS Interface (PS) - Enable/Disable
+	C201H	Pointing Device BIOS Interface (PS) - Reset
+	C202H	Pointing Device BIOS Interface (PS) - Set Sampling Rate
+	C203H	Pointing Device BIOS Interface (PS) - Set Resolution
+	C204H	Pointing Device BIOS Interface (PS) - Get Type
+	C205H	Pointing Device BIOS Interface (PS) - Initialize
+	C206H	Pointing Device BIOS Interface (PS) - Extended Commands
+	C207H	Pointing Device BIOS Interface (PS) - Set Device Handler Addr
+	C208H	Pointing Device BIOS Interface (PS) - Write To Pointer Port
+	C209H	Pointing Device BIOS Interface (PS) - Read From Pointer Port
 	C9H	Get CPU Type and Mask Revision
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
@@ -977,7 +980,8 @@ NEC V30 instructions code is based on MAME 0.128.
 
 INT 15H AH=84H (Joystick Support),
 INT 15H AH=87H (Copy Extended Memory),
-INT 15H AH=89H (Switch to Protected Mode),
+INT 15H AH=89H (Switch To Protected Mode),
+INT 15H AX=C209H (Read From Pointer Port)
 INT 21H AX=4402H (Read From Character Device Control Channel),
 INT 33H AX=001FH (Disable Mouse Driver),
 INT 33H AX=0020H (Enable Mouse Driver),

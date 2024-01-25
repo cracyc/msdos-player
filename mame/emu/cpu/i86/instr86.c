@@ -2585,6 +2585,12 @@ static void PREFIX86(_hlt)()    /* Opcode 0xf4 */
 	if(PM && (CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 #endif
 	m_halted=1;
+
+	// Exit MS-DOS Player
+	if(m_pc == 0xffff1) {
+		// The first process is terminated and jump to FFFF:0000 HALT
+		m_exit = 1;
+	}
 }
 
 static void PREFIX86(_cmc)()    /* Opcode 0xf5 */

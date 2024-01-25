@@ -2369,6 +2369,12 @@ static void I386OP(hlt)()               // Opcode 0xf4
 	CYCLES(CYCLES_HLT);
 //	if (m_cycles > 0)
 //		m_cycles = 0;
+
+	// Exit MS-DOS Player
+	if(m_pc == 0xffff1) {
+		// The first process is terminated and jump to FFFF:0000 HALT
+		m_exit = 1;
+	}
 }
 
 static void I386OP(decimal_adjust)(int direction)

@@ -3396,12 +3396,14 @@ static CPU_EXECUTE( i386 )
 #endif
 	CHANGE_PC(m_eip);
 
-//	if (m_halted)
-//	{
-//		m_tsc += cycles;
+	if (m_halted)
+	{
+#ifdef SUPPORT_RDTSC
+		m_tsc += 1;//cycles;
 //		m_cycles = 0;
-//		return;
-//	}
+#endif
+		return;
+	}
 
 //	while( m_cycles > 0 )
 //	{
