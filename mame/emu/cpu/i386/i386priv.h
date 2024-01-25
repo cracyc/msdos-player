@@ -348,6 +348,9 @@ union XMM_REG {
 	I386_SREG m_sreg[6];
 	UINT32 m_eip;
 	UINT32 m_pc;
+#ifdef USE_DEBUGGER
+	UINT32 m_prev_cs;
+#endif
 	UINT32 m_prev_eip;
 	UINT32 m_eflags;
 	UINT32 m_eflags_mask;

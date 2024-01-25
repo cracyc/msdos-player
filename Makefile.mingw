@@ -20,7 +20,7 @@ CFLAGS_OX=-o $@
 CFLAGS= -O3 -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
-LIBS = -lwinmm -lpsapi
+LIBS = -lwinmm -lpsapi -lwsock32
 LDFLAGS = -mconsole -s -static -static-libgcc
 
 
@@ -40,7 +40,7 @@ LDFLAGS = -mconsole -s -static -static-libgcc
 #CFLAGS_OX = /Fe$@
 #CFLAGS= /nologo /W4 /O2 /EHsc /D_MT /DWIN32 /D_MBCS /D_CONSOLE /DNDEBUG /DSUPPORT_DISASSEMBLER /errorReport:none
 #CXXFLAGS = $(CFLAGS)
-#LIBS = user32.lib winmm.lib psapi.lib
+#LIBS = user32.lib winmm.lib psapi.lib wsock32.lib
 #LDFLAGS = /MT
 
 

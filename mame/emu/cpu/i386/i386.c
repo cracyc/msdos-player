@@ -625,6 +625,21 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 	int SetRPL = 0;
 	m_lock = false;
 
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == irq) {
+				if((int_break_point.table[i].ah == REG8(AH) || int_break_point.table[i].ah_registered == 0) &&
+				   (int_break_point.table[i].al == REG8(AL) || int_break_point.table[i].al_registered == 0)) {
+					int_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+#endif
+
 	if( !(PROTECTED_MODE) )
 	{
 		/* 16-bit */
@@ -3116,6 +3131,9 @@ static void zero_state()
 	memset( m_sreg, 0, sizeof(m_sreg) );
 	m_eip = 0;
 	m_pc = 0;
+#ifdef USE_DEBUGGER
+	m_prev_cs = 0;
+#endif
 	m_prev_eip = 0;
 	m_eflags = 0;
 	m_eflags_mask = 0;
@@ -3379,6 +3397,25 @@ static CPU_EXECUTE( i386 )
 
 //	while( m_cycles > 0 )
 //	{
+#ifdef USE_DEBUGGER
+		if(now_debugging) {
+			if(force_suspend) {
+				force_suspend = false;
+				now_suspended = true;
+			} else {
+				for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+					if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+						break_point.hit = i + 1;
+						now_suspended = true;
+						break;
+					}
+				}
+			}
+			while(now_debugging && now_suspended) {
+				Sleep(10);
+			}
+		}
+#endif
 		i386_check_irq_line();
 		m_operand_size = m_sreg[CS].d;
 		m_xmm_operand_size = 0;
@@ -3390,6 +3427,9 @@ static CPU_EXECUTE( i386 )
 		int old_tf = m_TF;
 
 		m_segment_prefix = 0;
+#ifdef USE_DEBUGGER
+		m_prev_cs = m_sreg[CS].selector;
+#endif
 		m_prev_eip = m_eip;
 
 //		debugger_instruction_hook(device, m_pc);
@@ -3408,6 +3448,9 @@ static CPU_EXECUTE( i386 )
 			I386OP(decode_opcode)();
 			if(m_TF && old_tf)
 			{
+#ifdef USE_DEBUGGER
+				m_prev_cs = m_sreg[CS].selector;
+#endif
 				m_prev_eip = m_eip;
 				m_ext = 1;
 				i386_trap(1,0,0);
@@ -3420,6 +3463,13 @@ static CPU_EXECUTE( i386 )
 			m_ext = 1;
 			i386_trap_with_error(e&0xffffffff,0,0,e>>32);
 		}
+#ifdef USE_DEBUGGER
+		if(now_debugging) {
+			if(!now_going) {
+				now_suspended = true;
+			}
+		}
+#endif
 //	}
 #ifdef SUPPORT_RDTSC
 	m_tsc += (cycles - m_cycles);

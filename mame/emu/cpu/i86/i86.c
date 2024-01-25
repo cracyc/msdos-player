@@ -33,6 +33,10 @@ union i8086basicregs
 	i8086basicregs m_regs;
 	UINT32 m_pc;
 	UINT32 m_prevpc;
+#ifdef USE_DEBUGGER
+	UINT32  m_prev_cs;
+	UINT32  m_prev_eip;
+#endif
 	UINT32 m_base[4];
 	UINT16 m_sregs[4];
 	UINT16 m_flags;
@@ -230,9 +234,39 @@ static CPU_EXECUTE( i8086 )
 		return;
 	}
 
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(force_suspend) {
+			force_suspend = false;
+			now_suspended = true;
+		} else {
+			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+				if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+					break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+		while(now_debugging && now_suspended) {
+			Sleep(10);
+		}
+	}
+	m_prev_cs = m_sregs[CS];
+	m_prev_eip = m_pc - m_base[CS];
+#endif
+
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
 	TABLE86;
+
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(!now_going) {
+			now_suspended = true;
+		}
+	}
+#endif
 }
 
 
@@ -264,9 +298,39 @@ static CPU_EXECUTE( i80186 )
 		return;
 	}
 
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(force_suspend) {
+			force_suspend = false;
+			now_suspended = true;
+		} else {
+			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+				if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+					break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+		while(now_debugging && now_suspended) {
+			Sleep(10);
+		}
+	}
+	m_prev_cs = m_sregs[CS];
+	m_prev_eip = m_pc - m_base[CS];
+#endif
+
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
 	TABLE186;
+
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(!now_going) {
+			now_suspended = true;
+		}
+	}
+#endif
 }
 
 //#include "i86.h"
@@ -290,8 +354,38 @@ static CPU_EXECUTE( v30 )
 		return;
 	}
 
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(force_suspend) {
+			force_suspend = false;
+			now_suspended = true;
+		} else {
+			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+				if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+					break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+		while(now_debugging && now_suspended) {
+			Sleep(10);
+		}
+	}
+	m_prev_cs = m_sregs[CS];
+	m_prev_eip = m_pc - m_base[CS];
+#endif
+
 	m_seg_prefix = FALSE;
 	m_prevpc = m_pc;
 	TABLEV30;
+
+#ifdef USE_DEBUGGER
+	if(now_debugging) {
+		if(!now_going) {
+			now_suspended = true;
+		}
+	}
+#endif
 }
 

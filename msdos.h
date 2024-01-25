@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <conio.h>
+#include <locale.h>
 #include <math.h>
 #include <dos.h>
 #include <fcntl.h>
@@ -32,6 +33,7 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <setupapi.h>
+#include <winsock.h>
 
 #ifdef _DEBUG
 #define _CRTDBG_MAP_ALLOC
@@ -93,6 +95,9 @@ typedef unsigned short UINT16;
 #ifndef UINT32
 typedef unsigned int UINT32;
 #endif
+#ifndef UINT64
+typedef unsigned long long UINT64;
+#endif
 #ifndef INT8
 typedef signed char INT8;
 #endif
@@ -101,6 +106,9 @@ typedef signed short INT16;
 #endif
 #ifndef INT32
 typedef signed int INT32;
+#endif
+#ifndef INT64
+typedef signed long long INT64;
 #endif
 
 #pragma pack(1)
@@ -141,6 +149,10 @@ public:
 	void release()
 	{
 		free(buf);
+	}
+	void clear()
+	{
+		cnt = rpt = wpt = 0;
 	}
 	void write(int val) {
 		if(cnt < size) {
@@ -232,6 +244,67 @@ public:
 #endif
 
 /* ----------------------------------------------------------------------------
+	debugger
+---------------------------------------------------------------------------- */
+
+//#define USE_DEBUGGER
+
+#ifdef USE_DEBUGGER
+#define MAX_BREAK_POINTS	8
+
+bool now_debugging = false;
+bool now_going = false;
+bool now_suspended = false;
+bool force_suspend = false;
+
+typedef struct {
+	struct {
+		UINT32 addr;
+		UINT32 seg;
+		UINT32 ofs;
+		int status;	// 0 = none, 1 = enabled, other = disabled
+	} table[MAX_BREAK_POINTS];
+	int hit;
+} break_point_t;
+
+break_point_t break_point = {0};
+break_point_t rd_break_point = {0};
+break_point_t wr_break_point = {0};
+break_point_t in_break_point = {0};
+break_point_t out_break_point = {0};
+
+typedef struct {
+	struct {
+		int int_num;
+		UINT8 ah, ah_registered;
+		UINT8 al, al_registered;
+		int status;	// 0 = none, 1 = enabled, other = disabled
+	} table[MAX_BREAK_POINTS];
+	int hit;
+} int_break_point_t;
+
+int_break_point_t int_break_point = {0};
+
+FILE *fp_debugger = NULL;
+FILE *fi_debugger = NULL;
+
+// these read/write interfaces do not check break points,
+// debugger should use them not to hit any break point mistakely
+UINT8 debugger_read_byte(offs_t byteaddress);
+UINT16 debugger_read_word(offs_t byteaddress);
+UINT32 debugger_read_dword(offs_t byteaddress);
+void debugger_write_byte(offs_t byteaddress, UINT8 data);
+void debugger_write_word(offs_t byteaddress, UINT16 data);
+void debugger_write_dword(offs_t byteaddress, UINT32 data);
+UINT8 debugger_read_io_byte(offs_t addr);
+UINT16 debugger_read_io_word(offs_t addr);
+UINT32 debugger_read_io_dword(offs_t addr);
+void debugger_write_io_byte(offs_t addr, UINT8 val);
+void debugger_write_io_word(offs_t addr, UINT16 val);
+void debugger_write_io_dword(offs_t addr, UINT32 val);
+#endif
+
+/* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
@@ -246,13 +319,16 @@ void hardware_update();
 // memory
 
 #if defined(HAS_I386)
-#define MAX_MEM 0x2000000	/* 32MB */
+	#define ADDR_MASK 0xffffffff
+	#define MAX_MEM 0x2000000	/* 32MB */
 #elif defined(HAS_I286)
-#define MAX_MEM 0x1000000	/* 16MB */
+	#define ADDR_MASK 0xffffff
+	#define MAX_MEM 0x1000000	/* 16MB */
 #else
-#define MAX_MEM 0x100000	/* 1MB */
+	#define ADDR_MASK 0xfffff
+	#define MAX_MEM 0x100000	/* 1MB */
 #endif
-UINT8 mem[MAX_MEM + 3];
+UINT8 mem[MAX_MEM + 15];
 
 // ems
 
@@ -551,6 +627,7 @@ UINT32 XMS_TOP = 0;
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000
 #define PSP_SIZE	0x100
+#define PSP_SYSTEM	0x0008
 
 #define MAX_FILES	128
 #define MAX_PROCESS	16
@@ -913,6 +990,9 @@ static const struct {
 typedef struct {
 	UINT16 psp;
 	char module_dir[MAX_PATH];
+#ifdef USE_DEBUGGER
+	char module_path[MAX_PATH];
+#endif
 	PAIR32 dta;
 	UINT8 switchar;
 	UINT8 verify;
@@ -992,10 +1072,13 @@ FIFO *key_buf_char = NULL;
 FIFO *key_buf_scan = NULL;
 bool key_changed = false;
 UINT32 key_code = 0;
+UINT32 key_recv = 0;
 
-UINT8 ctrl_c_checking = 0x01; // ???
+UINT8 ctrl_break_checking = 0x00; // ???
+bool ctrl_break_detected = false;
+bool ctrl_break_pressed = false;
 bool ctrl_c_pressed = false;
-bool ctrl_c_detected = false;
+bool raise_int_1bh = false;
 
 int active_code_page;
 int system_code_page;

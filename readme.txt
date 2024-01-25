@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/2/2017
+								2/18/2017
 
 ----- What's this
 
@@ -102,7 +102,7 @@ On the Windows OS, there are too many variables and the environment variable
 table size will be more than 1024 bytes and it causes an error.
 
 In this case, please specify the option '-e' and only the minimum environment
-variables (APPEND/COMSPEC/INCLUDE/LIB/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are
+variables (APPEND/COMSPEC/LASTDRIVE/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are
 copied to the virtual table.
 
 	> msdos -e dd.com
@@ -143,6 +143,126 @@ In this case, please define MSDOS_TEMP on the host Windows, for example
 
 NOTE: MSDOS_(APPEND/COMSPEC/TEMP) are not copied to  the virtual table,
 but MSDOS_PATH is copied to, because some softwares may refer MSDOS_PATH.
+
+If the environment variable MSDOS_LASTDRIVE is defined on the host Windows,
+its value is copied to LASTDRIVE on the virtual table.
+If both MSDOS_LASTDRIVE and LASTDRIVE are not defined on the host Windows,
+LASTDRIVE=Z is automatically defined on the virtual table.
+
+If the environment variable PROMPT is not defined on the host Windows,
+PROMPT=$P$G is automatically defined on the virtual table.
+
+If the environment variable MSDOS_TZ is defined on the host Windows,
+its value is copied to TZ on the virtual table.
+If both MSDOS_TZ and TZ are not defined on the host Windows,
+and if your timezone is in the following table, TZ is automatically defined
+on the virtual table, for example TZ=JST-9 in Japan.
+
+------- Greenwich Mean Time ---------------------------------------------------
++00:00  GMT Standard Time                   GMT     BST     GB London
++00:00  GMT Standard Time                   GMT     IST     IE Dublin
++00:00  GMT Standard Time                   WET     WES     PT Lisbon
++00:00  Greenwich Standard Time             GMT     GST     IS Reykjavik
+------- Fernando De Noronha Std -----------------------------------------------
+-02:00  Mid-Atlantic Standard Time          FST     FDT     BR Noronha
+-02:00  UTC-02                              FST     FDT     BR Noronha
+------- Brazil Standard Time --------------------------------------------------
+-03:00  Bahia Standard Time                 BST     BDT     BR Bahia
+-03:00  SA Eastern Standard Time            BST     BDT     BR Fortaleza
+-03:00  Tocantins Standard Time             BST     BDT     BR Palmas
+------- Eastern Standard (Brazil) ---------------------------------------------
+-03:00  E. South America Standard Time      EST     EDT     BR Sao Paulo
+------- Greenland Standard Time -----------------------------------------------
+-03:00  Greenland Standard Time             GST     GDT     GL Godthab
+------- Newfoundland Standard Time --------------------------------------------
+-03:30  Newfoundland Standard Time          NST     NDT     CA St.Johns
+------- Atlantic Standard Time ------------------------------------------------
+-04:00  Atlantic Standard Time              AST     ADT     CA Halifax
+------- Western Standard (Brazil) ---------------------------------------------
+-04:00  Central Brazilian Standard Time     WST     WDT     BR Cuiaba
+-04:00  SA Western Standard Time            WST     WDT     BR Manaus
+------- Chile Standard Time ---------------------------------------------------
+-04:00  Pacific SA Standard Time            CST     CDT     CL Santiago
+------- Eastern Standard Time -------------------------------------------------
+-05:00  Eastern Standard Time               EST     EDT     US New York
+-05:00  Eastern Standard Time (Mexico)      EST     EDT     MX Cancun
+-05:00  US Eastern Standard Time            EST     EDT     US Indianapolis
+------- Acre Standard Time ----------------------------------------------------
+-05:00  SA Pacific Standard Time            AST     ADT     BR Rio Branco
+------- Cuba Standard Time ----------------------------------------------------
+-05:00  Cuba Standard Time                  CST     CDT     CU Havana
+------- Central Standard Time -------------------------------------------------
+-06:00  Canada Central Standard Time        CST     CDT     CA Regina
+-06:00  Central Standard Time               CST     CDT     US Chicago
+-06:00  Central Standard Time (Mexico)      CST     CDT     MX Mexico City
+------- Easter Island Standard ------------------------------------------------
+-06:00  Easter Island Standard Time         EST     EDT     CL Easter
+------- Mountain Standard Time ------------------------------------------------
+-07:00  Mountain Standard Time              MST     MDT     US Denver
+-07:00  Mountain Standard Time (Mexico)     MST     MDT     MX Chihuahua
+-07:00  US Mountain Standard Time           MST     MDT     US Phoenix
+------- Pacific Standard Time -------------------------------------------------
+-08:00  Pacific Standard Time               PST     PDT     US Los Angeles
+-08:00  Pacific Standard Time (Mexico)      PST     PDT     MX Tijuana
+------- Alaska Standard Time --------------------------------------------------
+-09:00  Alaskan Standard Time               AKS     AKD     US Anchorage
+------- Hawaii Standard Time --------------------------------------------------
+-10:00  Aleutian Standard Time              HST     HDT     US Aleutian
+-10:00  Hawaiian Standard Time              HST     HDT     US Honolulu
+------- Samoa Standard Time ---------------------------------------------------
++13:00  Samoa Standard Time                 SST     SDT     US Samoa
+------- New Zealand Standard Time ---------------------------------------------
++12:00  New Zealand Standard Time           NZS     NZD     NZ Auckland
+------- Guam Standard Time ----------------------------------------------------
++10:00  West Pacific Standard Time          GST     GDT     GU Guam
+------- Eastern Australian Standard -------------------------------------------
++10:00  AUS Eastern Standard Time           EAS     EAD     AU Sydney
++10:00  E. Australia Standard Time          EAS     EAD     AU Brisbane
++10:00  Tasmania Standard Time              EAS     EAD     AU Hobart
+------- Central Australian Standard -------------------------------------------
++09:30  AUS Central Standard Time           CAS     CAD     AU Darwin
++09:30  Cen. Australia Standard Time        CAS     CAD     AU Adelaide
+------- Japan Standard Time ---------------------------------------------------
++09:00  Tokyo Standard Time                 JST     JDT     JP Tokyo
+------- Korean Standard Time --------------------------------------------------
++09:00  Korea Standard Time                 KST     KDT     KR Seoul
++08:30  North Korea Standard Time           KST     KDT     KP Pyongyang
+------- China Coast Time ------------------------------------------------------
++08:00  China Standard Time                 CCT     CDT     CN Shanghai
++08:00  Taipei Standard Time                CCT     CDT     TW Taipei
+------- Hong Kong Time --------------------------------------------------------
++08:00  China Standard Time                 HKT     HKS     HK Hong Kong
+------- Singapore Standard Time -----------------------------------------------
++08:00  Singapore Standard Time             SST     SDT     SG Singapore
+------- Western Australian Standard -------------------------------------------
++08:45  Aus Central W. Standard Time        WAS     WAD     AU Eucla
++08:00  W. Australia Standard Time          WAS     WAD     AU Perth
+------- North Sumatra Time ----------------------------------------------------
++07:00  SE Asia Standard Time               NST     NDT     ID Jakarta
+------- Indian Standard Time --------------------------------------------------
++05:30  India Standard Time                 IST     IDT     IN Calcutta
+------- Iran Standard Time ----------------------------------------------------
++03:30  Iran Standard Time                  IST     IDT     IR Tehran
+------- Moscow Winter Time ----------------------------------------------------
++03:00  Belarus Standard Time               MSK     MSD     BY Minsk
++03:00  Russian Standard Time               MSK     MSD     RU Moscow
+------- Eastern Europe Time ---------------------------------------------------
++02:00  E. Europe Standard Time             EET     EES     MD Chisinau
++02:00  FLE Standard Time                   EET     EES     UA Kiev
++02:00  GTB Standard Time                   EET     EES     RO Bucharest
++02:00  Kaliningrad Standard Time           EET     EES     RU Kaliningrad
+------- Israel Standard Time --------------------------------------------------
++02:00  Israel Standard Time                IST     IDT     IL Jerusalem
+------- Central European Time -------------------------------------------------
++01:00  Central Europe Standard Time        CET     CES     HU Budapest
++01:00  Central European Standard Time      CET     CES     PL Warsaw
++01:00  Romance Standard Time               CET     CES     FR Paris
++01:00  W. Europe Standard Time             CET     CES     DE Berlin
+------- West African Time -----------------------------------------------------
++01:00  Namibia Standard Time               WAT     WAS     NA Windhoek
++01:00  W. Central Africa Standard Time     WAT     WAS     NG Lagos
+
+NOTE: https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
 
 
 ----- Convert command file to 32bit or 64bit execution file
@@ -206,6 +326,39 @@ for 80186, NEC V30, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
 You can build all binaries for several cpu models by running build8_all.bat
 or build12_all.bat.
 (You need VC++ 2008 with Service Pack 1 or VC++ 2013 with Update 5.)
+
+
+----- Internal Debugger
+
+MS-DOS Player contains the internal debugger for developers, but it is
+disabled on the binaries in the archive.
+To enable the internal debugger, please remove the comment out of definition
+"//#define USE_DEBUGGER" in msdos.h and build the binary.
+
+MS-DOS Player opens the telnet port.
+The port number is 23 in default, but if it is already used, 9000 or later.
+When you start your telnet client and connect to MS-DOS Player,
+the virtual cpu is suspended and you can start the debugger.
+
+If you see the messsage "waiting until cpu is suspended...",
+the internal DOS service is running, for example waiting your key inputs.
+The virtual cpu will be suspended when exit the internal DOS service,
+and you can start the debugger.
+
+If Tera Term PRO, PuTTY, or Windows telnet client (telnet.exe) is installed,
+it is automatically started and connected to MS-DOS Player.
+When you use Tera Term PRO or PuTTY, I recommend to disable "Line at Tiem"
+and enable "Character at Tiem".
+
+NOTE: When you run 32bit version of MS-DOS Player on Windows x64,
+MS-DOS Player will try to start 32bit version of telnet.exe in SysWOW64,
+but it is not usually installed.
+
+Please enter ? command to show the debugger commands.
+They are very similar to DEBUG command, and some break point functions
+(break at memory access (*), I/O port access, and interrupt) are added.
+
+(*) break does not occur when DOS service/BIOS emulation codes access.
 
 
 ----- Supported hardwares
@@ -390,8 +543,9 @@ INT 21H		MS-DOS System Call
 	30H	Get Version Number (*2)
 	31H	Keep Process
 	32H	Get DOS Drive Parameter Block
-	3300H	Get Ctrl-Break
-	3301H	Set Ctrl-Break
+	3300H	Get Ctrl-Break Checking State
+	3301H	Set Ctrl-Break Checking State
+	3302H	Get/Set Ctrl-Break Checking State
 	3305H	Get Boot Drive
 	3306H	Get True Version Number (*3)
 	3307H	Windows95 - Set/Clear DOS_FLAG
@@ -566,6 +720,7 @@ INT 2FH		Multiplex Interrupt
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
 	160AH	Windows - Identify Windows Version and Type (*5)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
+	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1A00H	ANSI.SYS - Installation Check
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 	4300H	XMS - Installation Check

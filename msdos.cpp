@@ -17,18 +17,17 @@ void exit_handler();
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
 
-//#define ENABLE_DEBUG
-#ifdef ENABLE_DEBUG
+//#define ENABLE_DEBUG_LOG
+#ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
-	#define ENABLE_DEBUG_DASM
 	#define ENABLE_DEBUG_SYSCALL
 	#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
 	
 	#ifdef EXPORT_DEBUG_TO_FILE
-		FILE* fdebug = NULL;
+		FILE* fp_debug_log = NULL;
 	#else
-		#define fdebug stderr
+		#define fp_debug_log stderr
 	#endif
 	#ifdef ENABLE_DEBUG_UNIMPLEMENTED
 		#define unimplemented_10h fatalerror
@@ -123,7 +122,6 @@ bool temp_file_created = false;
 bool ignore_illegal_insn = false;
 bool limit_max_memory = false;
 bool no_windows = false;
-//bool ctrl_break = false;
 bool stay_busy = false;
 UINT32 iops = 0;
 bool support_ems = false;
@@ -286,6 +284,23 @@ enum address_spacenum
 
 // read accessors
 UINT8 read_byte(offs_t byteaddress)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(rd_break_point.table[i].status == 1) {
+				if(byteaddress == rd_break_point.table[i].addr) {
+					rd_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	return(debugger_read_byte(byteaddress));
+}
+UINT8 debugger_read_byte(offs_t byteaddress)
+#endif
 {
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM) {
@@ -300,6 +315,23 @@ UINT8 read_byte(offs_t byteaddress)
 }
 
 UINT16 read_word(offs_t byteaddress)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(rd_break_point.table[i].status == 1) {
+				if(byteaddress >= rd_break_point.table[i].addr && byteaddress < rd_break_point.table[i].addr + 2) {
+					rd_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	return(debugger_read_word(byteaddress));
+}
+UINT16 debugger_read_word(offs_t byteaddress)
+#endif
 {
 	if(byteaddress == 0x41c) {
 		// pointer to first free slot in keyboard buffer
@@ -325,6 +357,23 @@ UINT16 read_word(offs_t byteaddress)
 }
 
 UINT32 read_dword(offs_t byteaddress)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(rd_break_point.table[i].status == 1) {
+				if(byteaddress >= rd_break_point.table[i].addr && byteaddress < rd_break_point.table[i].addr + 4) {
+					rd_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	return(debugger_read_dword(byteaddress));
+}
+UINT32 debugger_read_dword(offs_t byteaddress)
+#endif
 {
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
@@ -475,6 +524,23 @@ void write_text_vram_dword(offs_t offset, UINT32 data)
 }
 
 void write_byte(offs_t byteaddress, UINT8 data)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(wr_break_point.table[i].status == 1) {
+				if(byteaddress == wr_break_point.table[i].addr) {
+					wr_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	debugger_write_byte(byteaddress, data);
+}
+void debugger_write_byte(offs_t byteaddress, UINT8 data)
+#endif
 {
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
@@ -499,6 +565,23 @@ void write_byte(offs_t byteaddress, UINT8 data)
 }
 
 void write_word(offs_t byteaddress, UINT16 data)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(wr_break_point.table[i].status == 1) {
+				if(byteaddress >= wr_break_point.table[i].addr && byteaddress < wr_break_point.table[i].addr + 2) {
+					wr_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	debugger_write_word(byteaddress, data);
+}
+void debugger_write_word(offs_t byteaddress, UINT16 data)
+#endif
 {
 	if(byteaddress < MEMORY_END) {
 		if(byteaddress == 0x450 + mem[0x462] * 2) {
@@ -529,6 +612,23 @@ void write_word(offs_t byteaddress, UINT16 data)
 }
 
 void write_dword(offs_t byteaddress, UINT32 data)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(wr_break_point.table[i].status == 1) {
+				if(byteaddress >= wr_break_point.table[i].addr && byteaddress < wr_break_point.table[i].addr + 4) {
+					wr_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	debugger_write_dword(byteaddress, data);
+}
+void debugger_write_dword(offs_t byteaddress, UINT32 data)
+#endif
 {
 	if(byteaddress < MEMORY_END) {
 		*(UINT32 *)(mem + byteaddress) = data;
@@ -589,21 +689,20 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 #else
 	#include "mame/emu/cpu/i86/i86.c"
 #endif
-#ifdef ENABLE_DEBUG_DASM
+#ifdef USE_DEBUGGER
 	#include "mame/emu/cpu/i386/i386dasm.c"
-	int dasm = 0;
 #endif
 
 #if defined(HAS_I386)
 	#define SREG(x)				m_sreg[x].selector
 	#define SREG_BASE(x)			m_sreg[x].base
-
 	int cpu_type, cpu_step;
 #else
 	#define REG8(x)				m_regs.b[x]
 	#define REG16(x)			m_regs.w[x]
 	#define SREG(x)				m_sregs[x]
 	#define SREG_BASE(x)			m_base[x]
+	#define m_eip				(m_pc - m_base[CS])
 	#define m_CF				m_CarryVal
 	#define m_a20_mask			AMASK
 	#define i386_load_segment_descriptor(x)	m_base[x] = SegBase(x)
@@ -687,17 +786,1328 @@ UINT16 i386_read_stack()
 }
 
 /* ----------------------------------------------------------------------------
+	debugger
+---------------------------------------------------------------------------- */
+
+#ifdef USE_DEBUGGER
+#define TELNET_BLUE      0x0004 // text color contains blue.
+#define TELNET_GREEN     0x0002 // text color contains green.
+#define TELNET_RED       0x0001 // text color contains red.
+#define TELNET_INTENSITY 0x0008 // text color is intensified.
+
+int svr_socket = 0;
+int cli_socket = 0;
+
+process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error);
+
+void debugger_init()
+{
+	now_debugging = false;
+	now_going = false;
+	now_suspended = false;
+	force_suspend = false;
+	
+	memset(&break_point, 0, sizeof(break_point_t));
+	memset(&rd_break_point, 0, sizeof(break_point_t));
+	memset(&wr_break_point, 0, sizeof(break_point_t));
+	memset(&in_break_point, 0, sizeof(break_point_t));
+	memset(&out_break_point, 0, sizeof(break_point_t));
+	memset(&int_break_point, 0, sizeof(int_break_point_t));
+}
+
+void telnet_send(char *string)
+{
+	char buffer[8192], *ptr;
+	strcpy(buffer, string);
+	while((ptr = strstr(buffer, "\n")) != NULL) {
+		char tmp[8192];
+		*ptr = '\0';
+		sprintf(tmp, "%s\033E%s", buffer, ptr + 1);
+		strcpy(buffer, tmp);
+	}
+	
+	int len = strlen(buffer), res;
+	ptr = buffer;
+	while(len > 0) {
+		if((res = send(cli_socket, ptr, len, 0)) > 0) {
+			len -= res;
+			ptr += res;
+		}
+	}
+}
+
+void telnet_command(const char *format, ...)
+{
+	char buffer[1024];
+	va_list ap;
+	va_start(ap, format);
+	vsprintf(buffer, format, ap);
+	va_end(ap);
+	
+	telnet_send(buffer);
+}
+
+void telnet_printf(const char *format, ...)
+{
+	char buffer[1024];
+	va_list ap;
+	va_start(ap, format);
+	vsprintf(buffer, format, ap);
+	va_end(ap);
+	
+	if(fp_debugger != NULL) {
+		fprintf(fp_debugger, "%s", buffer);
+	}
+	telnet_send(buffer);
+}
+
+bool telnet_gets(char *str, int n)
+{
+	char buffer[1024];
+	int ptr = 0;
+	
+	telnet_command("\033[12l"); // local echo on
+	telnet_command("\033[2l");  // key unlock
+	
+	while(!m_halted) {
+		int len = recv(cli_socket, buffer, sizeof(buffer), 0);
+		
+		if(len > 0 && buffer[0] != 0xff) {
+			for(int i = 0; i < len; i++) {
+				if(buffer[i] == 0x0d || buffer[i] == 0x0a) {
+					str[ptr] = 0;
+					telnet_command("\033[2h");  // key lock
+					telnet_command("\033[12h"); // local echo off
+					return(!m_halted);
+				} else if(buffer[i] == 0x08) {
+					if(ptr > 0) {
+						telnet_command("\033[0K"); // erase from cursor position
+						ptr--;
+					} else {
+						telnet_command("\033[1C"); // move cursor forward
+					}
+				} else if(ptr < n - 1) {
+					if (buffer[i] >= 0x20 && buffer[i] <= 0x7e) {
+						str[ptr++] = buffer[i];
+					}
+				} else {
+					telnet_command("\033[1D\033[0K"); // move cursor backward and erase from cursor position
+				}
+			}
+		} else if(len == -1) {
+			if(WSAGetLastError() != WSAEWOULDBLOCK) {
+				return(false);
+			}
+		} else if(len == 0) {
+			return(false);
+		}
+		Sleep(10);
+	}
+	return(!m_halted);
+}
+
+bool telnet_kbhit()
+{
+	char buffer[1024];
+	
+	if(!m_halted) {
+		int len = recv(cli_socket, buffer, sizeof(buffer), 0);
+		
+		if(len > 0) {
+			for(int i = 0; i < len; i++) {
+				if(buffer[i] == 0x0d || buffer[i] == 0x0a) {
+					return(true);
+				}
+			}
+		} else if(len == 0) {
+			return(true); // disconnected
+		}
+	}
+	return(false);
+}
+
+bool telnet_disconnected()
+{
+	char buffer[1024];
+	int len = recv(cli_socket, buffer, sizeof(buffer), 0);
+	
+	if(len == 0) {
+		return(true);
+	} else if(len == -1) {
+		if(WSAGetLastError() != WSAEWOULDBLOCK) {
+			return(true);
+		}
+	}
+	return(false);
+}
+
+void telnet_set_color(int color)
+{
+	telnet_command("\033[%dm\033[3%dm", (color >> 3) & 1, (color & 7));
+}
+
+int debugger_dasm(char *buffer, UINT32 cs, UINT32 eip)
+{
+//	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
+	UINT8 ops[16];
+	for(int i = 0; i < 16; i++) {
+		ops[i] = debugger_read_byte(((cs << 4) + (eip + i)) & ADDR_MASK);
+	}
+	UINT8 *oprom = ops;
+	
+#if defined(HAS_I386)
+	if(m_operand_size) {
+		return(CPU_DISASSEMBLE_CALL(x86_32) & DASMFLAG_LENGTHMASK);
+	} else
+#endif
+	return(CPU_DISASSEMBLE_CALL(x86_16) & DASMFLAG_LENGTHMASK);
+}
+
+void debugger_regs_info(char *buffer)
+{
+#if defined(HAS_I386)
+	UINT32 flags = get_flags();
+#else
+	UINT32 flags = CompressFlags();
+#endif
+	
+#if defined(HAS_I386)
+	if(m_operand_size) {
+		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
+		PROTECTED_MODE ? "PE" : "--",
+		(flags & 0x40000) ? 'A' : '-',
+		(flags & 0x20000) ? 'V' : '-',
+		(flags & 0x10000) ? 'R' : '-',
+		(flags & 0x04000) ? 'N' : '-',
+		(flags & 0x02000) ? '1' : '0',
+		(flags & 0x01000) ? '1' : '0',
+		(flags & 0x00800) ? 'O' : '-',
+		(flags & 0x00400) ? 'D' : '-',
+		(flags & 0x00200) ? 'I' : '-',
+		(flags & 0x00100) ? 'T' : '-',
+		(flags & 0x00080) ? 'S' : '-',
+		(flags & 0x00040) ? 'Z' : '-',
+		(flags & 0x00010) ? 'A' : '-',
+		(flags & 0x00004) ? 'P' : '-',
+		(flags & 0x00001) ? 'C' : '-');
+	} else {
+#endif
+		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), m_eip, SREG(DS), SREG(ES), SREG(SS), SREG(CS),
+#if defined(HAS_I386)
+		PROTECTED_MODE ? "PE" : "--",
+#else
+		"--",
+#endif
+		(flags & 0x40000) ? 'A' : '-',
+		(flags & 0x20000) ? 'V' : '-',
+		(flags & 0x10000) ? 'R' : '-',
+		(flags & 0x04000) ? 'N' : '-',
+		(flags & 0x02000) ? '1' : '0',
+		(flags & 0x01000) ? '1' : '0',
+		(flags & 0x00800) ? 'O' : '-',
+		(flags & 0x00400) ? 'D' : '-',
+		(flags & 0x00200) ? 'I' : '-',
+		(flags & 0x00100) ? 'T' : '-',
+		(flags & 0x00080) ? 'S' : '-',
+		(flags & 0x00040) ? 'Z' : '-',
+		(flags & 0x00010) ? 'A' : '-',
+		(flags & 0x00004) ? 'P' : '-',
+		(flags & 0x00001) ? 'C' : '-');
+#if defined(HAS_I386)
+	}
+#endif
+}
+
+void debugger_process_info(char *buffer)
+{
+	UINT16 psp_seg = current_psp;
+	process_t *process;
+	bool check[0x10000] = {0};
+	
+	buffer[0] = '\0';
+	
+	while(!check[psp_seg] && (process  = msdos_process_info_get(psp_seg, false)) != NULL) {
+		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
+		char *file = process->module_path, *s;
+		char tmp[8192];
+		
+		while((s = strstr(file, "\\")) != NULL) {
+			file = s + 1;
+		}
+		sprintf(tmp, "PSP=%04X  ENV=%04X  RETURN=%04X:%04X  PROGRAM=%s\n", psp_seg, psp->env_seg, psp->int_22h.w.h, psp->int_22h.w.l, my_strupr(file));
+		strcat(tmp, buffer);
+		strcpy(buffer, tmp);
+		
+		check[psp_seg] = true;
+		psp_seg = psp->parent_psp;
+	}
+}
+
+UINT32 debugger_get_val(const char *str)
+{
+	char tmp[1024];
+	
+	if(str == NULL || strlen(str) == 0) {
+		return(0);
+	}
+	strcpy(tmp, str);
+	
+	if(strlen(tmp) == 3 && tmp[0] == '\'' && tmp[2] == '\'') {
+		// ank
+		return(tmp[1] & 0xff);
+	} else if(tmp[0] == '%') {
+		// decimal
+		return(strtoul(tmp + 1, NULL, 10));
+	}
+	return(strtoul(tmp, NULL, 16));
+}
+
+UINT32 debugger_get_seg(const char *str, UINT32 val)
+{
+	char tmp[1024], *s;
+	
+	if(str == NULL || strlen(str) == 0) {
+		return(val);
+	}
+	strcpy(tmp, str);
+	
+	if((s = strstr(tmp, ":")) != NULL) {
+		// 0000:0000
+		*s = '\0';
+		return(debugger_get_val(tmp));
+	}
+	return(val);
+}
+
+UINT32 debugger_get_ofs(const char *str)
+{
+	char tmp[1024], *s;
+	
+	if(str == NULL || strlen(str) == 0) {
+		return(0);
+	}
+	strcpy(tmp, str);
+	
+	if((s = strstr(tmp, ":")) != NULL) {
+		// 0000:0000
+		return(debugger_get_val(s + 1));
+	}
+	return(debugger_get_val(tmp));
+}
+
+void debugger_main()
+{
+	telnet_command("\033[20h"); // cr-lf
+	
+	force_suspend = true;
+	now_going = false;
+	now_debugging = true;
+	Sleep(100);
+	
+	if(!m_halted && !now_suspended) {
+		telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+		telnet_printf("waiting until cpu is suspended...\n");
+	}
+	while(!m_halted && !now_suspended) {
+		if(telnet_disconnected()) {
+			break;
+		}
+		Sleep(10);
+	}
+	
+	char buffer[8192];
+	
+	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+	debugger_process_info(buffer);
+	telnet_printf("%s", buffer);
+	debugger_regs_info(buffer);
+	telnet_printf("%s", buffer);
+	telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+	telnet_printf("breaked at %04X:%04X\n", SREG(CS), m_eip);
+	telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+	debugger_dasm(buffer, SREG(CS), m_eip);
+	telnet_printf("next\t%04X:%04X  %s\n", SREG(CS), m_eip, buffer);
+	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+	
+	#define MAX_COMMAND_LEN	64
+	
+	char command[MAX_COMMAND_LEN + 1];
+	char prev_command[MAX_COMMAND_LEN + 1] = {0};
+	
+	UINT32 data_seg = SREG(DS);
+	UINT32 data_ofs = 0;
+	UINT32 dasm_seg = SREG(CS);
+	UINT32 dasm_ofs = m_eip;
+	
+	while(!m_halted) {
+		telnet_printf("- ");
+		command[0] = '\0';
+		
+		if(fi_debugger != NULL) {
+			while(command[0] == '\0') {
+				if(fgets(command, sizeof(command), fi_debugger) == NULL) {
+					break;
+				}
+				while(strlen(command) > 0 && (command[strlen(command) - 1] == 0x0d || command[strlen(command) - 1] == 0x0a)) {
+					command[strlen(command) - 1] = '\0';
+				}
+			}
+			if(command[0] != '\0') {
+				telnet_command("%s\n", command);
+			}
+		}
+		if(command[0] == '\0') {
+			if(!telnet_gets(command, sizeof(command))) {
+				break;
+			}
+		}
+		if(command[0] == '\0') {
+			strcpy(command, prev_command);
+		} else {
+			strcpy(prev_command, command);
+		}
+		if(fp_debugger != NULL) {
+			fprintf(fp_debugger, "%s\n", command);
+		}
+		
+		if(!m_halted && command[0] != 0) {
+			char *params[32], *token = NULL;
+			int num = 0;
+			
+			if((token = strtok(command, " ")) != NULL) {
+				params[num++] = token;
+				while(num < 32 && (token = strtok(NULL, " ")) != NULL) {
+					params[num++] = token;
+				}
+			}
+			if(stricmp(params[0], "D") == 0) {
+				if(num <= 3) {
+					if(num >= 2) {
+						data_seg = debugger_get_seg(params[1], data_seg);
+						data_ofs = debugger_get_ofs(params[1]);
+					}
+					UINT32 end_seg = data_seg;
+					UINT32 end_ofs = data_ofs + 8 * 16 - 1;
+					if(num == 3) {
+						end_seg = debugger_get_seg(params[2], data_seg);
+						end_ofs = debugger_get_ofs(params[2]);
+					}
+					UINT64 start_addr = (data_seg << 4) + data_ofs;
+					UINT64 end_addr = (end_seg << 4) + end_ofs;
+//					bool sjis = false;
+					
+					for(UINT64 addr = (start_addr & ~0x0f); addr <= (end_addr | 0x0f); addr++) {
+						if((addr & 0x0f) == 0) {
+							if((data_ofs = addr - (data_seg << 4)) > 0xffff) {
+								data_seg += 0x1000;
+								data_ofs -= 0x10000;
+							}
+							telnet_printf("%06X:%04X ", data_seg, data_ofs);
+							memset(buffer, 0, sizeof(buffer));
+						}
+						if(addr < start_addr || addr > end_addr) {
+							telnet_printf("   ");
+							buffer[addr & 0x0f] = ' ';
+						} else {
+							UINT8 data = debugger_read_byte(addr & ADDR_MASK);
+							telnet_printf(" %02X", data);
+//							if(sjis) {
+//								buffer[addr & 0x0f] = data;
+//								sjis = false;
+//							} else if(((data >= 0x81 && data <= 0x9f) || (data >= 0xe0 && data <= 0xef)) && (addr & 0x0f) < 0x0f) {
+//								buffer[addr & 0x0f] = data;
+//								sjis = true;
+//							} else
+							if((data >= 0x20 && data <= 0x7e)/* || (data >= 0xa1 && data <= 0xdf)*/) {
+								buffer[addr & 0x0f] = data;
+							} else {
+								buffer[addr & 0x0f] = '.';
+							}
+						}
+						if((addr & 0x0f) == 0x0f) {
+							telnet_printf("  %s\n", buffer);
+						}
+					}
+					if((data_ofs = (end_addr + 1) - (data_seg << 4)) > 0xffff) {
+						data_seg += 0x1000;
+						data_ofs -= 0x10000;
+					}
+					prev_command[1] = '\0'; // remove parameters to dump continuously
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "E") == 0 || stricmp(params[0], "EB") == 0) {
+				if(num >= 3) {
+					UINT32 seg = debugger_get_seg(params[1], data_seg);
+					UINT32 ofs = debugger_get_ofs(params[1]);
+					for(int i = 2, j = 0; i < num; i++, j++) {
+						debugger_write_byte(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xff);
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "EW") == 0) {
+				if(num >= 3) {
+					UINT32 seg = debugger_get_seg(params[1], data_seg);
+					UINT32 ofs = debugger_get_ofs(params[1]);
+					for(int i = 2, j = 0; i < num; i++, j += 2) {
+						debugger_write_word(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xffff);
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "ED") == 0) {
+				if(num >= 3) {
+					UINT32 seg = debugger_get_seg(params[1], data_seg);
+					UINT32 ofs = debugger_get_ofs(params[1]);
+					for(int i = 2, j = 0; i < num; i++, j += 4) {
+						debugger_write_dword(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]));
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "EA") == 0) {
+				if(num >= 3) {
+					UINT32 seg = debugger_get_seg(params[1], data_seg);
+					UINT32 ofs = debugger_get_ofs(params[1]);
+					strcpy(buffer, prev_command);
+					if((token = strtok(buffer, "\"")) != NULL && (token = strtok(NULL, "\"")) != NULL) {
+						int len = strlen(token);
+						for(int i = 0; i < len; i++) {
+							debugger_write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
+						}
+					} else {
+						telnet_printf("invalid parameter\n");
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "I") == 0 || stricmp(params[0], "IB") == 0) {
+				if(num == 2) {
+					telnet_printf("%02X\n", debugger_read_io_byte(debugger_get_val(params[1])) & 0xff);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "IW") == 0) {
+				if(num == 2) {
+					telnet_printf("%04X\n", debugger_read_io_word(debugger_get_val(params[1])) & 0xffff);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "ID") == 0) {
+				if(num == 2) {
+					telnet_printf("%08X\n", debugger_read_io_dword(debugger_get_val(params[1])));
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "O") == 0 || stricmp(params[0], "OB") == 0) {
+				if(num == 3) {
+					debugger_write_io_byte(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xff);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "OW") == 0) {
+				if(num == 3) {
+					debugger_write_io_word(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xffff);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "OD") == 0) {
+				if(num == 3) {
+					debugger_write_io_dword(debugger_get_val(params[1]), debugger_get_val(params[2]));
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "R") == 0) {
+				if(num == 1) {
+					debugger_regs_info(buffer);
+					telnet_printf("%s", buffer);
+				} else if(num == 3) {
+#if defined(HAS_I386)
+					if(stricmp(params[1], "EAX") == 0) {
+						REG32(EAX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "EBX") == 0) {
+						REG32(EBX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "ECX") == 0) {
+						REG32(ECX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "EDX") == 0) {
+						REG32(EDX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "ESP") == 0) {
+						REG32(ESP) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "EBP") == 0) {
+						REG32(EBP) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "ESI") == 0) {
+						REG32(ESI) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "EDI") == 0) {
+						REG32(EDI) = debugger_get_val(params[2]);
+					} else
+#endif
+					if(stricmp(params[1], "AX") == 0) {
+						REG16(AX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "BX") == 0) {
+						REG16(BX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "CX") == 0) {
+						REG16(CX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "DX") == 0) {
+						REG16(DX) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "SP") == 0) {
+						REG16(SP) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "BP") == 0) {
+						REG16(BP) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "SI") == 0) {
+						REG16(SI) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "DI") == 0) {
+						REG16(DI) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "IP") == 0 || stricmp(params[1], "EIP") == 0) {
+#if defined(HAS_I386)
+						if(m_operand_size) {
+							m_eip = debugger_get_val(params[2]);
+						} else {
+							m_eip = debugger_get_val(params[2]) & 0xffff;
+						}
+						CHANGE_PC(m_eip);
+#else
+						m_pc = (SREG_BASE(CS) + (debugger_get_val(params[2]) & 0xffff)) & ADDR_MASK;
+						CHANGE_PC(m_pc);
+#endif
+					} else if(stricmp(params[1], "AL") == 0) {
+						REG8(AL) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "AH") == 0) {
+						REG8(AH) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "BL") == 0) {
+						REG8(BL) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "BH") == 0) {
+						REG8(BH) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "CL") == 0) {
+						REG8(CL) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "CH") == 0) {
+						REG8(CH) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "DL") == 0) {
+						REG8(DL) = debugger_get_val(params[2]);
+					} else if(stricmp(params[1], "DH") == 0) {
+						REG8(DH) = debugger_get_val(params[2]);
+					} else {
+						telnet_printf("unknown register %s\n", params[1]);
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(_tcsicmp(params[0], "S") == 0) {
+				if(num >= 4) {
+					UINT32 cur_seg = debugger_get_seg(params[1], data_seg);
+					UINT32 cur_ofs = debugger_get_ofs(params[1]);
+					UINT32 end_seg = debugger_get_seg(params[2], cur_seg);
+					UINT32 end_ofs = debugger_get_ofs(params[2]);
+					UINT8 list[32];
+					
+					for(int i = 3, j = 0; i < num && j < 32; i++, j++) {
+						list[j] = debugger_get_val(params[i]);
+					}
+					while((cur_seg << 4) + cur_ofs <= (end_seg << 4) + end_ofs) {
+						bool found = true;
+						for(int i = 3, j = 0; i < num && j < 32; i++, j++) {
+							if(debugger_read_byte(((cur_seg << 4) + (cur_ofs + j)) & ADDR_MASK) != list[j]) {
+								found = false;
+								break;
+							}
+						}
+						if(found) {
+							telnet_printf("%04X:%04X\n", cur_seg, cur_ofs);
+						}
+						if((cur_ofs += 1) > 0xffff) {
+							cur_seg += 0x1000;
+							cur_ofs -= 0x10000;
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "U") == 0) {
+				if(num <= 3) {
+					if(num >= 2) {
+						dasm_seg = debugger_get_seg(params[1], dasm_seg);
+						dasm_ofs = debugger_get_ofs(params[1]);
+					}
+					if(num == 3) {
+						UINT32 end_seg = debugger_get_seg(params[2], dasm_seg);
+						UINT32 end_ofs = debugger_get_ofs(params[2]);
+						
+						while((dasm_seg << 4) + dasm_ofs <= (end_seg << 4) + end_ofs) {
+							int len = debugger_dasm(buffer, dasm_seg, dasm_ofs);
+							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
+							for(int i = 0; i < len; i++) {
+								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+							}
+							for(int i = len; i < 8; i++) {
+								telnet_printf("  ");
+							}
+							telnet_printf("  %s\n", buffer);
+							if((dasm_ofs += len) > 0xffff) {
+								dasm_seg += 0x1000;
+								dasm_ofs -= 0x10000;
+							}
+						}
+					} else {
+						for(int i = 0; i < 16; i++) {
+							int len = debugger_dasm(buffer, dasm_seg, dasm_ofs);
+							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
+							for(int i = 0; i < len; i++) {
+								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+							}
+							for(int i = len; i < 8; i++) {
+								telnet_printf("  ");
+							}
+							telnet_printf("  %s\n", buffer);
+							if((dasm_ofs += len) > 0xffff) {
+								dasm_seg += 0x1000;
+								dasm_ofs -= 0x10000;
+							}
+						}
+					}
+					prev_command[1] = '\0'; // remove parameters to disassemble continuously
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "H") == 0) {
+				if(num == 3) {
+					UINT32 l = debugger_get_val(params[1]);
+					UINT32 r = debugger_get_val(params[2]);
+					telnet_printf("%08X  %08X\n", l + r, l - r);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "BP") == 0 || stricmp(params[0], "RBP") == 0 || stricmp(params[0], "WBP") == 0) {
+				break_point_t *break_point_ptr;
+				#define GET_BREAK_POINT_PTR() { \
+					if(params[0][0] == 'R') { \
+						break_point_ptr = &rd_break_point; \
+					} else if(params[0][0] == 'W') { \
+						break_point_ptr = &wr_break_point; \
+					} else if(params[0][0] == 'I') { \
+						break_point_ptr = &in_break_point; \
+					} else if(params[0][0] == 'O') { \
+						break_point_ptr = &out_break_point; \
+					} else { \
+						break_point_ptr = &break_point; \
+					} \
+				}
+				GET_BREAK_POINT_PTR();
+				if(num == 2) {
+					UINT32 seg = debugger_get_seg(params[1], SREG(CS));
+					UINT32 ofs = debugger_get_ofs(params[1]);
+					bool found = false;
+					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
+						if(break_point_ptr->table[i].status == 0 || break_point_ptr->table[i].addr == ((seg << 4) + ofs)) {
+							break_point_ptr->table[i].addr = (seg << 4) + ofs;
+							break_point_ptr->table[i].seg = seg;
+							break_point_ptr->table[i].ofs = ofs;
+							break_point_ptr->table[i].status = 1;
+							found = true;
+						}
+					}
+					if(!found) {
+						telnet_printf("too many break points\n");
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "IBP") == 0 || stricmp(params[0], "OBP") == 0) {
+				break_point_t *break_point_ptr;
+				GET_BREAK_POINT_PTR();
+				if(num == 2) {
+					UINT32 addr = debugger_get_val(params[1]);
+					bool found = false;
+					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
+						if(break_point_ptr->table[i].status == 0 || break_point_ptr->table[i].addr == addr) {
+							break_point_ptr->table[i].addr = addr;
+							break_point_ptr->table[i].status = 1;
+							found = true;
+						}
+					}
+					if(!found) {
+						telnet_printf("too many break points\n");
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "BC") == 0 || stricmp(params[0], "RBC") == 0 || stricmp(params[0], "WBC") == 0 || stricmp(params[0], "IBC") == 0 || stricmp(params[0], "OBC") == 0) {
+				break_point_t *break_point_ptr;
+				GET_BREAK_POINT_PTR();
+				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+					memset(break_point_ptr, 0, sizeof(break_point_t));
+				} else if(num >= 2) {
+					for(int i = 1; i < num; i++) {
+						int index = debugger_get_val(params[i]);
+						if(!(index >= 1 && index <= MAX_BREAK_POINTS)) {
+							telnet_printf("invalid index %x\n", index);
+						} else {
+							break_point_ptr->table[index - 1].addr = 0;
+							break_point_ptr->table[index - 1].seg = 0;
+							break_point_ptr->table[index - 1].ofs = 0;
+							break_point_ptr->table[index - 1].status = 0;
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "BD") == 0 || stricmp(params[0], "RBD") == 0 || stricmp(params[0], "WBD") == 0 || stricmp(params[0], "IBD") == 0 || stricmp(params[0], "OBD") == 0 ||
+			          stricmp(params[0], "BE") == 0 || stricmp(params[0], "RBE") == 0 || stricmp(params[0], "WBE") == 0 || stricmp(params[0], "IBE") == 0 || stricmp(params[0], "OBE") == 0) {
+				break_point_t *break_point_ptr;
+				GET_BREAK_POINT_PTR();
+				bool enabled = (params[0][strlen(params[0]) - 1] == 'E' || params[0][strlen(params[0]) - 1] == 'e');
+				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+						if(break_point_ptr->table[i].status != 0) {
+							break_point_ptr->table[i].status = enabled ? 1 : -1;
+						}
+					}
+				} else if(num >= 2) {
+					for(int i = 1; i < num; i++) {
+						int index = debugger_get_val(params[i]);
+						if(!(index >= 1 && index <= MAX_BREAK_POINTS)) {
+							telnet_printf("invalid index %x\n", index);
+						} else if(break_point_ptr->table[index - 1].status == 0) {
+							telnet_printf("break point %x is null\n", index);
+						} else {
+							break_point_ptr->table[index - 1].status = enabled ? 1 : -1;
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "BL") == 0 || stricmp(params[0], "RBL") == 0 || stricmp(params[0], "WBL") == 0) {
+				break_point_t *break_point_ptr;
+				GET_BREAK_POINT_PTR();
+				if(num == 1) {
+					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+						if(break_point_ptr->table[i].status) {
+							telnet_printf("%d %c %04X:%04X\n", i + 1, break_point_ptr->table[i].status == 1 ? 'e' : 'd', break_point_ptr->table[i].seg, break_point_ptr->table[i].ofs);
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "IBL") == 0 || stricmp(params[0], "OBL") == 0) {
+				break_point_t *break_point_ptr;
+				GET_BREAK_POINT_PTR();
+				if(num == 1) {
+					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+						if(break_point_ptr->table[i].status) {
+							telnet_printf("%d %c %04X\n", i + 1, break_point_ptr->table[i].status == 1 ? 'e' : 'd', break_point_ptr->table[i].addr);
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "INTBP") == 0) {
+				if(num >= 2 && num <= 4) {
+					int int_num = debugger_get_val(params[1]);
+					UINT8 ah = 0, ah_registered = 0;
+					UINT8 al = 0, al_registered = 0;
+					if(num >= 3) {
+						ah = debugger_get_val(params[2]);
+						ah_registered = 1;
+					}
+					if(num == 4) {
+						al = debugger_get_val(params[3]);
+						al_registered = 1;
+					}
+					bool found = false;
+					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
+						if(int_break_point.table[i].status == 0 || (
+						   int_break_point.table[i].int_num == int_num &&
+						   int_break_point.table[i].ah == ah && int_break_point.table[i].ah_registered == ah_registered &&
+						   int_break_point.table[i].al == al && int_break_point.table[i].al_registered == al_registered)) {
+							int_break_point.table[i].int_num = int_num;
+							int_break_point.table[i].ah = ah;
+							int_break_point.table[i].ah_registered = ah_registered;
+							int_break_point.table[i].al = al;
+							int_break_point.table[i].al_registered = al_registered;
+							int_break_point.table[i].status = 1;
+							found = true;
+						}
+					}
+					if(!found) {
+						telnet_printf("too many break points\n");
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "INTBC") == 0) {
+				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+					memset(&int_break_point, 0, sizeof(int_break_point_t));
+				} else if(num >= 2) {
+					for(int i = 1; i < num; i++) {
+						int index = debugger_get_val(params[i]);
+						if(!(index >= 1 && index <= MAX_BREAK_POINTS)) {
+							telnet_printf("invalid index %x\n", index);
+						} else {
+							int_break_point.table[index - 1].int_num = 0;
+							int_break_point.table[index - 1].ah = 0;
+							int_break_point.table[index - 1].ah_registered = 0;
+							int_break_point.table[index - 1].al = 0;
+							int_break_point.table[index - 1].al_registered = 0;
+							int_break_point.table[index - 1].status = 0;
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "INTBD") == 0 || stricmp(params[0], "INTBE") == 0) {
+				bool enabled = (params[0][strlen(params[0]) - 1] == 'E' || params[0][strlen(params[0]) - 1] == 'e');
+				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+						if(int_break_point.table[i].status != 0) {
+							int_break_point.table[i].status = enabled ? 1 : -1;
+						}
+					}
+				} else if(num >= 2) {
+					for(int i = 1; i < num; i++) {
+						int index = debugger_get_val(params[i]);
+						if(!(index >= 1 && index <= MAX_BREAK_POINTS)) {
+							telnet_printf("invalid index %x\n", index);
+						} else if(int_break_point.table[index - 1].status == 0) {
+							telnet_printf("break point %x is null\n", index);
+						} else {
+							int_break_point.table[index - 1].status = enabled ? 1 : -1;
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "INTBL") == 0) {
+				if(num == 1) {
+					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+						if(int_break_point.table[i].status) {
+							telnet_printf("%d %c %02X", i + 1, int_break_point.table[i].status == 1 ? 'e' : 'd', int_break_point.table[i].int_num);
+							if(int_break_point.table[i].ah_registered) {
+								telnet_printf(" %02X", int_break_point.table[i].ah);
+							}
+							if(int_break_point.table[i].al_registered) {
+								telnet_printf(" %02X", int_break_point.table[i].al);
+							}
+							telnet_printf("\n");
+						}
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "G") == 0 || stricmp(params[0], "P") == 0) {
+				if(num == 1 || num == 2) {
+					break_point_t break_point_stored;
+					bool break_points_stored = false;
+					
+					if(stricmp(params[0], "P") == 0) {
+						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
+						memset(&break_point, 0, sizeof(break_point_t));
+						break_points_stored = true;
+						
+						break_point.table[0].addr = (SREG(CS) << 4) + m_eip + debugger_dasm(buffer, SREG(CS), m_eip);
+						break_point.table[0].status = 1;
+					} else if(num >= 2) {
+						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
+						memset(&break_point, 0, sizeof(break_point_t));
+						break_points_stored = true;
+						
+						UINT32 seg = debugger_get_seg(params[1], SREG(CS));
+						UINT32 ofs = debugger_get_ofs(params[1]);
+						break_point.table[0].addr = (seg << 4) + ofs;
+						break_point.table[0].seg = seg;
+						break_point.table[0].ofs = ofs;
+						break_point.table[0].status = 1;
+					}
+					break_point.hit = rd_break_point.hit = wr_break_point.hit = in_break_point.hit = out_break_point.hit = int_break_point.hit = 0;
+					now_going = true;
+					now_suspended = false;
+					
+					telnet_command("\033[2l"); // key unlock
+					while(!m_halted && !now_suspended) {
+						if(telnet_kbhit()) {
+							break;
+						}
+						Sleep(10);
+					}
+					now_going = false;
+					telnet_command("\033[2h"); // key lock
+					
+					if(!(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit)) {
+						Sleep(100);
+						if(!m_halted && !now_suspended) {
+							telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+							telnet_printf("waiting until cpu is suspended...\n");
+						}
+					}
+					while(!m_halted && !now_suspended) {
+						if(telnet_disconnected()) {
+							break;
+						}
+						Sleep(10);
+					}
+					dasm_seg = SREG(CS);
+					dasm_ofs = m_eip;
+					
+					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+					debugger_dasm(buffer, m_prev_cs, m_prev_eip);
+					telnet_printf("done\t%04X:%04X  %s\n", m_prev_cs, m_prev_eip, buffer);
+					
+					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+					debugger_regs_info(buffer);
+					telnet_printf("%s", buffer);
+					
+					if(break_point.hit) {
+						if(stricmp(params[0], "G") == 0 && num == 1) {
+							telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+							telnet_printf("breaked at %04X:%04X: break point is hit\n", SREG(CS), m_eip);
+						}
+					} else if(rd_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was read at %04X:%04X\n", SREG(CS), m_eip,
+						rd_break_point.table[rd_break_point.hit - 1].seg, rd_break_point.table[rd_break_point.hit - 1].ofs,
+						m_prev_cs, m_prev_eip);
+					} else if(wr_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was written at %04X:%04X\n", SREG(CS), m_eip,
+						wr_break_point.table[wr_break_point.hit - 1].seg, wr_break_point.table[wr_break_point.hit - 1].ofs,
+						m_prev_cs, m_prev_eip);
+					} else if(in_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: port %04X was read at %04X:%04X\n", SREG(CS), m_eip,
+						in_break_point.table[in_break_point.hit - 1].addr,
+						m_prev_cs, m_prev_eip);
+					} else if(out_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: port %04X was written at %04X:%04X\n", SREG(CS), m_eip,
+						out_break_point.table[out_break_point.hit - 1].addr,
+						m_prev_cs, m_prev_eip);
+					} else if(int_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: INT %02x", SREG(CS), m_eip, int_break_point.table[int_break_point.hit - 1].int_num);
+						if(int_break_point.table[int_break_point.hit - 1].ah_registered) {
+							telnet_printf(" AH=%02x", int_break_point.table[int_break_point.hit - 1].ah);
+						}
+						if(int_break_point.table[int_break_point.hit - 1].al_registered) {
+							telnet_printf(" AL=%02x", int_break_point.table[int_break_point.hit - 1].al);
+						}
+						telnet_printf(" is raised at %04X:%04X\n", m_prev_cs, m_prev_eip);
+					} else {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: enter key was pressed\n", SREG(CS), m_eip);
+					}
+					if(break_points_stored) {
+						memcpy(&break_point, &break_point_stored, sizeof(break_point_t));
+					}
+					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+					debugger_dasm(buffer, SREG(CS), m_eip);
+					telnet_printf("next\t%04X:%04X  %s\n", SREG(CS), m_eip, buffer);
+					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "T") == 0) {
+				if(num == 1 || num == 2) {
+					int steps = 1;
+					if(num >= 2) {
+						steps = debugger_get_val(params[1]);
+					}
+					
+					telnet_command("\033[2l"); // key unlock
+					while(steps-- > 0) {
+						break_point.hit = rd_break_point.hit = wr_break_point.hit = in_break_point.hit = out_break_point.hit = int_break_point.hit = 0;
+						now_going = false;
+						now_suspended = false;
+						
+						while(!m_halted && !now_suspended) {
+							if(telnet_disconnected()) {
+								break;
+							}
+							Sleep(10);
+						}
+						dasm_seg = SREG(CS);
+						dasm_ofs = m_eip;
+						
+						telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+						debugger_dasm(buffer, m_prev_cs, m_prev_eip);
+						telnet_printf("done\t%04X:%04X  %s\n", m_prev_cs, m_prev_eip, buffer);
+						
+						telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+						debugger_regs_info(buffer);
+						telnet_printf("%s", buffer);
+						
+						if(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit || telnet_kbhit()) {
+							break;
+						}
+					}
+					telnet_command("\033[2h"); // key lock
+					
+					if(!(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit)) {
+						Sleep(100);
+						if(!m_halted && !now_suspended) {
+							telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+							telnet_printf("waiting until cpu is suspended...\n");
+						}
+					}
+					while(!m_halted && !now_suspended) {
+						if(telnet_disconnected()) {
+							break;
+						}
+						Sleep(10);
+					}
+					if(break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: break point is hit\n", SREG(CS), m_eip);
+					} else if(rd_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was read at %04X:%04X\n", SREG(CS), m_eip,
+						rd_break_point.table[rd_break_point.hit - 1].seg, rd_break_point.table[rd_break_point.hit - 1].ofs,
+						m_prev_cs, m_prev_eip);
+					} else if(wr_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was written at %04X:%04X\n", SREG(CS), m_eip,
+						wr_break_point.table[wr_break_point.hit - 1].seg, wr_break_point.table[wr_break_point.hit - 1].ofs,
+						m_prev_cs, m_prev_eip);
+					} else if(in_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: port %04X was read at %04X:%04X\n", SREG(CS), m_eip,
+						in_break_point.table[in_break_point.hit - 1].addr,
+						m_prev_cs, m_prev_eip);
+					} else if(out_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: port %04X was written at %04X:%04X\n", SREG(CS), m_eip,
+						out_break_point.table[out_break_point.hit - 1].addr,
+						m_prev_cs, m_prev_eip);
+					} else if(int_break_point.hit) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: INT %02x", SREG(CS), m_eip, int_break_point.table[int_break_point.hit - 1].int_num);
+						if(int_break_point.table[int_break_point.hit - 1].ah_registered) {
+							telnet_printf(" AH=%02x", int_break_point.table[int_break_point.hit - 1].ah);
+						}
+						if(int_break_point.table[int_break_point.hit - 1].al_registered) {
+							telnet_printf(" AL=%02x", int_break_point.table[int_break_point.hit - 1].al);
+						}
+						telnet_printf(" is raised at %04X:%04X\n", m_prev_cs, m_prev_eip);
+					} else if(steps > 0) {
+						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
+						telnet_printf("breaked at %04X:%04X: enter key was pressed\n", SREG(CS), m_eip);
+					}
+					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+					debugger_dasm(buffer, SREG(CS), m_eip);
+					telnet_printf("next\t%04X:%04X  %s\n", SREG(CS), m_eip, buffer);
+					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "Q") == 0) {
+				break;
+			} else if(stricmp(params[0], "X") == 0) {
+				debugger_process_info(buffer);
+				telnet_printf("%s", buffer);
+			} else if(stricmp(params[0], ">") == 0) {
+				if(num == 2) {
+					if(fp_debugger != NULL) {
+						fclose(fp_debugger);
+						fp_debugger = NULL;
+					}
+					fp_debugger = fopen(params[1], "w");
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "<") == 0) {
+				if(num == 2) {
+					if(fi_debugger != NULL) {
+						fclose(fi_debugger);
+						fi_debugger = NULL;
+					}
+					fi_debugger = fopen(params[1], "r");
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "?") == 0) {
+				telnet_printf("D [<start> [<end>]] - dump memory\n");
+				telnet_printf("E[{B,W,D}] <address> <list> - edit memory (byte,word,dword)\n");
+				telnet_printf("EA <address> \"<value>\" - edit memory (ascii)\n");
+				telnet_printf("I[{B,W,D}] <port> - input port (byte,word,dword)\n");
+				telnet_printf("O[{B,W,D}] <port> <value> - output port (byte,word,dword)\n");
+				
+				telnet_printf("R - show registers\n");
+				telnet_printf("R <reg> <value> - edit register\n");
+				telnet_printf("S <start> <end> <list> - search\n");
+				telnet_printf("U [<start> [<end>]] - unassemble\n");
+				
+				telnet_printf("H <value> <value> - hexadd\n");
+				
+				telnet_printf("BP <address> - set breakpoint\n");
+				telnet_printf("{R,W}BP <address> - set breakpoint (break at memory access)\n");
+				telnet_printf("{I,O}BP <port> - set breakpoint (break at i/o access)\n");
+				telnet_printf("INTBP <num> [<ah> [<al>]]- set breakpoint (break at interrupt)\n");
+				telnet_printf("[{R,W,I,O,INT}]B{C,D,E} {*,<list>} - clear/disable/enable breakpoint(s)\n");
+				telnet_printf("[{R,W,I,O,INT}]BL - list breakpoint(s)\n");
+				
+				telnet_printf("G - go (press enter key to break)\n");
+				telnet_printf("G <address> - go and break at address\n");
+				telnet_printf("P - trace one opcode (step over)\n");
+				telnet_printf("T [<count>] - trace (step in)\n");
+				telnet_printf("Q - quit\n");
+				telnet_printf("X - show dos process info\n");
+				
+				telnet_printf("> <filename> - output logfile\n");
+				telnet_printf("< <filename> - input commands from file\n");
+				
+				telnet_printf("<value> - hexa, decimal(%%d), ascii('a')\n");
+				telnet_printf("<list> - <value> [<value> [<value> [...]]]\n");
+			} else {
+				telnet_printf("unknown command %s\n", params[0]);
+			}
+		}
+	}
+	if(fp_debugger != NULL) {
+		fclose(fp_debugger);
+		fp_debugger = NULL;
+	}
+	if(fi_debugger != NULL) {
+		fclose(fi_debugger);
+		fi_debugger = NULL;
+	}
+	now_debugging = now_going = now_suspended = force_suspend = false;
+	closesocket(cli_socket);
+}
+
+const char *debugger_get_ttermpro_path()
+{
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("ProgramFiles")) {
+		sprintf(path, "%s\\teraterm\\ttermpro.exe", getenv("ProgramFiles"));
+	}
+	return(path);
+}
+
+const char *debugger_get_ttermpro_x86_path()
+{
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("ProgramFiles(x86)")) {
+		sprintf(path, "%s\\teraterm\\ttermpro.exe", getenv("ProgramFiles(x86)"));
+	}
+	return(path);
+}
+
+const char *debugger_get_putty_path()
+{
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("ProgramFiles")) {
+		sprintf(path, "%s\\PuTTY\\putty.exe", getenv("ProgramFiles"));
+	}
+	return(path);
+}
+
+const char *debugger_get_putty_x86_path()
+{
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("ProgramFiles(x86)")) {
+		sprintf(path, "%s\\PuTTY\\putty.exe", getenv("ProgramFiles(x86)"));
+	}
+	return(path);
+}
+
+const char *debugger_get_telnet_path()
+{
+	// NOTE: When you run 32bit version of msdos.exe on Windows x64,
+	// C:\Windows\System32\telnet.exe is redirected to telnet.exe in SysWOW64.
+	// But 32bit version of telnet.exe will not be installed in SysWOW64
+	// and 64bit version of telnet.exe will be installed in System32.
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("windir") != NULL) {
+		sprintf(path, "%s\\System32\\telnet.exe", getenv("windir"));
+	}
+	return(path);
+}
+
+DWORD WINAPI debugger_thread(LPVOID)
+{
+	WSADATA was_data;
+	struct sockaddr_in svr_addr;
+	struct sockaddr_in cli_addr;
+	int cli_addr_len = sizeof(cli_addr);
+	int port = 23;
+	int bind_stat = SOCKET_ERROR;
+	struct timeval timeout;
+	
+	WSAStartup(MAKEWORD(2,0), &was_data);
+	
+	if((svr_socket = socket(AF_INET, SOCK_STREAM, 0)) != INVALID_SOCKET) {
+		memset(&svr_addr, 0, sizeof(svr_addr));
+		svr_addr.sin_family = AF_INET;
+		svr_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		
+		while(!m_halted && port < 10000) {
+			svr_addr.sin_port = htons(port);
+			if((bind_stat = bind(svr_socket, (struct sockaddr *)&svr_addr, sizeof(svr_addr))) == 0) {
+				break;
+			} else {
+				port = (port == 23) ? 9000 : (port + 1);
+			}
+		}
+		if(bind_stat == 0) {
+			timeout.tv_sec = 1;
+			timeout.tv_usec = 0;
+			setsockopt(svr_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+			
+			listen(svr_socket, 1);
+			
+			char command[MAX_PATH] = {0};
+			STARTUPINFO si;
+			PROCESS_INFORMATION pi;
+			
+			if(_access(debugger_get_ttermpro_path(), 0) == 0) {
+				sprintf(command, "%s localhost:%d /T=1", debugger_get_ttermpro_path(), port);
+			} else if(_access(debugger_get_ttermpro_x86_path(), 0) == 0) {
+				sprintf(command, "%s localhost:%d /T=1", debugger_get_ttermpro_x86_path(), port);
+			} else if(_access(debugger_get_putty_path(), 0) == 0) {
+				sprintf(command, "%s -telnet localhost %d", debugger_get_putty_path(), port);
+			} else if(_access(debugger_get_putty_x86_path(), 0) == 0) {
+				sprintf(command, "%s -telnet localhost %d", debugger_get_putty_x86_path(), port);
+			} else if(_access(debugger_get_telnet_path(), 0) == 0) {
+				sprintf(command, "%s -t vt100 localhost %d", debugger_get_telnet_path(), port);
+			}
+			if(command[0] != '\0') {
+				memset(&si, 0, sizeof(STARTUPINFO));
+				memset(&pi, 0, sizeof(PROCESS_INFORMATION));
+				CreateProcess(NULL, command, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
+			}
+			
+			while(!m_halted) {
+				if((cli_socket = accept(svr_socket, (struct sockaddr *) &cli_addr, &cli_addr_len)) != INVALID_SOCKET) {
+					u_long val = 1;
+					ioctlsocket(cli_socket, FIONBIO, &val);
+					debugger_main();
+				}
+			}
+		}
+	}
+	WSACleanup();
+	return(0);
+}
+#endif
+
+/* ----------------------------------------------------------------------------
 	main
 ---------------------------------------------------------------------------- */
 
 BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
 	if(dwCtrlType == CTRL_BREAK_EVENT) {
-		// try to finish this program normally
-		m_halted = true;
+		if(key_buf_char != NULL && key_buf_scan != NULL) {
+			key_buf_char->clear();
+			key_buf_scan->clear();
+		}
+//		key_code = key_recv = 0;
 		return TRUE;
 	} else if(dwCtrlType == CTRL_C_EVENT) {
-		ctrl_c_pressed = true;
 		return TRUE;
 	} else if(dwCtrlType == CTRL_CLOSE_EVENT) {
 		// this program will be terminated abnormally, do minimum end process
@@ -1361,6 +2771,10 @@ int main(int argc, char *argv[], char *envp[])
 	
 	hardware_init();
 	
+#ifdef USE_DEBUGGER
+	debugger_init();
+#endif
+	
 	if(msdos_init(argc - (arg_offset + 1), argv + (arg_offset + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
@@ -1378,6 +2792,19 @@ int main(int argc, char *argv[], char *envp[])
 #ifdef USE_THREAD
 		InitializeCriticalSection(&vram_crit_sect);
 		CloseHandle(CreateThread(NULL, 4096, vram_thread, NULL, 0, NULL));
+#endif
+#ifdef USE_DEBUGGER
+		CloseHandle(CreateThread(NULL, 0, debugger_thread, NULL, 0, NULL));
+		// wait until telnet client starts and connects to me
+		if(_access(debugger_get_ttermpro_path(), 0) == 0 ||
+		   _access(debugger_get_ttermpro_x86_path(), 0) == 0 ||
+		   _access(debugger_get_putty_path(), 0) == 0 ||
+		   _access(debugger_get_putty_x86_path(), 0) == 0 ||
+		   _access(debugger_get_telnet_path(), 0) == 0) {
+			for(int i = 0; i < 100 && cli_socket == 0; i++) {
+				Sleep(100);
+			}
+		}
 #endif
 		hardware_run();
 #ifdef USE_THREAD
@@ -1583,20 +3010,48 @@ bool update_console_input()
 						}
 					}
 				} else if(ir[i].EventType & KEY_EVENT) {
+					// update keyboard flags in bios data area
+					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
+						mem[0x417] |= 0x04;
+					} else {
+						mem[0x417] &= ~0x04;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_CTRL_PRESSED) {
+						mem[0x418] |= 0x01;
+					} else {
+						mem[0x418] &= ~0x01;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
+						mem[0x417] |= 0x08;
+					} else {
+						mem[0x417] &= ~0x08;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_ALT_PRESSED) {
+						mem[0x418] |= 0x02;
+					} else {
+						mem[0x418] &= ~0x02;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
+						if(!(mem[0x417] & 0x03)) {
+							mem[0x417] |= 0x02; // left shift
+						}
+					} else {
+						mem[0x417] &= ~0x03;
+					}
+					
 					// set scan code of last pressed/release key to kbd_data (in-port 60h)
 					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode;
-					if(!ir[i].Event.KeyEvent.bKeyDown) {
-						// break
-						kbd_data |= 0x80;
-					} else {
+					kbd_status |= 1;
+					
+					// update dos key buffer
+					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
+					UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
+					
+					if(ir[i].Event.KeyEvent.bKeyDown) {
 						// make
 						kbd_data &= 0x7f;
 						
-						// update dos key buffer
-						UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
-						UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
-						
-						if(chr == 0) {
+						if(chr == 0x00) {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
 								if(scn >= 0x3b && scn <= 0x44) {
 									scn += 0x68 - 0x3b;	// F1 to F10
@@ -1681,6 +3136,26 @@ bool update_console_input()
 								key_buf_scan->write(scn);
 							}
 						}
+					} else if(chr == 0x03 && (ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) {
+						// ctrl-break, ctrl-c
+						if(scn == 0x46) {
+							if(key_buf_char != NULL && key_buf_scan != NULL) {
+								key_buf_char->write(0x00);
+								key_buf_scan->write(0x00);
+							}
+							ctrl_break_pressed = true;
+							mem[0x471] = 0x80;
+							raise_int_1bh = true;
+						} else {
+							if(key_buf_char != NULL && key_buf_scan != NULL) {
+								key_buf_char->write(chr);
+								key_buf_scan->write(scn);
+							}
+							ctrl_c_pressed = (scn == 0x2e);
+						}
+					} else {
+						// break
+						kbd_data |= 0x80;
 					}
 					result = key_changed = true;
 				}
@@ -1698,6 +3173,130 @@ bool update_key_buffer()
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
+
+static const struct {
+	char *name;
+	DWORD lcid;
+	char *std;
+	char *dlt;
+} tz_table[] = {
+	// https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
+//	0	GMT		Greenwich Mean Time		GMT0
+	{"GMT Standard Time",			0x0809, "GMT", "BST"},		// (UTC+00:00) GB London (en-gb)
+	{"GMT Standard Time",			0x1809, "GMT", "IST"},		// (UTC+00:00) IE Dublin (en-ie)
+	{"GMT Standard Time",			0x0000, "WET", "WES"},		// (UTC+00:00) PT Lisbon
+	{"Greenwich Standard Time",		0x0000, "GMT", "GST"},		// (UTC+00:00) IS Reykjavik
+//	2	FST	FDT	Fernando De Noronha Std		FST2FDT
+	{"Mid-Atlantic Standard Time",		0x0416, "FST", "FDT"},		// (UTC-02:00) BR Noronha (pt-br)
+	{"UTC-02",				0x0416, "FST", "FDT"},		// (UTC-02:00) BR Noronha (pt-br)
+//	3	BST		Brazil Standard Time		BST3
+	{"Bahia Standard Time",			0x0000, "BST", "BDT"},		// (UTC-03:00) BR Bahia
+	{"SA Eastern Standard Time",		0x0000, "BST", "BDT"},		// (UTC-03:00) BR Fortaleza
+	{"Tocantins Standard Time",		0x0000, "BST", "BDT"},		// (UTC-03:00) BR Palmas
+//	3	EST	EDT	Eastern Standard (Brazil)	EST3EDT
+	{"E. South America Standard Time",	0x0000, "EST", "EDT"},		// (UTC-03:00) BR Sao Paulo
+//	3	GST		Greenland Standard Time		GST3
+	{"Greenland Standard Time",		0x0000, "GST", "GDT"},		// (UTC-03:00) GL Godthab
+//	3:30	NST	NDT	Newfoundland Standard Time	NST3:30NDT
+	{"Newfoundland Standard Time",		0x0000, "NST", "NDT"},		// (UTC-03:30) CA St.Johns
+//	4	AST	ADT	Atlantic Standard Time		AST4ADT
+	{"Atlantic Standard Time",		0x0000, "AST", "ADT"},		// (UTC-04:00) CA Halifax
+//	4	WST	WDT	Western Standard (Brazil)	WST4WDT
+	{"Central Brazilian Standard Time",	0x0000, "WST", "WDT"},		// (UTC-04:00) BR Cuiaba
+	{"SA Western Standard Time",		0x0000, "WST", "WDT"},		// (UTC-04:00) BR Manaus
+//	5	EST	EDT	Eastern Standard Time	 	EST5EDT
+	{"Eastern Standard Time",		0x0000, "EST", "EDT"},		// (UTC-05:00) US New York
+	{"Eastern Standard Time (Mexico)",	0x0000, "EST", "EDT"},		// (UTC-05:00) MX Cancun
+	{"US Eastern Standard Time",		0x0000, "EST", "EDT"},		// (UTC-05:00) US Indianapolis
+//	5	CST	CDT	Chile Standard Time		CST5CDT
+	{"Pacific SA Standard Time",		0x0000, "CST", "CDT"},		// (UTC-04:00) CL Santiago
+//	5	AST	ADT	Acre Standard Time		AST5ADT
+	{"SA Pacific Standard Time",		0x0000, "AST", "ADT"},		// (UTC-05:00) BR Rio Branco
+//	5	CST	CDT	Cuba Standard Time		CST5CDT
+	{"Cuba Standard Time",			0x0000, "CST", "CDT"},		// (UTC-05:00) CU Havana
+//	6	CST	CDT	Central Standard Time		CST6CDT
+	{"Canada Central Standard Time",	0x0000, "CST", "CDT"},		// (UTC-06:00) CA Regina
+	{"Central Standard Time",		0x0000, "CST", "CDT"},		// (UTC-06:00) US Chicago
+	{"Central Standard Time (Mexico)",	0x0000, "CST", "CDT"},		// (UTC-06:00) MX Mexico City
+//	6	EST	EDT	Easter Island Standard		EST6EDT
+	{"Easter Island Standard Time",		0x0000, "EST", "EDT"},		// (UTC-06:00) CL Easter
+//	7	MST	MDT	Mountain Standard Time		MST7MDT
+	{"Mountain Standard Time",		0x0000, "MST", "MDT"},		// (UTC-07:00) US Denver
+	{"Mountain Standard Time (Mexico)",	0x0000, "MST", "MDT"},		// (UTC-07:00) MX Chihuahua
+	{"US Mountain Standard Time",		0x0000, "MST", "MDT"},		// (UTC-07:00) US Phoenix
+//	8	PST	PDT	Pacific Standard Time		PST8PDT
+	{"Pacific Standard Time",		0x0000, "PST", "PDT"},		// (UTC-08:00) US Los Angeles
+	{"Pacific Standard Time (Mexico)",	0x0000, "PST", "PDT"},		// (UTC-08:00) MX Tijuana
+//	9	AKS	AKD	Alaska Standard Time		AKS9AKD
+//	9	YST	YDT	Yukon Standard Time		YST9YST
+	{"Alaskan Standard Time",		0x0000, "AKS", "AKD"},		// (UTC-09:00) US Anchorage
+//	10	HST	HDT	Hawaii Standard Time		HST10HDT
+	{"Aleutian Standard Time",		0x0000, "HST", "HDT"},		// (UTC-10:00) US Aleutian
+	{"Hawaiian Standard Time",		0x0000, "HST", "HDT"},		// (UTC-10:00) US Honolulu
+//	11	SST		Samoa Standard Time		SST11
+	{"Samoa Standard Time",			0x0000, "SST", "SDT"},		// (UTC-11:00) US Samoa
+//	-12	NZS	NZD	New Zealand Standard Time	NZS-12NZD
+	{"New Zealand Standard Time",		0x0000, "NZS", "NZD"},		// (UTC+12:00) NZ Auckland
+//	-10	GST		Guam Standard Time		GST-10
+	{"West Pacific Standard Time",		0x0000, "GST", "GDT"},		// (UTC+10:00) GU Guam
+//	-10	EAS	EAD	Eastern Australian Standard	EAS-10EAD
+	{"AUS Eastern Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Sydney
+	{"E. Australia Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Brisbane
+	{"Tasmania Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Hobart
+//	-9:30	CAS	CAD	Central Australian Standard	CAS-9:30CAD
+	{"AUS Central Standard Time",		0x0000, "CAS", "CAD"},		// (UTC+09:30) AU Darwin
+	{"Cen. Australia Standard Time",	0x0000, "CAS", "CAD"},		// (UTC+09:30) AU Adelaide
+//	-9	JST		Japan Standard Time		JST-9
+	{"Tokyo Standard Time",			0x0000, "JST", "JDT"},		// (UTC+09:00) JP Tokyo
+//	-9	KST	KDT	Korean Standard Time		KST-9KDT
+	{"Korea Standard Time",			0x0000, "KST", "KDT"},		// (UTC+09:00) KR Seoul
+	{"North Korea Standard Time",		0x0000, "KST", "KDT"},		// (UTC+08:30) KP Pyongyang
+//	-8	HKT		Hong Kong Time			HKT-8
+	{"China Standard Time",			0x0C04, "HKT", "HKS"},		// (UTC+08:00) HK Hong Kong (zh-hk)
+//	-8	CCT		China Coast Time		CCT-8
+	{"China Standard Time",			0x0000, "CCT", "CDT"},		// (UTC+08:00) CN Shanghai
+	{"Taipei Standard Time",		0x0000, "CCT", "CDT"},		// (UTC+08:00) TW Taipei
+//	-8	SST		Singapore Standard Time		SST-8
+	{"Singapore Standard Time",		0x0000, "SST", "SDT"},		// (UTC+08:00) SG Singapore
+//	-8	WAS	WAD	Western Australian Standard	WAS-8WAD
+	{"Aus Central W. Standard Time",	0x0000, "WAS", "WAD"},		// (UTC+08:45) AU Eucla
+	{"W. Australia Standard Time",		0x0000, "WAS", "WAD"},		// (UTC+08:00) AU Perth
+//	-7:30	JT		Java Standard Time		JST-7:30
+//	-7	NST		North Sumatra Time		NST-7
+	{"SE Asia Standard Time",		0x0000, "NST", "NDT"},		// (UTC+07:00) ID Jakarta
+//	-5:30	IST		Indian Standard Time		IST-5:30
+	{"India Standard Time",			0x0000, "IST", "IDT"},		// (UTC+05:30) IN Calcutta
+//	-3:30	IST	IDT	Iran Standard Time		IST-3:30IDT
+	{"Iran Standard Time",			0x0000, "IST", "IDT"},		// (UTC+03:30) IR Tehran
+//	-3	MSK	MSD	Moscow Winter Time		MSK-3MSD
+	{"Belarus Standard Time",		0x0000, "MSK", "MSD"},		// (UTC+03:00) BY Minsk
+	{"Russian Standard Time",		0x0000, "MSK", "MSD"},		// (UTC+03:00) RU Moscow
+//	-2	EET		Eastern Europe Time		EET-2
+	{"E. Europe Standard Time",		0x0000, "EET", "EES"},		// (UTC+02:00) MD Chisinau
+	{"FLE Standard Time",			0x0000, "EET", "EES"},		// (UTC+02:00) UA Kiev
+	{"GTB Standard Time",			0x0000, "EET", "EES"},		// (UTC+02:00) RO Bucharest
+	{"Kaliningrad Standard Time",		0x0000, "EET", "EES"},		// (UTC+02:00) RU Kaliningrad
+//	-2	IST	IDT	Israel Standard Time		IST-2IDT
+	{"Israel Standard Time",		0x0000, "IST", "IDT"},		// (UTC+02:00) IL Jerusalem
+//	-1	MEZ	MES	Middle European Time		MEZ-1MES
+//	-1	SWT	SST	Swedish Winter Time		SWT-1SST
+//	-1	FWT	FST	French Winter Time		FWT-1FST
+//	-1	CET	CES	Central European Time		CET-1CES
+	{"Central Europe Standard Time",	0x0000, "CET", "CES"},		// (UTC+01:00) HU Budapest
+	{"Central European Standard Time",	0x0000, "CET", "CES"},		// (UTC+01:00) PL Warsaw
+	{"Romance Standard Time",		0x0000, "CET", "CES"},		// (UTC+01:00) FR Paris
+	{"W. Europe Standard Time",		0x0000, "CET", "CES"},		// (UTC+01:00) DE Berlin
+//	-1	WAT	 	West African Time		WAT-1
+	{"Namibia Standard Time",		0x0000, "WAT", "WAS"},		// (UTC+01:00) NA Windhoek
+	{"W. Central Africa Standard Time",	0x0000, "WAT", "WAS"},		// (UTC+01:00) NG Lagos
+//	0	UTC		Universal Coordinated Time	UTC0
+	{"UTC",					0x0000, "UTC", ""   },		// (UTC+00:00) GMT+0
+	{"UTC-02",				0x0000, "UTC", ""   },		// (UTC-02:00) GMT+2
+	{"UTC-08",				0x0000, "UTC", ""   },		// (UTC-08:00) GMT+8
+	{"UTC-09",				0x0000, "UTC", ""   },		// (UTC-09:00) GMT+9
+	{"UTC-11",				0x0000, "UTC", ""   },		// (UTC-11:00) GMT+11
+	{"UTC+12",				0x0000, "UTC", ""   },		// (UTC+12:00) GMT-12
+};
 
 static const struct {
 	UINT16 code;
@@ -1770,7 +3369,7 @@ static const struct {
 	{0x4A,	"Unexpected adapter close", NULL},
 */
 	{0x50,	"File exists", "ファイルは存在します."},
-	{0x52,	"Cannot make directory entry", "ディレクトリエントリを作れません."},
+	{0x52,	"Cannot make directory entry", "ディレクトリエントリを作成できません."},
 	{0x53,	"Fail on INT 24", "INT 24 で失敗しました."},
 	{0x54,	"Too many redirections", "リダイレクトが多すぎます."},
 	{0x55,	"Duplicate redirection", "リダイレクトが重複しています."},
@@ -1860,15 +3459,22 @@ process_t *msdos_process_info_create(UINT16 psp_seg)
 	return(NULL);
 }
 
-process_t *msdos_process_info_get(UINT16 psp_seg)
+process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error)
 {
 	for(int i = 0; i < MAX_PROCESS; i++) {
 		if(process[i].psp == psp_seg) {
 			return(&process[i]);
 		}
 	}
-	fatalerror("invalid psp address\n");
+	if(show_error) {
+		fatalerror("invalid psp address\n");
+	}
 	return(NULL);
+}
+
+process_t *msdos_process_info_get(UINT16 psp_seg)
+{
+	return(msdos_process_info_get(psp_seg, true));
 }
 
 void msdos_sda_update(int psp_seg)
@@ -1947,8 +3553,8 @@ void msdos_upper_table_update()
 	*(UINT16 *)(mem + UPPERTABLE_TOP) = 0x80;
 	for(unsigned i = 0; i < 0x80; ++i) {
 		UINT8 c[4];
-		*(UINT32 *)c = 0;				// reset internal conversion state
-		CharUpperBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage) 
+		*(UINT32 *)c = 0;		// reset internal conversion state
+		CharUpperBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage)
 		c[0] = 0x80 + i;
 		DWORD rc = CharUpperBuffA((LPSTR)c, 1);
 		mem[UPPERTABLE_TOP + 2 + i] = (rc == 1 && c[0]) ? c[0] : 0x80 + i;
@@ -1961,8 +3567,8 @@ void msdos_lower_table_update()
 	*(UINT16 *)(mem + LOWERTABLE_TOP) = 0x80;
 	for(unsigned i = 0; i < 0x80; ++i) {
 		UINT8 c[4];
-		*(UINT32 *)c = 0;				// reset internal conversion state
-		CharLowerBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage) 
+		*(UINT32 *)c = 0;		// reset internal conversion state
+		CharLowerBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage)
 		c[0] = 0x80 + i;
 		DWORD rc = CharLowerBuffA((LPSTR)c, 1);
 		mem[LOWERTABLE_TOP + 2 + i] = (rc == 1 && c[0]) ? c[0] : 0x80 + i;
@@ -2922,7 +4528,7 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if((key_buf_char != NULL && key_buf_char->count() != 0) || key_code != 0) {
+	if((key_buf_char != NULL && key_buf_char->count() != 0) || key_recv != 0) {
 		return(1);
 	} else {
 		return(_kbhit());
@@ -2959,12 +4565,13 @@ retry:
 	
 	// input from console
 	int key_char, key_scan;
-	if(key_code != 0) {
+	if(key_recv != 0) {
 		key_char = (key_code >> 0) & 0xff;
 		key_scan = (key_code >> 8) & 0xff;
 		key_code >>= 16;
+		key_recv >>= 16;
 	} else {
-		while(key_buf_char != NULL && key_buf_char->count() == 0 && !m_halted && !ctrl_c_pressed) {
+		while(key_buf_char != NULL && key_buf_char->count() == 0 && !m_halted) {
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
@@ -2982,12 +4589,8 @@ retry:
 			}
 		}
 		if(m_halted) {
-			// ctrl-break pressed - insert CR to terminate input loops
+			// insert CR to terminate input loops
 			key_char = 0x0d;
-			key_scan = 0;
-		} else if(ctrl_c_pressed) {
-			// ctrl-c pressed
-			key_char = 0x03;
 			key_scan = 0;
 		} else if(key_buf_char != NULL && key_buf_scan != NULL) {
 			key_char = key_buf_char->read();
@@ -3444,13 +5047,20 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 {
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		bool last_block;
 		
 		if(mcb->psp == 0) {
 			msdos_mem_merge(mcb_seg + 1);
 		} else {
 			msdos_mcb_check(mcb);
 		}
-		if(!(new_process && mcb->mz != 'Z')) {
+		if(!(last_block = (mcb->mz == 'Z'))) {
+			// check if the next is dummy mcb to link to umb
+			int next_seg = mcb_seg + 1 + mcb->paragraphs;
+			mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
+			last_block = (next_mcb->mz == 'Z' && next_mcb->paragraphs == 0);
+		}
+		if(!(new_process && !last_block)) {
 			if(mcb->psp == 0 && mcb->paragraphs >= paragraphs) {
 				msdos_mem_split(mcb_seg + 1, paragraphs);
 				mcb->psp = current_psp;
@@ -3500,9 +5110,17 @@ int msdos_mem_get_free(int mcb_seg, int new_process)
 	
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		bool last_block;
+		
 		msdos_mcb_check(mcb);
 		
-		if(!(new_process && mcb->mz != 'Z')) {
+		if(!(last_block = (mcb->mz == 'Z'))) {
+			// check if the next is dummy mcb to link to umb
+			int next_seg = mcb_seg + 1 + mcb->paragraphs;
+			mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
+			last_block = (next_mcb->mz == 'Z' && next_mcb->paragraphs == 0);
+		}
+		if(!(new_process && !last_block)) {
 			if(mcb->psp == 0 && mcb->paragraphs > max_paragraphs) {
 				max_paragraphs = mcb->paragraphs;
 			}
@@ -3536,64 +5154,31 @@ int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
 
 int msdos_mem_get_umb_linked()
 {
-	int mcb_seg = first_mcb;
+	mcb_t *mcb = (mcb_t *)(mem + MEMORY_END - 16);
+	msdos_mcb_check(mcb);
 	
-	while(1) {
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		msdos_mcb_check(mcb);
-		
-		if(mcb->mz == 'Z') {
-			if(mcb_seg >= (UMB_TOP >> 4)) {
-				return(-1);
-			}
-			break;
-		}
-		mcb_seg += 1 + mcb->paragraphs;
+	if(mcb->mz == 'M') {
+		return(-1);
 	}
 	return(0);
 }
 
-int msdos_mem_link_umb()
+void msdos_mem_link_umb()
 {
-	int mcb_seg = first_mcb;
+	mcb_t *mcb = (mcb_t *)(mem + MEMORY_END - 16);
+	msdos_mcb_check(mcb);
 	
-	while(1) {
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		msdos_mcb_check(mcb);
-		mcb_seg += 1 + mcb->paragraphs;
-		
-		if(mcb->mz == 'Z') {
-			if(mcb_seg == (MEMORY_END >> 4) - 1) {
-				mcb->mz = 'M';
-				((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked |= 0x01;
-				return(-1);
-			}
-			break;
-		}
-	}
-	return(0);
+	mcb->mz = 'M';
+	mcb->paragraphs = (UMB_TOP >> 4) - (MEMORY_END >> 4);
 }
 
-int msdos_mem_unlink_umb()
+void msdos_mem_unlink_umb()
 {
-	int mcb_seg = first_mcb;
+	mcb_t *mcb = (mcb_t *)(mem + MEMORY_END - 16);
+	msdos_mcb_check(mcb);
 	
-	while(1) {
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		msdos_mcb_check(mcb);
-		mcb_seg += 1 + mcb->paragraphs;
-		
-		if(mcb->mz == 'Z') {
-			break;
-		} else {
-			if(mcb_seg == (MEMORY_END >> 4) - 1) {
-				mcb->mz = 'Z';
-				((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked &= ~0x01;
-				return(-1);
-			}
-		}
-	}
-	return(0);
+	mcb->mz = 'Z';
+	mcb->paragraphs = 0;
 }
 
 #ifdef SUPPORT_HMA
@@ -4166,11 +5751,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	}
 	
 	// create psp
-#if defined(HAS_I386)
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = m_eip;
-#else
-	*(UINT16 *)(mem + 4 * 0x22 + 0) = m_pc - SREG_BASE(CS);
-#endif
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = SREG(CS);
 	psp_t *psp = msdos_psp_create(psp_seg, psp_seg + paragraphs, current_psp, env_seg);
 	memcpy(psp->fcb1, mem + (param->fcb1.w.h << 4) + param->fcb1.w.l, sizeof(psp->fcb1));
@@ -4199,6 +5780,9 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	// process info
 	process_t *process = msdos_process_info_create(psp_seg);
 	strcpy(process->module_dir, msdos_short_full_dir(path));
+#ifdef USE_DEBUGGER
+	strcpy(process->module_path, path);
+#endif
 	process->dta.w.l = 0x80;
 	process->dta.w.h = psp_seg;
 	process->switchar = '/';
@@ -5517,76 +7101,78 @@ inline void pcbios_int_15h_e8h()
 	}
 }
 
-UINT32 pcbios_get_key_code(bool clear_buffer)
+void pcbios_update_key_code(bool wait)
 {
-	UINT32 code = 0;
-	
 	if(key_buf_char != NULL && key_buf_scan != NULL) {
 		if(key_buf_char->count() == 0) {
 			if(!update_key_buffer()) {
-				if(clear_buffer) {
+				if(wait) {
 					Sleep(10);
 				} else {
 					maybe_idle();
 				}
 			}
 		}
-		if(!clear_buffer) {
-			key_buf_char->store_buffer();
-			key_buf_scan->store_buffer();
+		if(key_buf_char->count() != 0) {
+			key_code = key_buf_char->read() | (key_buf_scan->read() << 8);
+			key_recv = 0x0000ffff;
 		}
 		if(key_buf_char->count() != 0) {
-			code = key_buf_char->read() | (key_buf_scan->read() << 8);
-		}
-		if(key_buf_char->count() != 0) {
-			code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
-		}
-		if(!clear_buffer) {
-			key_buf_char->restore_buffer();
-			key_buf_scan->restore_buffer();
+			key_code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
+			key_recv |= 0xffff0000;
 		}
 	}
-	return code;
 }
 
 inline void pcbios_int_16h_00h()
 {
-	while(key_code == 0 && !m_halted) {
-		key_code = pcbios_get_key_code(true);
+	while(key_recv == 0 && !m_halted) {
+		pcbios_update_key_code(true);
 	}
-	if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
-		if(REG8(AH) == 0x10) {
-			key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
-		} else {
-			key_code = ((key_code >> 16) & 0xff00);
+	if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
+		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
+			if(REG8(AH) == 0x10) {
+				key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
+			} else {
+				key_code = ((key_code >> 16) & 0xff00);
+			}
+			key_recv >>= 16;
 		}
 	}
 	REG16(AX) = key_code & 0xffff;
 	key_code >>= 16;
+	key_recv >>= 16;
 }
 
 inline void pcbios_int_16h_01h()
 {
-	UINT32 key_code_tmp = key_code;
-	
-	if(key_code_tmp == 0) {
-		key_code_tmp = pcbios_get_key_code(false);
+	if(key_recv == 0) {
+		pcbios_update_key_code(false);
 	}
-	if((key_code_tmp & 0xffff) == 0x0000 || (key_code_tmp & 0xffff) == 0xe000) {
-		if(REG8(AH) == 0x11) {
-			key_code_tmp = ((key_code_tmp >> 8) & 0xff) | ((key_code_tmp >> 16) & 0xff00);
-		} else {
-			key_code_tmp = ((key_code_tmp >> 16) & 0xff00);
+	if(key_recv != 0) {
+		UINT32 key_code_tmp = key_code;
+		if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
+			if((key_code_tmp & 0xffff) == 0x0000 || (key_code_tmp & 0xffff) == 0xe000) {
+				if(REG8(AH) == 0x11) {
+					key_code_tmp = ((key_code_tmp >> 8) & 0xff) | ((key_code_tmp >> 16) & 0xff00);
+				} else {
+					key_code_tmp = ((key_code_tmp >> 16) & 0xff00);
+				}
+			}
 		}
-	}
-	if(key_code_tmp != 0) {
 		REG16(AX) = key_code_tmp & 0xffff;
-	}
 #if defined(HAS_I386)
-	m_ZF = (key_code_tmp == 0);
+		m_ZF = 0;
 #else
-	m_ZeroVal = (key_code_tmp != 0);
+		m_ZeroVal = 1;
 #endif
+	} else {
+#if defined(HAS_I386)
+		m_ZF = 1;
+#else
+		m_ZeroVal = 0;
+#endif
+	}
 }
 
 inline void pcbios_int_16h_02h()
@@ -5768,7 +7354,7 @@ inline void msdos_int_21h_00h()
 inline void msdos_int_21h_01h()
 {
 	REG8(AL) = msdos_getche();
-	ctrl_c_detected = ctrl_c_pressed;
+	ctrl_break_detected = ctrl_break_pressed;
 	
 	// some seconds may be passed in console
 	hardware_update();
@@ -5776,8 +7362,10 @@ inline void msdos_int_21h_01h()
 
 inline void msdos_int_21h_02h()
 {
-	msdos_putch(REG8(DL));
-	ctrl_c_detected = ctrl_c_pressed;
+	UINT8 data = REG8(DL);
+	msdos_putch(data);
+	REG8(AL) = data;
+	ctrl_break_detected = ctrl_break_pressed;
 }
 
 inline void msdos_int_21h_03h()
@@ -5815,7 +7403,9 @@ inline void msdos_int_21h_06h()
 			maybe_idle();
 		}
 	} else {
-		msdos_putch(REG8(DL));
+		UINT8 data = REG8(DL);
+		msdos_putch(data);
+		REG8(AL) = data;
 	}
 }
 
@@ -5830,7 +7420,7 @@ inline void msdos_int_21h_07h()
 inline void msdos_int_21h_08h()
 {
 	REG8(AL) = msdos_getch();
-	ctrl_c_detected = ctrl_c_pressed;
+	ctrl_break_detected = ctrl_break_pressed;
 	
 	// some seconds may be passed in console
 	hardware_update();
@@ -5857,7 +7447,8 @@ inline void msdos_int_21h_09h()
 			msdos_putch(str[i]);
 		}
 	}
-	ctrl_c_detected = ctrl_c_pressed;
+	REG8(AL) = '$';
+	ctrl_break_detected = ctrl_break_pressed;
 }
 
 inline void msdos_int_21h_0ah()
@@ -5868,10 +7459,14 @@ inline void msdos_int_21h_0ah()
 	int chr, p = 0;
 	
 	while((chr = msdos_getch()) != 0x0d) {
-		if(ctrl_c_pressed) {
+		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
 			p = 0;
-			msdos_putch(chr);
+			msdos_putch(0x03);
+			msdos_putch(0x0d);
+			msdos_putch(0x0a);
 			break;
+		} else if(ctrl_break_pressed) {
+			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
 			msdos_getch();
@@ -5899,7 +7494,7 @@ inline void msdos_int_21h_0ah()
 	}
 	buf[p] = 0x0d;
 	mem[ofs + 1] = p;
-	ctrl_c_detected = ctrl_c_pressed;
+	ctrl_break_detected = ctrl_break_pressed;
 	
 	// some seconds may be passed in console
 	hardware_update();
@@ -5913,7 +7508,7 @@ inline void msdos_int_21h_0bh()
 		REG8(AL) = 0x00;
 		maybe_idle();
 	}
-	ctrl_c_detected = ctrl_c_pressed;
+	ctrl_break_detected = ctrl_break_pressed;
 }
 
 inline void msdos_int_21h_0ch()
@@ -6628,14 +8223,16 @@ inline void msdos_int_21h_31h()
 		// recover the broken mcb
 		int mcb_seg = current_psp - 1;
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		
 		if(mcb_seg < (MEMORY_END >> 4)) {
-			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				mcb->mz = 'M';
-			} else {
-				mcb->mz = 'Z';
-			}
+			mcb->mz = 'M';
 			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
-			msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+			
+			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+			} else {
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0);
+			}
 		} else {
 			mcb->mz = 'Z';
 			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
@@ -6667,10 +8264,21 @@ inline void msdos_int_21h_33h()
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(DL) = ctrl_c_checking;
+		REG8(DL) = ctrl_break_checking;
 		break;
 	case 0x01:
-		ctrl_c_checking = REG8(DL);
+		ctrl_break_checking = REG8(DL);
+		break;
+	case 0x02:
+		{
+			UINT8 old = ctrl_break_checking;
+			ctrl_break_checking = REG8(DL);
+			REG8(DL) = old;
+		}
+		break;
+	case 0x03:
+	case 0x04:
+		// DOS 4.0+ - Unused
 		break;
 	case 0x05:
 		GetSystemDirectory(path, MAX_PATH);
@@ -6957,15 +8565,18 @@ inline void msdos_int_21h_3fh()
 				while(max > p) {
 					int chr = msdos_getch();
 					
-					if(ctrl_c_pressed) {
+					if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
 						p = 0;
 						buf[p++] = 0x0d;
 						if(max > p) {
 							buf[p++] = 0x0a;
 						}
-						msdos_putch(chr);
-						msdos_putch('\n');
+						msdos_putch(0x03);
+						msdos_putch(0x0d);
+						msdos_putch(0x0a);
 						break;
+					} else if(ctrl_break_pressed) {
+						// skip this byte
 					} else if(chr == 0x00) {
 						// skip 2nd byte
 						msdos_getch();
@@ -7727,7 +9338,7 @@ inline void msdos_int_21h_49h()
 	if(mcb->mz == 'M' || mcb->mz == 'Z') {
 		msdos_mem_free(SREG(ES));
 	} else {
-		REG16(AX) = 0x09; // illegal memory block address 
+		REG16(AX) = 0x09; // illegal memory block address
 		m_CF = 1;
 	}
 }
@@ -7745,7 +9356,7 @@ inline void msdos_int_21h_4ah()
 			m_CF = 1;
 		}
 	} else {
-		REG16(AX) = 0x09; // illegal memory block address 
+		REG16(AX) = 0x09; // illegal memory block address
 		m_CF = 1;
 	}
 }
@@ -9048,9 +10659,9 @@ inline void msdos_int_24h()
 	}
 	fprintf(stderr, "\n");
 	
-//	if(1) {
+	{
 		fprintf(stderr, "%s",   (active_code_page == 932) ? "中止 (A)" : "Abort");
-//	}
+	}
 	if(REG8(AH) & 0x10) {
 		fprintf(stderr, ", %s", (active_code_page == 932) ? "再試行 (R)" : "Retry");
 	}
@@ -9217,14 +10828,16 @@ inline void msdos_int_27h()
 		// recover the broken mcb
 		int mcb_seg = SREG(CS) - 1;
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		
 		if(mcb_seg < (MEMORY_END >> 4)) {
-			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				mcb->mz = 'M';
-			} else {
-				mcb->mz = 'Z';
-			}
+			mcb->mz = 'M';
 			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
-			msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+			
+			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+			} else {
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0);
+			}
 		} else {
 			mcb->mz = 'Z';
 			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
@@ -9699,14 +11312,19 @@ inline void msdos_int_2fh_16h()
 	case 0x13:
 	case 0x14:
 	case 0x15:
+	case 0x86:
 	case 0x87:
 	case 0x89:
+	case 0x8a:
 		// function not supported, do not clear AX
 		break;
 	case 0x80:
 		Sleep(10);
 		hardware_update();
 		REG8(AL) = 0x00;
+		break;
+	case 0x83:
+		REG16(BX) = 0x01; // system vm id
 		break;
 	case 0x8e:
 		REG16(AX) = 0x00; // failed
@@ -10070,27 +11688,6 @@ inline void msdos_int_2fh_55h()
 	}
 }
 
-inline void msdos_int_2fh_80h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		if(REG16(DX) == 0x0000) {
-			// FAX BIOS is not installed
-//			REG8(AL) = 0x00;
-		} else {
-			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-			REG16(AX) = 0x01;
-			m_CF = 1;
-		}
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
 inline void msdos_int_2fh_adh()
 {
 	switch(REG8(AL)) {
@@ -10161,38 +11758,6 @@ inline void msdos_int_2fh_aeh()
 				fatalerror("failed to start '%s' by int 2Fh, AX=AE01h\n", command);
 			}
 		}
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_b7h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// APPEND is not installed
-//		REG8(AL) = 0x00;
-		break;
-	case 0x07:
-	case 0x11:
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_d7h()
-{
-	switch(REG8(AL)) {
-	case 0x01:
-		// Banyan VINES v4+ is not installed
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -11590,17 +13155,17 @@ void msdos_syscall(unsigned num)
 #ifdef ENABLE_DEBUG_SYSCALL
 	if(num == 0x68) {
 		// dummy interrupt for EMS (int 67h)
-		fprintf(fdebug, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x69) {
 		// dummy interrupt for XMS (call far)
-		fprintf(fdebug, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x6a) {
 		// dummy interrupt for case map routine pointed in the country info
 	} else {
-		fprintf(fdebug, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
 #endif
-	ctrl_c_pressed = ctrl_c_detected = false;
+	ctrl_break_detected = ctrl_break_pressed = ctrl_c_pressed = false;
 	
 	switch(num) {
 	case 0x00:
@@ -11636,10 +13201,20 @@ void msdos_syscall(unsigned num)
 #endif
 		}
 		break;
+	case 0x09:
+		// ctrl-break is pressed
+		if(raise_int_1bh) {
+#if defined(HAS_I386)
+			m_ext = 0; // not an external interrupt
+			i386_trap(0x1b, 1, 0);
+			m_ext = 1;
+#else
+			PREFIX86(_interrupt)(0x1b);
+#endif
+			raise_int_1bh = false;
+		}
 	case 0x08:
 //		pcbios_irq0(); // this causes too slow emulation...
-	case 0x09:
-	case 0x0a:
 	case 0x0b:
 	case 0x0c:
 	case 0x0d:
@@ -11712,7 +13287,7 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x12:
 		// PC BIOS - Get Memory Size
-		REG16(AX) = MEMORY_END / 1024;
+		REG16(AX) = *(UINT16 *)(mem + 0x413);
 		break;
 	case 0x13:
 		// PC BIOS - Disk
@@ -11817,6 +13392,9 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
+	case 0x1b:
+		mem[0x471] = 0x00;
+		break;
 	case 0x20:
 		try {
 			msdos_process_terminate(SREG(CS), retval, 1);
@@ -11912,7 +13490,7 @@ void msdos_syscall(unsigned num)
 			case 0x50: msdos_int_21h_50h(); break;
 			case 0x51: msdos_int_21h_51h(); break;
 			case 0x52: msdos_int_21h_52h(); break;
-			// 0x53: translate bios parameter block to drive param bock
+			// 0x53: Translate BIOS Parameter Block to Drive Param Bock
 			case 0x54: msdos_int_21h_54h(); break;
 			case 0x55: msdos_int_21h_55h(); break;
 			case 0x56: msdos_int_21h_56h(0); break;
@@ -11923,13 +13501,13 @@ void msdos_syscall(unsigned num)
 			case 0x5b: msdos_int_21h_5bh(); break;
 			case 0x5c: msdos_int_21h_5ch(); break;
 			case 0x5d: msdos_int_21h_5dh(); break;
-			// 0x5e: ms-network
+			// 0x5e: MS-Network
 			case 0x5f: msdos_int_21h_5fh(); break;
 			case 0x60: msdos_int_21h_60h(0); break;
 			case 0x61: msdos_int_21h_61h(); break;
 			case 0x62: msdos_int_21h_62h(); break;
 			case 0x63: msdos_int_21h_63h(); break;
-			// 0x64: set device driver lockahead flag
+			// 0x64: Set Device Driver Lockahead Flag
 			case 0x65: msdos_int_21h_65h(); break;
 			case 0x66: msdos_int_21h_66h(); break;
 			case 0x67: msdos_int_21h_67h(); break;
@@ -11938,12 +13516,12 @@ void msdos_syscall(unsigned num)
 			case 0x6a: msdos_int_21h_6ah(); break;
 			case 0x6b: msdos_int_21h_6bh(); break;
 			case 0x6c: msdos_int_21h_6ch(0); break;
-			// 0x6d: find first rom program
-			// 0x6e: find next rom program
-			// 0x6f: get/set rom scan start address
-			// 0x70: windows95 get/set internationalization information
+			// 0x6d: Find First ROM Program
+			// 0x6e: Find Next ROM Program
+			// 0x6f: Get/Set ROM Scan Start Address
+			// 0x70: Windows95 - Get/Set Internationalization Information
 			case 0x71:
-				// windows95 long filename functions
+				// Windows95 - Long Filename Functions
 				switch(REG8(AL)) {
 				case 0x0d: msdos_int_21h_710dh(); break;
 				case 0x39: msdos_int_21h_39h(1); break;
@@ -11962,7 +13540,7 @@ void msdos_syscall(unsigned num)
 				case 0xa6: msdos_int_21h_71a6h(); break;
 				case 0xa7: msdos_int_21h_71a7h(); break;
 				case 0xa8: msdos_int_21h_71a8h(); break;
-				// 0xa9: server create/open file
+				// 0xa9: Server Create/Open File
 				case 0xaa: msdos_int_21h_71aah(); break;
 				default:
 					unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -11973,14 +13551,14 @@ void msdos_syscall(unsigned num)
 				break;
 			// 0x72: Windows95 beta - LFN FindClose
 			case 0x73:
-				// windows95 fat32 functions
+				// Windows95 - FAT32 Functions
 				switch(REG8(AL)) {
 				case 0x00: msdos_int_21h_7300h(); break;
-				// 0x01: set drive locking ???
+				// 0x01: Set Drive Locking ???
 				case 0x02: msdos_int_21h_7302h(); break;
 				case 0x03: msdos_int_21h_7303h(); break;
-				// 0x04: set dpb to use for formatting
-				// 0x05: extended absolute disk read/write
+				// 0x04: Set DPB to Use for Formatting
+				// 0x05: Extended Absolute Disk Read/Write
 				default:
 					unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 					REG16(AX) = 0x7300;
@@ -12045,7 +13623,7 @@ void msdos_syscall(unsigned num)
 			sda->suggested_action = 1; // Retry
 			sda->locus_of_last_error = 1; // Unknown
 		}
-		if(ctrl_c_checking && ctrl_c_detected) {
+		if(ctrl_break_checking && ctrl_break_detected) {
 			// raise int 23h
 #if defined(HAS_I386)
 			m_ext = 0; // not an external interrupt
@@ -12117,11 +13695,8 @@ void msdos_syscall(unsigned num)
 		case 0x4b: msdos_int_2fh_4bh(); break;
 		case 0x4f: msdos_int_2fh_4fh(); break;
 		case 0x55: msdos_int_2fh_55h(); break;
-		case 0x80: msdos_int_2fh_80h(); break;
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
-		case 0xb7: msdos_int_2fh_b7h(); break;
-		case 0xd7: msdos_int_2fh_d7h(); break;
 		// Installation Check
 		case 0x01: // PRINT.COM
 		case 0x02: // PC LAN Program Redirector
@@ -12133,27 +13708,88 @@ void msdos_syscall(unsigned num)
 		case 0x23: // DR DOS 5.0 GRAFTABL
 		case 0x27: // DR-DOR 6.0 TaskMAX
 		case 0x2e: // Novell DOS 7 GRAFTABL
+		case 0x39: // Kingswood TSR INTERFACE
+		case 0x41: // DOS Enhanced LAN Manager 2.0+ MINIPOP/NETPOPUP
 		case 0x45: // PROF.COM
 		case 0x51: // ODIHELP.EXE
+		case 0x52: // JAM.SYS v1.10+
 		case 0x54: // POWER.EXE
 		case 0x56: // INTERLNK
+		case 0x57: // IOMEGA DRIVERS
 		case 0x70: // License Service API
+		case 0x72: // SRDISK v1.30+
 		case 0x7a: // Novell NetWare
+		case 0x7f: // PRINDIR v9.0
+		case 0x80: // FAX BIOS
+		case 0x81: // Nanosoft, Inc. TurboNET redirector
+		case 0x82: // Nanosoft, Inc. CAPDOS
+		case 0x89: // WHOA!.COM
+		case 0x90: // Resident AID
 		case 0x94: // MICRO.EXE
+		case 0x97: // Micro Focus COBOL v3.1.31
+		case 0x98: // Micro Focus COBOL v3.1.31
+		case 0x99: // DOS Navigator II
+		case 0x9e: // INTMON v2.1
+		case 0x9f: // INTCFG v2.1
+		case 0xa9: // METZTSR.COM
+		case 0xab: // SRSoft MODAL PC v2
 		case 0xac: // GRAPHICS.COM
+		case 0xaf: // WinDOS v2.11
 		case 0xb0: // GRAFTABLE.COM
+		case 0xb4: // IBM PC3270 EMULATION PROG v3
+		case 0xb7: // APPEND
 		case 0xb8: // NETWORK
 		case 0xb9: // RECEIVER.COM
 		case 0xbc: // EGA.SYS
+		case 0xbe: // REDVIEW
 		case 0xbf: // PC LAN Program - REDIRIFS.EXE
 		case 0xc0: // Novell LSL.COM
+		case 0xc1: // Personal NetWare - STPIPX v1.00
+		case 0xc3: // SETWPR.COM
+		case 0xc5: // PC-DOS Econet v1.05
+		case 0xc7: // COLAP.COM
+		case 0xc9: // ThunderByte???
+		case 0xca: // TBSCANX
+		case 0xcb: // Communicating Applications Specification
+		case 0xcc: // Tsoft NFSDRVR
+		case 0xcd: // SWELL.EXE
+		case 0xcf: // TEMPLEXX 1.0
+		case 0xd0: // Lotus CD/Networker
 		case 0xd2: // PCL-838.EXE
+		case 0xd3: // TeleReplica
+		case 0xd6: // VEDIT VSWAP
+		case 0xd7: // Banyan VINES v4+
 		case 0xd8: // Novell NetWare Lite - CLIENT.EXE
+		case 0xda: // ZyXEL ZFAX v1.x
+		case 0xdb: // ZyXEL ZFAX v2+
+		case 0xdc: // GOLD.COM
+		case 0xdd: // MIXFIX.EXE
+		case 0xde: // Novell Netware - RPRINTER, NPRINTER
+		case 0xdf: // HyperWare programs
+		case 0xe0: // SETDRVER.COM v2.10+
+		case 0xe1: // Phantom2 v1.1+
+		case 0xe3: // ANARKEY.COM
+		case 0xed: // Phar Lap DOS EXTENDERS
+		case 0xee: // XVIEW
+		case 0xf0: // 4MAP
+		case 0xf1: // DOS EXTENDER
+		case 0xf2: // WINX
+		case 0xf4: // FINDIRQ.COM
+		case 0xf7: // AUTOPARK.COM
+		case 0xf8: // SuperStor PRO 2XON.COM
+		case 0xfb: // AutoBraille v1.1A
+		case 0xfe: // PC-NFS ???
+		case 0xff: // Topware Network Operating System
 			switch(REG8(AL)) {
 			case 0x00:
 				// This is not installed
 //				REG8(AL) = 0x00;
 				break;
+			case 0x01:
+				// Banyan VINES v4+ is not installed
+				if(REG8(AH) == 0xd7 && REG16(BX) == 0x0000) {
+					break;
+				}
 			default:
 				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x01;
@@ -12512,7 +14148,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x40e) = EXT_BIOS_TOP >> 4;
 #endif
 	*(UINT16 *)(mem + 0x410) = msdos_get_equipment();
-	*(UINT16 *)(mem + 0x413) = MEMORY_END / 1024;
+	*(UINT16 *)(mem + 0x413) = MEMORY_END >> 10;
 	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
 	*(UINT16 *)(mem + 0x44a) = csbi.dwSize.X;
 	*(UINT16 *)(mem + 0x44c) = regen;
@@ -12552,25 +14188,28 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
 	// so move iret table into allocated memory block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
-	msdos_mcb_create(seg++, 'M', -1, IRET_SIZE >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, IRET_SIZE >> 4);
 	IRET_TOP = seg << 4;
 	seg += IRET_SIZE >> 4;
 	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
 	
 	// dummy xms/ems device
-	msdos_mcb_create(seg++, 'M', -1, XMS_SIZE >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
 	XMS_TOP = seg << 4;
 	seg += XMS_SIZE >> 4;
 	
 	// environment
-	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
 	char env_append[ENV_SIZE] = {0}, append_added = 0;
 	char comspec_added = 0;
+	char lastdrive_added = 0;
 	char env_msdos_path[ENV_SIZE] = {0};
 	char env_path[ENV_SIZE] = {0}, path_added = 0;
+	char prompt_added = 0;
 	char env_temp[ENV_SIZE] = {0}, temp_added = 0, tmp_added = 0;
+	char tz_added = 0;
 	char *path, *short_path;
 	
 	if((path = getenv("MSDOS_APPEND")) != NULL) {
@@ -12641,12 +14280,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				tmp[i] = (tmp[i] - 'a') + 'A';
 			}
 		}
-		if(strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_TEMP;MSDOS_TMP;", name) != NULL) {
-			// ignore MSDOS_(APPEND/COMSPEC/TEMP/TMP)
-		} else if(standard_env && strstr(";APPEND;COMSPEC;INCLUDE;LIB;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
+		if(strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_LASTDRIVE;MSDOS_TEMP;MSDOS_TMP;MSDOS_TZ;", name) != NULL) {
+			// ignore MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TMP/TZ)
+		} else if(standard_env && strstr(";APPEND;COMSPEC;LASTDRIVE;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
 			// ignore non standard environments
 		} else {
-			if(strncmp(tmp, "APPEND=",  7) == 0) {
+			if(strncmp(tmp, "APPEND=", 7) == 0) {
 				if(env_append[0] != '\0') {
 					sprintf(tmp, "APPEND=%s", env_append);
 				} else {
@@ -12656,19 +14295,27 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			} else if(strncmp(tmp, "COMSPEC=", 8) == 0) {
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
 				comspec_added = 1;
-			} else if(strncmp(tmp, "MSDOS_PATH=",  11) == 0) {
+			} else if(strncmp(tmp, "LASTDRIVE=", 10) == 0) {
+				char *env = getenv("MSDOS_LASTDRIVE");
+				if(env != NULL) {
+					sprintf(tmp, "LASTDRIVE=%s", env);
+				}
+				lastdrive_added = 1;
+			} else if(strncmp(tmp, "MSDOS_PATH=", 11) == 0) {
 				if(env_msdos_path[0] != '\0') {
 					sprintf(tmp, "MSDOS_PATH=%s", env_msdos_path);
 				} else {
 					sprintf(tmp, "MSDOS_PATH=%s", msdos_get_multiple_short_path(tmp + 11));
 				}
-			} else if(strncmp(tmp, "PATH=",  5) == 0) {
+			} else if(strncmp(tmp, "PATH=", 5) == 0) {
 				if(env_path[0] != '\0') {
 					sprintf(tmp, "PATH=%s", env_path);
 				} else {
 					sprintf(tmp, "PATH=%s", msdos_get_multiple_short_path(tmp + 5));
 				}
 				path_added = 1;
+			} else if(strncmp(tmp, "PROMPT=", 7) == 0) {
+				prompt_added = 1;
 			} else if(strncmp(tmp, "TEMP=", 5) == 0) {
 				if(env_temp[0] != '\0') {
 					sprintf(tmp, "TEMP=%s", env_temp);
@@ -12676,13 +14323,19 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 					sprintf(tmp, "TEMP=%s", msdos_get_multiple_short_path(tmp + 5));
 				}
 				temp_added = 1;
-			} else if(strncmp(tmp, "TMP=",  4) == 0) {
+			} else if(strncmp(tmp, "TMP=", 4) == 0) {
 				if(env_temp[0] != '\0') {
 					sprintf(tmp, "TMP=%s", env_temp);
 				} else {
 					sprintf(tmp, "TMP=%s", msdos_get_multiple_short_path(tmp + 4));
 				}
 				tmp_added = 1;
+			} else if(strncmp(tmp, "TZ=", 3) == 0) {
+				char *env = getenv("MSDOS_TZ");
+				if(env != NULL) {
+					sprintf(tmp, "TZ=%s", env);
+				}
+				tz_added = 1;
 			}
 			int len = strlen(tmp);
 			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
@@ -12708,8 +14361,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	if(!comspec_added) {
 		SET_ENV("COMSPEC", "C:\\COMMAND.COM");
 	}
+	if(!lastdrive_added) {
+		SET_ENV("LASTDRIVE", "Z");
+	}
 	if(!path_added) {
 		SET_ENV("PATH", env_path);
+	}
+	if(!prompt_added) {
+		SET_ENV("PROMPT", "$P$G");
 	}
 	if(!temp_added) {
 		SET_ENV("TEMP", env_temp);
@@ -12717,20 +14376,83 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	if(!tmp_added) {
 		SET_ENV("TMP", env_temp);
 	}
+	if(!tz_added) {
+		TIME_ZONE_INFORMATION tzi;
+		HKEY hKey, hSubKey;
+		char tzi_std_name[64];
+		char tz_std[8] = "GMT";
+		char tz_dlt[8] = "GST";
+		char tz_value[32];
+		
+		// timezone name from GetTimeZoneInformation may not be english
+		bool daylight = (GetTimeZoneInformation(&tzi) != TIME_ZONE_ID_UNKNOWN);
+		setlocale(LC_CTYPE, "");
+		wcstombs(tzi_std_name, tzi.StandardName, sizeof(tzi_std_name));
+		
+		// get english timezone name from registry
+		if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Time Zones", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+			for(DWORD i = 0; !tz_added; i++) {
+				char reg_name[256], sub_key[1024], std_name[256];
+				DWORD size;
+				FILETIME ftTime;
+				LONG result = RegEnumKeyEx(hKey, i, reg_name, &(size = array_length(reg_name)), NULL, NULL, NULL, &ftTime);
+				
+				if(result == ERROR_SUCCESS) {
+					sprintf(sub_key, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Time Zones\\%s", reg_name);
+					if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, sub_key, 0, KEY_QUERY_VALUE, &hSubKey) == ERROR_SUCCESS) {
+						if(RegQueryValueEx(hSubKey, "Std", NULL, NULL, (LPBYTE)std_name, &(size = array_length(std_name))) == ERROR_SUCCESS) {
+							// search english timezone name from table
+							if (strcmp(std_name, tzi_std_name) == 0) {
+								for(int j = 0; j < array_length(tz_table); j++) {
+									if(strcmp(reg_name, tz_table[j].name) == 0 && (tz_table[j].lcid == 0 || tz_table[j].lcid == GetUserDefaultLCID())) {
+										if(tz_table[j].std != NULL) {
+											strcpy(tz_std, tz_table[j].std);
+										}
+										if(tz_table[j].dlt != NULL) {
+											strcpy(tz_dlt, tz_table[j].dlt);
+										}
+										tz_added = 1;
+										break;
+									}
+								}
+							}
+						}
+						RegCloseKey(hSubKey);
+					}
+				} else if(result == ERROR_NO_MORE_ITEMS) {
+					break;
+				}
+			}
+			RegCloseKey(hKey);
+		}
+		if((tzi.Bias % 60) != 0) {
+			sprintf(tz_value, "%s%d:%2d", tz_std, tzi.Bias / 60, abs(tzi.Bias % 60));
+		} else {
+			sprintf(tz_value, "%s%d", tz_std, tzi.Bias / 60);
+		}
+		if(daylight) {
+			strcat(tz_value, tz_dlt);
+		}
+		SET_ENV("TZ", tz_value);
+	}
 	seg += (ENV_SIZE >> 4);
 	
 	// psp
-	msdos_mcb_create(seg++, 'M', -1, PSP_SIZE >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, PSP_SIZE >> 4);
 	current_psp = seg;
 	msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
 	seg += (PSP_SIZE >> 4);
 	
 	// first free mcb in conventional memory
-	msdos_mcb_create(seg, 'Z', 0, (MEMORY_END >> 4) - seg - 2);
+	msdos_mcb_create(seg, 'M', 0, (MEMORY_END >> 4) - seg - 2);
 	first_mcb = seg;
 	
 	// dummy mcb to link to umb
-	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+#if 0
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4)); // link umb
+#else
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0); // unlink umb
+#endif
 	
 	// first free mcb in upper memory block
 	msdos_mcb_create(UMB_TOP >> 4, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 1);
@@ -13065,9 +14787,9 @@ void hardware_release()
 {
 	// release hardware resources when this program will be terminated abnormally
 #ifdef EXPORT_DEBUG_TO_FILE
-	if(fdebug != NULL) {
-		fclose(fdebug);
-		fdebug = NULL;
+	if(fp_debug_log != NULL) {
+		fclose(fp_debug_log);
+		fp_debug_log = NULL;
 	}
 #endif
 #if defined(HAS_I386)
@@ -13083,54 +14805,9 @@ void hardware_run()
 	
 #ifdef EXPORT_DEBUG_TO_FILE
 	// open debug log file after msdos_init() is done not to use the standard file handlers
-	fdebug = fopen("debug.log", "w");
+	fp_debug_log = fopen("debug.log", "w");
 #endif
 	while(!m_halted) {
-#ifdef ENABLE_DEBUG_DASM
-		if(dasm > 0) {
-			char buffer[256];
-#if defined(HAS_I386)
-			UINT32 flags = get_flags();
-			UINT32 eip = m_eip;
-#else
-			UINT32 flags = CompressFlags();
-			UINT32 eip = m_pc - SREG_BASE(CS);
-#endif
-			UINT8 *oprom = mem + SREG_BASE(CS) + eip;
-			
-#if defined(HAS_I386)
-			if(m_operand_size) {
-				CPU_DISASSEMBLE_CALL(x86_32);
-			} else
-#endif
-			CPU_DISASSEMBLE_CALL(x86_16);
-			
-			fprintf(fdebug, "AX=%04X  BX=%04X CX=%04X DX=%04X SP=%04X  BP=%04X  SI=%04X  DI=%04X\nDS=%04X  ES=%04X SS=%04X CS=%04X IP=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
-			REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), SREG(DS), SREG(ES), SREG(SS), SREG(CS), eip,
-#if defined(HAS_I386)
-			PROTECTED_MODE ? "PE" : "--",
-#else
-			"--",
-#endif
-			(flags & 0x40000) ? 'A' : '-',
-			(flags & 0x20000) ? 'V' : '-',
-			(flags & 0x10000) ? 'R' : '-',
-			(flags & 0x04000) ? 'N' : '-',
-			(flags & 0x02000) ? '1' : '0',
-			(flags & 0x01000) ? '1' : '0',
-			(flags & 0x00800) ? 'O' : '-',
-			(flags & 0x00400) ? 'D' : '-',
-			(flags & 0x00200) ? 'I' : '-',
-			(flags & 0x00100) ? 'T' : '-',
-			(flags & 0x00080) ? 'S' : '-',
-			(flags & 0x00040) ? 'Z' : '-',
-			(flags & 0x00010) ? 'A' : '-',
-			(flags & 0x00004) ? 'P' : '-',
-			(flags & 0x00001) ? 'C' : '-');
-			fprintf(fdebug, "%04X:%04X\t%s\n", SREG(CS), (unsigned)eip, buffer);
-			dasm--;
-		}
-#endif
 #if defined(HAS_I386)
 		m_cycles = 1;
 		CPU_EXECUTE_CALL(i386);
@@ -13150,9 +14827,9 @@ void hardware_run()
 		}
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
-	if(fdebug != NULL) {
-		fclose(fdebug);
-		fdebug = NULL;
+	if(fp_debug_log != NULL) {
+		fclose(fp_debug_log);
+		fp_debug_log = NULL;
 	}
 #endif
 }
@@ -14745,87 +16422,122 @@ UINT8 vga_read_status()
 // this is ugly patch for SW1US.EXE, it sometimes mistakely read/write 01h-10h for serial I/O
 //#define SW1US_PATCH
 
-#ifdef ENABLE_DEBUG_IOPORT
-UINT8 read_io_byte_debug(offs_t addr);
-
 UINT8 read_io_byte(offs_t addr)
+#ifdef USE_DEBUGGER
 {
-	UINT8 val = read_io_byte_debug(addr);
-	if(fdebug != NULL) {
-		fprintf(fdebug, "inb %04X, %02X\n", addr, val);
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(in_break_point.table[i].status == 1) {
+				if(addr == in_break_point.table[i].addr) {
+					in_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
 	}
-	return(val);
+	return(debugger_read_io_byte(addr));
 }
-
-UINT8 read_io_byte_debug(offs_t addr)
-#else
-UINT8 read_io_byte(offs_t addr)
+UINT8 debugger_read_io_byte(offs_t addr)
 #endif
 {
+	UINT8 val = 0xff;
+	
 	switch(addr) {
 #ifdef SW1US_PATCH
 	case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07: case 0x08:
 	case 0x09: case 0x0a: case 0x0b: case 0x0c: case 0x0d: case 0x0e: case 0x0f: case 0x10:
-		return(sio_read(0, addr - 1));
+		val = sio_read(0, addr - 1);
+		break;
 #else
 	case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07:
 	case 0x08: case 0x09: case 0x0a: case 0x0b: case 0x0c: case 0x0d: case 0x0e: case 0x0f:
-		return(dma_read(0, addr));
+		val = dma_read(0, addr);
+		break;
 #endif
 	case 0x20: case 0x21:
-		return(pic_read(0, addr));
+		val = pic_read(0, addr);
+		break;
 	case 0x40: case 0x41: case 0x42: case 0x43:
-		return(pit_read(addr & 0x03));
+		val = pit_read(addr & 0x03);
+		break;
 	case 0x60:
-		return(kbd_read_data());
+		val = kbd_read_data();
+		break;
 	case 0x61:
-		return(system_port);
+		val = system_port;
+		break;
 	case 0x64:
-		return(kbd_read_status());
+		val = kbd_read_status();
+		break;
 	case 0x71:
-		return(cmos_read(cmos_addr));
+		val = cmos_read(cmos_addr);
+		break;
 	case 0x81:
-		return(dma_page_read(0, 2));
+		val = dma_page_read(0, 2);
+		break;
 	case 0x82:
-		return(dma_page_read(0, 3));
+		val = dma_page_read(0, 3);
+		break;
 	case 0x83:
-		return(dma_page_read(0, 1));
+		val = dma_page_read(0, 1);
+		break;
 	case 0x87:
-		return(dma_page_read(0, 0));
+		val = dma_page_read(0, 0);
+		break;
 	case 0x89:
-		return(dma_page_read(1, 2));
+		val = dma_page_read(1, 2);
+		break;
 	case 0x8a:
-		return(dma_page_read(1, 3));
+		val = dma_page_read(1, 3);
+		break;
 	case 0x8b:
-		return(dma_page_read(1, 1));
+		val = dma_page_read(1, 1);
+		break;
 	case 0x8f:
-		return(dma_page_read(1, 0));
+		val = dma_page_read(1, 0);
+		break;
 	case 0x92:
-		return((m_a20_mask >> 19) & 2);
+		val = (m_a20_mask >> 19) & 2;
+		break;
 	case 0xa0: case 0xa1:
-		return(pic_read(1, addr));
+		val = pic_read(1, addr);
+		break;
 	case 0xc0: case 0xc2: case 0xc4: case 0xc6: case 0xc8: case 0xca: case 0xcc: case 0xce:
 	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
-		return(dma_read(1, (addr - 0xc0) >> 1));
+		val = dma_read(1, (addr - 0xc0) >> 1);
+		break;
 //	case 0x278: case 0x279: case 0x27a:
-//		return(pio_read(1, addr));
+//		val = pio_read(1, addr);
+//		break;
 	case 0x2e8: case 0x2e9: case 0x2ea: case 0x2eb: case 0x2ec: case 0x2ed: case 0x2ee: case 0x2ef:
-		return(sio_read(3, addr));
+		val = sio_read(3, addr);
+		break;
 	case 0x2f8: case 0x2f9: case 0x2fa: case 0x2fb: case 0x2fc: case 0x2fd: case 0x2fe: case 0x2ff:
-		return(sio_read(1, addr));
+		val = sio_read(1, addr);
+		break;
 	case 0x378: case 0x379: case 0x37a:
-		return(pio_read(0, addr));
+		val = pio_read(0, addr);
+		break;
 	case 0x3ba: case 0x3da:
-		return(vga_read_status());
+		val = vga_read_status();
+		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
-		return(sio_read(2, addr));
+		val = sio_read(2, addr);
+		break;
 	case 0x3f8: case 0x3f9: case 0x3fa: case 0x3fb: case 0x3fc: case 0x3fd: case 0x3fe: case 0x3ff:
-		return(sio_read(0, addr));
+		val = sio_read(0, addr);
+		break;
 	default:
-//		error("inb %4x\n", addr);
+//		fatalerror("unknown inb %4x\n", addr);
 		break;
 	}
-	return(0xff);
+#ifdef ENABLE_DEBUG_IOPORT
+	if(fp_debug_log != NULL) {
+		fprintf(fp_debug_log, "inb %04X, %02X\n", addr, val);
+	}
+#endif
+	return(val);
 }
 
 UINT16 read_io_word(offs_t addr)
@@ -14833,16 +16545,47 @@ UINT16 read_io_word(offs_t addr)
 	return(read_io_byte(addr) | (read_io_byte(addr + 1) << 8));
 }
 
+#ifdef USE_DEBUGGER
+UINT16 debugger_read_io_word(offs_t addr)
+{
+	return(debugger_read_io_byte(addr) | (debugger_read_io_byte(addr + 1) << 8));
+}
+#endif
+
 UINT32 read_io_dword(offs_t addr)
 {
 	return(read_io_byte(addr) | (read_io_byte(addr + 1) << 8) | (read_io_byte(addr + 2) << 16) | (read_io_byte(addr + 3) << 24));
 }
 
+#ifdef USE_DEBUGGER
+UINT32 debugger_read_io_dword(offs_t addr)
+{
+	return(debugger_read_io_byte(addr) | (debugger_read_io_byte(addr + 1) << 8) | (debugger_read_io_byte(addr + 2) << 16) | (debugger_read_io_byte(addr + 3) << 24));
+}
+#endif
+
 void write_io_byte(offs_t addr, UINT8 val)
+#ifdef USE_DEBUGGER
+{
+	if(now_debugging) {
+		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+			if(out_break_point.table[i].status == 1) {
+				if(addr == out_break_point.table[i].addr) {
+					out_break_point.hit = i + 1;
+					now_suspended = true;
+					break;
+				}
+			}
+		}
+	}
+	debugger_write_io_byte(addr, val);
+}
+void debugger_write_io_byte(offs_t addr, UINT8 val)
+#endif
 {
 #ifdef ENABLE_DEBUG_IOPORT
-	if(fdebug != NULL) {
-		fprintf(fdebug, "outb %04X, %02X\n", addr, val);
+	if(fp_debug_log != NULL) {
+		fprintf(fp_debug_log, "outb %04X, %02X\n", addr, val);
 	}
 #endif
 	switch(addr) {
@@ -14929,7 +16672,7 @@ void write_io_byte(offs_t addr, UINT8 val)
 		sio_write(0, addr, val);
 		break;
 	default:
-//		error("outb %4x,%2x\n", addr, val);
+//		fatalerror("unknown outb %4x,%2x\n", addr, val);
 		break;
 	}
 }
@@ -14940,6 +16683,14 @@ void write_io_word(offs_t addr, UINT16 val)
 	write_io_byte(addr + 1, (val >> 8) & 0xff);
 }
 
+#ifdef USE_DEBUGGER
+void debugger_write_io_word(offs_t addr, UINT16 val)
+{
+	debugger_write_io_byte(addr + 0, (val >> 0) & 0xff);
+	debugger_write_io_byte(addr + 1, (val >> 8) & 0xff);
+}
+#endif
+
 void write_io_dword(offs_t addr, UINT32 val)
 {
 	write_io_byte(addr + 0, (val >>  0) & 0xff);
@@ -14947,3 +16698,13 @@ void write_io_dword(offs_t addr, UINT32 val)
 	write_io_byte(addr + 2, (val >> 16) & 0xff);
 	write_io_byte(addr + 3, (val >> 24) & 0xff);
 }
+
+#ifdef USE_DEBUGGER
+void debugger_write_io_dword(offs_t addr, UINT32 val)
+{
+	debugger_write_io_byte(addr + 0, (val >>  0) & 0xff);
+	debugger_write_io_byte(addr + 1, (val >>  8) & 0xff);
+	debugger_write_io_byte(addr + 2, (val >> 16) & 0xff);
+	debugger_write_io_byte(addr + 3, (val >> 24) & 0xff);
+}
+#endif
