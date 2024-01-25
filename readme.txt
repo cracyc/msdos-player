@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/22/2016
+								6/24/2016
 
 ----- What's this
 
@@ -26,55 +26,28 @@ support game softwares. I recommend DOSBOx for this purpose.
 Start a command prompt and run this emulator with target command file
 and any options.
 
-For example, compile sample.c with LSI C-86 and execute compiled binary:
+For example, compile sample.c with LSI C-86 and execute the compiled binary:
 
 	> msdos lcc sample.c
-	> msdos sample
+	> msdos sample.exe
 
-Usage: MSDOS [-b] [-c[(new exec file)]] [-d] [-e] [-i] [-m] [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]
+
+----- Options
+
+Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
+             [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
+	-p	record current code page when convert command file
 	-d	pretend running under straight DOS, not Windows
 	-e	use a reduced environment block
 	-i	ignore invalid instructions
 	-m	restrict free memory to 0x7FFF paragraphs
+	-n	create a new buffer (25 lines, 80 columns by default)
 	-s	enable serial I/O and set host's COM port numbers
 	-v	set the DOS version
-	-x	enable XMS/EMS
-
-Some softwares (for example DoDiary Version 1.55) invite that the environment
-variable table should be less than 1024 bytes.
-On the Windows OS, there are too many variables and the variable table size
-will be more than 1024 bytes and it causes an error.
-
-In this case, please specify the option '-e' and only the minimum variables
-(COMSPEC/INCLUDE/LIB/PATH/PROMPT/TEMP/TMP/TZ) are copied to the table.
-
-	> msdos -e dd.com
-
-The environment variable COMSPEC is not copied from the host Windows, and its
-value is always "C:\COMMAND.COM".
-If a program tries to open the "C:\COMMAND.COM" file, the file is redirected
-to the path in the environment variable MSDOS_COMSPEC on the host Windows.
-If the MSDOS_COMSPEC is not defined, it is redirected to the COMMAND.COM file
-that does exist:
-
-- in the same directory as the target program file,
-- in the same directory as msdos.exe,
-- in the current directory,
-- in the directory that is in your PATH and MSDOS_PATH environment variables
-
-The environment variables TEMP and TMP on the host Windows is very long,
-for example, it is usually "C:\User\(User Name)\AppData\Local\Temp".
-DOSSHELL.EXE tries to create a batch file in the TEMP directry to start
-the selected program, and it does not work coorecty if the batch file path is
-too long.
-Please define the environment variable MSDOS_TEMP on the host Windows,
-for example "C:\TEMP", and its value is copied to TEMP/TMP on the table.
-If the MSDOS_TEMP is not defined, TEMP/TMP values on the host is copied.
-
-(NOTE: MSDOS_COMSPEC and MSDOS_TEMP are not copied to the variable table.)
+	-x	enable XMS and LIM EMS
 
 EDIT.COM does not work correctly when a free memory space is large.
 Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
@@ -82,8 +55,8 @@ Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
 	> msdos -m edit.com
 
 "Windows Enhanced Mode Installation Check" API (INT 2FH, AX=1600H) and
-"Identify Windows Version and Type" API (INT 2FH, AX=160AH) return
-the version of host Windows.
+"Identify Windows Version and Type" API (INT 2FH, AX=160AH) return the version
+of the host Windows.
 If you want to pretend that Windows is not running, specify the option '-d'.
 
 	> msdos -d command.com
@@ -96,7 +69,7 @@ If you want to change the version number, please specify the option '-vX.XX'.
 NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
 the version number 7.10 and '-v' option is not affected.
 
-To enable XMS (i286 or later) and EMS, please specify the option '-x'.
+To enable XMS (i286 or later) and LIM EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
 so the size of UMB is decreased from 224KB to 160KB.
 
@@ -108,6 +81,58 @@ If you specify '-s3,4', the virtual COM1/2 are connected to the host's COM3/4.
 NOTE: The maximum baud rate is limited to 9600bps.
 
 
+----- About the environment variable table
+
+Basically, the environment variable table on the host Windows is copied to
+the table on the virtual machine (hereinafter, referred to as "virtual table"),
+and in this time, PATH/TEMP/TMP values are converted to short path.
+
+Some softwares (for example DoDiary Version 1.55) invite that the environment
+variable table should be less than 1024 bytes.
+On the Windows OS, there are too many variables and the environment variable
+table size will be more than 1024 bytes and it causes an error.
+
+In this case, please specify the option '-e' and only the minimum environment
+variables (COMSPEC/INCLUDE/LIB/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are copied
+to the virtual table.
+
+	> msdos -e dd.com
+
+The environment variable COMSPEC is not copied from the host Windows, and its
+value on the virtual table is always "C:\COMMAND.COM".
+
+If a program tries to open the "C:\COMMAND.COM" file, the file is redirected
+to the path in the environment variable MSDOS_COMSPEC on the host Windows.
+If MSDOS_COMSPEC is not defined, it is redirected to the COMMAND.COM file that
+does exist:
+
+- in the same directory as the target program file,
+- in the same directory as the running msdos.exe,
+- in the current directory,
+- in the directory that is in MSDOS_PATH and PATH environment variables
+
+You may have a directory that contains 16bit command files, and you may want
+not to add this path to PATH on the host Windows but want to add it to PATH
+on the virtual table.
+
+In this case, please define MSDOS_PATH on the host Windows, and its value is
+copied to the top of PATH on the virtual table.
+In other words, the value of PATH on the virtual table is MSDOS_PATH;PATH
+on the host Windows, so a program searches files in directories in MSDOS_PATH
+before files in directories in PATH.
+
+The environment variables TEMP and TMP on the host Windows may be very long,
+in usually, it is "C:\User\(Your User Name)\AppData\Local\Temp".
+DOSSHELL.EXE tries to create a batch file in the TEMP directry to start
+the selected program, and it may not work correctly because of the too long
+batch file path.
+In this case, please define MSDOS_TEMP on the host Windows, for example
+"C:\TEMP", and its value is copied to TEMP and TMP on the virtual table.
+
+NOTE: MSDOS_COMSPEC and MSDOS_TEMP are not copied to the virtual table,
+but MSDOS_PATH is copied to, because some softwares refer MSDOS_PATH.
+
+
 ----- Convert command file to 32bit or 64bit execution file
 
 You can convert a 16bit command file to a single 32bit or 64bit execution file
@@ -115,27 +140,36 @@ by embeding a command file to the msdos.exe.
 
 For exmaple, you can convert LIST.COM by this command:
 
-	> msdos -clist32.exe list.com
+	> msdos -cLIST32.EXE LIST.COM
 
-and you can simply run list32.exe without msdos.exe.
+and you can simply run LIST32.EXE without msdos.exe.
 
-Other options' value are also stored to a new execution file. For example:
+NOTE: Please specify a target command file with its extension, and specify
+a new execution file name other than "msdos.exe". If a new execution file name
+is not specified (only "-c" is specified), it is "new_exec_file.exe".
 
-	> msdos -ccommand32.exe -v6.22 -x command.com
+Other options' value are also stored to a new execution file, for example:
 
-the command.com starts with the version 6.22 and XMS/EMS option enabled.
+	> msdos -COMMAND32.EXE -v6.22 -x COMMAND.COM
 
-The active code page is also stored. For example:
+When you run COMMAND32.EXE, it starts COMMAND.COM with the version 6.22 and
+XMS/EMS option enabled.
+
+The active code page can be also stored with '-p' option, for example:
+
+	> msdos -cSW1US32.EXE -p437 -s SW1US.EXE
 
 	> chcp 437
-	> msdos -cSW1US32.exe -s SW1US.exe
+	> msdos -cSW1US32.EXE -p -s SW1US.EXE
 
-the SW1US.exe starts with the code page 437 and serial I/O option enabled.
+When you run cSW1US32.EXE, it starts SW1US.EXE with the code page 437 and
+serial I/O option enabled.
 
-NOTE: Please make a new execution file name other than msdos.exe.
-
-At the execution time, the embeded command file will be extracted into
-the temp folder and will be removed when the execution is normally finished.
+At the execution time, an embedded command file will be extracted with
+the original command file name in the current directory.
+But if the original command file exists, it will be extracted with
+the temporary command file name not to overwrite the original command file.
+The extracted command file will be removed when the execution is finished.
 
 
 ----- Binaries
@@ -152,7 +186,7 @@ This archive contains 8 executable binaries:
 	i486_x64	Emulates 80486 and supports only 64bit Windows
 
 8086 binaries are much faster than 80286/80386/80486.
-If you don't need the protected mode or mnemonics added with 80286/80386/80486,
+If you don't need the protected mode or new mnemonics of 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
 The VC++ project file "msdos.vcproj" also has the configurations for 80186,
@@ -602,8 +636,8 @@ CALL FAR XMS
 
 --- License
 
-The copyright belongs to the author, but you can use the source codes
-under the GNU GENERAL PUBLIC LICENSE Version 2.
+The copyright belongs to the author, but you can use the source codes under
+the GNU GENERAL PUBLIC LICENSE Version 2.
 
 See also COPYING.txt for more details about the license.
 

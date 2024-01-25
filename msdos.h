@@ -229,8 +229,11 @@ public:
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
+//#define SUPPORT_GRAPHIC_SCREEN
+
 void hardware_init();
 void hardware_finish();
+void hardware_release();
 void hardware_run();
 void hardware_update();
 
@@ -263,12 +266,13 @@ typedef struct {
 	bool mapped;
 } ems_page_t;
 
-ems_handle_t ems_handles[MAX_EMS_HANDLES];
+ems_handle_t ems_handles[MAX_EMS_HANDLES] = {0};
 ems_page_t ems_pages[4];
 int free_ems_pages;
 
 void ems_init();
 void ems_finish();
+void ems_release();
 void ems_allocate_pages(int handle, int pages);
 void ems_reallocate_pages(int handle, int pages);
 void ems_release_pages(int handle);
@@ -449,11 +453,12 @@ typedef struct {
 	CRITICAL_SECTION csModemStat;
 } sio_mt_t;
 
-sio_t sio[2];
+sio_t sio[2] = {0};
 sio_mt_t sio_mt[2];
 
 void sio_init();
 void sio_finish();
+void sio_release();
 void sio_write(int c, UINT32 addr, UINT8 data);
 UINT8 sio_read(int c, UINT32 addr);
 void sio_update(int c);
@@ -528,7 +533,12 @@ void kbd_write_command(UINT8 val);
 #define DBCS_SIZE	0x10
 #define MSDOS_SYSTEM_DATA_END (DBCS_TOP + DBCS_SIZE)
 #define MEMORY_TOP	((MSDOS_SYSTEM_DATA_END + 15) & ~15U)
+#ifdef SUPPORT_GRAPHIC_SCREEN
+#define MEMORY_END	0xa0000
+#define VGA_VRAM_TOP	0xa0000
+#else
 #define MEMORY_END	0xb8000
+#endif
 #define TEXT_VRAM_TOP	0xb8000
 #define EMS_TOP		0xc0000
 #define EMS_SIZE	0x10000
@@ -924,6 +934,7 @@ typedef struct {
 		bool mapped;
 	} ems_pages[4];
 	bool ems_pages_stored;
+	bool called_by_int2eh;
 } process_t;
 
 typedef struct {
@@ -981,8 +992,8 @@ int scr_top;
 bool restore_console_on_exit = false;
 bool cursor_moved;
 
-FIFO *key_buf_char;
-FIFO *key_buf_scan;
+FIFO *key_buf_char = NULL;
+FIFO *key_buf_scan = NULL;
 bool key_changed = false;
 UINT32 key_code = 0;
 

@@ -7,8 +7,11 @@
 
 #include "msdos.h"
 
+void exit_handler();
+
 #define fatalerror(...) { \
 	fprintf(stderr, __VA_ARGS__); \
+	exit_handler(); \
 	exit(1); \
 }
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
@@ -112,6 +115,9 @@ void clear_scr_buffer(WORD attr);
 static UINT32 vram_length_char = 0, vram_length_attr = 0;
 static UINT32 vram_last_length_char = 0, vram_last_length_attr = 0;
 static COORD vram_coord_char, vram_coord_attr;
+
+char temp_file_path[MAX_PATH];
+bool temp_file_created = false;
 
 bool ignore_illegal_insn = false;
 bool limit_max_memory = false;
@@ -662,6 +668,92 @@ void i386_call_far(UINT16 selector, UINT32 address)
 	main
 ---------------------------------------------------------------------------- */
 
+BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
+{
+	if(dwCtrlType == CTRL_BREAK_EVENT) {
+		// try to finish this program normally
+		m_halted = true;
+		return TRUE;
+	} else if(dwCtrlType == CTRL_C_EVENT) {
+		ctrl_c_pressed = true;
+		return TRUE;
+	} else if(dwCtrlType == CTRL_CLOSE_EVENT) {
+		// this program will be terminated abnormally, do minimum end process
+		exit_handler();
+		exit(1);
+	}
+	return FALSE;
+}
+
+void exit_handler()
+{
+	if(temp_file_created) {
+		DeleteFile(temp_file_path);
+		temp_file_created = false;
+	}
+	if(key_buf_char != NULL) {
+		key_buf_char->release();
+		delete key_buf_char;
+		key_buf_char = NULL;
+	}
+	if(key_buf_scan != NULL) {
+		key_buf_scan->release();
+		delete key_buf_scan;
+		key_buf_scan = NULL;
+	}
+	hardware_release();
+}
+
+#ifdef USE_THREAD
+DWORD WINAPI vram_thread(LPVOID)
+{
+	while(!m_halted) {
+		EnterCriticalSection(&vram_crit_sect);
+		if(vram_length_char != 0 && vram_length_char == vram_last_length_char) {
+			vram_flush_char();
+		}
+		if(vram_length_attr != 0 && vram_length_attr == vram_last_length_attr) {
+			vram_flush_attr();
+		}
+		vram_last_length_char = vram_length_char;
+		vram_last_length_attr = vram_length_attr;
+		LeaveCriticalSection(&vram_crit_sect);
+		// this is about half the maximum keyboard repeat rate - any
+		// lower tends to be jerky, any higher misses updates
+		Sleep(15);
+	}
+	return 0;
+}
+#endif
+
+long get_section_in_exec_file(FILE *fp, char *name)
+{
+	UINT8 header[0x400];
+	
+	long position = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	fread(header, sizeof(header), 1, fp);
+	fseek(fp, position, SEEK_SET);
+	
+	try {
+		_IMAGE_DOS_HEADER *dosHeader = (_IMAGE_DOS_HEADER *)(header + 0);
+		DWORD dwTopOfSignature = dosHeader->e_lfanew;
+		DWORD dwTopOfCoffHeader = dwTopOfSignature + 4;
+		_IMAGE_FILE_HEADER *coffHeader = (_IMAGE_FILE_HEADER *)(header + dwTopOfCoffHeader);
+		DWORD dwTopOfOptionalHeader = dwTopOfCoffHeader + sizeof(_IMAGE_FILE_HEADER);
+		DWORD dwTopOfFirstSectionHeader = dwTopOfOptionalHeader + coffHeader->SizeOfOptionalHeader;
+		
+		for(int i = 0; i < coffHeader->NumberOfSections; i++) {
+			_IMAGE_SECTION_HEADER *sectionHeader = (_IMAGE_SECTION_HEADER *)(header + dwTopOfFirstSectionHeader + IMAGE_SIZEOF_SECTION_HEADER * i);
+			if(memcmp(sectionHeader->Name, name, strlen(name)) == 0) {
+				return(sectionHeader->PointerToRawData);
+			}
+		}
+	} catch(...) {
+	}
+	return(0);
+}
+
 bool is_started_from_command_prompt()
 {
 	bool ret = false;
@@ -737,75 +829,6 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 	return VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, dwlConditionMask);
 }
 
-BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
-{
-	if(dwCtrlType == CTRL_BREAK_EVENT) {
-		m_halted = true;
-		return TRUE;
-	} else if(dwCtrlType == CTRL_C_EVENT) {
-		ctrl_c_pressed = true;
-		return TRUE;
-#ifdef EXPORT_DEBUG_TO_FILE
-	} else if(dwCtrlType == CTRL_CLOSE_EVENT) {
-		if(fdebug) {
-			fclose(fdebug);
-			fdebug = NULL;
-		}
-#endif
-	}
-	return FALSE;
-}
-
-#ifdef USE_THREAD
-DWORD WINAPI vram_thread(LPVOID)
-{
-	while(!m_halted) {
-		EnterCriticalSection(&vram_crit_sect);
-		if(vram_length_char != 0 && vram_length_char == vram_last_length_char) {
-			vram_flush_char();
-		}
-		if(vram_length_attr != 0 && vram_length_attr == vram_last_length_attr) {
-			vram_flush_attr();
-		}
-		vram_last_length_char = vram_length_char;
-		vram_last_length_attr = vram_length_attr;
-		LeaveCriticalSection(&vram_crit_sect);
-		// this is about half the maximum keyboard repeat rate - any
-		// lower tends to be jerky, any higher misses updates
-		Sleep(15);
-	}
-	return 0;
-}
-#endif
-
-#define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
-
-#if defined(_MSC_VER) && (_MSC_VER >= 1400)
-#define SUPPORT_EMBED
-#endif
-
-#ifdef SUPPORT_EMBED
-bool is_padding(UINT8 *buffer)
-{
-	return (memcmp(buffer, "XPADDING", 8) == 0 && memcmp(buffer + 8, "PADDINGX", 8) == 0) ||
-	       (memcmp(buffer, "PADDINGP", 8) == 0 && memcmp(buffer + 8, "ADDINGXX", 8) == 0) ||
-	       (memcmp(buffer, "ADDINGPA", 8) == 0 && memcmp(buffer + 8, "DDINGXXP", 8) == 0) ||
-	       (memcmp(buffer, "DDINGPAD", 8) == 0 && memcmp(buffer + 8, "DINGXXPA", 8) == 0) ||
-	       (memcmp(buffer, "DINGPADD", 8) == 0 && memcmp(buffer + 8, "INGXXPAD", 8) == 0) ||
-	       (memcmp(buffer, "INGPADDI", 8) == 0 && memcmp(buffer + 8, "NGXXPADD", 8) == 0) ||
-	       (memcmp(buffer, "NGPADDIN", 8) == 0 && memcmp(buffer + 8, "GXXPADDI", 8) == 0) ||
-	       (memcmp(buffer, "GPADDING", 8) == 0 && memcmp(buffer + 8, "XXPADDIN", 8) == 0) ||
-	       (memcmp(buffer, "PADDINGX", 8) == 0 && memcmp(buffer + 8, "XPADDING", 8) == 0) ||
-	       (memcmp(buffer, "ADDINGXX", 8) == 0 && memcmp(buffer + 8, "PADDINGP", 8) == 0) ||
-	       (memcmp(buffer, "DDINGXXP", 8) == 0 && memcmp(buffer + 8, "ADDINGPA", 8) == 0) ||
-	       (memcmp(buffer, "DINGXXPA", 8) == 0 && memcmp(buffer + 8, "DDINGPAD", 8) == 0) ||
-	       (memcmp(buffer, "INGXXPAD", 8) == 0 && memcmp(buffer + 8, "DINGPADD", 8) == 0) ||
-	       (memcmp(buffer, "NGXXPADD", 8) == 0 && memcmp(buffer + 8, "INGPADDI", 8) == 0) ||
-	       (memcmp(buffer, "GXXPADDI", 8) == 0 && memcmp(buffer + 8, "NGPADDIN", 8) == 0) ||
-	       (memcmp(buffer, "XXPADDIN", 8) == 0 && memcmp(buffer + 8, "GPADDING", 8) == 0);
-};
-#endif
-
 void get_sio_port_numbers()
 {
 	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
@@ -842,102 +865,120 @@ void get_sio_port_numbers()
 	}
 }
 
+#define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
+
 int main(int argc, char *argv[], char *envp[])
 {
 	int arg_offset = 0;
 	int standard_env = 0;
 	int buf_width = 0, buf_height = 0;
-	BOOL bSuccess, bChangeScreenSize = FALSE;
-	
-#ifdef SUPPORT_EMBED
-	// FIXME: it is invited that this program is built with VC++2005 or later,
-	// and "XPADDINGPADDINGX" is stored at the end of this execution file
-	char dummy_argv_0[] = "msdos.exe";
-	char dummy_argv_1[MAX_PATH];
-	char *dummy_argv[256] = {dummy_argv_0, dummy_argv_1, 0};
-	char new_exec_file[MAX_PATH];
-	bool convert_cmd_file = false;
+	bool get_console_info_success = false;
+	bool screen_size_changed = false;
 	
 	_TCHAR path[MAX_PATH], full[MAX_PATH], *name = NULL;
 	GetModuleFileName(NULL, path, MAX_PATH);
 	GetFullPathName(path, MAX_PATH, full, &name);
 	
+	char dummy_argv_0[] = "msdos.exe";
+	char dummy_argv_1[MAX_PATH];
+	char *dummy_argv[256] = {dummy_argv_0, dummy_argv_1, 0};
+	char new_exec_file[MAX_PATH];
+	bool convert_cmd_file = false;
+	unsigned int code_page = 0;
+	
 	if(name != NULL && stricmp(name, "msdos.exe") != 0) {
-		// run embedded command file
+		// check if command file is embedded to this execution file
+		// if this execution file name is msdos.exe, don't check
 		FILE* fp = fopen(full, "rb");
-		fseek(fp, 0, SEEK_END);
-		UINT32 size = ftell(fp), pos = 0;
-		fseek(fp, 0, SEEK_SET);
-		bool prev_padding = false;
-		
-		while(pos < size) {
-			UINT8 buffer[16];
-			fread(buffer, 16, 1, fp);
+		long offset = get_section_in_exec_file(fp, ".msdos");
+		if(offset != 0) {
+			UINT8 buffer[14];
+			fseek(fp, offset, SEEK_SET);
+			fread(buffer, sizeof(buffer), 1, fp);
 			
-			if(prev_padding && memcmp(buffer, "OPTS:", 5) == 0) {
-				// restore flags
-				stay_busy = ((buffer[5] & 0x01) != 0);
-				no_windows = ((buffer[5] & 0x02) != 0);
-				standard_env = ((buffer[5] & 0x04) != 0);
-				ignore_illegal_insn = ((buffer[5] & 0x08) != 0);
-				limit_max_memory = ((buffer[5] & 0x10) != 0);
-				if((buffer[5] & 0x20) != 0) {
-					get_sio_port_numbers();
-				}
-				if((buffer[5] & 0x40) != 0) {
-					UMB_TOP = EMS_TOP + EMS_SIZE;
-					support_ems = true;
-#ifdef SUPPORT_XMS
-					support_xms = true;
-#endif
-				}
-				if(buffer[6] != 0 && buffer[7] != 0) {
-					buf_width = buffer[6];
-					buf_height = buffer[7];
-				}
-				if(buffer[8] != 0) {
-					major_version = buffer[8];
-					minor_version = buffer[9];
-				}
-				if(buffer[10] != 0 || buffer[11] != 0) {
-					int code_page = buffer[10] + buffer[11] * 256;
-					SetConsoleCP(code_page);
-					SetConsoleOutputCP(code_page);
-				}
-				fread(buffer, 16, 1, fp);
-				fseek(fp, -16, SEEK_CUR);
-				
-				// restore command file
-				if(memcmp(buffer, "MZ", 2) == 0) {
-					sprintf(dummy_argv_1, "%s\\MSDOSPLA.EXE", getenv("TEMP"));
-				} else {
-					sprintf(dummy_argv_1, "%s\\MSDOSPLA.COM", getenv("TEMP"));
-				}
-				FILE* fo = fopen(dummy_argv_1, "wb");
-				for(; pos < size; pos++) {
-					fputc(fgetc(fp), fo);
-				}
-				fclose(fo);
-				
-				// adjust argc/argv
-				for(int i = 1; i < argc && (i + 1) < 256; i++) {
-					dummy_argv[i + 1] = argv[i];
-				}
-				argc++;
-				argv = dummy_argv;
-				break;
+			// restore flags
+			stay_busy           = ((buffer[0] & 0x01) != 0);
+			no_windows          = ((buffer[0] & 0x02) != 0);
+			standard_env        = ((buffer[0] & 0x04) != 0);
+			ignore_illegal_insn = ((buffer[0] & 0x08) != 0);
+			limit_max_memory    = ((buffer[0] & 0x10) != 0);
+			if((buffer[0] & 0x20) != 0) {
+				get_sio_port_numbers();
 			}
-			prev_padding = is_padding(buffer);
-			pos += 16;
+			if((buffer[0] & 0x40) != 0) {
+				UMB_TOP = EMS_TOP + EMS_SIZE;
+				support_ems = true;
+#ifdef SUPPORT_XMS
+				support_xms = true;
+#endif
+			}
+			if((buffer[1] != 0 || buffer[2] != 0) && (buffer[3] != 0 || buffer[4] != 0)) {
+				buf_width  = buffer[1] | (buffer[2] << 8);
+				buf_height = buffer[3] | (buffer[4] << 8);
+			}
+			if(buffer[5] != 0) {
+				major_version = buffer[5];
+				minor_version = buffer[6];
+			}
+			if((code_page = buffer[7] | (buffer[8] << 8)) != 0) {
+				SetConsoleCP(code_page);
+				SetConsoleOutputCP(code_page);
+			}
+			int name_len = buffer[9];
+			int file_len = buffer[10] | (buffer[11] << 8) | (buffer[12] << 16) | (buffer[13] << 24);
+			
+			// restore command file name
+			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
+			fread(dummy_argv_1, name_len, 1, fp);
+			
+			if(name_len != 0 && _access(dummy_argv_1, 0) == 0) {
+				// if original command file exists, create a temporary file name
+				if(GetTempFileName(_T("."), _T("DOS"), 0, dummy_argv_1) != 0) {
+					// create a temporary command file in the current director
+					DeleteFile(dummy_argv_1);
+				} else {
+					// create a temporary command file in the temporary folder
+					GetTempPath(MAX_PATH, path);
+					if(GetTempFileName(path, _T("DOS"), 0, dummy_argv_1) != 0) {
+						DeleteFile(dummy_argv_1);
+					} else {
+						sprintf(dummy_argv_1, "%s$DOSPRG$.TMP", path);
+					}
+				}
+				// check the command file type
+				fread(buffer, 2, 1, fp);
+				fseek(fp, -2, SEEK_CUR);
+				if(memcmp(buffer, "MZ", 2) != 0) {
+					memcpy(dummy_argv_1 + strlen(dummy_argv_1) - 4, ".COM", 4);
+				} else {
+					memcpy(dummy_argv_1 + strlen(dummy_argv_1) - 4, ".EXE", 4);
+				}
+			}
+			
+			// restore command file
+			FILE* fo = fopen(dummy_argv_1, "wb");
+			for(int i = 0; i < file_len; i++) {
+				fputc(fgetc(fp), fo);
+			}
+			fclose(fo);
+			
+			GetFullPathName(dummy_argv_1, MAX_PATH, temp_file_path, NULL);
+			temp_file_created = true;
+			SetFileAttributes(temp_file_path, FILE_ATTRIBUTE_HIDDEN);
+			
+			// adjust argc/argv
+			for(int i = 1; i < argc && (i + 1) < 256; i++) {
+				dummy_argv[i + 1] = argv[i];
+			}
+			argc++;
+			argv = dummy_argv;
 		}
 		fclose(fp);
 	}
-#endif
 	for(int i = 1; i < argc; i++) {
 		if(_strnicmp(argv[i], "-b", 2) == 0) {
 			stay_busy = true;
 			arg_offset++;
-#ifdef SUPPORT_EMBED
 		} else if(_strnicmp(argv[i], "-c", 2) == 0) {
 			if(argv[i][2] != '\0') {
 				strcpy(new_exec_file, &argv[i][2]);
@@ -946,7 +987,13 @@ int main(int argc, char *argv[], char *envp[])
 			}
 			convert_cmd_file = true;
 			arg_offset++;
-#endif
+		} else if(_strnicmp(argv[i], "-p", 2) == 0) {
+			if(IS_NUMERIC(argv[i][2])) {
+				code_page = atoi(&argv[i][2]);
+			} else {
+				code_page = GetConsoleCP();
+			}
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-d", 2) == 0) {
 			no_windows = true;
 			arg_offset++;
@@ -971,9 +1018,9 @@ int main(int argc, char *argv[], char *envp[])
 			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-s", 2) == 0) {
-			if(strlen(argv[i]) > 2) {
+			if(IS_NUMERIC(argv[i][2])) {
 				char *p1 = &argv[i][2], *p2;
-				if((p2 = strchr(p1, ',')) != NULL) {
+				if((p2 = strchr(p1, ',')) != NULL && IS_NUMERIC(p2[1])) {
 					sio_port_number[1] = atoi(p2 + 1);
 				}
 				sio_port_number[0] = atoi(p1);
@@ -1006,20 +1053,16 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr, "MS-DOS Player (" CPU_MODEL_NAME(CPU_MODEL) ") for Win32 console\n\n");
 #endif
 		fprintf(stderr,
-			"Usage: MSDOS [-b] "
-#ifdef SUPPORT_EMBED
-			"[-c[(new exec file)]] "
-#endif
-			"[-d] [-e] [-i] [-m] [-n[L[,C]]] [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]\n"
+			"Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
+			"             [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
-#ifdef SUPPORT_EMBED
-	#ifdef _WIN64
+#ifdef _WIN64
 			"\t-c\tconvert command file to 64bit execution file\n"
-	#else
+#else
 			"\t-c\tconvert command file to 32bit execution file\n"
-	#endif
 #endif
+			"\t-p\trecord current code page when convert command file\n"
 			"\t-d\tpretend running under straight DOS, not Windows\n"
 			"\t-e\tuse a reduced environment block\n"
 			"\t-i\tignore invalid instructions\n"
@@ -1028,9 +1071,9 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
 			"\t-v\tset the DOS version\n"
 #ifdef SUPPORT_XMS
-			"\t-x\tenable XMS/EMS\n"
+			"\t-x\tenable XMS and LIM EMS\n"
 #else
-			"\t-x\tenable EMS\n"
+			"\t-x\tenable LIM EMS\n"
 #endif
 		);
 		
@@ -1045,73 +1088,157 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		return(EXIT_FAILURE);
 	}
-#ifdef SUPPORT_EMBED
 	if(convert_cmd_file) {
 		retval = EXIT_FAILURE;
-		if(name != NULL && stricmp(name, "msdos.exe") == 0) {
+		if(name != NULL/* && stricmp(name, "msdos.exe") == 0*/) {
 			FILE *fp = NULL, *fs = NULL, *fo = NULL;
-			int data = 0;
+			int len = strlen(argv[arg_offset + 1]), data;
 			
-			if((fp = fopen(full, "rb")) == NULL) {
-				fprintf(stderr, "Cant't open '%s'\n", name);
-			} else if((fs = fopen(argv[arg_offset + 1], "rb")) == NULL) {
-				if(strchr(argv[arg_offset + 1], ',') != NULL) {
-					fprintf(stderr, "Cant't open '%s'\n", argv[arg_offset + 1]);
-				} else {
-					fprintf(stderr, "Cant't open '%s', please specify command file with extenstion\n", argv[arg_offset + 1]);
-				}
-			} else if((fo = fopen(new_exec_file, "wb")) == NULL) {
-				fprintf(stderr, "Cant't open '%s'\n", new_exec_file);
+			if(!(len > 4 && (stricmp(argv[arg_offset + 1] + len - 4, ".COM") == 0 || stricmp(argv[arg_offset + 1] + len - 4, ".EXE") == 0))) {
+				fprintf(stderr, "Specify command file with extenstion (.COM or .EXE)\n");
+			} else if((fp = fopen(full, "rb")) == NULL) {
+				fprintf(stderr, "Can't open '%s'\n", name);
 			} else {
-				// store msdos.exe
-				while((data = fgetc(fp)) != EOF) {
-					fputc(data, fo);
+				long offset = get_section_in_exec_file(fp, ".msdos");
+				if(offset != 0) {
+					UINT8 buffer[14];
+					fseek(fp, offset, SEEK_SET);
+					fread(buffer, sizeof(buffer), 1, fp);
+					memset(path, 0, sizeof(path));
+					fread(path, buffer[9], 1, fp);
+					fprintf(stderr, "Command file '%s' was already embedded to '%s'\n", path, name);
+				} else if((fs = fopen(argv[arg_offset + 1], "rb")) == NULL) {
+					fprintf(stderr, "Can't open '%s'\n", argv[arg_offset + 1]);
+				} else if((fo = fopen(new_exec_file, "wb")) == NULL) {
+					fprintf(stderr, "Can't open '%s'\n", new_exec_file);
+				} else {
+					// read pe header of msdos.exe
+					UINT8 header[0x400];
+					fseek(fp, 0, SEEK_SET);
+					fread(header, sizeof(header), 1, fp);
+					
+					_IMAGE_DOS_HEADER *dosHeader = (_IMAGE_DOS_HEADER *)(header + 0);
+					DWORD dwTopOfSignature = dosHeader->e_lfanew;
+					DWORD dwTopOfCoffHeader = dwTopOfSignature + 4;
+					_IMAGE_FILE_HEADER *coffHeader = (_IMAGE_FILE_HEADER *)(header + dwTopOfCoffHeader);
+					DWORD dwTopOfOptionalHeader = dwTopOfCoffHeader + sizeof(_IMAGE_FILE_HEADER);
+					_IMAGE_OPTIONAL_HEADER *optionalHeader = (_IMAGE_OPTIONAL_HEADER *)(header + dwTopOfOptionalHeader);
+					DWORD dwTopOfFirstSectionHeader = dwTopOfOptionalHeader + coffHeader->SizeOfOptionalHeader;
+					
+					_IMAGE_SECTION_HEADER *lastSectionHeader = (_IMAGE_SECTION_HEADER *)(header + dwTopOfFirstSectionHeader + IMAGE_SIZEOF_SECTION_HEADER * (coffHeader->NumberOfSections - 1));
+					DWORD dwEndOfFile = lastSectionHeader->PointerToRawData + lastSectionHeader->SizeOfRawData;
+					DWORD dwLastSectionSize = lastSectionHeader->SizeOfRawData;
+					DWORD dwExtraLastSectionBytes = dwLastSectionSize % optionalHeader->SectionAlignment;
+					if(dwExtraLastSectionBytes != 0) {
+						DWORD dwRemain = optionalHeader->SectionAlignment - dwExtraLastSectionBytes;
+						dwLastSectionSize += dwRemain;
+					}
+					DWORD dwVirtualAddress = lastSectionHeader->VirtualAddress + dwLastSectionSize;
+					
+					// add new section
+					_IMAGE_SECTION_HEADER *newSectionHeader = (_IMAGE_SECTION_HEADER *)(header + dwTopOfFirstSectionHeader + IMAGE_SIZEOF_SECTION_HEADER * coffHeader->NumberOfSections);
+					coffHeader->NumberOfSections++;
+					memset(newSectionHeader, 0, IMAGE_SIZEOF_SECTION_HEADER);
+					memcpy(newSectionHeader->Name, ".msdos", 6);
+					newSectionHeader->VirtualAddress = dwVirtualAddress;
+					newSectionHeader->PointerToRawData = dwEndOfFile;
+					newSectionHeader->Characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_DISCARDABLE;
+					
+					// store msdos.exe
+					fseek(fp, 0, SEEK_SET);
+					for(int i = 0; i < dwEndOfFile; i++) {
+						if((data = fgetc(fp)) != EOF) {
+							fputc(data, fo);
+						} else {
+							// we should not reach here :-(
+							fputc(0, fo);
+						}
+					}
+					
+					// store options
+					UINT8 flags = 0;
+					if(stay_busy) {
+						flags |= 0x01;
+					}
+					if(no_windows) {
+						flags |= 0x02;
+					}
+					if(standard_env) {
+						flags |= 0x04;
+					}
+					if(ignore_illegal_insn) {
+						flags |= 0x08;
+					}
+					if(limit_max_memory) {
+						flags |= 0x10;
+					}
+					if(sio_port_number[0] != 0 || sio_port_number[1] != 0) {
+						flags |= 0x20;
+					}
+					if(support_ems) {
+						flags |= 0x40;
+					}
+					
+					fputc(flags, fo);
+					fputc((buf_width  >> 0) & 0xff, fo);
+					fputc((buf_width  >> 8) & 0xff, fo);
+					fputc((buf_height >> 0) & 0xff, fo);
+					fputc((buf_height >> 8) & 0xff, fo);
+					fputc(major_version, fo);
+					fputc(minor_version, fo);
+					fputc((code_page >> 0) & 0xff, fo);
+					fputc((code_page >> 8) & 0xff, fo);
+					
+					// store command file info
+					GetFullPathName(argv[arg_offset + 1], MAX_PATH, full, &name);
+					int name_len = strlen(name);
+					fseek(fs, 0, SEEK_END);
+					long file_size = ftell(fs);
+					
+					fputc(name_len, fo);
+					fputc((file_size >>  0) & 0xff, fo);
+					fputc((file_size >>  8) & 0xff, fo);
+					fputc((file_size >> 16) & 0xff, fo);
+					fputc((file_size >> 24) & 0xff, fo);
+					fwrite(name, name_len, 1, fo);
+					
+					// store command file
+					fseek(fs, 0, SEEK_SET);
+					for(int i = 0; i < file_size; i++) {
+						if((data = fgetc(fs)) != EOF) {
+							fputc(data, fo);
+						} else {
+							// we should not reach here :-(
+							fputc(0, fo);
+						}
+					}
+					
+					// store padding data and update pe header
+					newSectionHeader->SizeOfRawData = 14 + name_len + file_size;
+					DWORD dwExtraRawBytes = newSectionHeader->SizeOfRawData % optionalHeader->FileAlignment;
+					if(dwExtraRawBytes != 0) {
+						DWORD dwRemain = optionalHeader->FileAlignment - dwExtraRawBytes;
+						for(int i = 0; i < dwRemain; i++) {
+							fputc(0, fo);
+						}
+						newSectionHeader->SizeOfRawData += dwRemain;
+					}
+					newSectionHeader->Misc.VirtualSize = newSectionHeader->SizeOfRawData;
+					
+					DWORD dwNewSectionSize = newSectionHeader->SizeOfRawData;
+					DWORD dwExtraNewSectionBytes = dwNewSectionSize % optionalHeader->SectionAlignment;
+					if(dwExtraNewSectionBytes != 0) {
+						DWORD dwRemain = optionalHeader->SectionAlignment - dwExtraNewSectionBytes;
+						dwNewSectionSize += dwRemain;
+					}
+					optionalHeader->SizeOfImage += dwNewSectionSize;
+					
+					fseek(fo, 0, SEEK_SET);
+					fwrite(header, sizeof(header), 1, fo);
+					
+					fprintf(stderr, "'%s' is successfully created\n", new_exec_file);
+					retval = EXIT_SUCCESS;
 				}
-				
-				// store options
-				UINT8 flags = 0;
-				if(stay_busy) {
-					flags |= 0x01;
-				}
-				if(no_windows) {
-					flags |= 0x02;
-				}
-				if(standard_env) {
-					flags |= 0x04;
-				}
-				if(ignore_illegal_insn) {
-					flags |= 0x08;
-				}
-				if(limit_max_memory) {
-					flags |= 0x10;
-				}
-				if(sio_port_number[0] != 0 || sio_port_number[1] != 0) {
-					flags |= 0x20;
-				}
-				if(support_ems) {
-					flags |= 0x40;
-				}
-				int code_page = GetConsoleCP();
-				
-				fwrite("OPTS:", 5, 1, fo);
-				fputc(flags, fo);
-				fputc(buf_width, fo);
-				fputc(buf_height, fo);
-				fputc(major_version, fo);
-				fputc(minor_version, fo);
-				fputc((code_page >> 0) & 0xff, fo);
-				fputc((code_page >> 8) & 0xff, fo);
-				fputc(0, fo);
-				fputc(0, fo);
-				fputc(0, fo);
-				fputc(0, fo);
-				
-				// store command file
-				while((data = fgetc(fs)) != EOF) {
-					fputc(data, fo);
-				}
-				fprintf(stderr, "'%s' is successfully created\n", new_exec_file);
-				retval = EXIT_SUCCESS;
 			}
 			if(fp != NULL) {
 				fclose(fp);
@@ -1128,7 +1255,6 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		return(retval);
 	}
-#endif
 	
 	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
 	
@@ -1136,7 +1262,7 @@ int main(int argc, char *argv[], char *envp[])
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
 	
-	bSuccess = GetConsoleScreenBufferInfo(hStdout, &csbi);
+	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	GetConsoleCursorInfo(hStdout, &ci);
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
 	
@@ -1146,20 +1272,20 @@ int main(int argc, char *argv[], char *envp[])
 			SCR_BUF(y,x).Attributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
 		}
 	}
-	if(bSuccess) {
+	if(get_console_info_success) {
 		scr_width = csbi.dwSize.X;
 		scr_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 		
-		// v-text shadow buffer size is 0x7ff0
-		if((scr_width > SCR_BUF_WIDTH) || (scr_height > SCR_BUF_HEIGHT) || (scr_width * scr_height * 2 > 0x7ff0) ||
+		// v-text shadow buffer size must be lesser than 0x7fd0
+		if((scr_width > SCR_BUF_WIDTH) || (scr_height > SCR_BUF_HEIGHT) || (scr_width * scr_height * 2 > 0x7fd0) ||
 		   (buf_width != 0 && buf_width != scr_width) || (buf_height != 0 && buf_height != scr_height)) {
 			scr_width = min(buf_width != 0 ? buf_width : scr_width, SCR_BUF_WIDTH);
 			scr_height = min(buf_height != 0 ? buf_height : scr_height, SCR_BUF_HEIGHT);
-			if(scr_width * scr_height * 2 > 0x7ff0) {
+			if(scr_width * scr_height * 2 > 0x7fd0) {
 				scr_width = 80;
 				scr_height = 25;
 			}
-			bChangeScreenSize = TRUE;
+			screen_size_changed = true;
 		}
 	} else {
 		// for a proof (not a console)
@@ -1185,7 +1311,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		SetConsoleCtrlHandler(ctrl_handler, TRUE);
 		
-		if(bChangeScreenSize) {
+		if(screen_size_changed) {
 			change_console_size(scr_width, scr_height);
 		}
 		TIMECAPS caps;
@@ -1203,7 +1329,7 @@ int main(int argc, char *argv[], char *envp[])
 		timeEndPeriod(caps.wPeriodMin);
 		
 		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
-		if(bSuccess) {
+		if(get_console_info_success) {
 			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(restore_console_on_exit) {
 				// window can't be bigger than buffer,
@@ -1230,18 +1356,28 @@ int main(int argc, char *argv[], char *envp[])
 	
 	hardware_finish();
 	
-	key_buf_char->release();
-	delete key_buf_char;
-	key_buf_scan->release();
-	delete key_buf_scan;
-	
-//	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
-	
-#if defined(_MSC_VER) && (_MSC_VER >= 1400)
-	if(argv == dummy_argv) {
-		DeleteFile(dummy_argv_1);
+	if(key_buf_char != NULL) {
+		key_buf_char->release();
+		delete key_buf_char;
+		key_buf_char = NULL;
 	}
-#endif
+	if(key_buf_scan != NULL) {
+		key_buf_scan->release();
+		delete key_buf_scan;
+		key_buf_scan = NULL;
+	}
+	if(temp_file_created) {
+		DeleteFile(temp_file_path);
+		temp_file_created = false;
+	}
+//	if(argv == dummy_argv) {
+//		if(!is_started_from_command_prompt()) {
+//			fprintf(stderr, "\nHit any key to quit...");
+//			while(!_kbhit()) {
+//				Sleep(10);
+//			}
+//		}
+//	}
 #ifdef _DEBUG
 	_CrtDumpMemoryLeaks();
 #endif
@@ -1378,9 +1514,9 @@ bool update_console_input()
 							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
 								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 							}
-							// FIXME: character is always 8x8 ???
-							int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
-							int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+							// FIXME: character size is always 8x8 ???
+							int x = 3 + 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
+							int y = 4 + 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
 							if(mouse.position.x != x || mouse.position.y != y) {
 								mouse.position.x = x;
 								mouse.position.y = y;
@@ -1389,10 +1525,13 @@ bool update_console_input()
 						}
 					}
 				} else if(ir[i].EventType & KEY_EVENT) {
+					// set scan code of last pressed/release key to kbd_data (in-port 60h)
 					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode;
 					if(!ir[i].Event.KeyEvent.bKeyDown) {
+						// break
 						kbd_data |= 0x80;
 					} else {
+						// make
 						kbd_data &= 0x7f;
 						
 						// update dos key buffer
@@ -1842,6 +1981,38 @@ char *msdos_trimmed_path(char *path, int lfn)
 	return(tmp);
 }
 
+char *msdos_get_multiple_short_path(char *src)
+{
+	// LONGPATH;LONGPATH;LONGPATH to SHORTPATH;SHORTPATH;SHORTPATH
+	static char env_path[ENV_SIZE];
+	char tmp[ENV_SIZE], *token;
+	
+	memset(env_path, 0, sizeof(env_path));
+	strcpy(tmp, src);
+	token = my_strtok(tmp, ";");
+	
+	while(token != NULL) {
+		if(token[0] != '\0') {
+			char *path = msdos_remove_double_quote(token), short_path[MAX_PATH];
+			if(strlen(path) != 0) {
+				if(GetShortPathName(path, short_path, MAX_PATH) == 0) {
+					strcat(env_path, path);
+				} else {
+					my_strupr(short_path);
+					strcat(env_path, short_path);
+				}
+				strcat(env_path, ";");
+			}
+		}
+		token = my_strtok(NULL, ";");
+	}
+	int len = strlen(env_path);
+	if(len != 0 && env_path[len - 1] == ';') {
+		env_path[len - 1] = '\0';
+	}
+	return(env_path);
+}
+
 bool match(char *text, char *pattern)
 {
 	// http://www.prefield.com/algorithm/string/wildcard.html
@@ -2041,26 +2212,34 @@ bool msdos_is_existing_file(char *path)
 char *msdos_search_command_com(char *command_path, char *env_path)
 {
 	static char tmp[MAX_PATH];
-	char path[MAX_PATH], *file_name;
+	char path[ENV_SIZE], *file_name;
 	
+	// check if COMMAND.COM is in the same directory as the target program file
 	if(GetFullPathName(command_path, MAX_PATH, tmp, &file_name) != 0) {
 		sprintf(file_name, "COMMAND.COM");
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
 		}
 	}
+	
+	// check if COMMAND.COM is in the same directory as the running msdos.exe
 	if(GetModuleFileName(NULL, path, MAX_PATH) != 0 && GetFullPathName(path, MAX_PATH, tmp, &file_name) != 0) {
 		sprintf(file_name, "COMMAND.COM");
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
 		}
 	}
+	
+	// check if COMMAND.COM is in the current directory
 	if(GetFullPathName("COMMAND.COM", MAX_PATH, tmp, &file_name) != 0) {
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
 		}
 	}
-	char *token = my_strtok(env_path, ";");
+	
+	// cehck if COMMAND.COM is in the directory that is in MSDOS_PATH and PATH environment variables
+	strcpy(path, env_path);
+	char *token = my_strtok(path, ";");
 	while(token != NULL) {
 		if(strlen(token) != 0 && token[0] != '%') {
 			strcpy(tmp, msdos_combine_path(token, "COMMAND.COM"));
@@ -2915,7 +3094,13 @@ mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
 void msdos_mcb_check(mcb_t *mcb)
 {
 	if(!(mcb->mz == 'M' || mcb->mz == 'Z')) {
-		fatalerror("broken mcb\n");
+		#if 0
+			// shutdown now !!!
+			fatalerror("broken memory control block\n");
+		#else
+			// return error code and continue
+			throw(0x07); // broken memory control block
+		#endif
 	}
 }
 
@@ -3609,10 +3794,23 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	REG16(SP) = psp->stack.w.l;
 	i386_jmp_far(psp->int_22h.w.h, psp->int_22h.w.l);
 	
-	process_t *process = msdos_process_info_get(psp_seg);
-	int_10h_feh_called = process->parent_int_10h_feh_called;
-	int_10h_ffh_called = process->parent_int_10h_ffh_called;
-	SREG(DS) = process->parent_ds;
+//	process_t *current_process = msdos_process_info_get(psp_seg);
+	process_t *current_process = NULL;
+	for(int i = 0; i < MAX_PROCESS; i++) {
+		if(process[i].psp == psp_seg) {
+			current_process = &process[i];
+			break;
+		}
+	}
+	if(current_process == NULL) {
+		throw(0x1f); // general failure
+	}
+	int_10h_feh_called = current_process->parent_int_10h_feh_called;
+	int_10h_ffh_called = current_process->parent_int_10h_ffh_called;
+	if(current_process->called_by_int2eh) {
+		REG16(AX) = ret;
+	}
+	SREG(DS) = current_process->parent_ds;
 	i386_load_segment_descriptor(DS);
 	
 	if(mem_free) {
@@ -3635,7 +3833,7 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	}
 	msdos_stdio_reopen();
 	
-	memset(process, 0, sizeof(process_t));
+	memset(current_process, 0, sizeof(process_t));
 	
 	current_psp = psp->parent_psp;
 	retval = ret;
@@ -6987,7 +7185,7 @@ inline void msdos_int_21h_49h()
 	if(mcb->mz == 'M' || mcb->mz == 'Z') {
 		msdos_mem_free(SREG(ES));
 	} else {
-		REG16(AX) = 9;
+		REG16(AX) = 0x09; // illegal memory block address 
 		m_CF = 1;
 	}
 }
@@ -7005,7 +7203,7 @@ inline void msdos_int_21h_4ah()
 			m_CF = 1;
 		}
 	} else {
-		REG16(AX) = 7;
+		REG16(AX) = 0x09; // illegal memory block address 
 		m_CF = 1;
 	}
 }
@@ -8384,8 +8582,17 @@ inline void msdos_int_2eh()
 	strcpy(cmd_line->cmd, opt);
 	cmd_line->cmd[cmd_line->len] = 0x0d;
 	
-	msdos_process_exec(command, param, 0);
-	REG8(AL) = 0;
+	try {
+		if(msdos_process_exec(command, param, 0)) {
+			REG16(AX) = 0xffff; // error before processing command
+		} else {
+			// set flag to set retval to ax when the started process is terminated
+			process_t *process = msdos_process_info_get(current_psp);
+			process->called_by_int2eh = true;
+		}
+	} catch(...) {
+		REG16(AX) = 0xffff; // error before processing command
+	}
 }
 
 inline void msdos_int_2fh_01h()
@@ -8878,7 +9085,9 @@ inline void msdos_int_2fh_aeh()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(AL) = 0;
+		// FIXME: we need to check the given command line
+		REG8(AL) = 0x00; // the command should be executed as usual
+//		REG8(AL) = 0xff; // this command is a TSR extension to COMMAND.COM
 		break;
 	case 0x01:
 		{
@@ -8902,9 +9111,10 @@ inline void msdos_int_2fh_aeh()
 			memcpy(cmd_line->cmd, mem + SREG_BASE(DS) + REG16(BX) + 2, cmd_line->len);
 			cmd_line->cmd[cmd_line->len] = 0x0d;
 			
-			if(msdos_process_exec(command, param, 0)) {
-				REG16(AX) = 0x02;
-				m_CF = 1;
+			try {
+				msdos_process_exec(command, param, 0);
+			} catch(...) {
+				fatalerror("failed to start '%s' by int 2Fh, AX=AE01h\n", command);
 			}
 		}
 		break;
@@ -10037,6 +10247,27 @@ UINT16 msdos_get_equipment()
 //		equip |= (1 << 8);	// 0 if DMA installed
 		equip |= (2 << 9);	// number of serial ports
 		equip |= (3 << 14);	// number of printer ports (NOTE: this number is 3 on Windows 98 SE though only LPT1 exists)
+		
+		// check only A: and B: if it is floppy drive
+		DWORD dwDrives = GetLogicalDrives();
+		int n = 0;
+		for(int i = 0; i < 2; i++) {
+			if(dwDrives & (1 << i)) {
+				char volume[] = "A:\\";
+				volume[0] = 'A' + i;
+				if(GetDriveType(volume) == DRIVE_REMOVABLE) {
+					n++;
+				}
+			}
+		}
+		if(n != 0) {
+			equip |= (1 << 0);	// floppy disk(s) installed
+			n--;
+			equip |= (n << 6);	// number of floppies installed less 1
+		}
+//		if(joyGetNumDevs() != 0) {
+//			equip |= (1 << 12);	// game port installed
+//		}
 	}
 	return(equip);
 }
@@ -10060,18 +10291,30 @@ void msdos_syscall(unsigned num)
 	
 	switch(num) {
 	case 0x00:
-		error("division by zero\n");
-		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+		try {
+			msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+			error("division by zero\n");
+		} catch(...) {
+			fatalerror("division by zero detected, and failed to terminate current process\n");
+		}
 		break;
 	case 0x04:
-		error("overflow\n");
-		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+		try {
+			msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+			error("overflow\n");
+		} catch(...) {
+			fatalerror("overflow detected, and failed to terminate current process\n");
+		}
 		break;
 	case 0x06:
 		// NOTE: ish.com has illegal instruction...
 		if(!ignore_illegal_insn) {
-			error("illegal instruction\n");
-			msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+			try {
+				msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+				error("illegal instruction\n");
+			} catch(...) {
+				fatalerror("illegal instruction detected, and failed to terminate current process\n");
+			}
 		} else {
 #if defined(HAS_I386)
 			m_eip++;
@@ -10257,176 +10500,188 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x20:
-		msdos_process_terminate(SREG(CS), retval, 1);
+		try {
+			msdos_process_terminate(SREG(CS), retval, 1);
+		} catch(...) {
+			fatalerror("failed to terminate the process (PSP=%04X) by int 20h\n", SREG(CS));
+		}
 		break;
 	case 0x21:
 		// MS-DOS System Call
 		m_CF = 0;
-		switch(REG8(AH)) {
-		case 0x00: msdos_int_21h_00h(); break;
-		case 0x01: msdos_int_21h_01h(); break;
-		case 0x02: msdos_int_21h_02h(); break;
-		case 0x03: msdos_int_21h_03h(); break;
-		case 0x04: msdos_int_21h_04h(); break;
-		case 0x05: msdos_int_21h_05h(); break;
-		case 0x06: msdos_int_21h_06h(); break;
-		case 0x07: msdos_int_21h_07h(); break;
-		case 0x08: msdos_int_21h_08h(); break;
-		case 0x09: msdos_int_21h_09h(); break;
-		case 0x0a: msdos_int_21h_0ah(); break;
-		case 0x0b: msdos_int_21h_0bh(); break;
-		case 0x0c: msdos_int_21h_0ch(); break;
-		case 0x0d: msdos_int_21h_0dh(); break;
-		case 0x0e: msdos_int_21h_0eh(); break;
-		case 0x0f: msdos_int_21h_0fh(); break;
-		case 0x10: msdos_int_21h_10h(); break;
-		case 0x11: msdos_int_21h_11h(); break;
-		case 0x12: msdos_int_21h_12h(); break;
-		case 0x13: msdos_int_21h_13h(); break;
-		case 0x14: msdos_int_21h_14h(); break;
-		case 0x15: msdos_int_21h_15h(); break;
-		case 0x16: msdos_int_21h_16h(); break;
-		case 0x17: msdos_int_21h_17h(); break;
-		case 0x18: msdos_int_21h_18h(); break;
-		case 0x19: msdos_int_21h_19h(); break;
-		case 0x1a: msdos_int_21h_1ah(); break;
-		case 0x1b: msdos_int_21h_1bh(); break;
-		case 0x1c: msdos_int_21h_1ch(); break;
-		case 0x1d: msdos_int_21h_1dh(); break;
-		case 0x1e: msdos_int_21h_1eh(); break;
-		case 0x1f: msdos_int_21h_1fh(); break;
-		case 0x20: msdos_int_21h_20h(); break;
-		case 0x21: msdos_int_21h_21h(); break;
-		case 0x22: msdos_int_21h_22h(); break;
-		case 0x23: msdos_int_21h_23h(); break;
-		case 0x24: msdos_int_21h_24h(); break;
-		case 0x25: msdos_int_21h_25h(); break;
-		case 0x26: msdos_int_21h_26h(); break;
-		case 0x27: msdos_int_21h_27h(); break;
-		case 0x28: msdos_int_21h_28h(); break;
-		case 0x29: msdos_int_21h_29h(); break;
-		case 0x2a: msdos_int_21h_2ah(); break;
-		case 0x2b: msdos_int_21h_2bh(); break;
-		case 0x2c: msdos_int_21h_2ch(); break;
-		case 0x2d: msdos_int_21h_2dh(); break;
-		case 0x2e: msdos_int_21h_2eh(); break;
-		case 0x2f: msdos_int_21h_2fh(); break;
-		case 0x30: msdos_int_21h_30h(); break;
-		case 0x31: msdos_int_21h_31h(); break;
-		case 0x32: msdos_int_21h_32h(); break;
-		case 0x33: msdos_int_21h_33h(); break;
-		case 0x34: msdos_int_21h_34h(); break;
-		case 0x35: msdos_int_21h_35h(); break;
-		case 0x36: msdos_int_21h_36h(); break;
-		case 0x37: msdos_int_21h_37h(); break;
-		case 0x38: msdos_int_21h_38h(); break;
-		case 0x39: msdos_int_21h_39h(0); break;
-		case 0x3a: msdos_int_21h_3ah(0); break;
-		case 0x3b: msdos_int_21h_3bh(0); break;
-		case 0x3c: msdos_int_21h_3ch(); break;
-		case 0x3d: msdos_int_21h_3dh(); break;
-		case 0x3e: msdos_int_21h_3eh(); break;
-		case 0x3f: msdos_int_21h_3fh(); break;
-		case 0x40: msdos_int_21h_40h(); break;
-		case 0x41: msdos_int_21h_41h(0); break;
-		case 0x42: msdos_int_21h_42h(); break;
-		case 0x43: msdos_int_21h_43h(0); break;
-		case 0x44: msdos_int_21h_44h(); break;
-		case 0x45: msdos_int_21h_45h(); break;
-		case 0x46: msdos_int_21h_46h(); break;
-		case 0x47: msdos_int_21h_47h(0); break;
-		case 0x48: msdos_int_21h_48h(); break;
-		case 0x49: msdos_int_21h_49h(); break;
-		case 0x4a: msdos_int_21h_4ah(); break;
-		case 0x4b: msdos_int_21h_4bh(); break;
-		case 0x4c: msdos_int_21h_4ch(); break;
-		case 0x4d: msdos_int_21h_4dh(); break;
-		case 0x4e: msdos_int_21h_4eh(); break;
-		case 0x4f: msdos_int_21h_4fh(); break;
-		case 0x50: msdos_int_21h_50h(); break;
-		case 0x51: msdos_int_21h_51h(); break;
-		case 0x52: msdos_int_21h_52h(); break;
-		// 0x53: translate bios parameter block to drive param bock
-		case 0x54: msdos_int_21h_54h(); break;
-		case 0x55: msdos_int_21h_55h(); break;
-		case 0x56: msdos_int_21h_56h(0); break;
-		case 0x57: msdos_int_21h_57h(); break;
-		case 0x58: msdos_int_21h_58h(); break;
-		case 0x59: msdos_int_21h_59h(); break;
-		case 0x5a: msdos_int_21h_5ah(); break;
-		case 0x5b: msdos_int_21h_5bh(); break;
-		case 0x5c: msdos_int_21h_5ch(); break;
-		case 0x5d: msdos_int_21h_5dh(); break;
-		// 0x5e: ms-network
-		// 0x5f: ms-network
-		case 0x60: msdos_int_21h_60h(0); break;
-		case 0x61: msdos_int_21h_61h(); break;
-		case 0x62: msdos_int_21h_62h(); break;
-		case 0x63: msdos_int_21h_63h(); break;
-		// 0x64: set device driver lockahead flag
-		case 0x65: msdos_int_21h_65h(); break;
-		case 0x66: msdos_int_21h_66h(); break;
-		case 0x67: msdos_int_21h_67h(); break;
-		case 0x68: msdos_int_21h_68h(); break;
-		case 0x69: msdos_int_21h_69h(); break;
-		case 0x6a: msdos_int_21h_6ah(); break;
-		case 0x6b: msdos_int_21h_6bh(); break;
-		case 0x6c: msdos_int_21h_6ch(0); break;
-		// 0x6d: find first rom program
-		// 0x6e: find next rom program
-		// 0x6f: get/set rom scan start address
-		// 0x70: windows95 get/set internationalization information
-		case 0x71:
-			// windows95 long filename functions
-			switch(REG8(AL)) {
-			case 0x0d: msdos_int_21h_710dh(); break;
-			case 0x39: msdos_int_21h_39h(1); break;
-			case 0x3a: msdos_int_21h_3ah(1); break;
-			case 0x3b: msdos_int_21h_3bh(1); break;
-			case 0x41: msdos_int_21h_7141h(1); break;
-			case 0x43: msdos_int_21h_43h(1); break;
-			case 0x47: msdos_int_21h_47h(1); break;
-			case 0x4e: msdos_int_21h_714eh(); break;
-			case 0x4f: msdos_int_21h_714fh(); break;
-			case 0x56: msdos_int_21h_56h(1); break;
-			case 0x60: msdos_int_21h_60h(1); break;
-			case 0x6c: msdos_int_21h_6ch(1); break;
-			case 0xa0: msdos_int_21h_71a0h(); break;
-			case 0xa1: msdos_int_21h_71a1h(); break;
-			case 0xa6: msdos_int_21h_71a6h(); break;
-			case 0xa7: msdos_int_21h_71a7h(); break;
-			case 0xa8: msdos_int_21h_71a8h(); break;
-			// 0xa9: server create/open file
-			case 0xaa: msdos_int_21h_71aah(); break;
+		try {
+			switch(REG8(AH)) {
+			case 0x00: msdos_int_21h_00h(); break;
+			case 0x01: msdos_int_21h_01h(); break;
+			case 0x02: msdos_int_21h_02h(); break;
+			case 0x03: msdos_int_21h_03h(); break;
+			case 0x04: msdos_int_21h_04h(); break;
+			case 0x05: msdos_int_21h_05h(); break;
+			case 0x06: msdos_int_21h_06h(); break;
+			case 0x07: msdos_int_21h_07h(); break;
+			case 0x08: msdos_int_21h_08h(); break;
+			case 0x09: msdos_int_21h_09h(); break;
+			case 0x0a: msdos_int_21h_0ah(); break;
+			case 0x0b: msdos_int_21h_0bh(); break;
+			case 0x0c: msdos_int_21h_0ch(); break;
+			case 0x0d: msdos_int_21h_0dh(); break;
+			case 0x0e: msdos_int_21h_0eh(); break;
+			case 0x0f: msdos_int_21h_0fh(); break;
+			case 0x10: msdos_int_21h_10h(); break;
+			case 0x11: msdos_int_21h_11h(); break;
+			case 0x12: msdos_int_21h_12h(); break;
+			case 0x13: msdos_int_21h_13h(); break;
+			case 0x14: msdos_int_21h_14h(); break;
+			case 0x15: msdos_int_21h_15h(); break;
+			case 0x16: msdos_int_21h_16h(); break;
+			case 0x17: msdos_int_21h_17h(); break;
+			case 0x18: msdos_int_21h_18h(); break;
+			case 0x19: msdos_int_21h_19h(); break;
+			case 0x1a: msdos_int_21h_1ah(); break;
+			case 0x1b: msdos_int_21h_1bh(); break;
+			case 0x1c: msdos_int_21h_1ch(); break;
+			case 0x1d: msdos_int_21h_1dh(); break;
+			case 0x1e: msdos_int_21h_1eh(); break;
+			case 0x1f: msdos_int_21h_1fh(); break;
+			case 0x20: msdos_int_21h_20h(); break;
+			case 0x21: msdos_int_21h_21h(); break;
+			case 0x22: msdos_int_21h_22h(); break;
+			case 0x23: msdos_int_21h_23h(); break;
+			case 0x24: msdos_int_21h_24h(); break;
+			case 0x25: msdos_int_21h_25h(); break;
+			case 0x26: msdos_int_21h_26h(); break;
+			case 0x27: msdos_int_21h_27h(); break;
+			case 0x28: msdos_int_21h_28h(); break;
+			case 0x29: msdos_int_21h_29h(); break;
+			case 0x2a: msdos_int_21h_2ah(); break;
+			case 0x2b: msdos_int_21h_2bh(); break;
+			case 0x2c: msdos_int_21h_2ch(); break;
+			case 0x2d: msdos_int_21h_2dh(); break;
+			case 0x2e: msdos_int_21h_2eh(); break;
+			case 0x2f: msdos_int_21h_2fh(); break;
+			case 0x30: msdos_int_21h_30h(); break;
+			case 0x31: msdos_int_21h_31h(); break;
+			case 0x32: msdos_int_21h_32h(); break;
+			case 0x33: msdos_int_21h_33h(); break;
+			case 0x34: msdos_int_21h_34h(); break;
+			case 0x35: msdos_int_21h_35h(); break;
+			case 0x36: msdos_int_21h_36h(); break;
+			case 0x37: msdos_int_21h_37h(); break;
+			case 0x38: msdos_int_21h_38h(); break;
+			case 0x39: msdos_int_21h_39h(0); break;
+			case 0x3a: msdos_int_21h_3ah(0); break;
+			case 0x3b: msdos_int_21h_3bh(0); break;
+			case 0x3c: msdos_int_21h_3ch(); break;
+			case 0x3d: msdos_int_21h_3dh(); break;
+			case 0x3e: msdos_int_21h_3eh(); break;
+			case 0x3f: msdos_int_21h_3fh(); break;
+			case 0x40: msdos_int_21h_40h(); break;
+			case 0x41: msdos_int_21h_41h(0); break;
+			case 0x42: msdos_int_21h_42h(); break;
+			case 0x43: msdos_int_21h_43h(0); break;
+			case 0x44: msdos_int_21h_44h(); break;
+			case 0x45: msdos_int_21h_45h(); break;
+			case 0x46: msdos_int_21h_46h(); break;
+			case 0x47: msdos_int_21h_47h(0); break;
+			case 0x48: msdos_int_21h_48h(); break;
+			case 0x49: msdos_int_21h_49h(); break;
+			case 0x4a: msdos_int_21h_4ah(); break;
+			case 0x4b: msdos_int_21h_4bh(); break;
+			case 0x4c: msdos_int_21h_4ch(); break;
+			case 0x4d: msdos_int_21h_4dh(); break;
+			case 0x4e: msdos_int_21h_4eh(); break;
+			case 0x4f: msdos_int_21h_4fh(); break;
+			case 0x50: msdos_int_21h_50h(); break;
+			case 0x51: msdos_int_21h_51h(); break;
+			case 0x52: msdos_int_21h_52h(); break;
+			// 0x53: translate bios parameter block to drive param bock
+			case 0x54: msdos_int_21h_54h(); break;
+			case 0x55: msdos_int_21h_55h(); break;
+			case 0x56: msdos_int_21h_56h(0); break;
+			case 0x57: msdos_int_21h_57h(); break;
+			case 0x58: msdos_int_21h_58h(); break;
+			case 0x59: msdos_int_21h_59h(); break;
+			case 0x5a: msdos_int_21h_5ah(); break;
+			case 0x5b: msdos_int_21h_5bh(); break;
+			case 0x5c: msdos_int_21h_5ch(); break;
+			case 0x5d: msdos_int_21h_5dh(); break;
+			// 0x5e: ms-network
+			// 0x5f: ms-network
+			case 0x60: msdos_int_21h_60h(0); break;
+			case 0x61: msdos_int_21h_61h(); break;
+			case 0x62: msdos_int_21h_62h(); break;
+			case 0x63: msdos_int_21h_63h(); break;
+			// 0x64: set device driver lockahead flag
+			case 0x65: msdos_int_21h_65h(); break;
+			case 0x66: msdos_int_21h_66h(); break;
+			case 0x67: msdos_int_21h_67h(); break;
+			case 0x68: msdos_int_21h_68h(); break;
+			case 0x69: msdos_int_21h_69h(); break;
+			case 0x6a: msdos_int_21h_6ah(); break;
+			case 0x6b: msdos_int_21h_6bh(); break;
+			case 0x6c: msdos_int_21h_6ch(0); break;
+			// 0x6d: find first rom program
+			// 0x6e: find next rom program
+			// 0x6f: get/set rom scan start address
+			// 0x70: windows95 get/set internationalization information
+			case 0x71:
+				// windows95 long filename functions
+				switch(REG8(AL)) {
+				case 0x0d: msdos_int_21h_710dh(); break;
+				case 0x39: msdos_int_21h_39h(1); break;
+				case 0x3a: msdos_int_21h_3ah(1); break;
+				case 0x3b: msdos_int_21h_3bh(1); break;
+				case 0x41: msdos_int_21h_7141h(1); break;
+				case 0x43: msdos_int_21h_43h(1); break;
+				case 0x47: msdos_int_21h_47h(1); break;
+				case 0x4e: msdos_int_21h_714eh(); break;
+				case 0x4f: msdos_int_21h_714fh(); break;
+				case 0x56: msdos_int_21h_56h(1); break;
+				case 0x60: msdos_int_21h_60h(1); break;
+				case 0x6c: msdos_int_21h_6ch(1); break;
+				case 0xa0: msdos_int_21h_71a0h(); break;
+				case 0xa1: msdos_int_21h_71a1h(); break;
+				case 0xa6: msdos_int_21h_71a6h(); break;
+				case 0xa7: msdos_int_21h_71a7h(); break;
+				case 0xa8: msdos_int_21h_71a8h(); break;
+				// 0xa9: server create/open file
+				case 0xaa: msdos_int_21h_71aah(); break;
+				default:
+					unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+					REG16(AX) = 0x7100;
+					m_CF = 1;
+					break;
+				}
+				break;
+			// 0x72: Windows95 beta - LFN FindClose
+			case 0x73:
+				// windows95 fat32 functions
+				switch(REG8(AL)) {
+				case 0x00: msdos_int_21h_7300h(); break;
+				// 0x01: set drive locking ???
+				case 0x02: msdos_int_21h_7302h(); break;
+				case 0x03: msdos_int_21h_7303h(); break;
+				// 0x04: set dpb to use for formatting
+				// 0x05: extended absolute disk read/write
+				default:
+					unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+					REG16(AX) = 0x7300;
+					m_CF = 1;
+					break;
+				}
+				break;
 			default:
 				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-				REG16(AX) = 0x7100;
+				REG16(AX) = 0x01;
 				m_CF = 1;
 				break;
 			}
-			break;
-		// 0x72: Windows95 beta - LFN FindClose
-		case 0x73:
-			// windows95 fat32 functions
-			switch(REG8(AL)) {
-			case 0x00: msdos_int_21h_7300h(); break;
-			// 0x01: set drive locking ???
-			case 0x02: msdos_int_21h_7302h(); break;
-			case 0x03: msdos_int_21h_7303h(); break;
-			// 0x04: set dpb to use for formatting
-			// 0x05: extended absolute disk read/write
-			default:
-				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-				REG16(AX) = 0x7300;
-				m_CF = 1;
-				break;
-			}
-			break;
-		default:
-			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-			REG16(AX) = 0x01;
+		} catch(int error) {
+			REG16(AX) = error;
 			m_CF = 1;
-			break;
+		} catch(...) {
+			REG16(AX) = 0x1f; // general failure
+			m_CF = 1;
 		}
 		if(m_CF) {
 			sda_t *sda = (sda_t *)(mem + SDA_TOP);
@@ -10484,10 +10739,18 @@ void msdos_syscall(unsigned num)
 	case 0x22:
 		fatalerror("int 22h (terminate address)\n");
 	case 0x23:
-		msdos_process_terminate(current_psp, (retval & 0xff) | 0x100, 1);
+		try {
+			msdos_process_terminate(current_psp, (retval & 0xff) | 0x100, 1);
+		} catch(...) {
+			fatalerror("failed to terminate the current process by int 23h\n");
+		}
 		break;
 	case 0x24:
-		msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+		try {
+			msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
+		} catch(...) {
+			fatalerror("failed to terminate the current process by int 24h\n");
+		}
 		break;
 	case 0x25:
 		msdos_int_25h();
@@ -10496,7 +10759,11 @@ void msdos_syscall(unsigned num)
 		msdos_int_26h();
 		break;
 	case 0x27:
-		msdos_int_27h();
+		try {
+			msdos_int_27h();
+		} catch(...) {
+			fatalerror("failed to terminate the process (PSP=%04X) by int 27h\n", SREG(CS));
+		}
 		break;
 	case 0x28:
 		Sleep(10);
@@ -10640,35 +10907,40 @@ void msdos_syscall(unsigned num)
 #ifdef SUPPORT_XMS
 	case 0x69:
 		// dummy interrupt for XMS (call far)
-		switch(REG8(AH)) {
-		case 0x00: msdos_call_xms_00h(); break;
-		case 0x01: msdos_call_xms_01h(); break;
-		case 0x02: msdos_call_xms_02h(); break;
-		case 0x03: msdos_call_xms_03h(); break;
-		case 0x04: msdos_call_xms_04h(); break;
-		case 0x05: msdos_call_xms_05h(); break;
-		case 0x06: msdos_call_xms_06h(); break;
-		case 0x07: msdos_call_xms_07h(); break;
-		case 0x08: msdos_call_xms_08h(); break;
-		case 0x09: msdos_call_xms_09h(); break;
-		case 0x0a: msdos_call_xms_0ah(); break;
-		case 0x0b: msdos_call_xms_0bh(); break;
-		case 0x0c: msdos_call_xms_0ch(); break;
-		case 0x0d: msdos_call_xms_0dh(); break;
-		case 0x0e: msdos_call_xms_0eh(); break;
-		case 0x0f: msdos_call_xms_0fh(); break;
-		case 0x10: msdos_call_xms_10h(); break;
-		case 0x11: msdos_call_xms_11h(); break;
-		case 0x12: msdos_call_xms_12h(); break;
-		// 0x88: XMS 3.0 - Query free extended memory
-		// 0x89: XMS 3.0 - Allocate any extended memory
-		// 0x8e: XMS 3.0 - Get extended EMB handle information
-		// 0x8f: XMS 3.0 - Reallocate any extended memory block
-		default:
-			unimplemented_xms("call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		try {
+			switch(REG8(AH)) {
+			case 0x00: msdos_call_xms_00h(); break;
+			case 0x01: msdos_call_xms_01h(); break;
+			case 0x02: msdos_call_xms_02h(); break;
+			case 0x03: msdos_call_xms_03h(); break;
+			case 0x04: msdos_call_xms_04h(); break;
+			case 0x05: msdos_call_xms_05h(); break;
+			case 0x06: msdos_call_xms_06h(); break;
+			case 0x07: msdos_call_xms_07h(); break;
+			case 0x08: msdos_call_xms_08h(); break;
+			case 0x09: msdos_call_xms_09h(); break;
+			case 0x0a: msdos_call_xms_0ah(); break;
+			case 0x0b: msdos_call_xms_0bh(); break;
+			case 0x0c: msdos_call_xms_0ch(); break;
+			case 0x0d: msdos_call_xms_0dh(); break;
+			case 0x0e: msdos_call_xms_0eh(); break;
+			case 0x0f: msdos_call_xms_0fh(); break;
+			case 0x10: msdos_call_xms_10h(); break;
+			case 0x11: msdos_call_xms_11h(); break;
+			case 0x12: msdos_call_xms_12h(); break;
+			// 0x88: XMS 3.0 - Query free extended memory
+			// 0x89: XMS 3.0 - Allocate any extended memory
+			// 0x8e: XMS 3.0 - Get extended EMB handle information
+			// 0x8f: XMS 3.0 - Reallocate any extended memory block
+			default:
+				unimplemented_xms("call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+				REG16(AX) = 0x0000;
+				REG8(BL) = 0x80; // function not implemented
+				break;
+			}
+		} catch(...) {
 			REG16(AX) = 0x0000;
-			REG8(BL) = 0x80;
-			break;
+			REG8(BL) = 0x8f; // unrecoverable driver error
 		}
 		break;
 #endif
@@ -10901,79 +11173,74 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
-	char env_path[8192] = "", *path, temp_path[MAX_PATH] = {0};
+	char env_msdos_path[ENV_SIZE] = "", env_path[ENV_SIZE] = "", env_temp[ENV_SIZE] = "", *path;
 	
-	for(char **p = envp; p != NULL && *p != NULL; p++) {
-		if(_strnicmp(*p, "MSDOS_PATH=", 11) == 0) {
-			sprintf(env_path, "%s;", *p + 11);
-			break;
+	if((path = getenv("MSDOS_PATH")) != NULL) {
+		strcpy(env_msdos_path, msdos_get_multiple_short_path(path));
+		if(env_msdos_path[0] != '\0') {
+			strcat(env_path, env_msdos_path);
 		}
 	}
-	for(char **p = envp; p != NULL && *p != NULL; p++) {
-		if(_strnicmp(*p, "PATH=", 5) == 0) {
-			strcat(env_path, *p + 5);
-			break;
+	if((path = getenv("PATH")) != NULL) {
+		if(env_path[0] != '\0') {
+			strcat(env_path, ";");
 		}
+		strcat(env_path, msdos_get_multiple_short_path(path));
 	}
-	if((path = getenv("MSDOS_COMSPEC")) != NULL ||
-	   (path = msdos_search_command_com(argv[0], env_path)) != NULL) {
-		strcpy(comspec_path, path);
+	if((path = getenv("MSDOS_TEMP")) != NULL || (path = getenv("TEMP")) != NULL || (path = getenv("TMP")) != NULL) {
+		strcpy(env_temp, msdos_get_multiple_short_path(path));
 	}
-	if((path = getenv("MSDOS_TEMP")) != NULL) {
-		if(GetShortPathName(path, temp_path, MAX_PATH) == 0) {
-			strcpy(temp_path, path);
-		}
+	if((path = getenv("MSDOS_COMSPEC")) != NULL || (path = msdos_search_command_com(argv[0], env_path)) != NULL) {
+		strcpy(comspec_path, msdos_get_multiple_short_path(path));
 	}
-	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
-		char tmp[ENV_SIZE], name[ENV_SIZE], value[ENV_SIZE];
-		int value_pos = 0;
+		char tmp[ENV_SIZE], name[ENV_SIZE];
 		strcpy(tmp, *p);
 		for(int i = 0;; i++) {
 			if(tmp[i] == '=') {
 				tmp[i] = '\0';
 				sprintf(name, ";%s;", tmp);
 				my_strupr(name);
-				strcpy(value, tmp + (value_pos = i + 1));
 				tmp[i] = '=';
 				break;
 			} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
-				tmp[i] = tmp[i] - 'a' + 'A';
+				tmp[i] = (tmp[i] - 'a') + 'A';
 			}
 		}
 		if(strncmp(tmp, "MSDOS_COMSPEC=", 14) == 0) {
 			// ignore MSDOS_COMSPEC
 		} else if(strncmp(tmp, "MSDOS_TEMP=", 11) == 0) {
 			// ignore MSDOS_TEMP
-		} else if(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
+		} else if(standard_env && strstr(";COMSPEC;INCLUDE;LIB;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
 			// ignore non standard environments
 		} else {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
-			} else if(strncmp(tmp, "TEMP=", 5) == 0 && temp_path[0] != '\0') {
-				sprintf(tmp, "TEMP=%s", temp_path);
-			} else if(strncmp(tmp, "TMP=",  4) == 0 && temp_path[0] != '\0') {
-				sprintf(tmp, "TMP=%s", temp_path);
-			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
-				tmp[value_pos] = '\0';
-				char *token = my_strtok(value, ";");
-				while(token != NULL) {
-					if(strlen(token) != 0) {
-						char *path = msdos_remove_double_quote(token), short_path[MAX_PATH];
-						if(strlen(path) != 0) {
-							if(GetShortPathName(path, short_path, MAX_PATH) == 0) {
-								strcat(tmp, path);
-							} else {
-								strcat(tmp, short_path);
-							}
-							strcat(tmp, ";");
-						}
-					}
-					token = my_strtok(NULL, ";");
+			} else if(strncmp(tmp, "MSDOS_PATH=",  11) == 0) {
+				if(env_msdos_path[0] != '\0') {
+					sprintf(tmp, "MSDOS_PATH=%s", env_msdos_path);
+				} else {
+					sprintf(tmp, "MSDOS_PATH=%s", msdos_get_multiple_short_path(tmp + 11));
 				}
-				tmp[strlen(tmp) - 1] = '\0';
-				my_strupr(tmp);
+			} else if(strncmp(tmp, "PATH=",  5) == 0) {
+				if(env_path[0] != '\0') {
+					sprintf(tmp, "PATH=%s", env_path);
+				} else {
+					sprintf(tmp, "PATH=%s", msdos_get_multiple_short_path(tmp + 5));
+				}
+			} else if(strncmp(tmp, "TEMP=", 5) == 0) {
+				if(env_temp[0] != '\0') {
+					sprintf(tmp, "TEMP=%s", env_temp);
+				} else {
+					sprintf(tmp, "TEMP=%s", msdos_get_multiple_short_path(tmp + 5));
+				}
+			} else if(strncmp(tmp, "TMP=",  4) == 0) {
+				if(env_temp[0] != '\0') {
+					sprintf(tmp, "TMP=%s", env_temp);
+				} else {
+					sprintf(tmp, "TMP=%s", msdos_get_multiple_short_path(tmp + 4));
+				}
 			}
 			int len = strlen(tmp);
 			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
@@ -11245,8 +11512,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_nls_tables_init();
 	
 	// execute command
-	if(msdos_process_exec(argv[0], param, 0)) {
-		fatalerror("'%s' not found\n", argv[0]);
+	try {
+		if(msdos_process_exec(argv[0], param, 0)) {
+			fatalerror("'%s' not found\n", argv[0]);
+		}
+	} catch(...) {
+		// we should not reach here :-(
+		fatalerror("failed to start '%s' because of unexpected exeption\n", argv[0]);
 	}
 	retval = 0;
 	return(0);
@@ -11318,11 +11590,28 @@ void hardware_finish()
 	sio_finish();
 }
 
+void hardware_release()
+{
+	// release hardware resources when this program will be terminated abnormally
+#ifdef EXPORT_DEBUG_TO_FILE
+	if(fdebug != NULL) {
+		fclose(fdebug);
+		fdebug = NULL;
+	}
+#endif
+#if defined(HAS_I386)
+	vtlb_free(m_vtlb);
+#endif
+	ems_release();
+	sio_release();
+}
+
 void hardware_run()
 {
 	int ops = 0;
 	
 #ifdef EXPORT_DEBUG_TO_FILE
+	// open debug log file after msdos_init() is done not to use the standard file handlers
 	fdebug = fopen("debug.log", "w");
 #endif
 	while(!m_halted) {
@@ -11390,7 +11679,10 @@ void hardware_run()
 		}
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
-	fclose(fdebug);
+	if(fdebug != NULL) {
+		fclose(fdebug);
+		fdebug = NULL;
+	}
 #endif
 }
 
@@ -11484,8 +11776,13 @@ void ems_init()
 
 void ems_finish()
 {
+	ems_release();
+}
+
+void ems_release()
+{
 	for(int i = 0; i < MAX_EMS_HANDLES; i++) {
-		if(ems_handles[i].buffer) {
+		if(ems_handles[i].buffer != NULL) {
 			free(ems_handles[i].buffer);
 			ems_handles[i].buffer = NULL;
 		}
@@ -12289,6 +12586,7 @@ void sio_finish()
 		if(sio_mt[c].hThread != NULL) {
 			WaitForSingleObject(sio_mt[c].hThread, INFINITE);
 			CloseHandle(sio_mt[c].hThread);
+			sio_mt[c].hThread = NULL;
 		}
 		DeleteCriticalSection(&sio_mt[c].csSendData);
 		DeleteCriticalSection(&sio_mt[c].csRecvData);
@@ -12296,11 +12594,26 @@ void sio_finish()
 		DeleteCriticalSection(&sio_mt[c].csLineStat);
 		DeleteCriticalSection(&sio_mt[c].csModemCtrl);
 		DeleteCriticalSection(&sio_mt[c].csModemStat);
-		
-		sio[c].send_buffer->release();
-		delete sio[c].send_buffer;
-		sio[c].recv_buffer->release();
-		delete sio[c].recv_buffer;
+	}
+	sio_release();
+}
+
+void sio_release()
+{
+	for(int c = 0; c < 2; c++) {
+		// sio_thread() may access the resources :-(
+		if(sio_mt[c].hThread == NULL) {
+			if(sio[c].send_buffer != NULL) {
+				sio[c].send_buffer->release();
+				delete sio[c].send_buffer;
+				sio[c].send_buffer = NULL;
+			}
+			if(sio[c].recv_buffer != NULL) {
+				sio[c].recv_buffer->release();
+				delete sio[c].recv_buffer;
+				sio[c].recv_buffer = NULL;
+			}
+		}
 	}
 }
 
