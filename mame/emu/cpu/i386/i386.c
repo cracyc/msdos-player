@@ -165,8 +165,13 @@ static void i386_load_segment_descriptor(int segment )
 		m_sreg[segment].d = 0;
 		m_sreg[segment].valid = true;
 
-		if( segment == CS && !m_performed_intersegment_jump )
-			m_sreg[segment].base |= 0xfff00000;
+		if( segment == CS )
+		{
+			if( !m_performed_intersegment_jump )
+				m_sreg[segment].base |= 0xfff00000;
+			if(m_cpu_version < 0x5000)
+				m_sreg[segment].flags = 0x93;
+		}
 	}
 }
 
@@ -1639,7 +1644,8 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 		}
 		if (operand32 != 0)  // if 32-bit
 		{
-			if(i386_limit_check(SS, REG32(ESP) - 8))
+			UINT32 offset = (STACK_32BIT ? REG32(ESP) - 8 : (REG16(SP) - 8) & 0xffff);
+			if(i386_limit_check(SS, offset))
 			{
 				logerror("CALL (%08x): Stack has no room for return address.\n",m_pc);
 				FAULT(FAULT_SS,0)  // #SS(0)
@@ -1647,7 +1653,8 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 		}
 		else
 		{
-			if(i386_limit_check(SS, (REG16(SP) - 4) & 0xffff))
+			UINT32 offset = (STACK_32BIT ? REG32(ESP) - 4 : (REG16(SP) - 4) & 0xffff);
+			if(i386_limit_check(SS, offset))
 			{
 				logerror("CALL (%08x): Stack has no room for return address.\n",m_pc);
 				FAULT(FAULT_SS,0)  // #SS(0)
@@ -1897,7 +1904,8 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 					/* same privilege */
 					if (operand32 != 0)  // if 32-bit
 					{
-						if(i386_limit_check(SS, REG32(ESP) - 8))
+						UINT32 stkoff = (STACK_32BIT ? REG32(ESP) - 8 : (REG16(SP) - 8) & 0xffff);
+						if(i386_limit_check(SS, stkoff))
 						{
 							logerror("CALL: Stack has no room for return address.\n");
 							FAULT(FAULT_SS,0) // #SS(0)
@@ -1907,7 +1915,8 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 					}
 					else
 					{
-						if(i386_limit_check(SS, (REG16(SP) - 4) & 0xffff))
+						UINT32 stkoff = (STACK_32BIT ? REG32(ESP) - 4 : (REG16(SP) - 4) & 0xffff);
+						if(i386_limit_check(SS, stkoff))
 						{
 							logerror("CALL: Stack has no room for return address.\n");
 							FAULT(FAULT_SS,0) // #SS(0)
@@ -2124,7 +2133,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 				FAULT(FAULT_SS,0)
 			}
 		}
-		if(operand32 == 0)
+		if(STACK_32BIT)
 			REG16(SP) += (4+count);
 		else
 			REG32(ESP) += (8+count);
@@ -3227,12 +3236,12 @@ static CPU_RESET( i386 )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x9b;
+	m_sreg[CS].flags    = 0x93;
 	m_sreg[CS].valid    = true;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 	m_sreg[DS].valid = m_sreg[ES].valid = m_sreg[FS].valid = m_sreg[GS].valid = m_sreg[SS].valid =true;
 
 	m_idtr.base = 0;
@@ -3341,7 +3350,7 @@ static void pentium_smi()
 	m_sreg[CS].selector = 0x3000; // pentium only, ppro sel = smbase >> 4
 	m_sreg[CS].base = m_smbase;
 	m_sreg[CS].limit = 0xffffffff;
-	m_sreg[CS].flags = 0x809b;
+	m_sreg[CS].flags = 0x8093;
 	m_sreg[CS].valid = true;
 	m_cr[4] = 0;
 	m_dr[7] = 0x400;
@@ -3519,11 +3528,11 @@ static CPU_RESET( i486 )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3575,11 +3584,11 @@ static CPU_RESET( pentium )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3647,11 +3656,11 @@ static CPU_RESET( mediagx )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3711,11 +3720,11 @@ static CPU_RESET( pentium_pro )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3784,11 +3793,11 @@ static CPU_RESET( pentium_mmx )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3856,11 +3865,11 @@ static CPU_RESET( pentium2 )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3922,11 +3931,11 @@ static CPU_RESET( pentium3 )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;
@@ -3990,11 +3999,11 @@ static CPU_RESET( pentium4 )
 	m_sreg[CS].selector = 0xf000;
 	m_sreg[CS].base     = 0xffff0000;
 	m_sreg[CS].limit    = 0xffff;
-	m_sreg[CS].flags    = 0x009b;
+	m_sreg[CS].flags    = 0x0093;
 
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffff;
-	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0092;
+	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x0093;
 
 	m_idtr.base = 0;
 	m_idtr.limit = 0x3ff;

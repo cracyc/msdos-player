@@ -1,5 +1,5 @@
 Based on MAME 0.152.
-Fixes in MAME 0.154 to 0.185 are applied.
+Fixes in MAME 0.154 to 0.197 are applied.
 
 i386_state are removed and all its members are changed to global variables.
 All registers can be accessed directly without cpustate->.

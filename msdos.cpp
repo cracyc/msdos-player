@@ -771,6 +771,7 @@ int m_exit = 0;
 #if defined(HAS_I386)
 	static CPU_TRANSLATE(i386);
 	#include "mame/lib/softfloat/softfloat.c"
+	#include "mame/lib/softfloat/fsincos.c"
 	#include "mame/emu/cpu/i386/i386.c"
 	#include "mame/emu/cpu/vtlb.c"
 #elif defined(HAS_I286)
