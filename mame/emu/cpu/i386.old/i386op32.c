@@ -1,5 +1,3 @@
-// license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
 static UINT32 I386OP(shift_rotate32)(UINT8 modrm, UINT32 value, UINT8 shift)
 {
 	UINT32 dst, src;

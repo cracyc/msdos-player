@@ -1,5 +1,3 @@
-// license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
 /*
     Intel 386 emulator
 
@@ -2796,16 +2794,9 @@ static void report_invalid_modrm(const char* opcode, UINT8 modrm)
 /* Forward declarations */
 static void I386OP(decode_opcode)();
 static void I386OP(decode_two_byte)();
-static void I386OP(decode_three_byte38)();
-static void I386OP(decode_three_byte3a)();
 static void I386OP(decode_three_byte66)();
 static void I386OP(decode_three_bytef2)();
 static void I386OP(decode_three_bytef3)();
-static void I386OP(decode_four_byte3866)();
-static void I386OP(decode_four_byte3a66)();
-static void I386OP(decode_four_byte38f2)();
-static void I386OP(decode_four_byte3af2)();
-static void I386OP(decode_four_byte38f3)();
 
 
 
@@ -2830,7 +2821,7 @@ static void I386OP(decode_opcode)()
 		m_opcode_table1_16[m_opcode]();
 }
 
-/* Two-byte opcode 0f xx */
+/* Two-byte opcode prefix */
 static void I386OP(decode_two_byte)()
 {
 	m_opcode = FETCH();
@@ -2844,29 +2835,7 @@ static void I386OP(decode_two_byte)()
 		m_opcode_table2_16[m_opcode]();
 }
 
-/* Three-byte opcode 0f 38 xx */
-static void I386OP(decode_three_byte38)()
-{
-	m_opcode = FETCH();
-
-	if (m_operand_size)
-		m_opcode_table338_32[m_opcode]();
-	else
-		m_opcode_table338_16[m_opcode]();
-}
-
-/* Three-byte opcode 0f 3a xx */
-static void I386OP(decode_three_byte3a)()
-{
-	m_opcode = FETCH();
-
-	if (m_operand_size)
-		m_opcode_table33a_32[m_opcode]();
-	else
-		m_opcode_table33a_16[m_opcode]();
-}
-
-/* Three-byte opcode prefix 66 0f xx */
+/* Three-byte opcode prefix 66 0f */
 static void I386OP(decode_three_byte66)()
 {
 	m_opcode = FETCH();
@@ -2876,7 +2845,7 @@ static void I386OP(decode_three_byte66)()
 		m_opcode_table366_16[m_opcode]();
 }
 
-/* Three-byte opcode prefix f2 0f xx */
+/* Three-byte opcode prefix f2 0f */
 static void I386OP(decode_three_bytef2)()
 {
 	m_opcode = FETCH();
@@ -2895,57 +2864,6 @@ static void I386OP(decode_three_bytef3)()
 	else
 		m_opcode_table3f3_16[m_opcode]();
 }
-
-/* Four-byte opcode prefix 66 0f 38 xx */
-static void I386OP(decode_four_byte3866)()
-{
-	m_opcode = FETCH();
-	if (m_operand_size)
-		m_opcode_table46638_32[m_opcode]();
-	else
-		m_opcode_table46638_16[m_opcode]();
-}
-
-/* Four-byte opcode prefix 66 0f 3a xx */
-static void I386OP(decode_four_byte3a66)()
-{
-	m_opcode = FETCH();
-	if (m_operand_size)
-		m_opcode_table4663a_32[m_opcode]();
-	else
-		m_opcode_table4663a_16[m_opcode]();
-}
-
-/* Four-byte opcode prefix f2 0f 38 xx */
-static void I386OP(decode_four_byte38f2)()
-{
-	m_opcode = FETCH();
-	if (m_operand_size)
-		m_opcode_table4f238_32[m_opcode]();
-	else
-		m_opcode_table4f238_16[m_opcode]();
-}
-
-/* Four-byte opcode prefix f2 0f 3a xx */
-static void I386OP(decode_four_byte3af2)()
-{
-	m_opcode = FETCH();
-	if (m_operand_size)
-		m_opcode_table4f23a_32[m_opcode]();
-	else
-		m_opcode_table4f23a_16[m_opcode]();
-}
-
-/* Four-byte opcode prefix f3 0f 38 xx */
-static void I386OP(decode_four_byte38f3)()
-{
-	m_opcode = FETCH();
-	if (m_operand_size)
-		m_opcode_table4f338_32[m_opcode]();
-	else
-		m_opcode_table4f338_16[m_opcode]();
-}
-
 
 /*************************************************************************/
 
@@ -3057,41 +2975,6 @@ static void build_opcode_table(UINT32 features)
 			{
 				m_opcode_table3f3_32[op->opcode] = op->handler32;
 				m_opcode_table3f3_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_3BYTE38)
-			{
-				m_opcode_table338_32[op->opcode] = op->handler32;
-				m_opcode_table338_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_3BYTE3A)
-			{
-				m_opcode_table33a_32[op->opcode] = op->handler32;
-				m_opcode_table33a_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_4BYTE3866)
-			{
-				m_opcode_table46638_32[op->opcode] = op->handler32;
-				m_opcode_table46638_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_4BYTE3A66)
-			{
-				m_opcode_table4663a_32[op->opcode] = op->handler32;
-				m_opcode_table4663a_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_4BYTE38F2)
-			{
-				m_opcode_table4f238_32[op->opcode] = op->handler32;
-				m_opcode_table4f238_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_4BYTE3AF2)
-			{
-				m_opcode_table4f23a_32[op->opcode] = op->handler32;
-				m_opcode_table4f23a_16[op->opcode] = op->handler16;
-			}
-			else if (op->flags & OP_4BYTE38F3)
-			{
-				m_opcode_table4f338_32[op->opcode] = op->handler32;
-				m_opcode_table4f338_16[op->opcode] = op->handler16;
 			}
 			else
 			{

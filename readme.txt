@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/28/2015
+								4/24/2015
 
 ----- What's this
 
@@ -315,7 +315,7 @@ INT 2FH		Multiplex Interrupt
 ----- Thanks
 
 80286 code is based on MAME 0.149.
-80386 code is based on MAME 0.152 and fixes in MAME 0.154/0.157 are applied.
+80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.160 are applied.
 
 INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
 are based on DOSBox.

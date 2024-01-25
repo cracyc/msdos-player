@@ -1,5 +1,3 @@
-// license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
 #pragma once
 
 #ifndef __I386_H__
@@ -438,26 +436,12 @@ union XMM_REG {
 	void (*m_opcode_table1_32[256])();
 	void (*m_opcode_table2_16[256])();
 	void (*m_opcode_table2_32[256])();
-	void (*m_opcode_table338_16[256])();
-	void (*m_opcode_table338_32[256])();
-	void (*m_opcode_table33a_16[256])();
-	void (*m_opcode_table33a_32[256])();
 	void (*m_opcode_table366_16[256])();
 	void (*m_opcode_table366_32[256])();
 	void (*m_opcode_table3f2_16[256])();
 	void (*m_opcode_table3f2_32[256])();
 	void (*m_opcode_table3f3_16[256])();
 	void (*m_opcode_table3f3_32[256])();
-	void (*m_opcode_table46638_16[256])();
-	void (*m_opcode_table46638_32[256])();
-	void (*m_opcode_table4f238_16[256])();
-	void (*m_opcode_table4f238_32[256])();
-	void (*m_opcode_table4f338_16[256])();
-	void (*m_opcode_table4f338_32[256])();
-	void (*m_opcode_table4663a_16[256])();
-	void (*m_opcode_table4663a_32[256])();
-	void (*m_opcode_table4f23a_16[256])();
-	void (*m_opcode_table4f23a_32[256])();
 
 	bool m_lock_table[2][256];
 

@@ -1,5 +1,3 @@
-// license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
 static UINT16 I386OP(shift_rotate16)(UINT8 modrm, UINT32 value, UINT8 shift)
 {
 	UINT32 src = value & 0xffff;
@@ -3337,7 +3335,7 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					ea = GetEA(modrm,1);
 				}
 				WRITE16(ea, m_gdtr.limit);
-				WRITE32(ea + 2, m_gdtr.base);
+				WRITE32(ea + 2, m_gdtr.base & 0xffffff);
 				CYCLES(CYCLES_SGDT);
 				break;
 			}
@@ -3353,7 +3351,7 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					ea = GetEA(modrm,1);
 				}
 				WRITE16(ea, m_idtr.limit);
-				WRITE32(ea + 2, m_idtr.base);
+				WRITE32(ea + 2, m_idtr.base & 0xffffff);
 				CYCLES(CYCLES_SIDT);
 				break;
 			}
