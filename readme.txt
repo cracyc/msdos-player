@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/9/2017
+								6/16/2017
 
 ----- What's this
 
@@ -428,6 +428,8 @@ INT 10H		PC BIOS - Video
 	130*H	Write String
 	1310H	Read Characters and Standard Attributes
 	1311H	Read Characters and Extended Attributes
+	1312H	Write Characters and Standard Attributes (???)
+	1313H	Write Characters and Extended Attributes (???)
 	1320H	Write Characters and Standard Attributes
 	1321H	Write Characters and Extended Attributes
 	1A00H	Get Display Combination Code
@@ -606,6 +608,7 @@ INT 21H		MS-DOS System Call
 	43FFH	Windows98 - Extended-Length File Name Operations
 	4400H	Get Device Information
 	4401H	Set Device Information
+	4402H	Read From Character Device Control Channel
 	4406H	Get Input Status
 	4407H	Get Output Status
 	4408H	Device Removable Query
@@ -649,6 +652,7 @@ INT 21H		MS-DOS System Call
 	5AH	Create Unique File
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
+	5D00H	Server Function Call
 	5D06H	Get Address of DOS Swappable Data Area
 	5D0AH	Set Extended Error Information
 	5E00H	Get Machine Name
@@ -701,6 +705,7 @@ INT 21H		MS-DOS System Call
 	71A6H	Windows95 - LFN - Get File Information by Handle
 	71A7H	Windows95 - LFN - Convert File Time/DOS Time
 	71A8H	Windows95 - LFN - Generate Short File Name
+	71A9H	Windows95 - LFN - Extended Server Open/Create
 	71AAH	Windows95 - LFN - Create/Terminate/Query SUBST
 	7300H	Windows95 - FAT32 - Get Drive Locking
 	7302H	Windows95 - FAT32 - Get Extended DPB
@@ -914,6 +919,7 @@ are applied.
 INT 15H AH=84H (Joystick Support),
 INT 15H AH=87H (Copy Extended Memory),
 INT 15H AH=89H (Switch to Protected Mode),
+INT 21H AX=4402H (Read From Character Device Control Channel),
 INT 33H AX=001FH (Disable Mouse Driver),
 INT 33H AX=0020H (Enable Mouse Driver),
 and some DOS info block improvements are based on DOSBox.

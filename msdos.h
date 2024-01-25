@@ -728,12 +728,18 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define UMB_END		0xf8000
 #define SHADOW_BUF_TOP	0xf8000
 #define EMB_TOP		0x10fff0
+//#define EMB_TOP	0x128000 // MEM.EXE invites this value???
 #define EMB_END		MAX_MEM
 
 UINT32 IRET_TOP = 0;
 #define IRET_SIZE	0x100
 UINT32 XMS_TOP = 0;
-#define XMS_SIZE	0x20	/* 18 + 6 + 7 */
+// XMS_TOP + 0x000	EMMXXXX0 driver
+// XMS_TOP + 0x012	EMS dummy routine
+// XMS_TOP + 0x015	XMS dummy routine
+// XMS_TOP + 0x018	EMMXXXX0 ioctrl recv buffer
+// XMS_TOP + 0x1b9	EMMXXXX0 driver dummy routine (at XMS_TOP + XMS_SIZE - 7)
+#define XMS_SIZE	0x1c0	/* 18 + 6 + 413 + 7 */
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000

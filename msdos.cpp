@@ -852,7 +852,7 @@ void debugger_init()
 	memset(&int_break_point, 0, sizeof(int_break_point_t));
 }
 
-void telnet_send(char *string)
+void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
 	strcpy(buffer, string);
@@ -2091,7 +2091,7 @@ DWORD WINAPI debugger_thread(LPVOID)
 		if(bind_stat == 0) {
 			timeout.tv_sec = 1;
 			timeout.tv_usec = 0;
-			setsockopt(svr_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+			setsockopt(svr_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
 			
 			listen(svr_socket, 1);
 			
@@ -2203,7 +2203,7 @@ DWORD WINAPI vram_thread(LPVOID)
 }
 #endif
 
-long get_section_in_exec_file(FILE *fp, char *name)
+long get_section_in_exec_file(FILE *fp, const char *name)
 {
 	UINT8 header[0x400];
 	
@@ -3565,7 +3565,7 @@ void msdos_putch(UINT8 data);
 #ifdef USE_SERVICE_THREAD
 void msdos_putch_tmp(UINT8 data);
 #endif
-char *msdos_short_path(char *path);
+const char *msdos_short_path(const char *path);
 bool msdos_is_valid_drive(int drv);
 bool msdos_is_removable_drive(int drv);
 bool msdos_is_cdrom_drive(int drv);
@@ -3692,7 +3692,7 @@ void msdos_cds_update(int drv)
 	cds->bs_offset = 2;
 }
 
-void msdos_cds_update(int drv, char *path)
+void msdos_cds_update(int drv, const char *path)
 {
 	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
 	
@@ -3878,12 +3878,12 @@ int msdos_kanji_2nd_byte_check(UINT8 *buf, int n)
 
 // file control
 
-char *msdos_remove_double_quote(char *path)
+const char *msdos_remove_double_quote(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
-	memset(tmp, 0, sizeof(tmp));
 	if(strlen(path) >= 2 && path[0] == '"' && path[strlen(path) - 1] == '"') {
+		memset(tmp, 0, sizeof(tmp));
 		memcpy(tmp, path + 1, strlen(path) - 2);
 	} else {
 		strcpy(tmp, path);
@@ -3891,22 +3891,23 @@ char *msdos_remove_double_quote(char *path)
 	return(tmp);
 }
 
-char *msdos_remove_end_separator(char *path)
+const char *msdos_remove_end_separator(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
 	strcpy(tmp, path);
-	int len = strlen(tmp);
-	if(len > 3 && tmp[len - 1] == '\\') {
-		tmp[len - 1] = '\0';
+	
+	// for example "C:\" case, the end separator should not be removed
+	if(strlen(tmp) > 3 && tmp[strlen(tmp) - 1] == '\\') {
+		tmp[strlen(tmp) - 1] = '\0';
 	}
 	return(tmp);
 }
 
-char *msdos_combine_path(char *dir, const char *file)
+const char *msdos_combine_path(const char *dir, const char *file)
 {
 	static char tmp[MAX_PATH];
-	char *tmp_dir = msdos_remove_double_quote(dir);
+	const char *tmp_dir = msdos_remove_double_quote(dir);
 	
 	if(strlen(tmp_dir) == 0) {
 		strcpy(tmp, file);
@@ -3918,7 +3919,7 @@ char *msdos_combine_path(char *dir, const char *file)
 	return(tmp);
 }
 
-char *msdos_trimmed_path(char *path, int lfn)
+const char *msdos_trimmed_path(const char *path, int lfn)
 {
 	static char tmp[MAX_PATH];
 	
@@ -3926,7 +3927,8 @@ char *msdos_trimmed_path(char *path, int lfn)
 		strcpy(tmp, path);
 	} else {
 		// remove space in the path
-		char *src = path, *dst = tmp;
+		const char *src = path;
+		char *dst = tmp;
 		
 		while(*src != '\0') {
 			if(msdos_lead_byte_check(*src)) {
@@ -3988,7 +3990,7 @@ char *msdos_trimmed_path(char *path, int lfn)
 	return(tmp);
 }
 
-char *msdos_get_multiple_short_path(char *src)
+const char *msdos_get_multiple_short_path(const char *src)
 {
 	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
 	static char env_path[ENV_SIZE];
@@ -4000,7 +4002,8 @@ char *msdos_get_multiple_short_path(char *src)
 	
 	while(token != NULL) {
 		if(token[0] != '\0') {
-			char *path = msdos_remove_double_quote(token), short_path[MAX_PATH];
+			const char *path = msdos_remove_double_quote(token);
+			char short_path[MAX_PATH];
 			if(path != NULL && strlen(path) != 0) {
 				if(env_path[0] != '\0') {
 					strcat(env_path, ";");
@@ -4018,7 +4021,7 @@ char *msdos_get_multiple_short_path(char *src)
 	return(env_path);
 }
 
-bool match(char *text, char *pattern)
+bool match(const char *text, const char *pattern)
 {
 	// http://www.prefield.com/algorithm/string/wildcard.html
 	switch(*pattern) {
@@ -4033,9 +4036,9 @@ bool match(char *text, char *pattern)
 	}
 }
 
-bool msdos_match_volume_label(char *path, char *volume)
+bool msdos_match_volume_label(const char *path, const char *volume)
 {
-	char *p;
+	const char *p = NULL;
 	
 	if(!*volume) {
 		return false;
@@ -4052,7 +4055,7 @@ bool msdos_match_volume_label(char *path, char *volume)
 	}
 }
 
-char *msdos_fcb_path(fcb_t *fcb)
+const char *msdos_fcb_path(fcb_t *fcb)
 {
 	static char tmp[MAX_PATH];
 	char name[9], ext[4];
@@ -4079,7 +4082,7 @@ char *msdos_fcb_path(fcb_t *fcb)
 	return(tmp);
 }
 
-void msdos_set_fcb_path(fcb_t *fcb, char *path)
+void msdos_set_fcb_path(fcb_t *fcb, const char *path)
 {
 	char *ext = my_strchr(path, '.');
 	
@@ -4091,7 +4094,7 @@ void msdos_set_fcb_path(fcb_t *fcb, char *path)
 	memcpy(fcb->file_name, path, strlen(path));
 }
 
-char *msdos_short_path(char *path)
+const char *msdos_short_path(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
@@ -4102,10 +4105,10 @@ char *msdos_short_path(char *path)
 	return(tmp);
 }
 
-char *msdos_short_name(WIN32_FIND_DATA *fd)
+const char *msdos_short_name(WIN32_FIND_DATA *fd)
 {
 	static char tmp[MAX_PATH];
-
+	
 	if(fd->cAlternateFileName[0]) {
 		strcpy(tmp, fd->cAlternateFileName);
 	} else {
@@ -4115,7 +4118,7 @@ char *msdos_short_name(WIN32_FIND_DATA *fd)
 	return(tmp);
 }
 
-char *msdos_short_full_path(char *path)
+const char *msdos_short_full_path(const char *path)
 {
 	static char tmp[MAX_PATH];
 	char full[MAX_PATH], *name;
@@ -4137,7 +4140,7 @@ char *msdos_short_full_path(char *path)
 	return(tmp);
 }
 
-char *msdos_short_full_dir(char *path)
+const char *msdos_short_full_dir(const char *path)
 {
 	static char tmp[MAX_PATH];
 	char full[MAX_PATH], *name;
@@ -4151,9 +4154,11 @@ char *msdos_short_full_dir(char *path)
 	return(tmp);
 }
 
-char *msdos_local_file_path(char *path, int lfn)
+const char *msdos_local_file_path(const char *path, int lfn)
 {
-	char *trimmed = msdos_trimmed_path(path, lfn);
+	static char trimmed[MAX_PATH];
+	
+	strcpy(trimmed, msdos_trimmed_path(path, lfn));
 #if 0
 	// I have forgotten the reason of this routine... :-(
 	if(_access(trimmed, 0) != 0) {
@@ -4169,7 +4174,7 @@ char *msdos_local_file_path(char *path, int lfn)
 	return(trimmed);
 }
 
-bool msdos_is_device_path(char *path)
+bool msdos_is_device_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
@@ -4210,7 +4215,7 @@ bool msdos_is_device_path(char *path)
 	return(false);
 }
 
-bool msdos_is_con_path(char *path)
+bool msdos_is_con_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
@@ -4220,7 +4225,7 @@ bool msdos_is_con_path(char *path)
 	return(false);
 }
 
-int msdos_is_comm_path(char *path)
+int msdos_is_comm_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
@@ -4238,10 +4243,10 @@ int msdos_is_comm_path(char *path)
 	return(0);
 }
 
-void msdos_set_comm_params(int sio_port, char *path)
+void msdos_set_comm_params(int sio_port, const char *path)
 {
 	// COM1:{110,150,300,600,1200,2400,4800,9600},{N,O,E,M,S},{8,7,6,5},{1,1.5,2}
-	char *p = NULL;
+	const char *p = NULL;
 	
 	if((p = strstr(path, ":")) != NULL) {
 		UINT8 selector = sio_read(sio_port - 1, 3);
@@ -4292,7 +4297,7 @@ void msdos_set_comm_params(int sio_port, char *path)
 	}
 }
 
-int msdos_is_prn_path(char *path)
+int msdos_is_prn_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
@@ -4356,7 +4361,7 @@ bool msdos_is_subst_drive(int drv)
 	return(false);
 }
 
-bool msdos_is_existing_file(char *path)
+bool msdos_is_existing_file(const char *path)
 {
 	// http://d.hatena.ne.jp/yu-hr/20100317/1268826458
 	WIN32_FIND_DATA FindData;
@@ -4369,7 +4374,7 @@ bool msdos_is_existing_file(char *path)
 	return(false);
 }
 
-char *msdos_search_command_com(char *command_path, char *env_path)
+const char *msdos_search_command_com(const char *command_path, const char *env_path)
 {
 	static char tmp[MAX_PATH];
 	char path[ENV_SIZE], *file_name;
@@ -4416,15 +4421,18 @@ int msdos_drive_number(const char *path)
 {
 	char tmp[MAX_PATH], *name;
 	
-	GetFullPathName(path, MAX_PATH, tmp, &name);
-	if(tmp[0] >= 'a' && tmp[0] <= 'z') {
-		return(tmp[0] - 'a');
-	} else {
-		return(tmp[0] - 'A');
+	if(GetFullPathName(path, MAX_PATH, tmp, &name) >= 2 && tmp[1] == ':') {
+		if(tmp[0] >= 'a' && tmp[0] <= 'z') {
+			return(tmp[0] - 'a');
+		} else if(tmp[0] >= 'A' && tmp[0] <= 'Z') {
+			return(tmp[0] - 'A');
+		}
 	}
+//	return(msdos_drive_number("."));
+	return(_getdrive() - 1);
 }
 
-char *msdos_volume_label(char *path)
+const char *msdos_volume_label(const char *path)
 {
 	static char tmp[MAX_PATH];
 	char volume[] = "A:\\";
@@ -4440,10 +4448,10 @@ char *msdos_volume_label(char *path)
 	return(tmp);
 }
 
-char *msdos_short_volume_label(char *label)
+const char *msdos_short_volume_label(const char *label)
 {
 	static char tmp[(8 + 1 + 3) + 1];
-	char *src = label;
+	const char *src = label;
 	int remain = strlen(label);
 	char *dst_n = tmp;
 	char *dst_e = tmp + 9;
@@ -4548,10 +4556,10 @@ errno_t msdos_maperr(unsigned long oserrno)
 	return EINVAL;
 }
 
-int msdos_open(const char *filename, int oflag)
+int msdos_open(const char *path, int oflag)
 {
 	if((oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)) != _O_RDONLY) {
-		return _open(filename, oflag);
+		return(_open(path, oflag));
 	}
 	
 	SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, !(oflag & _O_NOINHERIT) };
@@ -4577,18 +4585,18 @@ int msdos_open(const char *filename, int oflag)
 		break;
 	}
 	
-	HANDLE h = CreateFile(filename, GENERIC_READ | FILE_WRITE_ATTRIBUTES,
+	HANDLE h = CreateFile(path, GENERIC_READ | FILE_WRITE_ATTRIBUTES,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, disposition,
 		FILE_ATTRIBUTE_NORMAL, NULL);
 	if(h == INVALID_HANDLE_VALUE) {
 		// FILE_WRITE_ATTRIBUTES may not be granted for standard users.
 		// Retry without FILE_WRITE_ATTRIBUTES.
-		h = CreateFile(filename, GENERIC_READ,
+		h = CreateFile(path, GENERIC_READ,
 			FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, disposition,
 			FILE_ATTRIBUTE_NORMAL, NULL);
 		if(h == INVALID_HANDLE_VALUE) {
 			errno = msdos_maperr(GetLastError());
-			return -1;
+			return(-1);
 		}
 	}
 	
@@ -4596,7 +4604,59 @@ int msdos_open(const char *filename, int oflag)
 	if(fd == -1) {
 		CloseHandle(h);
 	}
-	return fd;
+	return(fd);
+}
+
+int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
+{
+	int fd = -1;
+	
+	*sio_port = *lpt_port = 0;
+	
+	if(msdos_is_con_path(path)) {
+		// MODE.COM opens CON device with read/write mode :-(
+		if((oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)) == _O_RDWR) {
+			oflag &= ~(_O_RDONLY | _O_WRONLY | _O_RDWR);
+			oflag |= _O_RDONLY;
+		}
+		if((fd = msdos_open("CON", oflag)) == -1) {
+//			fd = msdos_open("NUL", oflag);
+		}
+	} else if((*sio_port = msdos_is_comm_path(path)) != 0) {
+		fd = msdos_open("NUL", oflag);
+		msdos_set_comm_params(*sio_port, path);
+	} else if((*lpt_port = msdos_is_prn_path(path)) != 0) {
+		fd = msdos_open("NUL", oflag);
+	} else if(msdos_is_device_path(path)) {
+		fd = msdos_open("NUL", oflag);
+//	} else if(oflag & _O_CREAT) {
+//		fd = _open(path, oflag, _S_IREAD | _S_IWRITE);
+//	} else {
+//		fd = _open(path, oflag);
+	}
+	return(fd);
+}
+
+UINT16 msdos_device_info(const char *path)
+{
+	if(msdos_is_con_path(path)) {
+		return(0x80d3);
+	} else if(msdos_is_comm_path(path)) {
+		return(0x80a0);
+	} else if(msdos_is_prn_path(path)) {
+//		return(0xa8c0);
+		return(0x80a0);
+	} else if(msdos_is_device_path(path)) {
+		if(strstr(path, "EMMXXXX0") != NULL) {
+			return(0xc0c0);
+		} else if(strstr(path, "MSCD001") != NULL) {
+			return(0xc880);
+		} else {
+			return(0x8084);
+		}
+	} else {
+		return(msdos_drive_number(path));
+	}
 }
 
 void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg, int sio_port, int lpt_port)
@@ -4612,10 +4672,13 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	// isatty makes no distinction between CON & NUL
 	// GetFileSize fails on CON, succeeds on NUL
 	if(atty && (info != 0x80d3 || GetFileSize((HANDLE)_get_osfhandle(fd), NULL) == 0)) {
-		info = 0x8084;
+		if(info == 0x80d3) {
+			info = 0x8084;
+		}
 		atty = 0;
 	} else if(!atty && info == 0x80d3) {
-		info = msdos_drive_number(".");
+//		info = msdos_drive_number(".");
+		info = msdos_drive_number(path);
 	}
 	file_handler[fd].valid = 1;
 	file_handler[fd].id = id++;	// dummy id for int 21h ax=71a6h
@@ -4777,7 +4840,8 @@ void msdos_stdio_reopen()
 	}
 	if(!file_handler[4].valid) {
 		_dup2(DUP_STDPRN, 4);
-		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
+//		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0x80a0, 0, 0, 1); // LPT1
 	}
 	for(int i = 0; i < 5; i++) {
 		if(msdos_psp_get_file_table(i, current_psp) == 0xff) {
@@ -5366,7 +5430,7 @@ void msdos_prn_out(char data)
 
 // memory control
 
-mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, char *prog_name)
+mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, const char *prog_name)
 {
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	
@@ -5721,7 +5785,7 @@ int msdos_hma_mem_get_free(int *available_offset)
 
 // environment
 
-void msdos_env_set_argv(int env_seg, char *argv)
+void msdos_env_set_argv(int env_seg, const char *argv)
 {
 	char *dst = (char *)(mem + (env_seg << 4));
 	
@@ -5740,7 +5804,7 @@ void msdos_env_set_argv(int env_seg, char *argv)
 	*dst++ = 0;
 }
 
-char *msdos_env_get_argv(int env_seg)
+const char *msdos_env_get_argv(int env_seg)
 {
 	static char env[ENV_SIZE];
 	char *src = env;
@@ -5758,7 +5822,7 @@ char *msdos_env_get_argv(int env_seg)
 	return(NULL);
 }
 
-char *msdos_env_get(int env_seg, const char *name)
+const char *msdos_env_get(int env_seg, const char *name)
 {
 	static char env[ENV_SIZE];
 	char *src = env;
@@ -5780,12 +5844,12 @@ char *msdos_env_get(int env_seg, const char *name)
 	return(NULL);
 }
 
-void msdos_env_set(int env_seg, char *name, char *value)
+void msdos_env_set(int env_seg, const char *name, const char *value)
 {
 	char env[ENV_SIZE];
 	char *src = env;
 	char *dst = (char *)(mem + (env_seg << 4));
-	char *argv = msdos_env_get_argv(env_seg);
+	const char *argv = msdos_env_get_argv(env_seg);
 	int done = 0;
 	
 	memcpy(src, dst, ENV_SIZE);
@@ -5884,10 +5948,12 @@ int msdos_psp_get_file_table(int fd, int psp_seg)
 	return fd;
 }
 
-int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
+int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al)
 {
 	// load command file
 	int fd = -1;
+	int sio_port = 0;
+	int lpt_port = 0;
 	int dos_command = 0;
 	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name = NULL, name_tmp[MAX_PATH];
 	char pipe_stdin_path[MAX_PATH] = {0};
@@ -6058,7 +6124,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				} else {
 					// search path in parent environments
 					psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
-					char *env = msdos_env_get(parent_psp->env_seg, "PATH");
+					const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
 					if(env != NULL) {
 						char env_path[4096];
 						strcpy(env_path, env);
@@ -6264,9 +6330,14 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		
 		// pipe
 		if(pipe_stdin_path[0] != '\0') {
-			if((fd = _open(pipe_stdin_path, _O_RDONLY | _O_BINARY)) != -1) {
-				UINT16 info = msdos_drive_number(pipe_stdin_path);
-				msdos_file_handler_open(fd, pipe_stdin_path, _isatty(fd), 0, info, current_psp);
+//			if((fd = _open(pipe_stdin_path, _O_RDONLY | _O_BINARY)) != -1) {
+			if(msdos_is_device_path(pipe_stdin_path)) {
+				fd = msdos_open_device(pipe_stdin_path, _O_RDONLY | _O_BINARY, &sio_port, &lpt_port);
+			} else {
+				fd = _open(pipe_stdin_path, _O_RDONLY | _O_BINARY);
+			}
+			if(fd != -1) {
+				msdos_file_handler_open(fd, pipe_stdin_path, _isatty(fd), 0, msdos_device_info(pipe_stdin_path), current_psp, sio_port, lpt_port);
 				psp->file_table[0] = fd;
 				msdos_psp_set_file_table(fd, fd, current_psp);
 			}
@@ -6276,9 +6347,14 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				SetFileAttributes(pipe_stdout_path, FILE_ATTRIBUTE_NORMAL);
 				DeleteFile(pipe_stdout_path);
 			}
-			if((fd = _open(pipe_stdout_path, _O_WRONLY | _O_BINARY | _O_CREAT)) != -1) {
-				UINT16 info = msdos_drive_number(pipe_stdout_path);
-				msdos_file_handler_open(fd, pipe_stdout_path, _isatty(fd), 1, info, current_psp);
+//			if((fd = _open(pipe_stdout_path, _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE)) != -1) {
+			if(msdos_is_device_path(pipe_stdout_path)) {
+				fd = msdos_open_device(pipe_stdout_path, _O_WRONLY | _O_BINARY, &sio_port, &lpt_port);
+			} else {
+				fd = _open(pipe_stdout_path, _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+			}
+			if(fd != -1) {
+				msdos_file_handler_open(fd, pipe_stdout_path, _isatty(fd), 1, msdos_device_info(pipe_stdout_path), current_psp, sio_port, lpt_port);
 				psp->file_table[1] = fd;
 				msdos_psp_set_file_table(fd, fd, current_psp);
 			}
@@ -6288,9 +6364,14 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				SetFileAttributes(pipe_stderr_path, FILE_ATTRIBUTE_NORMAL);
 				DeleteFile(pipe_stderr_path);
 			}
-			if((fd = _open(pipe_stderr_path, _O_WRONLY | _O_BINARY | _O_CREAT)) != -1) {
-				UINT16 info = msdos_drive_number(pipe_stderr_path);
-				msdos_file_handler_open(fd, pipe_stderr_path, _isatty(fd), 2, info, current_psp);
+//			if((fd = _open(pipe_stderr_path, _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE)) != -1) {
+			if(msdos_is_device_path(pipe_stderr_path)) {
+				fd = msdos_open_device(pipe_stderr_path, _O_WRONLY | _O_BINARY, &sio_port, &lpt_port);
+			} else {
+				fd = _open(pipe_stdout_path, _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
+			}
+			if(fd != -1) {
+				msdos_file_handler_open(fd, pipe_stderr_path, _isatty(fd), 1, msdos_device_info(pipe_stderr_path), current_psp, sio_port, lpt_port);
 				psp->file_table[2] = fd;
 				msdos_psp_set_file_table(fd, fd, current_psp);
 			}
@@ -7133,7 +7214,7 @@ inline void pcbios_int_10h_13h()
 			for(int i = 0; i < num; i++) {
 				mem[ofs++] = scr_char[i];
 				mem[ofs++] = scr_attr[i];
-				if(REG8(AL) == 0x11) {
+				if(REG8(AL) & 0x01) {
 					mem[ofs++] = 0;
 					mem[ofs++] = 0;
 				}
@@ -7142,7 +7223,7 @@ inline void pcbios_int_10h_13h()
 			for(int i = 0, src = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
 				mem[ofs++] = mem[src++];
 				mem[ofs++] = mem[src++];
-				if(REG8(AL) == 0x11) {
+				if(REG8(AL) & 0x01) {
 					mem[ofs++] = 0;
 					mem[ofs++] = 0;
 				}
@@ -7155,6 +7236,8 @@ inline void pcbios_int_10h_13h()
 			}
 		}
 		break;
+	case 0x12: // ???
+	case 0x13: // ???
 	case 0x20:
 	case 0x21:
 		if(mem[0x462] == REG8(BH)) {
@@ -7163,7 +7246,7 @@ inline void pcbios_int_10h_13h()
 			for(int i = 0; i < len; i++) {
 				scr_char[i] = mem[ofs++];
 				scr_attr[i] = mem[ofs++];
-				if(REG8(AL) == 0x21) {
+				if(REG8(AL) & 0x01) {
 					ofs += 2;
 				}
 			}
@@ -7173,7 +7256,7 @@ inline void pcbios_int_10h_13h()
 			for(int i = 0, dest = pcbios_get_shadow_buffer_address(REG8(BH), co.X, co.Y - scr_top); i < REG16(CX); i++) {
 				mem[dest++] = mem[ofs++];
 				mem[dest++] = mem[ofs++];
-				if(REG8(AL) == 0x21) {
+				if(REG8(AL) & 0x01) {
 					ofs += 2;
 				}
 				if(++co.X == scr_width) {
@@ -8986,7 +9069,7 @@ inline void msdos_int_21h_0fh()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
-	char *path = msdos_fcb_path(fcb);
+	const char *path = msdos_fcb_path(fcb);
 	HANDLE hFile = CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
@@ -9018,7 +9101,7 @@ inline void msdos_int_21h_11h()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	ext_fcb_t *ext_find = (ext_fcb_t *)(mem + dta_laddr);
 	find_fcb_t *find = (find_fcb_t *)(mem + dta_laddr + (ext_fcb->flag == 0xff ? 7 : 0));
-	char *path = msdos_fcb_path(fcb);
+	const char *path = msdos_fcb_path(fcb);
 	WIN32_FIND_DATA fd;
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, dta_laddr);
@@ -9205,7 +9288,7 @@ inline void msdos_int_21h_16h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
-	char *path = msdos_fcb_path(fcb);
+	const char *path = msdos_fcb_path(fcb);
 	HANDLE hFile = CreateFile(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, ext_fcb->flag == 0xff ? ext_fcb->attribute : FILE_ATTRIBUTE_NORMAL, NULL);
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
@@ -9224,10 +9307,15 @@ inline void msdos_int_21h_17h()
 {
 	ext_fcb_t *ext_fcb_src = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb_src = (fcb_t *)(ext_fcb_src + (ext_fcb_src->flag == 0xff ? 1 : 0));
-	char *path_src = msdos_fcb_path(fcb_src);
+//	const char *path_src = msdos_fcb_path(fcb_src);
+	char path_src[MAX_PATH];
+	strcpy(path_src, msdos_fcb_path(fcb_src));
+	
 	ext_fcb_t *ext_fcb_dst = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX) + 16);
 	fcb_t *fcb_dst = (fcb_t *)(ext_fcb_dst + (ext_fcb_dst->flag == 0xff ? 1 : 0));
-	char *path_dst = msdos_fcb_path(fcb_dst);
+//	const char *path_dst = msdos_fcb_path(fcb_dst);
+	char path_dst[MAX_PATH];
+	strcpy(path_dst, msdos_fcb_path(fcb_dst));
 	
 	if(rename(path_src, path_dst)) {
 		REG8(AL) = 0xff;
@@ -9367,7 +9455,7 @@ inline void msdos_int_21h_23h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
-	char *path = msdos_fcb_path(fcb);
+	const char *path = msdos_fcb_path(fcb);
 	HANDLE hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
@@ -10130,7 +10218,7 @@ inline void msdos_int_21h_3ah(int lfn)
 
 inline void msdos_int_21h_3bh(int lfn)
 {
-	char *path = msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn);
+	const char *path = msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn);
 	
 	if(_chdir(path)) {
 		REG16(AX) = 3;	// must be 3 (path not found)
@@ -10150,29 +10238,16 @@ inline void msdos_int_21h_3bh(int lfn)
 
 inline void msdos_int_21h_3ch()
 {
-	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
+	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int attr = GetFileAttributes(path);
 	int fd = -1;
-	UINT16 info;
 	int sio_port = 0;
 	int lpt_port = 0;
 	
-	if(msdos_is_con_path(path)) {
-		fd = _open("CON", _O_WRONLY | _O_BINARY);
-		info = 0x80d3;
-	} else if((sio_port = msdos_is_comm_path(path)) != 0) {
-		fd = _open("NUL", _O_RDWR | _O_BINARY);
-		info = 0x80d3;
-		msdos_set_comm_params(sio_port, path);
-	} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
-		fd = _open("NUL", _O_WRONLY | _O_BINARY);
-		info = 0xa8c0;
-	} else if(msdos_is_device_path(path)) {
-		fd = _open("NUL", _O_WRONLY | _O_BINARY);
-		info = 0x80d3;
+	if(msdos_is_device_path(path)) {
+		fd = msdos_open_device(path, _O_WRONLY | _O_BINARY, &sio_port, &lpt_port);
 	} else {
 		fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
-		info = msdos_drive_number(path);
 	}
 	if(fd != -1) {
 		if(attr == -1) {
@@ -10180,7 +10255,7 @@ inline void msdos_int_21h_3ch()
 		}
 		SetFileAttributes(path, attr);
 		REG16(AX) = fd;
-		msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp, sio_port, lpt_port);
+		msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_device_info(path), current_psp, sio_port, lpt_port);
 		msdos_psp_set_file_table(fd, fd, current_psp);
 	} else {
 		REG16(AX) = errno;
@@ -10190,34 +10265,21 @@ inline void msdos_int_21h_3ch()
 
 inline void msdos_int_21h_3dh()
 {
-	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
+	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int mode = REG8(AL) & 0x03;
 	int fd = -1;
-	UINT16 info;
 	int sio_port = 0;
 	int lpt_port = 0;
 	
 	if(mode < 0x03) {
-		if(msdos_is_con_path(path)) {
-			fd = msdos_open("CON", file_mode[mode].mode);
-			info = 0x80d3;
-		} else if((sio_port = msdos_is_comm_path(path)) != 0) {
-			fd = msdos_open("NUL", file_mode[mode].mode);
-			info = 0x80d3;
-			msdos_set_comm_params(sio_port, path);
-		} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
-			fd = _open("NUL", file_mode[mode].mode);
-			info = 0xa8c0;
-		} else if(msdos_is_device_path(path)) {
-			fd = msdos_open("NUL", file_mode[mode].mode);
-			info = 0x80d3;
+		if(msdos_is_device_path(path)) {
+			fd = msdos_open_device(path, file_mode[mode].mode, &sio_port, &lpt_port);
 		} else {
 			fd = msdos_open(path, file_mode[mode].mode);
-			info = msdos_drive_number(path);
 		}
 		if(fd != -1) {
 			REG16(AX) = fd;
-			msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp, sio_port, lpt_port);
+			msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_device_info(path), current_psp, sio_port, lpt_port);
 			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
 			REG16(AX) = errno;
@@ -10438,7 +10500,7 @@ inline void msdos_int_21h_42h()
 
 inline void msdos_int_21h_43h(int lfn)
 {
-	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn);
+	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn);
 	int attr;
 	
 	if(!lfn && REG8(AL) > 2) {
@@ -10463,17 +10525,24 @@ inline void msdos_int_21h_43h(int lfn)
 		break;
 	case 0x02:
 		{
-			DWORD size = GetCompressedFileSize(path, NULL);
-			if(size != INVALID_FILE_SIZE) {
-				if(size != 0 && size == GetFileSize(path, NULL)) {
-					DWORD sectors_per_cluster, bytes_per_sector, free_clusters, total_clusters;
-					// this isn't correct if the file is in the NTFS MFT
-					if(GetDiskFreeSpace(path, &sectors_per_cluster, &bytes_per_sector, &free_clusters, &total_clusters)) {
-						size = ((size - 1) | (sectors_per_cluster * bytes_per_sector - 1)) + 1;
+			DWORD compressed_size = GetCompressedFileSize(path, NULL), file_size = 0;
+			if(compressed_size != INVALID_FILE_SIZE) {
+				if(compressed_size != 0) {
+					HANDLE hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+					if(hFile != INVALID_HANDLE_VALUE) {
+						file_size = GetFileSize(hFile, NULL);
+						CloseHandle(hFile);
+					}
+					if(compressed_size == file_size) {
+						DWORD sectors_per_cluster, bytes_per_sector, free_clusters, total_clusters;
+						// this isn't correct if the file is in the NTFS MFT
+						if(GetDiskFreeSpace(path, &sectors_per_cluster, &bytes_per_sector, &free_clusters, &total_clusters)) {
+							compressed_size = ((compressed_size - 1) | (sectors_per_cluster * bytes_per_sector - 1)) + 1;
+						}
 					}
 				}
-				REG16(AX) = LOWORD(size);
-				REG16(DX) = HIWORD(size);
+				REG16(AX) = LOWORD(compressed_size);
+				REG16(DX) = HIWORD(compressed_size);
 			} else {
 				REG16(AX) = (UINT16)GetLastError();
 				m_CF = 1;
@@ -10593,10 +10662,113 @@ inline void msdos_int_21h_44h()
 		REG16(DX) = file_handler[fd].info;
 		break;
 	case 0x01: // set ioctrl data
-		file_handler[fd].info |= REG8(DL);
+		if(REG8(DH) != 0) {
+//			REG16(AX) = 0x0d; // data invalid
+//			m_CF = 1;
+			file_handler[fd].info = REG16(DX);
+		} else {
+			file_handler[fd].info &= 0xff00;
+			file_handler[fd].info |= REG8(DL);
+		}
 		break;
 	case 0x02: // recv from character device
+		if(strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) {
+			// from DOSBox
+			switch(*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX))) {
+			case 0x00:
+				if(REG16(CX) >= 6) {
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 0x0023;
+					*(UINT32 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = 0x0000;
+					REG16(AX) = 6; // number of bytes actually read
+				} else {
+					REG16(AX) = 0x0d; // data invalid
+					m_CF = 1;
+				}
+				break;
+			case 0x01:
+				if(REG16(CX) >= 6) {
+					*(UINT16 *)(mem + XMS_TOP + 0x18 + 0x000) = 0x0004;	// flags
+					*(UINT16 *)(mem + XMS_TOP + 0x18 + 0x002) = 0x019d;	// size of this structure
+					*(UINT16 *)(mem + XMS_TOP + 0x18 + 0x004) = 0x0001;	// version 1.0
+					*(UINT32 *)(mem + XMS_TOP + 0x18 + 0x006) = 0x00000000;	// reserved
+					for(int addr = 0, ofs = 0x00a; addr < 0x100000; addr += 0x4000, ofs += 6) {
+						if(addr >= EMS_TOP && addr < EMS_TOP + EMS_SIZE) {
+							int page = (addr - EMS_TOP) / 0x4000;
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 0) = 0x03;	// frame type: EMS frame in 64k page
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 1) = 0xff;	// owner: NONE
+							*(UINT16 *)(mem + XMS_TOP + 0x18 + ofs + 2) = 0x7fff;	// no logical page number
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 4) = page;	// physical EMS page number
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 5) = 0x00;	// flags: EMS frame
+						} else {
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 0) = 0x00;	// frame type: NONE
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 1) = 0xff;	// owner: NONE
+							*(UINT16 *)(mem + XMS_TOP + 0x18 + ofs + 2) = 0xffff;	// non-EMS frame
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 4) = 0xff;	// EMS page number (NONE)
+							*(UINT8  *)(mem + XMS_TOP + 0x18 + ofs + 5) = 0xaa;	// flags: direct mapping
+						}
+					}
+					*(UINT8  *)(mem + XMS_TOP + 0x18 + 0x18a) = 0x74;	// ??
+					*(UINT8  *)(mem + XMS_TOP + 0x18 + 0x18b) = 0x00;	// no UMB descriptors following
+					*(UINT8  *)(mem + XMS_TOP + 0x18 + 0x18c) = 0x01;	// 1 EMS handle info record
+					*(UINT16 *)(mem + XMS_TOP + 0x18 + 0x17d) = 0x0000;	// system handle
+					*(UINT32 *)(mem + XMS_TOP + 0x18 + 0x18f) = 0x00000000;	// handle name
+					*(UINT32 *)(mem + XMS_TOP + 0x18 + 0x193) = 0x00000000;	// handle name
+					*(UINT16 *)(mem + XMS_TOP + 0x18 + 0x197) = 0x0001;	// system handle
+					*(UINT32 *)(mem + XMS_TOP + 0x18 + 0x199) = 0x00110000;	// physical address
+					
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 0x0018;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = XMS_TOP >> 4;;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 4) = 0x0001; // version 1.0
+					REG16(AX) = 6; // number of bytes actually read
+				} else {
+					REG16(AX) = 0x0d; // data invalid
+					m_CF = 1;
+				}
+				break;
+			case 0x02:
+				if(REG16(CX) >= 2) {
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 0x40; // EMS 4.0
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX) + 1) = 0x00;
+					REG16(AX) = 2; // number of bytes actually read
+				} else {
+					REG16(AX) = 0x0d; // data invalid
+					m_CF = 1;
+				}
+				break;
+			case 0x03:
+				if(REG16(CX) >= 4) {
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = MAX_EMS_PAGES * 16; // max size (kb)
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = 0x0080; // min size (kb)
+					REG16(AX) = 4; // number of bytes actually read
+				} else {
+					REG16(AX) = 0x0d; // data invalid
+					m_CF = 1;
+				}
+				break;
+			default:
+				REG16(AX) = 0x01; // function number invalid
+				m_CF = 1;
+			}
+		} else if(strstr(file_handler[fd].path, "CONFIG$") != NULL) {
+			if(REG16(CX) >= 5) {
+				memset(mem + SREG_BASE(DS) + REG16(DX), 0, 5);
+				REG16(AX) = 5; // number of bytes actually read
+			} else {
+				REG16(AX) = 0x0d; // data invalid
+				m_CF = 1;
+			}
+		} else {
+//			memset(mem + SREG_BASE(DS) + REG16(DX), 0, REG16(CX));
+//			REG16(AX) = REG16(CX);
+			REG16(AX) = 0x05; // access denied
+			m_CF = 1;
+		}
+		break;
 	case 0x03: // send to character device
+//		REG16(AX) = 0x05;
+//		m_CF = 1;
+		REG16(AX) = 0x00; // success
+		break;
 	case 0x04: // recv from block device
 	case 0x05: // send to block device
 		REG16(AX) = 0x05;
@@ -10642,7 +10814,11 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x0a: // check remote handle
-		REG16(DX) = 0x00; // FIXME
+		if(!(file_handler[fd].info & 0x8000) && msdos_is_remote_drive(msdos_drive_number(file_handler[fd].path))) {
+			REG16(DX) = 0x8000;
+		} else {
+			REG16(DX) = 0x0000;
+		}
 		break;
 	case 0x0b: // set retry count
 		break;
@@ -11036,11 +11212,14 @@ inline void msdos_int_21h_47h(int lfn)
 	char path[MAX_PATH];
 	
 	if(_getdcwd(REG8(DL), path, MAX_PATH) != NULL) {
+		if(!lfn) {
+			strcpy(path, msdos_short_path(path));
+		}
 		if(path[1] == ':') {
 			// the returned path does not include a drive or the initial backslash
-			strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), (lfn ? path : msdos_short_path(path)) + 3);
+			strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), path + 3);
 		} else {
-			strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), lfn ? path : msdos_short_path(path));
+			strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), path);
 		}
 	} else {
 		REG16(AX) = errno;
@@ -11190,7 +11369,7 @@ inline void msdos_int_21h_4eh()
 	process_t *process = msdos_process_info_get(current_psp);
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	find_t *find = (find_t *)(mem + dta_laddr);
-	char *path = msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
+	const char *path = msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	WIN32_FIND_DATA fd;
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, LFN_DTA_LADDR);
@@ -11515,9 +11694,10 @@ inline void msdos_int_21h_5ah()
 
 inline void msdos_int_21h_5bh()
 {
-	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
+	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	
-	if(msdos_is_existing_file(path)) {
+//	if(msdos_is_existing_file(path)) {
+	if(msdos_is_device_path(path) || msdos_is_existing_file(path)) {
 		// already exists
 		REG16(AX) = 0x50;
 		m_CF = 1;
@@ -11567,12 +11747,46 @@ inline void msdos_int_21h_5ch()
 inline void msdos_int_21h_5dh()
 {
 	switch(REG8(AL)) {
+	case 0x00:
+		if(*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x12) == 0x0000) {
+			// current system
+			static bool reenter = false;
+			if(!reenter) {
+				UINT32 offset = SREG_BASE(DS) + REG16(DX);
+				REG16(AX) = *(UINT16 *)(mem + offset + 0x00);
+				REG16(BX) = *(UINT16 *)(mem + offset + 0x02);
+				REG16(CX) = *(UINT16 *)(mem + offset + 0x04);
+				REG16(DX) = *(UINT16 *)(mem + offset + 0x06);
+				REG16(SI) = *(UINT16 *)(mem + offset + 0x08);
+				REG16(DI) = *(UINT16 *)(mem + offset + 0x0a);
+				SREG(DS)  = *(UINT16 *)(mem + offset + 0x0c);
+				SREG(ES)  = *(UINT16 *)(mem + offset + 0x0e);
+				i386_load_segment_descriptor(DS);
+				i386_load_segment_descriptor(ES);
+				reenter = true;
+				try {
+					msdos_syscall(0x21);
+				} catch(...) {
+				}
+				reenter = false;
+			}
+		} else {
+			REG16(AX) = 0x49; //  network software not installed
+			m_CF = 1;
+		}
+		break;
 	case 0x06: // get address of dos swappable data area
 		SREG(DS) = (SDA_TOP >> 4);
 		i386_load_segment_descriptor(DS);
 		REG16(SI) = offsetof(sda_t, crit_error_flag);
 		REG16(CX) = 0x80;
 		REG16(DX) = 0x1a;
+		break;
+	case 0x07: // get redirected printer mode
+	case 0x08: // set redirected printer mode
+	case 0x09: // flush redirected printer output
+		REG16(AX) = 0x49; //  network software not installed
+		m_CF = 1;
 		break;
 	case 0x0a: // set extended error information
 		{
@@ -11592,9 +11806,6 @@ inline void msdos_int_21h_5dh()
 	case 0x0b: // get dos swappable data areas
 		REG16(AX) = 0x01;
 		m_CF = 1;
-		break;
-	case 0x08: // set redirected printer mode
-	case 0x09: // flush redirected printer output
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -11627,8 +11838,9 @@ inline void msdos_int_21h_5eh()
 		}
 		break;
 	default:
-		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+//		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//		REG16(AX) = 0x01;
+		REG16(AX) = 0x49; //  network software not installed
 		m_CF = 1;
 		break;
 	}
@@ -11682,8 +11894,9 @@ inline void msdos_int_21h_5fh()
 		}
 		break;
 	default:
-		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
+//		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//		REG16(AX) = 0x01;
+		REG16(AX) = 0x49; //  network software not installed
 		m_CF = 1;
 		break;
 	}
@@ -11691,7 +11904,8 @@ inline void msdos_int_21h_5fh()
 
 inline void msdos_int_21h_60h(int lfn)
 {
-	char full[MAX_PATH], *path;
+	char full[MAX_PATH];
+	const char *path = NULL;
 	
 	if(lfn) {
 		char *name;
@@ -11867,11 +12081,11 @@ inline void msdos_int_21h_65h()
 		break;
 	case 0x23:
 		// FIXME: need to check multi-byte (kanji) charactre?
-		if(REG8(DL) == 'N' || REG8(DL) == 'n' || (REG8(DL) == 0x82 && REG8(DH) == 0x78) || (REG8(DL) == 0x82 && REG8(DH) == 0x99)) {
-			// 8278h/8299h: multi-byte (kanji) Y and y
-			REG16(AX) = 0x00;
-		} else if(REG8(DL) == 'Y' || REG8(DL) == 'y' || (REG8(DL) == 0x82 && REG8(DH) == 0x6d) || (REG8(DL) == 0x82 && REG8(DH) == 0x8e)) {
+		if(REG8(DL) == 'N' || REG8(DL) == 'n' || (REG8(DL) == 0x82 && REG8(DH) == 0x6d) || (REG8(DL) == 0x82 && REG8(DH) == 0x8e)) {
 			// 826dh/828eh: multi-byte (kanji) N and n
+			REG16(AX) = 0x00;
+		} else if(REG8(DL) == 'Y' || REG8(DL) == 'y' || (REG8(DL) == 0x82 && REG8(DH) == 0x78) || (REG8(DL) == 0x82 && REG8(DH) == 0x99)) {
+			// 8278h/8299h: multi-byte (kanji) Y and y
 			REG16(AX) = 0x01;
 		} else {
 			REG16(AX) = 0x02;
@@ -11970,6 +12184,12 @@ inline void msdos_int_21h_69h()
 	case 0x01:
 		REG16(AX) = 0x03;
 		m_CF = 1;
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
 	}
 }
 
@@ -11981,12 +12201,12 @@ inline void msdos_int_21h_6ah()
 
 inline void msdos_int_21h_6bh()
 {
-	REG8(AL) = 0;
+	REG8(AL) = 0x00;
 }
 
 inline void msdos_int_21h_6ch(int lfn)
 {
-	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(SI)), lfn);
+	const char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(SI)), lfn);
 	int mode = REG8(BL) & 0x03;
 	
 	if(mode < 0x03) {
@@ -11994,31 +12214,18 @@ inline void msdos_int_21h_6ch(int lfn)
 			// file exists
 			if(REG8(DL) & 1) {
 				int fd = -1;
-				UINT16 info;
 				int sio_port = 0;
 				int lpt_port = 0;
 				
-				if(msdos_is_con_path(path)) {
-					fd = msdos_open("CON", file_mode[mode].mode);
-					info = 0x80d3;
-				} else if((sio_port = msdos_is_comm_path(path)) != 0) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0x80d3;
-					msdos_set_comm_params(sio_port, path);
-				} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0xa8c0;
-				} else if(msdos_is_device_path(path)) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0x80d3;
+				if(msdos_is_device_path(path)) {
+					fd = msdos_open_device(path, file_mode[mode].mode, &sio_port, &lpt_port);
 				} else {
 					fd = msdos_open(path, file_mode[mode].mode);
-					info = msdos_drive_number(path);
 				}
 				if(fd != -1) {
 					REG16(AX) = fd;
 					REG16(CX) = 1;
-					msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp, sio_port, lpt_port);
+					msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_device_info(path), current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
@@ -12027,26 +12234,13 @@ inline void msdos_int_21h_6ch(int lfn)
 			} else if(REG8(DL) & 2) {
 				int attr = GetFileAttributes(path);
 				int fd = -1;
-				UINT16 info;
 				int sio_port = 0;
 				int lpt_port = 0;
 				
-				if(msdos_is_con_path(path)) {
-					fd = msdos_open("CON", file_mode[mode].mode);
-					info = 0x80d3;
-				} else if((sio_port = msdos_is_comm_path(path)) != 0) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0x80d3;
-					msdos_set_comm_params(sio_port, path);
-				} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0xa8c0;
-				} else if(msdos_is_device_path(path)) {
-					fd = msdos_open("NUL", file_mode[mode].mode);
-					info = 0x80d3;
+				if(msdos_is_device_path(path)) {
+					fd = msdos_open_device(path, file_mode[mode].mode, &sio_port, &lpt_port);
 				} else {
 					fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
-					info = msdos_drive_number(path);
 				}
 				if(fd != -1) {
 					if(attr == -1) {
@@ -12055,7 +12249,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					SetFileAttributes(path, attr);
 					REG16(AX) = fd;
 					REG16(CX) = 3;
-					msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp, sio_port, lpt_port);
+					msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_device_info(path), current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
@@ -14870,6 +15064,7 @@ inline void msdos_call_xms_00h()
 {
 #if defined(HAS_I386)
 	REG16(AX) = 0x0300; // V3.00 (XMS Version)
+//	REG16(BX) = 0x0395; // V3.95 (Driver Revision in BCD)
 	REG16(BX) = 0x035f; // V3.95 (Driver Revision)
 #else
 	REG16(AX) = 0x0200; // V2.00 (XMS Version)
@@ -14958,15 +15153,16 @@ inline void msdos_call_xms_05h()
 void msdos_call_xms_06h()
 {
 	if(xms_a20_local_enb_count > 0) {
-		xms_a20_local_enb_count--;
-	}
-	if(xms_a20_local_enb_count == 0) {
-		i386_set_a20_line(0);
-	}
-	if((m_a20_mask >> 20) & 1) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0x94;
+		if(--xms_a20_local_enb_count == 0) {
+			i386_set_a20_line(0);
+			REG16(AX) = 0x0001;
+			REG8(BL) = 0x00;
+		} else {
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0x94;
+		}
 	} else {
+		i386_set_a20_line(0);
 		REG16(AX) = 0x0001;
 		REG8(BL) = 0x00;
 	}
@@ -14980,22 +15176,34 @@ inline void msdos_call_xms_07h()
 
 inline void msdos_call_xms_08h()
 {
-	REG16(AX) = REG16(DX) = 0x0000;
+	UINT32 eax = 0, edx = 0;
 	
 	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
 		if(emb_handle->handle == 0) {
-			if(REG16(AX) < emb_handle->size_kb) {
-				REG16(AX) = emb_handle->size_kb;
+			if(eax < emb_handle->size_kb) {
+				eax = emb_handle->size_kb;
 			}
-			REG16(DX) += emb_handle->size_kb;
+			edx += emb_handle->size_kb;
 		}
 	}
-	
-	if(REG16(AX) == 0 && REG16(DX) == 0) {
+	if(eax > 65535) {
+		eax = 65535;
+	}
+	if(edx > 65535) {
+		edx = 65535;
+	}
+	if(eax == 0 && edx == 0) {
 		REG8(BL) = 0xa0;
 	} else {
 		REG8(BL) = 0x00;
 	}
+#if defined(HAS_I386)
+	REG32(EAX) = eax;
+	REG32(EDX) = edx;
+#else
+	REG16(AX) = (UINT16)eax;
+	REG16(DX) = (UINT16)edx;
+#endif
 	xms_dx_after_call_08h = REG16(DX);
 }
 
@@ -15027,9 +15235,9 @@ inline void msdos_call_xms_0ah()
 	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
-	} else if(emb_handle->lock > 0) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xab;
+//	} else if(emb_handle->lock > 0) {
+//		REG16(AX) = 0x0000;
+//		REG8(BL) = 0xab;
 	} else {
 		msdos_xms_free_emb_handle(emb_handle);
 		
@@ -15054,7 +15262,6 @@ inline void msdos_call_xms_0bh()
 		src_buffer = mem;
 		src_addr = (((src_addr >> 16) & 0xffff) << 4) + (src_addr & 0xffff);
 		src_addr_max = MAX_MEM;
-
 	} else {
 		if((emb_handle = msdos_xms_get_emb_handle(src_handle)) == NULL) {
 			REG16(AX) = 0x0000;
@@ -15096,9 +15303,10 @@ inline void msdos_call_xms_0ch()
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
 	} else {
-		emb_handle->lock++;
+		if(emb_handle->lock < 255) {
+			emb_handle->lock++;
+		}
 		REG16(AX) = 0x0001;
-		REG8(BL) = 0x00;
 		REG16(DX) = (emb_handle->address >> 16) & 0xffff;
 		REG16(BX) = (emb_handle->address      ) & 0xffff;
 	}
@@ -15250,7 +15458,6 @@ inline void msdos_call_xms_88h()
 			REG32(EDX) += emb_handle->size_kb;
 		}
 	}
-	
 	if(REG32(EAX) == 0 && REG32(EDX) == 0) {
 		REG8(BL) = 0xa0;
 	} else {
@@ -15325,14 +15532,15 @@ void msdos_syscall(unsigned num)
 #ifdef ENABLE_DEBUG_SYSCALL
 	if(num == 0x08 || num == 0x1c) {
 		// don't log the timer interrupts
+//		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x68) {
 		// dummy interrupt for EMS (int 67h)
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x69) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num == 0x6a) {
-		// dummy interrupt for case map routine pointed in the country info
+	} else if(num >= 0x6a && num < 0x70) {
+		// dummy interrupt
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
@@ -15778,7 +15986,7 @@ void msdos_syscall(unsigned num)
 				case 0xa6: msdos_int_21h_71a6h(); break;
 				case 0xa7: msdos_int_21h_71a7h(); break;
 				case 0xa8: msdos_int_21h_71a8h(); break;
-				// 0xa9: Server Create/Open File
+				case 0xa9: msdos_int_21h_6ch(1); break;
 				case 0xaa: msdos_int_21h_71aah(); break;
 				default:
 					unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -16263,7 +16471,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		msdos_file_handler_open(3, "STDAUX", 0, 2, 0x80c0, 0);
 	}
 	if(_open("NUL", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
-		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
+//		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0x80a0, 0, 0, 1); // LPT1
 	}
 	_dup2(0, DUP_STDIN);
 	_dup2(1, DUP_STDOUT);
@@ -16400,7 +16609,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	char prompt_added = 0;
 	char env_temp[ENV_SIZE] = {0}, temp_added = 0, tmp_added = 0;
 	char tz_added = 0;
-	char *path, *short_path;
+	const char *path, *short_path;
 	
 	if((path = getenv("MSDOS_APPEND")) != NULL) {
 		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
