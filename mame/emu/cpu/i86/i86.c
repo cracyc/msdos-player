@@ -50,6 +50,7 @@ union i8086basicregs
 	INT8 m_test_state;
 
 	int m_halted;         /* Is the CPU halted ? */
+	int m_int_num;
 
 	UINT16 m_ip;
 	UINT32 m_sp;

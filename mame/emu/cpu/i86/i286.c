@@ -70,6 +70,7 @@ union i80286basicregs
 
 	int m_halted;         /* Is the CPU halted ? */
 	int m_trap_level;
+	int m_int_num;
 
 	char m_seg_prefix;
 	UINT8   m_prefix_seg;

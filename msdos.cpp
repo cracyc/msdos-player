@@ -2830,7 +2830,9 @@ int main(int argc, char *argv[], char *envp[])
 	InitializeCriticalSection(&input_crit_sect);
 	InitializeCriticalSection(&key_buf_crit_sect);
 	InitializeCriticalSection(&putch_crit_sect);
+	main_thread_id = GetCurrentThreadId();
 #endif
+	
 	key_buf_char = new FIFO(256);
 	key_buf_scan = new FIFO(256);
 	
@@ -3580,6 +3582,7 @@ static const struct {
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
 void msdos_putch(UINT8 data);
+void msdos_putch_fast(UINT8 data);
 #ifdef USE_SERVICE_THREAD
 void msdos_putch_tmp(UINT8 data);
 #endif
@@ -5086,6 +5089,63 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 }
 
 void msdos_putch(UINT8 data)
+{
+	static bool reenter = false;
+	
+	msdos_stdio_reopen();
+	
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(1, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
+		// stdout is redirected to file
+		msdos_write(fd, &data, 1);
+		return;
+	}
+	
+	// call int 29h ?
+	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
+		// int 29h is not hooked, no need to call int 29h
+		msdos_putch_fast(data);
+#ifdef USE_SERVICE_THREAD
+	} else if(in_service && main_thread_id != GetCurrentThreadId()) {
+		// XXX: in usually we should not reach here
+		// this is called from service thread to echo the input
+		// we can not call int 29h because it causes a critial issue to control cpu running in main thread :-(
+		msdos_putch_fast(data);
+#endif
+	} else if(reenter) {
+		// disallow reentering call int 29h routine to prevent an infinite loop :-(
+		msdos_putch_fast(data);
+	} else {
+		// this is called from main thread, so we can call int 29h :-)
+		reenter = true;
+		try {
+			UINT32 tmp_pc = m_pc;
+			UINT16 tmp_ax = REG16(AX);
+			UINT32 tmp_bx = REG16(BX); // BX may be destroyed by some versions of DOS 3.3
+			
+			// call int 29h routine is at fffc:0027
+			i386_call_far(DUMMY_TOP >> 4, 0x0027);
+			REG8(AL) = data;
+			
+			// run cpu until call int 29h routine is done
+			while(!m_halted && tmp_pc != m_pc) {
+				try {
+					hardware_run_cpu();
+				} catch(...) {
+				}
+			}
+			REG16(AX) = tmp_ax;
+			REG16(BX) = tmp_bx;
+		} catch(...) {
+		}
+		reenter = false;
+	}
+}
+
+void msdos_putch_fast(UINT8 data)
 #ifdef USE_SERVICE_THREAD
 {
 	EnterCriticalSection(&putch_crit_sect);
@@ -5106,16 +5166,6 @@ void msdos_putch_tmp(UINT8 data)
 	static WORD stored_a;
 	static char tmp[64], out[64];
 	
-	msdos_stdio_reopen();
-	
-	process_t *process = msdos_process_info_get(current_psp);
-	int fd = msdos_psp_get_file_table(1, current_psp);
-	
-	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
-		// stdout is redirected to file
-		msdos_write(fd, &data, 1);
-		return;
-	}
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	
 	// output to console
@@ -8816,10 +8866,17 @@ DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 inline void msdos_int_21h_01h()
 {
 #ifdef USE_SERVICE_THREAD
-	start_service_loop(msdos_int_21h_01h_thread);
-#else
-	msdos_int_21h_01h_thread(NULL);
-	REQUEST_HARDWRE_UPDATE();
+	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
+		// msdos_putch() will be used in this service
+		// if int 29h is hooked, run this service in main thread to call int 29h
+		start_service_loop(msdos_int_21h_01h_thread);
+	} else {
+#endif
+		msdos_int_21h_01h_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+	}
 #endif
 }
 
@@ -9018,10 +9075,17 @@ inline void msdos_int_21h_0ah()
 {
 	if(mem[SREG_BASE(DS) + REG16(DX)] != 0x00) {
 #ifdef USE_SERVICE_THREAD
-		start_service_loop(msdos_int_21h_0ah_thread);
-#else
-		msdos_int_21h_0ah_thread(NULL);
-		REQUEST_HARDWRE_UPDATE();
+		if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+		   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
+			// msdos_putch() will be used in this service
+			// if int 29h is hooked, run this service in main thread to call int 29h
+			start_service_loop(msdos_int_21h_0ah_thread);
+		} else {
+#endif
+			msdos_int_21h_0ah_thread(NULL);
+			REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+		}
 #endif
 	}
 }
@@ -10435,10 +10499,17 @@ inline void msdos_int_21h_3fh()
 				// BX is stdin or is redirected to stdin
 				if(REG16(CX) != 0) {
 #ifdef USE_SERVICE_THREAD
-					start_service_loop(msdos_int_21h_3fh_thread);
-#else
-					msdos_int_21h_3fh_thread(NULL);
-					REQUEST_HARDWRE_UPDATE();
+					if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+					   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
+						// msdos_putch() will be used in this service
+						// if int 29h is hooked, run this service in main thread to call int 29h
+						start_service_loop(msdos_int_21h_3fh_thread);
+					} else {
+#endif
+						msdos_int_21h_3fh_thread(NULL);
+						REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+					}
 #endif
 				} else {
 					REG16(AX) = 0;
@@ -10894,8 +10965,18 @@ inline void msdos_int_21h_44h()
 			// end code-page preparation
 			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 2;
 			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = active_code_page;
-//		} else if(REG8(CL) == 0x5f) {
-//			// set display information
+		} else if(REG8(CL) == 0x5f) {
+			// set display information
+			if(*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) >= 14) {
+				int cur_width  = *(UINT16 *)(mem + 0x44a) + 0;
+				int cur_height = *(UINT8  *)(mem + 0x484) + 1;
+				int new_width  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e);	// character columns
+				int new_height = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10);	// character rows
+				
+				if(cur_width != new_width || cur_height != new_height) {
+					pcbios_set_console_size(new_width, new_height, true);
+				}
+			}
 		} else if(REG8(CL) == 0x65) {
 			// get iteration (retry) count
 			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX)) = iteration_count;
@@ -10942,17 +11023,17 @@ inline void msdos_int_21h_44h()
 			}
 		} else if(REG8(CL) == 0x7f) {
 			// get display information
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a));
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a);
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;	// level (0 for DOS 4.x-6.0)
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;	// reserved (0)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;	// length of following data (14)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;	// bit 0 set for blink, clear for intensity
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;	// mode type (1=text, 2=graphics)
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;	// reserved (0)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;	// 4 bits per pixel
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a) + 0);	// pixel columns
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);	// pixel rows
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a) + 0;		// character columns
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;		// character rows
 		} else {
 			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01; // invalid function
@@ -13069,15 +13150,7 @@ inline void msdos_int_27h()
 
 inline void msdos_int_29h()
 {
-#if 1
-	// need to check escape sequences
-	msdos_putch(REG8(AL));
-#else
-	DWORD num;
-	vram_flush();
-	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), &REG8(AL), 1, &num, NULL);
-	cursor_moved = true;
-#endif
+	msdos_putch_fast(REG8(AL));
 }
 
 inline void msdos_int_2eh()
@@ -13714,21 +13787,31 @@ inline void msdos_int_2fh_1ah()
 		REG8(AL) = 0xff;
 		break;
 	case 0x01:
-		if(REG8(CL) == 0x7f) {
+		if(REG8(CL) == 0x5f) {
+			// set display information
+			if(*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) >= 14) {
+				int cur_width  = *(UINT16 *)(mem + 0x44a) + 0;
+				int cur_height = *(UINT8  *)(mem + 0x484) + 1;
+				int new_width  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e);	// character columns
+				int new_height = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10);	// character rows
+				
+				if(cur_width != new_width || cur_height != new_height) {
+					pcbios_set_console_size(new_width, new_height, true);
+				}
+			}
+		} else if(REG8(CL) == 0x7f) {
 			// get display information
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;
-			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a));
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a);
-			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;
-//		} else if(REG8(CL) == 0x5f) {
-//			// set display information
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;	// level (0 for DOS 4.x-6.0)
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;	// reserved (0)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;	// length of following data (14)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;	// bit 0 set for blink, clear for intensity
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;	// mode type (1=text, 2=graphics)
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;	// reserved (0)
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;	// 4 bits per pixel
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a) + 0);	// pixel columns
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);	// pixel rows
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a) + 0;		// character columns
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;		// character rows
 		} else {
 			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01;
@@ -16035,17 +16118,17 @@ void msdos_syscall(unsigned num)
 	if(num == 0x08 || num == 0x1c) {
 		// don't log the timer interrupts
 //		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+	} else if(num == 0x30) {
+		// dummy interrupt for call 0005h (call near)
+		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x68) {
 		// dummy interrupt for EMS (int 67h)
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else if(num == 0x69) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num >= 0x6a && num < 0x6f) {
+	} else if(num >= 0x6a && num <= 0x6f) {
 		// dummy interrupt
-	} else if(num == 0x6f) {
-		// dummy interrupt for call 0005h (call near)
-		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
@@ -16055,6 +16138,10 @@ void msdos_syscall(unsigned num)
 		pcbios_update_cursor_position();
 		cursor_moved = false;
 	}
+#ifdef USE_SERVICE_THREAD
+	// this is called from dummy loop to wait until a serive that waits input is done
+	if(!in_service)
+#endif
 	ctrl_break_detected = ctrl_break_pressed = ctrl_c_pressed = false;
 	
 	switch(num) {
@@ -16767,6 +16854,12 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
+/*
+	case 0x67:
+		// int 67h handler is in EMS device driver (EMMXXXX0) and it calls int 68h
+		// NOTE: some softwares get address of int 67h handler and recognize the address is in EMS device driver
+		break;
+*/
 	case 0x68:
 		// dummy interrupt for EMS (int 67h)
 		switch(REG8(AH)) {
@@ -17585,7 +17678,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x16] = 0xfc;
 	mem[DUMMY_TOP + 0x17] = 0xcb;	// retf
 	
-	// irq0 routine (system time)
+	// irq0 routine (system timer)
 	mem[DUMMY_TOP + 0x18] = 0xcd;	// int 1ch
 	mem[DUMMY_TOP + 0x19] = 0x1c;
 	mem[DUMMY_TOP + 0x1a] = 0xea;	// jmp far (IRET_TOP >> 4):0008
@@ -17603,6 +17696,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 6fh (dummy)
 	mem[DUMMY_TOP + 0x25] = 0x6f;
 	mem[DUMMY_TOP + 0x26] = 0xcb;	// retf
+	
+	// call int 29h routine
+	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
+	mem[DUMMY_TOP + 0x28] = 0x29;
+	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
 	
 	// boot routine
 	mem[0xffff0 + 0x00] = 0xf4;	// halt
@@ -17786,26 +17884,15 @@ void hardware_release()
 
 void hardware_run()
 {
+	m_halted = 0;
+	m_int_num = -1;
+	
 #ifdef EXPORT_DEBUG_TO_FILE
 	// open debug log file after msdos_init() is done not to use the standard file handlers
 	fp_debug_log = fopen("debug.log", "w");
 #endif
 	while(!m_halted) {
-#if defined(HAS_I386)
-		CPU_EXECUTE_CALL(i386);
-		if(m_eip != m_prev_eip) {
-			idle_ops++;
-		}
-#else
-		CPU_EXECUTE_CALL(CPU_MODEL);
-		if(m_pc != m_prevpc) {
-			idle_ops++;
-		}
-#endif
-		if(++update_ops == UPDATE_OPS) {
-			hardware_update();
-			update_ops = 0;
-		}
+		hardware_run_cpu();
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
 	if(fp_debug_log != NULL) {
@@ -17813,6 +17900,33 @@ void hardware_run()
 		fp_debug_log = NULL;
 	}
 #endif
+}
+
+inline void hardware_run_cpu()
+{
+#if defined(HAS_I386)
+	CPU_EXECUTE_CALL(i386);
+	if(m_eip != m_prev_eip) {
+		idle_ops++;
+	}
+#else
+	CPU_EXECUTE_CALL(CPU_MODEL);
+	if(m_pc != m_prevpc) {
+		idle_ops++;
+	}
+#endif
+#ifdef USE_DEBUGGER
+	// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+	if(m_int_num >= 0) {
+		unsigned num = (unsigned)m_int_num;
+		m_int_num = -1;
+		msdos_syscall(num);
+	}
+#endif
+	if(++update_ops == UPDATE_OPS) {
+		update_ops = 0;
+		hardware_update();
+	}
 }
 
 void hardware_update()

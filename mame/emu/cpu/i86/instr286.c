@@ -847,9 +847,15 @@ static void PREFIX286(_iret)()
 	UINT16 flags = i80286_far_return(1, 0);
 	i80286_load_flags(flags, oldcpl);
 
-	// MS-DOS system call
+	// Emulate system call on MS-DOS Player
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
+#ifdef USE_DEBUGGER
+		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+		m_int_num = (old - IRET_TOP);
+#else
+		// Call msdos_syscall() here for better processing speed
 		msdos_syscall(old - IRET_TOP);
+#endif
 	}
 }
 

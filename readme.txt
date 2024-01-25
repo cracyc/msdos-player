@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/12/2017
+								7/14/2017
 
 ----- What's this
 
@@ -364,7 +364,7 @@ They are very similar to DEBUG command, and some break point functions
 
 ----- Supported hardwares
 
-This emulator provides a very simple IBM PC compatible hardware emulation:
+This emulator provides a very simple IBM PC-like hardware emulation:
 
 CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
 PC BIOS, DMA Controller (dummy), Interrupt Controller, System Timer,
@@ -390,8 +390,8 @@ NOTE:
 0C0000H -	EMS Page Frame (64K)
 0D0000H -	Upper Memory Block (160KB)
 ----------
-0F8000H -	V-TEXT Shadow Buffer (32KB-48B)
-0FFFD0H		Dummy BIOS/DOS/Driver Service Routines
+0F8000H -	V-TEXT Shadow Buffer (32KB-64B)
+0FFFC0H -	Dummy BIOS/DOS/Driver Service Routines
 0FFFF0H -	CPU Boot Address
 100000H -	Upper Memory (15MB/31MB)
 
@@ -775,7 +775,7 @@ INT 2FH		Multiplex Interrupt
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1A00H	ANSI.SYS - Installation Check
-	1A01H	ANSI.SYS - Get Display Information (CL=7Fh)
+	1A01H	ANSI.SYS - Set/Get Display Information
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 	4300H	XMS - Installation Check
 	4308H	HIMEM.SYS - Get A20 Handler Number
@@ -884,6 +884,8 @@ INT 67H		LIM EMS
 	7000H	EMS - Get Page Frame Status (NEC PC-9801 Only ???)
 	7001H	EMS - Enable/Disable Page Frame (NEC PC-9801 Only ???)
 
+INT 68H-6FH	Used for Dummy BIOS/DOS/Driver Service Routines
+
 CALL FAR XMS
 
 	00H	XMS - Get XMS Version Number (*9)
@@ -921,6 +923,18 @@ CALL FAR XMS
 (*9) XMS Version: 3.95
 
 
+----- INT 29H limitations
+
+When INT 21H/2FH service outputs a character to console, INT 29H is called.
+
+If INT 21H/2FH service that outputs a character to console is called
+in INT 29H handler, INT 29H is not called again to prevent an infinite loop.
+
+If INT 29H handler is hooked by your software, the virtual CPU is suspended
+and a timer interrupt never be raised while waiting inputs from console in
+INT 21H, AH=01H/0AH/3FH service.
+
+
 --- License
 
 The copyright belongs to the author, but you can use the source codes under
@@ -931,11 +945,9 @@ See also COPYING.txt for more details about the license.
 
 ----- Thanks
 
-8086/80286 code is based on MAME 0.149 and fixes in MAME 0.150 to 0.185
-are applied.
+8086/80286 code is based on MAME 0.149 and applied fixes in MAME 0.150-0.185.
 NEC V30 instructions code is based on MAME 0.128.
-8038/80486 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.185
-are applied.
+8038/80486 code is based on MAME 0.152 and applied fixes in MAME 0.154-0.185.
 
 INT 15H AH=84H (Joystick Support),
 INT 15H AH=87H (Copy Extended Memory),

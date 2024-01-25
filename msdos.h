@@ -319,6 +319,7 @@ CRITICAL_SECTION key_buf_crit_sect;
 CRITICAL_SECTION putch_crit_sect;
 bool in_service = false;
 bool service_exit = false;
+DWORD main_thread_id;
 
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
@@ -334,6 +335,7 @@ void hardware_init();
 void hardware_finish();
 void hardware_release();
 void hardware_run();
+void hardware_run_cpu();
 void hardware_update();
 
 // drive

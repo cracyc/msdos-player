@@ -391,6 +391,7 @@ union XMM_REG {
 	UINT8 m_ext;  // external interrupt
 
 	int m_halted;
+	int m_int_num;
 
 	int m_operand_size;
 	int m_xmm_operand_size;
