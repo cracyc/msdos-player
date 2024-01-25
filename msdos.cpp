@@ -3758,27 +3758,40 @@ bool update_console_input()
 						// make
 						tmp_data &= 0x7f;
 						
+						if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
+							if(scn == 0x0e) {
+								chr = 0x00; // Alt + Back
+							} else if(scn == 0x35 && (ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY)) {
+								chr = 0x00; // Alt + [K] /
+							}
+						} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED | SHIFT_PRESSED)) {
+							if(scn == 0x0f) {
+								chr = 0x00; // Shift/Ctrl + Tab
+							}
+						}
 						if(chr == 0x00) {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
-								if(scn >= 0x3b && scn <= 0x44) {
+								if(scn == 0x35) {
+									scn = 0xa4;		// Keypad /
+								} else if(scn >= 0x3b && scn <= 0x44) {
 									scn += 0x68 - 0x3b;	// F1 to F10
 								} else if(scn == 0x57 || scn == 0x58) {
 									scn += 0x8b - 0x57;	// F11 & F12
 								} else if(scn >= 0x47 && scn <= 0x53) {
-									scn += 0x97 - 0x47;	// edit/arrow clusters
-								} else if(scn == 0x35) {
-									scn = 0xa4;		// keypad /
+									scn += 0x97 - 0x47;	// Edit/Arrow clusters
 								}
 							} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
 								if(scn == 0x07) {
-									chr = 0x1e;	// Ctrl+^
+									chr = 0x1e;	// Ctrl + ^
 								} else if(scn == 0x0c) {
-									chr = 0x1f;	// Ctrl+_
+									chr = 0x1f;	// Ctrl + _
+								} else if(scn == 0x0f) {
+									scn = 0x94;	// Ctrl + Tab
 								} else if(scn >= 0x35 && scn <= 0x58) {
 									static const UINT8 ctrl_map[] = {
-										0x95,	// keypad /
+										0x95,	// Keypad /
 										0,
-										0x96,	// keypad *
+										0x96,	// Keypad *
 										0, 0, 0,
 										0x5e,	// F1
 										0x5f,	// F2
@@ -3797,9 +3810,9 @@ bool update_console_input()
 										0x84,	// PgUp
 										0x8e,	// keypad -
 										0x73,	// Left
-										0x8f,	// keypad center
+										0x8f,	// Keypad Center
 										0x74,	// Right
-										0x90,	// keyapd +
+										0x90,	// Keypad +
 										0x75,	// End
 										0x91,	// Down
 										0x76,	// PgDn
@@ -3827,7 +3840,11 @@ bool update_console_input()
 									EnterCriticalSection(&key_buf_crit_sect);
 #endif
 									if(chr == 0) {
-										pcbios_set_key_buffer(0x00, ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+										if(scn >= 0x78 && scn != 0x84) {
+											pcbios_set_key_buffer(0x00, 0x00);
+										} else {
+											pcbios_set_key_buffer(0x00, ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+										}
 									}
 									pcbios_set_key_buffer(chr, scn);
 #ifdef USE_SERVICE_THREAD
@@ -3837,9 +3854,20 @@ bool update_console_input()
 							}
 						} else {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
-								chr = 0;
 								if(scn >= 0x02 && scn <= 0x0e) {
 									scn += 0x78 - 0x02;	// 1 to 0 - =
+								}
+								chr = 0;
+							} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
+								if(scn == 0x0e) {
+									chr = 0x7f;	// Ctrl + Back
+								} else if(scn == 0x1c) {
+									chr = 0x0a;	// Ctrl + Enter
+								}
+							}
+							if(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY) {
+								if(scn == 0x1c || scn == 0x35) {
+									scn = 0xe0;	// Keypad /, Enter
 								}
 							}
 							if(key_buf_char != NULL && key_buf_scan != NULL) {
@@ -3854,7 +3882,7 @@ bool update_console_input()
 						}
 					} else {
 						if(chr == 0x03 && (ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) {
-							// ctrl-break, ctrl-c
+							// Ctrl + Break, Ctrl + C
 							if(scn == 0x46) {
 								if(key_buf_char != NULL && key_buf_scan != NULL) {
 #ifdef USE_SERVICE_THREAD
@@ -4204,10 +4232,10 @@ static const struct {
 
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
-void msdos_putch(UINT8 data);
-void msdos_putch_fast(UINT8 data);
+void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah);
+void msdos_putch_fast(UINT8 data, unsigned int_num, UINT8 reg_ah);
 #ifdef USE_SERVICE_THREAD
-void msdos_putch_tmp(UINT8 data);
+void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah);
 #endif
 const char *msdos_short_path(const char *path);
 const char *msdos_short_full_dir(const char *path);
@@ -4533,19 +4561,50 @@ int msdos_lead_byte_check(UINT8 code)
 	return(0);
 }
 
-int msdos_ctrl_code_check(UINT8 code)
+int msdos_ctrl_code_check(UINT8 code, unsigned int_num, UINT8 reg_ah)
 {
-	if(active_code_page != 437) {
-		return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
-	}
+//	if(active_code_page != 437) {
+		if(int_num == 0x21 && (reg_ah == 0x0a || reg_ah == 0x3f)) {
+			return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+		}
+//	}
 	return 0;
 }
 
-int msdos_esc_code_check(UINT8 code)
+int msdos_symbol_code_check(UINT8 code, unsigned int_num, UINT8 reg_ah)
 {
-	if(active_code_page != 437) {
-		return (code == 0x1b);
-	}
+/*
+ note for tables:
+   --  means outpus as normal symbol (show AS IS)
+   ++  means that is control/special symbol
+
+                           ----------------------------------------------
+     MSDOS 6.20            |                ASCII codes                 |
+     WinXP NTVDM           | \0 | \a | \b | \t | \n | \r | ^Z | ^[ |    |
+                           |0x00|0x07|0x08|0x09|0x0A|0x0D|0x1A|0x1B|0xFF|
+ ------------------------------------------------------------------------
+ | Fn 02h Int 21h          | ?  | ++ | ++ | ++ | ++ | ++ | -- | -- | -- |
+ | Fn 06h Int 21h          | ?  | ++ | ++ | -- | ++ | ++ | -- | -- | ++ |
+ | Fn 40h Int 21h          | ?  | ++ | ++ | ++ | ++ | ++ | ++ | -- | -- |
+ ------------------------------------------------------------------------
+ | Int 29h                 | ?  | ++ | ++ | -- | ++ | ++ | -- | -- | -- |
+ ------------------------------------------------------------------------
+ | Fn 0Ah Int 10h (BIOS)   | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+ ------------------------------------------------------------------------
+*/
+//	if(active_code_page == 437) {
+		if(int_num == 0x21) {
+			if(reg_ah == 0x02) {
+				return (code == 0x1a || code == 0x1b || code == 0xff);
+			} else if(reg_ah == 0x06) {
+				return (code == 0x09 || code == 0x1a || code == 0x1b);
+			} else if(reg_ah == 0x40) {
+				return (code == 0x1b || code == 0xff);
+			}
+		} else if(int_num == 0x29) {
+			return (code == 0x09 || code == 0x1a || code == 0x1b || code == 0xff);
+		}
+//	}
 	return 0;
 }
 
@@ -5558,7 +5617,7 @@ int msdos_kbhit()
 	return(_kbhit());
 }
 
-int msdos_getch_ex(int echo)
+int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
 {
 	static char prev = 0;
 	
@@ -5641,19 +5700,19 @@ retry:
 		}
 	}
 	if(echo && key_char) {
-		msdos_putch(key_char);
+		msdos_putch(key_char, int_num, reg_ah);
 	}
 	return key_char ? key_char : (key_scan != 0xe0) ? key_scan : 0;
 }
 
-inline int msdos_getch()
+inline int msdos_getch(unsigned int_num, UINT8 reg_ah)
 {
-	return(msdos_getch_ex(0));
+	return(msdos_getch_ex(0, int_num, reg_ah));
 }
 
-inline int msdos_getche()
+inline int msdos_getche(unsigned int_num, UINT8 reg_ah)
 {
-	return(msdos_getch_ex(1));
+	return(msdos_getch_ex(1, int_num, reg_ah));
 }
 
 int msdos_write(int fd, const void *buffer, unsigned int count)
@@ -5713,7 +5772,7 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 	return(_write(fd, buffer, count));
 }
 
-void msdos_putch(UINT8 data)
+void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 {
 	msdos_stdio_reopen();
 	
@@ -5730,17 +5789,17 @@ void msdos_putch(UINT8 data)
 	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// int 29h is not hooked, no need to call int 29h
-		msdos_putch_fast(data);
+		msdos_putch_fast(data, int_num, reg_ah);
 #ifdef USE_SERVICE_THREAD
 	} else if(in_service && main_thread_id != GetCurrentThreadId()) {
 		// XXX: in usually we should not reach here
 		// this is called from service thread to echo the input
 		// we can not call int 29h because it causes a critial issue to control cpu running in main thread :-(
-		msdos_putch_fast(data);
+		msdos_putch_fast(data, int_num, reg_ah);
 #endif
 	} else if(in_service_29h) {
 		// disallow reentering call int 29h routine to prevent an infinite loop :-(
-		msdos_putch_fast(data);
+		msdos_putch_fast(data, int_num, reg_ah);
 	} else {
 		// this is called from main thread, so we can call int 29h :-)
 		in_service_29h = true;
@@ -5769,14 +5828,14 @@ void msdos_putch(UINT8 data)
 	}
 }
 
-void msdos_putch_fast(UINT8 data)
+void msdos_putch_fast(UINT8 data, unsigned int_num, UINT8 reg_ah)
 #ifdef USE_SERVICE_THREAD
 {
 	EnterCriticalSection(&putch_crit_sect);
-	msdos_putch_tmp(data);
+	msdos_putch_tmp(data, int_num, reg_ah);
 	LeaveCriticalSection(&putch_crit_sect);
 }
-void msdos_putch_tmp(UINT8 data)
+void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 #endif
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -6034,7 +6093,7 @@ void msdos_putch_tmp(UINT8 data)
 		if(msdos_lead_byte_check(data)) {
 			is_kanji = 1;
 			return;
-		} else if(msdos_esc_code_check(data)) {
+		} else if(data == 0x1b && !msdos_symbol_code_check(data, int_num, reg_ah)) {
 			is_esc = 1;
 			return;
 		}
@@ -6048,12 +6107,14 @@ void msdos_putch_tmp(UINT8 data)
 			is_kanji = 0;
 		} else if(msdos_lead_byte_check(data)) {
 			is_kanji = 1;
-		} else if(msdos_ctrl_code_check(data)) {
+		} else if(msdos_ctrl_code_check(data, int_num, reg_ah)) {
 			out[q++] = '^';
 			c += 'A' - 1;
 		}
 		out[q++] = c;
 	}
+	out[q] = '\0';
+	
 	if(cursor_moved_by_crtc) {
 		if(!restore_console_size) {
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
@@ -6064,7 +6125,22 @@ void msdos_putch_tmp(UINT8 data)
 		SetConsoleCursorPosition(hStdout, co);
 		cursor_moved_by_crtc = false;
 	}
-	if(q == 1 && out[0] == 0x08) {
+	if(q == 1 && msdos_symbol_code_check(out[0], int_num, reg_ah)) {
+		const char *dummy = " ";
+		WriteConsoleA(hStdout, dummy, 1, &num, NULL);
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		if(csbi.dwCursorPosition.X > 0) {
+			co.X = csbi.dwCursorPosition.X - 1;
+			co.Y = csbi.dwCursorPosition.Y;
+		} else if(csbi.dwCursorPosition.Y > 0) {
+			co.X = csbi.dwSize.X - 1;
+			co.Y = csbi.dwCursorPosition.Y - 1;
+		} else {
+			// XXX: in usually we should not reach here
+			co.X = co.Y = 0;
+		}
+		MyWriteConsoleOutputCharacterA(hStdout, out, 1, co, &num);
+	} else if(q == 1 && out[0] == 0x08) {
 		// back space
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
@@ -6076,7 +6152,7 @@ void msdos_putch_tmp(UINT8 data)
 			co.Y = csbi.dwCursorPosition.Y - 1;
 			SetConsoleCursorPosition(hStdout, co);
 		} else {
-			WriteConsoleA(hStdout, out, q, &num, NULL); // to make sure
+			WriteConsoleA(hStdout, out, 1, &num, NULL); // to make sure
 		}
 	} else {
 		WriteConsoleA(hStdout, out, q, &num, NULL);
@@ -9938,7 +10014,7 @@ inline void msdos_int_21h_00h()
 DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 {
 	CPU_AX_in_service &= 0xff00;
-	CPU_AX_in_service |= msdos_getche();
+	CPU_AX_in_service |= msdos_getche(0x21, 0x01);
 	
 	ctrl_break_detected = ctrl_break_pressed;
 	
@@ -9971,7 +10047,7 @@ inline void msdos_int_21h_01h()
 inline void msdos_int_21h_02h()
 {
 	UINT8 data = CPU_DL;
-	msdos_putch(data);
+	msdos_putch(data, 0x21, 0x02);
 	CPU_AL = data;
 	ctrl_break_detected = ctrl_break_pressed;
 }
@@ -9995,7 +10071,7 @@ inline void msdos_int_21h_06h()
 {
 	if(CPU_DL == 0xff) {
 		if(msdos_kbhit()) {
-			CPU_AL = msdos_getch();
+			CPU_AL = msdos_getch(0x21, 0x06);
 			CPU_SET_Z_FLAG(0);
 		} else {
 			CPU_AL = 0;
@@ -10004,7 +10080,7 @@ inline void msdos_int_21h_06h()
 		}
 	} else {
 		UINT8 data = CPU_DL;
-		msdos_putch(data);
+		msdos_putch(data, 0x21, 0x06);
 		CPU_AL = data;
 	}
 }
@@ -10012,7 +10088,7 @@ inline void msdos_int_21h_06h()
 DWORD WINAPI msdos_int_21h_07h_thread(LPVOID)
 {
 	CPU_AX_in_service &= 0xff00;
-	CPU_AX_in_service |= msdos_getch();
+	CPU_AX_in_service |= msdos_getch(0x21, 0x07);
 	
 #ifdef USE_SERVICE_THREAD
 	service_exit = true;
@@ -10039,7 +10115,7 @@ inline void msdos_int_21h_07h()
 DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 {
 	CPU_AX_in_service &= 0xff00;
-	CPU_AX_in_service |= msdos_getch();
+	CPU_AX_in_service |= msdos_getch(0x21, 0x08);
 	
 	ctrl_break_detected = ctrl_break_pressed;
 	
@@ -10083,7 +10159,7 @@ inline void msdos_int_21h_09h()
 		msdos_write(fd, str, len);
 	} else {
 		for(int i = 0; i < len; i++) {
-			msdos_putch(str[i]);
+			msdos_putch(str[i], 0x21, 0x09);
 		}
 	}
 	CPU_AL = '$';
@@ -10097,67 +10173,67 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 	UINT8 *buf = mem + ofs + 2;
 	int chr, p = 0;
 	
-	while((chr = msdos_getch()) != 0x0d) {
+	while((chr = msdos_getch(0x21, 0x0a)) != 0x0d) {
 		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
 			p = 0;
-			msdos_putch(0x03);
-			msdos_putch(0x0d);
-			msdos_putch(0x0a);
+			msdos_putch(0x03, 0x21, 0x0a);
+			msdos_putch(0x0d, 0x21, 0x0a);
+			msdos_putch(0x0a, 0x21, 0x0a);
 			break;
 		} else if(ctrl_break_pressed) {
 			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
-			msdos_getch();
+			msdos_getch(0x21, 0x0a);
 		} else if(chr == 0x08) {
 			// back space
 			if(p > 0) {
 				p--;
-				if(msdos_ctrl_code_check(buf[p])) {
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+				if(msdos_ctrl_code_check(buf[p], 0x21, 0x0a)) {
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
 				} else if(p > 0 && msdos_kanji_2nd_byte_check(buf, p)) {
 					p--;
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
 				} else {
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
 				}
 			}
 		} else if(chr == 0x1b) {
 			// escape
 			while(p > 0) {
 				p--;
-				if(msdos_ctrl_code_check(buf[p])) {
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+				if(msdos_ctrl_code_check(buf[p], 0x21, 0x0a)) {
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
 				} else {
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x0a);
+					msdos_putch(0x20, 0x21, 0x0a);
+					msdos_putch(0x08, 0x21, 0x0a);
 				}
 			}
 		} else if(p < max) {
 			buf[p++] = chr;
-			msdos_putch(chr);
+			msdos_putch(chr, 0x21, 0x0a);
 		}
 	}
 	buf[p] = 0x0d;
-	msdos_putch(0x0d);
+	msdos_putch(0x0d, 0x21, 0x0a);
 	mem[ofs + 1] = p;
 	ctrl_break_detected = ctrl_break_pressed;
 	
@@ -10212,7 +10288,7 @@ inline void msdos_int_21h_0ch()
 		// stdin is redirected to file
 	} else {
 		while(msdos_kbhit()) {
-			msdos_getch();
+			msdos_getch(0x21, 0x0c);
 		}
 	}
 	
@@ -11536,7 +11612,7 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 	int p = 0;
 	
 	while(max > p) {
-		int chr = msdos_getch();
+		int chr = msdos_getch(0x21, 0x3f);
 		
 		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
 			p = 0;
@@ -11544,68 +11620,68 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 			if(max > p) {
 				buf[p++] = 0x0a;
 			}
-			msdos_putch(0x03);
-			msdos_putch(0x0d);
-			msdos_putch(0x0a);
+			msdos_putch(0x03, 0x21, 0x3f);
+			msdos_putch(0x0d, 0x21, 0x3f);
+			msdos_putch(0x0a, 0x21, 0x3f);
 			break;
 		} else if(ctrl_break_pressed) {
 			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
-			msdos_getch();
+			msdos_getch(0x21, 0x3f);
 		} else if(chr == 0x0d) {
 			// carriage return
 			buf[p++] = 0x0d;
 			if(max > p) {
 				buf[p++] = 0x0a;
 			}
-			msdos_putch('\n');
+			msdos_putch('\n', 0x21, 0x3f);
 			break;
 		} else if(chr == 0x08) {
 			// back space
 			if(p > 0) {
 				p--;
-				if(msdos_ctrl_code_check(buf[p])) {
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+				if(msdos_ctrl_code_check(buf[p], 0x21, 0x3f)) {
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
 				} else if(p > 0 && msdos_kanji_2nd_byte_check(buf, p)) {
 					p--;
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
 				} else {
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
 				}
 			}
 		} else if(chr == 0x1b) {
 			// escape
 			while(p > 0) {
 				p--;
-				if(msdos_ctrl_code_check(buf[p])) {
-					msdos_putch(0x08);
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
-					msdos_putch(0x08);
+				if(msdos_ctrl_code_check(buf[p], 0x21, 0x3f)) {
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
 				} else {
-					msdos_putch(0x08);
-					msdos_putch(0x20);
-					msdos_putch(0x08);
+					msdos_putch(0x08, 0x21, 0x3f);
+					msdos_putch(0x20, 0x21, 0x3f);
+					msdos_putch(0x08, 0x21, 0x3f);
 				}
 			}
 		} else {
 			buf[p++] = chr;
-			msdos_putch(chr);
+			msdos_putch(chr, 0x21, 0x3f);
 		}
 	}
 	CPU_AX_in_service = p;
@@ -11694,7 +11770,7 @@ inline void msdos_int_21h_40h()
 				if(file_handler[fd].atty) {
 					// BX is stdout/stderr or is redirected to stdout
 					for(int i = 0; i < CPU_CX; i++) {
-						msdos_putch(mem[CPU_DS_BASE + CPU_DX + i]);
+						msdos_putch(mem[CPU_DS_BASE + CPU_DX + i], 0x21, 0x40);
 					}
 					CPU_AX = CPU_CX;
 				} else {
@@ -14371,7 +14447,7 @@ inline void msdos_int_27h()
 
 inline void msdos_int_29h()
 {
-	msdos_putch_fast(CPU_AL);
+	msdos_putch_fast(CPU_AL, 0x29, CPU_AH);
 }
 
 inline void msdos_int_2eh()
@@ -14521,10 +14597,10 @@ inline void msdos_int_2fh_12h()
 		{
 			UINT16 c = CPU_READ_STACK();
 			if((c >> 0) & 0xff) {
-				msdos_putch((c >> 0) & 0xff);
+				msdos_putch((c >> 0) & 0xff, 0x2f, 0x12);
 			}
 			if((c >> 8) & 0xff) {
-				msdos_putch((c >> 8) & 0xff);
+				msdos_putch((c >> 8) & 0xff, 0x2f, 0x12);
 			}
 		}
 		break;
