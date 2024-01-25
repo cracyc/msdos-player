@@ -155,7 +155,7 @@ void write_io_byte(UINT32 byteaddress, UINT8 data);
 void write_io_word(UINT32 byteaddress, UINT16 data);
 void write_io_dword(UINT32 byteaddress, UINT32 data);
 
-void CPU_RESET();
+void kbd_reset();
 
 // debugger
 

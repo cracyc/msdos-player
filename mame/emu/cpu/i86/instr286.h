@@ -13,7 +13,8 @@
 #define STACK_FAULT 12
 #define GENERAL_PROTECTION_FAULT 13
 
-#define CPL (m_sregs[CS]&3)
+//#define CPL (m_sregs[CS]&3)
+#define CPL (((m_rights[SS]>>5)&3))
 #define PM (m_msw&1)
 
 static void i80286_trap2(UINT32 error);

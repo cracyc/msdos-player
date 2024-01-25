@@ -340,6 +340,7 @@ inline void CPU_SET_CPL(int value)
 }
 
 #define CPU_STAT_PM			PROTECTED_MODE
+#define CPU_STAT_VM86			V8086_MODE
 
 #define CPU_EFLAG			get_flags()
 #define CPU_SET_EFLAG(x)		set_flags(x)
@@ -364,8 +365,14 @@ void CPU_INIT()
 	CPU_INIT_CALL(CPU_MODEL);
 }
 
-void CPU_EXIT()
+void CPU_RELEASE()
 {
+	vtlb_free(m_vtlb);
+}
+
+void CPU_FINISH()
+{
+	CPU_RELEASE();
 }
 
 void CPU_RESET()
@@ -413,6 +420,13 @@ void CPU_CALL_FAR(UINT16 selector, UINT32 address)
 	}
 }
 
+void CPU_IRET()
+{
+	// Don't call msdos_syscall() in iret routine
+	m_pc = 1;
+	I386OP(iret16)();
+}
+
 void CPU_PUSH(UINT16 value)
 {
 	PUSH16(value);
@@ -454,6 +468,35 @@ void CPU_WRITE_STACK(UINT16 value)
 	WRITE16(ea, value);
 }
 
+void CPU_LOAD_LDTR(UINT16 selector)
+{
+	I386_SREG seg;
+	m_ldtr.segment = selector;
+	seg.selector = selector;
+	i386_load_protected_mode_segment(&seg, NULL);
+	m_ldtr.limit = seg.limit;
+	m_ldtr.base = seg.base;
+	m_ldtr.flags = seg.flags;
+}
+
+void CPU_LOAD_TR(UINT16 selector)
+{
+	I386_SREG seg;
+	m_task.segment = selector;
+	seg.selector = selector;
+	i386_load_protected_mode_segment(&seg, NULL);
+	m_task.limit = seg.limit;
+	m_task.base = seg.base;
+	m_task.flags = seg.flags;
+}
+
+UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+{
+	UINT32 addr = seg_base + ofs;
+	translate_address(0, TRANSLATE_READ, &addr, NULL);
+	return addr;
+}
+
 #ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
@@ -463,24 +506,5 @@ UINT32 CPU_GET_PREV_PC()
 UINT32 CPU_GET_NEXT_PC()
 {
 	return m_pc;
-}
-
-UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
-{
-	if(PROTECTED_MODE) {
-		UINT32 addr = (seg << 4) + ofs;
-		
-		if(m_cr[0] & (1 << 31)) {
-			UINT32 pde_addr = (m_cr[3] & 0xfffff000) + ((addr >> 20) & 0xffc);
-			UINT32 pde = read_dword(pde_addr & m_a20_mask);
-			/* XXX: check */
-			UINT32 pte_addr = (pde & 0xfffff000) + ((addr >> 10) & 0xffc);
-			UINT32 pte = read_dword(pte_addr & m_a20_mask);
-			/* XXX: check */
-			addr = (pte & 0xfffff000) + (addr & 0xfff);
-		}
-		return addr;
-	}
-	return (seg << 4) + (ofs & 0xffff);
 }
 #endif

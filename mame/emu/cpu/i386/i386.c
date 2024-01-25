@@ -158,7 +158,8 @@ static void i386_load_segment_descriptor(int segment )
 		{
 			m_sreg[segment].base = m_sreg[segment].selector << 4;
 			m_sreg[segment].limit = 0xffff;
-			m_sreg[segment].flags = (segment == CS) ? 0x00fb : 0x00f3;
+//			m_sreg[segment].flags = (segment == CS) ? 0x00fb : 0x00f3;
+			m_sreg[segment].flags = 0x00f3;
 			m_sreg[segment].d = 0;
 			m_sreg[segment].valid = true;
 		}
@@ -693,15 +694,16 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 		}
 		if(trap_level >= 3)
 		{
-			UINT16 offset = READ16(0x467);
-			UINT16 selector = READ16(0x469);
+//			UINT16 offset = READ16(0x467);
+//			UINT16 selector = READ16(0x469);
 			logerror("IRQ: Triple fault. CPU reset.\n");
-			CPU_RESET_CALL(CPU_MODEL);
-			m_sreg[CS].selector = selector;
-			m_performed_intersegment_jump = 1;
-			m_eip = offset;
-			i386_load_segment_descriptor(CS);
-			CHANGE_PC(m_eip);
+//			CPU_RESET_CALL(CPU_MODEL);
+//			m_sreg[CS].selector = selector;
+//			m_performed_intersegment_jump = 1;
+//			m_eip = offset;
+//			i386_load_segment_descriptor(CS);
+//			CHANGE_PC(m_eip);
+			kbd_reset();
 			return;
 		}
 
@@ -2141,9 +2143,9 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 			}
 		}
 		if(STACK_32BIT)
-			REG16(SP) += (4+count);
+			REG32(ESP) += (operand32 ? 8 : 4) + count;
 		else
-			REG32(ESP) += (8+count);
+			REG16(SP) += (operand32 ? 8 : 4) + count;
 	}
 	else if(RPL > CPL)
 	{

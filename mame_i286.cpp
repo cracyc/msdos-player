@@ -569,6 +569,8 @@ inline void CPU_SET_I_FLAG(INT32 value)
 	m_IF = value;
 }
 
+#define CPU_STAT_PM			PM
+
 #define CPU_EFLAG			CompressFlags()
 #define CPU_SET_EFLAG(x)		ExpandFlags(x)
 
@@ -596,8 +598,13 @@ void CPU_INIT()
 	CPU_INIT_CALL(CPU_MODEL);
 }
 
-void CPU_EXIT()
+void CPU_RELEASE()
 {
+}
+
+void CPU_FINISH()
+{
+	CPU_RELEASE();
 }
 
 void CPU_RESET()
@@ -642,6 +649,13 @@ void CPU_CALL_FAR(UINT16 selector, UINT32 address)
 	CHANGE_PC(m_pc);
 }
 
+void CPU_IRET()
+{
+	// Don't call msdos_syscall() in iret routine
+	m_pc = 1;
+	PREFIX86(_iret());
+}
+
 void CPU_PUSH(UINT16 value)
 {
 	PUSH(value);
@@ -671,6 +685,17 @@ void CPU_WRITE_STACK(UINT16 value)
 	WriteWord(((m_base[SS] + ((sp - 2) & 0xffff)) & AMASK), value);
 }
 
+UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+{
+#if defined(HAS_I286)
+	// FIXME: Protected Mode
+	if(PM) {
+		return seg_base + ofs;
+	}
+#endif
+	return seg_base + (ofs & 0xffff);
+}
+
 #ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
@@ -680,11 +705,5 @@ UINT32 CPU_GET_PREV_PC()
 UINT32 CPU_GET_NEXT_PC()
 {
 	return m_pc;
-}
-
-UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
-{
-	// FIXME: Protected Mode
-	return (seg << 4) + (ofs & 0xffff);
 }
 #endif

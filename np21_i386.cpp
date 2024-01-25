@@ -61,6 +61,7 @@ int CPU_DISASSEMBLE(UINT8 *oprom, offs_t eip, bool is_ia32, char *buffer, size_t
 #include "np21_i386c/cpucore.h"
 #include "np21_i386c/ia32/ia32.mcr"
 #include "np21_i386c/ia32/ctrlxfer.h"
+#include "np21_i386c/ia32/instructions/ctrl_trans.h"
 #include "np21_i386c/ia32/instructions/flag_ctrl.h"
 #include "np21_i386c/ia32/instructions/fpu/fp.h"
 
@@ -250,9 +251,14 @@ void CPU_INIT()
 	irq_pending = false;
 }
 
-void CPU_EXIT()
+void CPU_RELEASE()
 {
 	CPU_DEINITIALIZE();
+}
+
+void CPU_FINISH()
+{
+	CPU_RELEASE();
 }
 
 void CPU_RESET()
@@ -287,26 +293,7 @@ void CPU_RESET()
 	CPU_ADRSMASK = PREV_CPU_ADRSMASK;
 }
 
-#ifdef USE_DEBUGGER
-UINT32 convert_address(UINT32 cs_base, UINT32 eip)
-{
-	if(CPU_STAT_PM) {
-		UINT32 addr = cs_base + eip;
-		
-		if(CPU_STAT_PAGING) {
-			UINT32 pde_addr = CPU_STAT_PDE_BASE + ((addr >> 20) & 0xffc);
-			UINT32 pde = read_dword(pde_addr & CPU_ADRSMASK);
-			/* XXX: check */
-			UINT32 pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((addr >> 10) & 0xffc);
-			UINT32 pte = read_dword(pte_addr & CPU_ADRSMASK);
-			/* XXX: check */
-			addr = (pte & CPU_PTE_BASEADDR_MASK) + (addr & CPU_PAGE_MASK);
-		}
-		return addr;
-	}
-	return cs_base + (eip & 0xffff);
-}
-#endif
+UINT32 CPU_GET_NEXT_PC();
 
 void CPU_EXECUTE()
 {
@@ -316,7 +303,7 @@ void CPU_EXECUTE()
 			force_suspend = false;
 			now_suspended = true;
 		} else {
-			UINT32 next_pc = convert_address(CS_BASE, CPU_EIP);
+			UINT32 next_pc = CPU_GET_NEXT_PC();
 			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 				if(break_point.table[i].status == 1 && break_point.table[i].addr == next_pc) {
 					break_point.hit = i + 1;
@@ -403,6 +390,15 @@ void CPU_CALL_FAR(UINT16 new_cs, UINT32 new_ip)
 	}
 }
 
+void CPU_IRET()
+{
+	// Don't call msdos_syscall() in iret routine
+	UINT32 tmp = CPU_PREV_PC;
+	CPU_PREV_PC = 0;
+	IRET();
+	CPU_PREV_PC = tmp;
+}
+
 void CPU_PUSH(UINT16 reg)
 {
 	if (!CPU_STAT_SS32) {
@@ -462,6 +458,35 @@ void CPU_WRITE_STACK(UINT16 reg)
 	}
 }
 
+void CPU_LOAD_LDTR(UINT16 selector)
+{
+	load_ldtr(selector, GP_EXCEPTION);
+}
+
+void CPU_LOAD_TR(UINT16 selector)
+{
+	load_tr(selector);
+}
+
+UINT32 CPU_TRANS_ADDR(UINT32 seg_base, UINT32 ofs)
+{
+	if(CPU_STAT_PM) {
+		UINT32 addr = seg_base + ofs;
+		
+		if(CPU_STAT_PAGING) {
+			UINT32 pde_addr = CPU_STAT_PDE_BASE + ((addr >> 20) & 0xffc);
+			UINT32 pde = read_dword(pde_addr & CPU_ADRSMASK);
+			/* XXX: check */
+			UINT32 pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((addr >> 10) & 0xffc);
+			UINT32 pte = read_dword(pte_addr & CPU_ADRSMASK);
+			/* XXX: check */
+			addr = (pte & CPU_PTE_BASEADDR_MASK) + (addr & CPU_PAGE_MASK);
+		}
+		return addr;
+	}
+	return seg_base + (ofs & 0xffff);
+}
+
 #ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
@@ -470,11 +495,6 @@ UINT32 CPU_GET_PREV_PC()
 
 UINT32 CPU_GET_NEXT_PC()
 {
-	return convert_address(CS_BASE, CPU_EIP);
-}
-
-UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
-{
-	return convert_address(seg << 4, ofs);
+	return CPU_TRANS_ADDR(CS_BASE, CPU_EIP);
 }
 #endif

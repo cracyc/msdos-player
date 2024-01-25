@@ -775,7 +775,7 @@ static void I386OP(iret32)()            // Opcode 0xcf
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
 #ifdef USE_DEBUGGER
 		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-		msdos_intnum = (old - IRET_TOP);
+		msdos_int_num = (old - IRET_TOP);
 #else
 		// Call msdos_syscall() here for better processing speed
 		if(m_lock)
@@ -1051,10 +1051,20 @@ static void I386OP(enter32)()           // Opcode 0xc8
 
 	if(level > 0)
 	{
-		for(x=1;x<level-1;x++)
+		for(x=1;x<=level-1;x++)
 		{
-			REG32(EBP) -= 4;
-			PUSH32(READ32(REG32(EBP)));
+			UINT32 addr;
+			if(!STACK_32BIT)
+			{
+				REG16(BP) -= 4;
+				addr = REG16(BP);
+			}
+			else
+			{
+				REG32(EBP) -= 4;
+				addr = REG32(EBP);
+			}
+			PUSH32(READ32(i386_translate(SS, addr, 0, 4)));
 		}
 		PUSH32(frameptr);
 	}

@@ -188,6 +188,7 @@ DWORD main_thread_id;
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
 #endif
+UINT32 done_ax;
 
 bool in_service_29h = false;
 
@@ -293,7 +294,15 @@ drive_param_t drive_params[26] = {0};
 	#define ADDR_MASK 0xfffff
 	#define MAX_MEM 0x100000	/* 1MB */
 #endif
-UINT8 mem[MAX_MEM + 16];
+
+#ifdef _MSC_VER
+__declspec(align(4096))
+#endif
+UINT8 mem[MAX_MEM + 16]
+#ifdef __GNUC__
+__attribute__ ((aligned(4096)))
+#endif
+;
 
 // ems
 
@@ -521,6 +530,7 @@ UINT8 kbd_status;
 UINT8 kbd_command;
 
 void kbd_init();
+void kbd_reset();
 UINT8 kbd_read_data();
 void kbd_write_data(UINT8 val);
 UINT8 kbd_read_status();
@@ -1018,9 +1028,9 @@ static const struct {
 typedef struct {
 	UINT16 psp;
 	char module_dir[MAX_PATH];
-#ifdef USE_DEBUGGER
+//#ifdef USE_DEBUGGER
 	char module_path[MAX_PATH];
-#endif
+//#endif
 	PAIR32 dta;
 	UINT8 switchar;
 	UINT8 verify;

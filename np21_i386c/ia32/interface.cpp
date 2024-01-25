@@ -289,7 +289,7 @@ ia32_panic(const char *str, ...)
 
 #if defined(IA32_REBOOT_ON_PANIC)
 	VERBOSE(("ia32_panic: reboot"));
-	CPU_RESET();
+	kbd_reset();
 #ifdef __cplusplus
 	throw(2);
 #else

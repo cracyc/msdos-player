@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								4/9/2020
+								4/10/2020
 
 ----- What's This
 
@@ -518,6 +518,7 @@ INT 15H		PC BIOS
 	88H	Get Extended Memory Size
 	89H	Switch To Protected Mode
 	8AH	Get Big Memory Size
+	C0H	Get Configuration
 	C200H	Pointing Device BIOS Interface (PS) - Enable/Disable
 	C201H	Pointing Device BIOS Interface (PS) - Reset
 	C202H	Pointing Device BIOS Interface (PS) - Set Sampling Rate
@@ -1046,6 +1047,9 @@ INT 33H AX=0020H (Enable Mouse Driver),
 INT 67H AX=DE01H (Get Protected Mode Interface),
 INT 67H AX=DE0CH (Switch To Protected Mode),
 and some DOS info block improvements are based on DOSBox.
+
+Imported many fixes from Mr.cracyc's fork hosted at:
+https://github.com/cracyc/msdos-player
 
 Patched by Mr.Sagawa, Mr.sava (lukewarm), Mr.Kimura (emk), Mr.Jason Hood,
 Mr.N2583ZYOB6, and Mr.Fujita.
