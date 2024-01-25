@@ -3230,6 +3230,8 @@ bool update_console_input()
 						kbd_data |= 0x80;
 					}
 					result = key_changed = true;
+					// IME may be on and it may causes screen scroll up and cursor position change
+					cursor_moved = true;
 				}
 			}
 		}
@@ -3792,6 +3794,25 @@ int msdos_lead_byte_check(UINT8 code)
 int msdos_ctrl_code_check(UINT8 code)
 {
 	return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+}
+
+int msdos_kanji_2nd_byte_check(UINT8 *buf, int n)
+{
+	int is_kanji_1st = 0;
+	int is_kanji_2nd = 0;
+	
+	for(int p = 0;; p++) {
+		if(is_kanji_1st) {
+			is_kanji_1st = 0;
+			is_kanji_2nd = 1;
+		} else if(msdos_lead_byte_check(buf[p])) {
+			is_kanji_1st = 1;
+		}
+		if(p == n) {
+			return(is_kanji_2nd);
+		}
+		is_kanji_2nd = 0;
+	}
 }
 
 // file control
@@ -6256,6 +6277,17 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
 
+void pcbios_update_cursor_position()
+{
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+	if(!restore_console_on_exit) {
+		scr_top = csbi.srWindow.Top;
+	}
+	mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
+	mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
+}
+
 inline void pcbios_int_10h_00h()
 {
 	switch(REG8(AL) & 0x7f) {
@@ -7778,6 +7810,14 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 					msdos_putch(0x20);
 					msdos_putch(0x08);
 					msdos_putch(0x08);
+				} else if(p > 0 && msdos_kanji_2nd_byte_check(buf, p)) {
+					p--;
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
 				} else {
 					msdos_putch(0x08);
 					msdos_putch(0x20);
@@ -8914,6 +8954,14 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 			if(p > 0) {
 				p--;
 				if(msdos_ctrl_code_check(buf[p])) {
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+				} else if(p > 0 && msdos_kanji_2nd_byte_check(buf, p)) {
+					p--;
 					msdos_putch(0x08);
 					msdos_putch(0x08);
 					msdos_putch(0x20);
@@ -13578,6 +13626,11 @@ void msdos_syscall(unsigned num)
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
 #endif
+	// update cursor position
+	if(cursor_moved) {
+		pcbios_update_cursor_position();
+		cursor_moved = false;
+	}
 	ctrl_break_detected = ctrl_break_pressed = ctrl_c_pressed = false;
 	
 	switch(num) {
@@ -14465,13 +14518,7 @@ void msdos_syscall(unsigned num)
 	
 	// update cursor position
 	if(cursor_moved) {
-		CONSOLE_SCREEN_BUFFER_INFO csbi;
-		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-		if(!restore_console_on_exit) {
-			scr_top = csbi.srWindow.Top;
-		}
-		mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
-		mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
+		pcbios_update_cursor_position();
 		cursor_moved = false;
 	}
 }
@@ -17079,6 +17126,11 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 #ifdef USE_SERVICE_THREAD
 	case 0xf7:
 		// dummy i/o for BIOS/DOS service
+		if(in_service && cursor_moved) {
+			// update cursor position before service is done
+			pcbios_update_cursor_position();
+			cursor_moved = false;
+		}
 		finish_service_loop();
 		break;
 #endif

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/21/2017
+								2/23/2017
 
 ----- What's this
 
@@ -860,7 +860,8 @@ See also COPYING.txt for more details about the license.
 NEC V30 instructions code is based on MAME 0.128
 80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.174 are applied.
 
-INT 15H AH=87H (copy extended memory), AH=89H (switch to protected mode),
+INT 15H AH=87H (Copy Extended Memory), AH=89H (Switch to Protected Mode),
+INT 33H AX=001FH (Disable Mouse Driver), AX=0020H (Enable Mouse Driver),
 and some DOS info block improvements are based on DOSBox.
 
 Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk) and Mr.Jason Hood.
