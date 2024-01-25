@@ -727,6 +727,9 @@ void kbd_write_command(UINT8 val);
 UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define UMB_END		0xf8000
 #define SHADOW_BUF_TOP	0xf8000
+// text vram size: 80x25x2 = 4000 = 0fa0h
+// fffa0h-fffefh can be used for dummy routines
+#define DUMMY_TOP	0xfffc0
 #define EMB_TOP		0x10fff0
 //#define EMB_TOP	0x128000 // MEM.EXE invites this value???
 #define EMB_END		MAX_MEM
@@ -1281,6 +1284,8 @@ typedef struct {
 	UINT16 display_page;
 	UINT16 language;
 	UINT16 hot_spot[2];
+	UINT16 screen_mask;
+	UINT16 cursor_mask;
 } mouse_t;
 
 mouse_t mouse;

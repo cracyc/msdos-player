@@ -772,7 +772,6 @@ void i386_jmp_far(UINT16 selector, UINT32 address)
 #endif
 }
 
-#ifdef USE_SERVICE_THREAD
 void i386_call_far(UINT16 selector, UINT32 address)
 {
 #if defined(HAS_I386)
@@ -802,7 +801,26 @@ void i386_call_far(UINT16 selector, UINT32 address)
 	CHANGE_PC(m_pc);
 #endif
 }
+
+void i386_push16(UINT16 value)
+{
+#if defined(HAS_I386)
+	PUSH16(value);
+#else
+	PUSH(value);
 #endif
+}
+
+UINT16 i386_pop16()
+{
+#if defined(HAS_I386)
+	return POP16();
+#else
+	UINT16 value;
+	POP(value);
+	return value;
+#endif
+}
 
 UINT16 i386_read_stack()
 {
@@ -5902,8 +5920,8 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 	psp->exit[1] = 0x20;
 	psp->first_mcb = mcb_seg;
 #if 1
-	psp->call5[0] = 0xcd;	// int 6fh
-	psp->call5[1] = 0x6f;
+	psp->call5[0] = 0xcd;	// int 30h
+	psp->call5[1] = 0x30;
 	psp->call5[2] = 0xc3;	// ret
 #else
 	psp->call5[0] = 0x8a;	// mov ah, cl
@@ -6549,21 +6567,21 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 #if defined(HAS_I386)
 	if(m_SF != 0) {
 		m_SF = 0;
-		mem[0xfffd0 + 0x15] = 0x79;	// jns -4
+		mem[DUMMY_TOP + 0x15] = 0x79;	// jns -4
 	} else {
 		m_SF = 1;
-		mem[0xfffd0 + 0x15] = 0x78;	// js -4
+		mem[DUMMY_TOP + 0x15] = 0x78;	// js -4
 	}
 #else
 	if(m_SignVal < 0) {
 		m_SignVal = 0;
-		mem[0xfffd0 + 0x15] = 0x79;	// jns -4
+		mem[DUMMY_TOP + 0x15] = 0x79;	// jns -4
 	} else {
 		m_SignVal = -1;
-		mem[0xfffd0 + 0x15] = 0x78;	// js -4
+		mem[DUMMY_TOP + 0x15] = 0x78;	// js -4
 	}
 #endif
-	i386_call_far(0xfffd, 0x0013);
+	i386_call_far(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
 	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
@@ -7950,8 +7968,8 @@ inline void pcbios_int_15h_50h()
 			REG8(AH) = 0x06; // font is read only
 			m_CF = 1;
 		} else {
-			// dummy font read routine is at fffd:000d
-			SREG(ES) = 0xfffd;
+			// dummy font read routine is at fffc:000d
+			SREG(ES) = DUMMY_TOP >> 4;
 			i386_load_segment_descriptor(ES);
 			REG16(BX) = 0x000d;
 			REG8(AH) = 0x00; // success
@@ -9934,8 +9952,8 @@ int get_country_info(country_info_t *ci, LCID locale)
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
-	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffd:000a
-	ci->case_map.w.h = 0xfffd;
+	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffc:000a
+	ci->case_map.w.h = DUMMY_TOP >> 4;
 	GetLocaleInfo(locale, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
 }
@@ -13104,6 +13122,7 @@ inline void msdos_int_2fh_05h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
+		// critical error handler is installed
 		REG8(AL) = 0xff;
 		break;
 	case 0x01:
@@ -13129,6 +13148,7 @@ inline void msdos_int_2fh_05h()
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
 		m_CF = 1;
 	}
 }
@@ -13138,6 +13158,7 @@ inline void msdos_int_2fh_06h()
 	switch(REG8(AL)) {
 	case 0x00:
 		// ASSIGN is not installed
+//		REG8(AL) = 0x00;
 		break;
 	case 0x01:
 		// this call is available from within MIRROR.COM even if ASSIGN is not installed
@@ -13204,12 +13225,20 @@ inline void msdos_int_2fh_12h()
 		}
 		break;
 	case 0x05:
-		msdos_putch(i386_read_stack());
+		{
+			UINT16 c = i386_read_stack();
+			if((c >> 0) & 0xff) {
+				msdos_putch((c >> 0) & 0xff);
+			}
+			if((c >> 8) & 0xff) {
+				msdos_putch((c >> 8) & 0xff);
+			}
+		}
 		break;
-//	case 0x06: // DOS 3.0+ internal - Invole Critical Error
+//	case 0x06: // DOS 3.0+ internal - Invoke Critical Error
 //	case 0x07: // DOS 3.0+ internal - Make Disk Buffer Most Recentry Used
 //	case 0x08: // DOS 3.0+ internal - Decrement SFT Reference Count
-//	case 0x09: // DOS 3.0+ internal - Flush and FREE Disk Buffer
+//	case 0x09: // DOS 3.0+ internal - Flush and Free Disk Buffer
 //	case 0x0a: // DOS 3.0+ internal - Perform Critical Error Interrupt
 //	case 0x0b: // DOS 3.0+ internal - Signal Sharing Violation to User
 //	case 0x0c: // DOS 3.0+ internal - Open Device and Set SFT Owner/Mode
@@ -13287,7 +13316,17 @@ inline void msdos_int_2fh_12h()
 			m_CF = 1;
 		}
 		break;
-//	case 0x17: // DOS 3.0+ internal - Get Current Directory Structure for Drive
+	case 0x17:
+		{
+			UINT16 drive = i386_read_stack();
+			if(msdos_is_valid_drive(drive)) {
+				msdos_cds_update(drive);
+			}
+			REG16(SI) = 88 * drive;
+			SREG(DS) = (CDS_TOP >> 4);
+			i386_load_segment_descriptor(DS);
+		}
+		break;
 //	case 0x18: // DOS 3.0+ internal - Get Caller's Registers
 //	case 0x19: // DOS 3.0+ internal - Set Drive???
 	case 0x1a:
@@ -13343,7 +13382,17 @@ inline void msdos_int_2fh_12h()
 			}
 		}
 		break;
-//	case 0x1f: // DOS 3.0+ internal - Build Current Directory Structure
+	case 0x1f:
+		{
+			UINT16 drive = i386_read_stack();
+			if(msdos_is_valid_drive(drive)) {
+				msdos_cds_update(drive);
+			}
+			REG16(SI) = 88 * drive;
+			SREG(ES) = (CDS_TOP >> 4);
+			i386_load_segment_descriptor(ES);
+		}
+		break;
 	case 0x20:
 		{
 			int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
@@ -13361,7 +13410,23 @@ inline void msdos_int_2fh_12h()
 	case 0x21:
 		msdos_int_21h_60h(0);
 		break;
-//	case 0x22: // DOS 3.0+ internal - Set Extended Error Info
+	case 0x22:
+		{
+			sda_t *sda = (sda_t *)(mem + SDA_TOP);
+			if(*(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x00) != 0xff) {
+				sda->extended_error_code = *(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x00);
+			}
+			if(*(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x01) != 0xff) {
+				sda->error_class         = *(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x01);
+			}
+			if(*(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x02) != 0xff) {
+				sda->suggested_action    = *(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x02);
+			}
+			if(*(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x03) != 0xff) {
+				sda->locus_of_last_error = *(UINT8 *)(mem + SREG_BASE(SS) + REG16(SI) + 0x03);
+			}
+		}
+		break;
 //	case 0x23: // DOS 3.0+ internal - Check If Character Device
 //	case 0x24: // DOS 3.0+ internal - Sharing Retry Delay
 	case 0x25:
@@ -13402,8 +13467,8 @@ inline void msdos_int_2fh_12h()
 			i386_load_segment_descriptor(ES);
 			REG16(DI) = 0x00;
 		} else if(REG8(DL) == 0x08) {
-			// dummy parameter error message read routine is at fffd:0010
-			SREG(ES) = 0xfffd;
+			// dummy parameter error message read routine is at fffc:0010
+			SREG(ES) = DUMMY_TOP >> 4;
 			i386_load_segment_descriptor(ES);
 			REG16(DI) = 0x0010;
 		}
@@ -13548,7 +13613,7 @@ inline void msdos_int_2fh_16h()
 		// from DOSBox
 		i386_set_a20_line(1);
 		break;
-	case 0x06: // Windows Enhanced Mode & 286 DOSX exit Broadcast
+	case 0x06: // Windows Enhanced Mode & 286 DOSX Exit Broadcast
 	case 0x08: // Windows Enhanced Mode Init Complete Broadcast
 	case 0x09: // Windows Enhanced Mode Begin Exit Broadcast
 		break;
@@ -13560,6 +13625,7 @@ inline void msdos_int_2fh_16h()
 			REG16(AX) = 0x0000;
 			REG8(BH) = win_major_version;
 			REG8(BL) = win_minor_version;
+//			REG16(CX) = 0x0002; // standard
 			REG16(CX) = 0x0003; // enhanced
 		}
 		break;
@@ -13576,6 +13642,7 @@ inline void msdos_int_2fh_16h()
 	case 0x81:
 	case 0x82:
 	case 0x84:
+	case 0x85:
 	case 0x86:
 	case 0x87:
 	case 0x89:
@@ -13595,13 +13662,13 @@ inline void msdos_int_2fh_16h()
 		break;
 	case 0x8f:
 		switch(REG8(DH)) {
-		case 0x00:
-		case 0x02:
-		case 0x03:
-			REG16(AX) = 0x00;
-			break;
 		case 0x01:
-			REG16(AX) = 0x168f;
+//			REG16(AX) = 0x0000; // close command selected but not yet acknowledged
+//			REG16(AX) = 0x0001; // close command issued and acknowledged
+			REG16(AX) = 0x168f; // close command not selected -- application should continue
+			break;
+		default:
+			REG16(AX) = 0x0000; // successful
 			break;
 		}
 		break;
@@ -13645,6 +13712,28 @@ inline void msdos_int_2fh_1ah()
 	case 0x00:
 		// ANSI.SYS is installed
 		REG8(AL) = 0xff;
+		break;
+	case 0x01:
+		if(REG8(CL) == 0x7f) {
+			// get display information
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a));
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a);
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;
+//		} else if(REG8(CL) == 0x5f) {
+//			// set display information
+		} else {
+			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
+		}
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -14077,7 +14166,8 @@ inline void msdos_int_2fh_adh()
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 8) = active_code_page;
 		break;
 	case 0x80:
-		break; // keyb.com is not installed
+		// KEYB.COM is not installed
+		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -14247,6 +14337,12 @@ inline void msdos_int_33h_0009h()
 	mouse.hot_spot[1] = REG16(CX);
 }
 
+inline void msdos_int_33h_000ah()
+{
+	mouse.screen_mask = REG16(CX);
+	mouse.cursor_mask = REG16(DX);
+}
+
 inline void msdos_int_33h_000bh()
 {
 //	if(mouse.hidden > 0) {
@@ -14409,11 +14505,74 @@ inline void msdos_int_33h_0024h()
 	REG16(CX) = 0x0400; // PS/2
 }
 
+inline void msdos_int_33h_0025h()
+{
+	REG16(AX) = 0x8000; // driver (not TSR), software text cursor
+}
+
 inline void msdos_int_33h_0026h()
 {
 	REG16(BX) = 0x0000;
 	REG16(CX) = mouse.max_position.x;
 	REG16(DX) = mouse.max_position.y;
+}
+
+inline void msdos_int_33h_0027h()
+{
+//	if(mouse.hidden > 0) {
+		update_console_input();
+//	}
+	int dx = (mouse.position.x - mouse.prev_position.x) * mouse.mickey.x / 8;
+	int dy = (mouse.position.y - mouse.prev_position.y) * mouse.mickey.y / 8;
+	mouse.prev_position.x = mouse.position.x;
+	mouse.prev_position.y = mouse.position.y;
+	REG16(AX) = mouse.screen_mask;
+	REG16(BX) = mouse.cursor_mask;
+	REG16(CX) = dx;
+	REG16(DX) = dy;
+}
+
+inline void msdos_int_33h_0028h()
+{
+	if(REG16(CX) != 0) {
+		UINT8 tmp = REG8(AL);
+		REG8(AL) = REG8(CL);
+		pcbios_int_10h_00h();
+		REG8(AL) = tmp;
+	}
+	REG8(CL) = 0x00; // successful
+}
+
+inline void msdos_int_33h_0029h()
+{
+	switch(REG16(CX)) {
+	case 0x0000:
+		REG16(CX) = 0x0003;
+		sprintf((char *)(mem + WORK_TOP), "TEXT Mode (80x25)$");
+		break;
+	case 0x0003:
+		REG16(CX) = 0x0070;
+		sprintf((char *)(mem + WORK_TOP), "V-TEXT Mode (%dx%d)$", scr_width, scr_height);
+		break;
+	case 0x0070:
+		REG16(CX) = 0x0071;
+		sprintf((char *)(mem + WORK_TOP), "Extended CGA V-TEXT Mode (%dx%d)$", scr_width, scr_height);
+		break;
+	case 0x0071:
+		REG16(CX) = 0x0073;
+		sprintf((char *)(mem + WORK_TOP), "Extended CGA TEXT Mode (80x25)$");
+		break;
+	default:
+		REG16(CX) = 0x0000;
+		break;
+	}
+	if(REG16(CX) != 0) {
+		SREG(DS) = (WORK_TOP >> 4);
+	} else {
+		SREG(DS) = 0x0000;
+	}
+	i386_load_segment_descriptor(DS);
+	REG16(DX) = 0x0000;
 }
 
 inline void msdos_int_33h_002ah()
@@ -14435,9 +14594,9 @@ inline void msdos_int_33h_0031h()
 inline void msdos_int_33h_0032h()
 {
 	REG16(AX) = 0;
-//	REG16(AX) |= 0x8000; // 0025h
+	REG16(AX) |= 0x8000; // 0025h
 	REG16(AX) |= 0x4000; // 0026h
-//	REG16(AX) |= 0x2000; // 0027h
+	REG16(AX) |= 0x2000; // 0027h
 //	REG16(AX) |= 0x1000; // 0028h
 //	REG16(AX) |= 0x0800; // 0029h
 	REG16(AX) |= 0x0400; // 002ah
@@ -14451,6 +14610,17 @@ inline void msdos_int_33h_0032h()
 	REG16(AX) |= 0x0004; // 0032h
 //	REG16(AX) |= 0x0002; // 0033h
 //	REG16(AX) |= 0x0001; // 0034h
+}
+
+inline void msdos_int_33h_004dh()
+{
+	strcpy((char *)(mem + SREG_BASE(ES) + REG16(DI)), "Copyright 2017 MS-DOS Player");
+}
+
+inline void msdos_int_33h_006dh()
+{
+	*(UINT8 *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x08; // V8.05
+	*(UINT8 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = 0x05;
 }
 
 inline void msdos_int_67h_40h()
@@ -14853,6 +15023,149 @@ inline void msdos_int_67h_54h()
 	}
 }
 
+inline void msdos_int_67h_55h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
+		UINT16 jump_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0);
+		UINT16 jump_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2);
+		UINT8  entries  = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 4);
+		UINT16 map_ofs  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 5);
+		UINT16 map_seg  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 7);
+		
+		for(int i = 0; i < (int)entries; i++) {
+			int logical  = *(UINT16 *)(mem + (map_seg << 4) + map_ofs + 4 * i + 0);
+			int physical = *(UINT16 *)(mem + (map_seg << 4) + map_ofs + 4 * i + 2);
+			
+			if(REG8(AL) == 0x01) {
+				physical = ((physical << 4) - EMS_TOP) / 0x4000;
+			}
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			} else
+			if(logical == 0xffff) {
+				ems_unmap_page(physical & 3);
+			} else if(logical < ems_handles[REG16(DX)].pages) {
+				ems_map_page(physical & 3, REG16(DX), logical);
+			} else {
+				REG8(AH) = 0x8a;
+				return;
+			}
+		}
+		i386_jmp_far(jump_seg, jump_ofs);
+		REG8(AH) = 0x00;
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_56h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x02) {
+		REG16(BX) = (2 + 2) * 4;
+		REG8(AH) = 0x00;
+	} else if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
+		UINT16 call_ofs    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  0);
+		UINT16 call_seg    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  2);
+		UINT8  new_entries = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) +  4);
+		UINT16 new_map_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  5);
+		UINT16 new_map_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) +  7);
+#if 0
+		UINT8  old_entries = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) +  9);
+		UINT16 old_map_ofs = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 10);
+		UINT16 old_map_seg = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 12);
+#endif
+		UINT16 handles[4], pages[4];
+		
+		// alter page map and call routine is at fffc:001f
+		if(!(call_seg == 0 && call_ofs == 0)) {
+			mem[DUMMY_TOP + 0x1f] = 0x9a;	// call far
+			mem[DUMMY_TOP + 0x20] = (call_ofs >> 0) & 0xff;
+			mem[DUMMY_TOP + 0x21] = (call_ofs >> 8) & 0xff;
+			mem[DUMMY_TOP + 0x22] = (call_seg >> 0) & 0xff;
+			mem[DUMMY_TOP + 0x23] = (call_seg >> 8) & 0xff;
+		} else {
+			// invalid call addr :-(
+			mem[DUMMY_TOP + 0x1f] = 0x90;	// nop
+			mem[DUMMY_TOP + 0x20] = 0x90;	// nop
+			mem[DUMMY_TOP + 0x21] = 0x90;	// nop
+			mem[DUMMY_TOP + 0x22] = 0x90;	// nop
+			mem[DUMMY_TOP + 0x23] = 0x90;	// nop
+		}
+		// do call far (push cs/ip) in old mapping
+		i386_call_far(DUMMY_TOP >> 4, 0x001f);
+		
+		// get old mapping data
+#if 0
+		for(int i = 0; i < (int)old_entries; i++) {
+			int logical  = *(UINT16 *)(mem + (old_map_seg << 4) + old_map_ofs + 4 * i + 0);
+			int physical = *(UINT16 *)(mem + (old_map_seg << 4) + old_map_ofs + 4 * i + 2);
+			
+			if(REG8(AL) == 0x01) {
+				physical = ((physical << 4) - EMS_TOP) / 0x4000;
+			}
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			} else
+			if(logical == 0xffff) {
+				ems_unmap_page(physical & 3);
+			} else if(logical < ems_handles[REG16(DX)].pages) {
+				ems_map_page(physical & 3, REG16(DX), logical);
+			} else {
+				REG8(AH) = 0x8a;
+				return;
+			}
+		}
+#endif
+		for(int i = 0; i < 4; i++) {
+			handles[i] = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
+			pages  [i] = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
+		}
+		
+		// set new mapping
+		for(int i = 0; i < (int)new_entries; i++) {
+			int logical  = *(UINT16 *)(mem + (new_map_seg << 4) + new_map_ofs + 4 * i + 0);
+			int physical = *(UINT16 *)(mem + (new_map_seg << 4) + new_map_ofs + 4 * i + 2);
+			
+			if(REG8(AL) == 0x01) {
+				physical = ((physical << 4) - EMS_TOP) / 0x4000;
+			}
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			} else
+			if(logical == 0xffff) {
+				ems_unmap_page(physical & 3);
+			} else if(logical < ems_handles[REG16(DX)].pages) {
+				ems_map_page(physical & 3, REG16(DX), logical);
+			} else {
+				REG8(AH) = 0x8a;
+				return;
+			}
+		}
+		
+		// push old mapping data in new mapping
+		for(int i = 0; i < 4; i++) {
+			i386_push16(handles[i]);
+			i386_push16(pages  [i]);
+		}
+		REG8(AH) = 0x00;
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
 inline void msdos_int_67h_57h_tmp()
 {
 	UINT32 copy_length = *(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00);
@@ -14985,7 +15298,12 @@ inline void msdos_int_67h_59h()
 	if(!support_ems) {
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00) {
-		REG8(AH) = 0xa4; // access denied by operating system
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 1024;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2) = 0;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4) = 4 * 4;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 6) = 0;
+		REG8(AH) = 0x00;
+//		REG8(AH) = 0xa4; // access denied by operating system
 	} else if(REG8(AL) == 0x01) {
 		REG8(AH) = 0x00;
 		REG16(BX) = free_ems_pages;
@@ -15022,12 +15340,88 @@ inline void msdos_int_67h_5ah()
 	}
 }
 
+inline void msdos_int_67h_5bh()
+{
+	static UINT8  stored_bl = 0x00;
+	static UINT16 stored_es = 0x0000;
+	static UINT16 stored_di = 0x0000;
+	
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		if(stored_bl == 0x00) {
+			if(!(stored_es == 0 && stored_di == 0)) {
+				for(int i = 0; i < 4; i++) {
+					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
+					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
+				}
+			}
+			SREG(ES) = stored_es;
+			i386_load_segment_descriptor(ES);
+			REG16(DI) = stored_di;
+		} else {
+			REG8(BL) = stored_bl;
+		}
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x01) {
+		if(REG8(BL) == 0x00) {
+			if(!(SREG(ES) == 0 && REG16(DI) == 0)) {
+				for(int i = 0; i < 4; i++) {
+					UINT16 handle = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 0);
+					UINT16 page   = *(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 2);
+					
+					if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+						ems_map_page(i, handle, page);
+					} else {
+						ems_unmap_page(i);
+					}
+				}
+			}
+		}
+		stored_bl = REG8(BL);
+		stored_es = SREG(ES);
+		stored_di = REG16(DI);
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x02) {
+		REG16(DX) = 4 * 4;
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x03) {
+		REG8(BL) = 0x00; // not supported
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x04) {
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x05) {
+		REG8(BL) = 0x00; // not supported
+		REG8(AH) = 0x00;
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
 inline void msdos_int_67h_5dh()
 {
 	if(!support_ems) {
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01 || REG8(AL) == 0x02) {
 		REG8(AH) = 0xa4; // operating system denied access
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_70h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		REG8(AL) = 0x00;
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x01) {
+		REG8(AL) = 0x00;
+//		REG8(AH) = (REG8(BL) == 0x00) ? 0x00 : 0x80;
+		REG8(AH) = 0x00;
 	} else {
 		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
@@ -15959,7 +16353,7 @@ void msdos_syscall(unsigned num)
 			fatalerror("failed to terminate the process (PSP=%04X) by int 20h\n", SREG(CS));
 		}
 		break;
-	case 0x6f:
+	case 0x30:
 		// dummy interrupt for case map routine pointed in the country info
 //		if(!(REG8(CL) >= 0x00 && REG8(CL) <= 0x24)) {
 //			REG8(AL) = 0x00;
@@ -16306,48 +16700,63 @@ void msdos_syscall(unsigned num)
 		switch(REG8(AH)) {
 		case 0x00:
 			// Mouse
-			switch(REG8(AL)) {
-			case 0x00: msdos_int_33h_0000h(); break;
-			case 0x01: msdos_int_33h_0001h(); break;
-			case 0x02: msdos_int_33h_0002h(); break;
-			case 0x03: msdos_int_33h_0003h(); break;
-			case 0x04: msdos_int_33h_0004h(); break;
-			case 0x05: msdos_int_33h_0005h(); break;
-			case 0x06: msdos_int_33h_0006h(); break;
-			case 0x07: msdos_int_33h_0007h(); break;
-			case 0x08: msdos_int_33h_0008h(); break;
-			case 0x09: msdos_int_33h_0009h(); break;
-			case 0x0a: break; // Define Text Cursor
-			case 0x0b: msdos_int_33h_000bh(); break;
-			case 0x0c: msdos_int_33h_000ch(); break;
-			case 0x0d: break; // Light Pen Emulation On
-			case 0x0e: break; // Light Pen Emulation Off
-			case 0x0f: msdos_int_33h_000fh(); break;
-			case 0x10: break; // Define Screen Region for Updating
-			case 0x11: msdos_int_33h_0011h(); break;
-			case 0x12: REG16(AX) = 0xffff; break; // Set Large Graphics Cursor Block
-			case 0x13: break; // Define Double-Speed Threshold
-			case 0x14: msdos_int_33h_0014h(); break;
-			case 0x15: msdos_int_33h_0015h(); break;
-			case 0x16: msdos_int_33h_0016h(); break;
-			case 0x17: msdos_int_33h_0017h(); break;
-			case 0x18: msdos_int_33h_0018h(); break;
-			case 0x19: msdos_int_33h_0019h(); break;
-			case 0x1a: msdos_int_33h_001ah(); break;
-			case 0x1b: msdos_int_33h_001bh(); break;
-			case 0x1d: msdos_int_33h_001dh(); break;
-			case 0x1e: msdos_int_33h_001eh(); break;
-			case 0x1f: msdos_int_33h_001fh(); break;
-			case 0x20: msdos_int_33h_0020h(); break;
-			case 0x21: msdos_int_33h_0021h(); break;
-			case 0x22: msdos_int_33h_0022h(); break;
-			case 0x23: msdos_int_33h_0023h(); break;
-			case 0x24: msdos_int_33h_0024h(); break;
-			case 0x26: msdos_int_33h_0026h(); break;
-			case 0x2a: msdos_int_33h_002ah(); break;
-			case 0x2f: break; // Mouse Hardware Reset
-			case 0x31: msdos_int_33h_0031h(); break;
-			case 0x32: msdos_int_33h_0032h(); break;
+			switch(REG16(AX)) {
+			case 0x0000: msdos_int_33h_0000h(); break;
+			case 0x0001: msdos_int_33h_0001h(); break;
+			case 0x0002: msdos_int_33h_0002h(); break;
+			case 0x0003: msdos_int_33h_0003h(); break;
+			case 0x0004: msdos_int_33h_0004h(); break;
+			case 0x0005: msdos_int_33h_0005h(); break;
+			case 0x0006: msdos_int_33h_0006h(); break;
+			case 0x0007: msdos_int_33h_0007h(); break;
+			case 0x0008: msdos_int_33h_0008h(); break;
+			case 0x0009: msdos_int_33h_0009h(); break;
+			case 0x000a: msdos_int_33h_000ah(); break;
+			case 0x000b: msdos_int_33h_000bh(); break;
+			case 0x000c: msdos_int_33h_000ch(); break;
+			case 0x000d: break; // MS MOUSE v1.0+ - Light Pen Emulation On
+			case 0x000e: break; // MS MOUSE v1.0+ - Light Pen Emulation Off
+			case 0x000f: msdos_int_33h_000fh(); break;
+			case 0x0010: break; // MS MOUSE v1.0+ - Define Screen Region for Updating
+			case 0x0011: msdos_int_33h_0011h(); break;
+			case 0x0012: REG16(AX) = 0xffff; break; // MS MOUSE - Set Large Graphics Cursor Block
+			case 0x0013: break; // MS MOUSE v5.0+ - Define Double-Speed Threshold
+			case 0x0014: msdos_int_33h_0014h(); break;
+			case 0x0015: msdos_int_33h_0015h(); break;
+			case 0x0016: msdos_int_33h_0016h(); break;
+			case 0x0017: msdos_int_33h_0017h(); break;
+			case 0x0018: msdos_int_33h_0018h(); break;
+			case 0x0019: msdos_int_33h_0019h(); break;
+			case 0x001a: msdos_int_33h_001ah(); break;
+			case 0x001b: msdos_int_33h_001bh(); break;
+			case 0x001c: break; // MS MOUSE v6.0+ - Set Interrupt Rate
+			case 0x001d: msdos_int_33h_001dh(); break;
+			case 0x001e: msdos_int_33h_001eh(); break;
+			case 0x001f: msdos_int_33h_001fh(); break;
+			case 0x0020: msdos_int_33h_0020h(); break;
+			case 0x0021: msdos_int_33h_0021h(); break;
+			case 0x0022: msdos_int_33h_0022h(); break;
+			case 0x0023: msdos_int_33h_0023h(); break;
+			case 0x0024: msdos_int_33h_0024h(); break;
+			case 0x0025: msdos_int_33h_0025h(); break;
+			case 0x0026: msdos_int_33h_0026h(); break;
+			case 0x0027: msdos_int_33h_0027h(); break;
+			case 0x0028: msdos_int_33h_0028h(); break;
+			case 0x0029: msdos_int_33h_0029h(); break;
+			case 0x002a: msdos_int_33h_002ah(); break;
+			// 0x002b: MS MOUSE v7.0+ - Load Acceleration Profiles
+			// 0x002c: MS MOUSE v7.0+ - Get Acceleration Profiles
+			// 0x002d: MS MOUSE v7.0+ - Select Acceleration Profile
+			// 0x002e: MS MOUSE v8.10+ - Set Acceleration Profile Names
+			case 0x002f: break; // Mouse Hardware Reset
+			// 0x0030: MS MOUSE v7.04+ - Get/Set BallPoint Information
+			case 0x0031: msdos_int_33h_0031h(); break;
+			case 0x0032: msdos_int_33h_0032h(); break;
+			// 0x0033: MS MOUSE v7.05+ - Get Switch Settings And Acceleration Profile Data
+			// 0x0034: MS MOUSE v8.0+ - Get Initialization File
+			// 0x0035: MS MOUSE v8.10+ - LCD Screen Large Pointer Support
+			case 0x004d: msdos_int_33h_004dh(); break;
+			case 0x006d: msdos_int_33h_006dh(); break;
 			default:
 				unimplemented_33h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				break;
@@ -16382,20 +16791,16 @@ void msdos_syscall(unsigned num)
 		case 0x52: msdos_int_67h_52h(); break;
 		case 0x53: msdos_int_67h_53h(); break;
 		case 0x54: msdos_int_67h_54h(); break;
-		// 0x55: LIM EMS 4.0 - Alter Page Map And JUMP
-		// 0x56: LIM EMS 4.0 - Alter Page Map And CALL
+		case 0x55: msdos_int_67h_55h(); break;
+		case 0x56: msdos_int_67h_56h(); break;
 		case 0x57: msdos_int_67h_57h(); break;
 		case 0x58: msdos_int_67h_58h(); break;
 		case 0x59: msdos_int_67h_59h(); break;
 		case 0x5a: msdos_int_67h_5ah(); break;
-		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
+		case 0x5b: msdos_int_67h_5bh(); break;
 		// 0x5c: LIM EMS 4.0 - Prepare Expanded Memory Hardware For Warm Boot
 		case 0x5d: msdos_int_67h_5dh(); break;
-		// 0x60: EEMS - Get Physical Window Array
-		// 0x61: EEMS - Generic Accelerator Card Support
-		// 0x68: EEMS - Get Address of All Pge Frames om System
-		// 0x69: EEMS - Map Page into Frame
-		// 0x6a: EEMS - Page Mapping
+		case 0x70: msdos_int_67h_70h(); break;
 		// 0xde: VCPI
 		case 0xde: msdos_int_67h_deh(); break;
 		default:
@@ -16463,11 +16868,11 @@ void msdos_syscall(unsigned num)
 			REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 			REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 			
-			mem[0xfffd0 + 0x02] = 0x9a;	// call far
-			mem[0xfffd0 + 0x03] = mouse.call_addr.w.l & 0xff;
-			mem[0xfffd0 + 0x04] = mouse.call_addr.w.l >> 8;
-			mem[0xfffd0 + 0x05] = mouse.call_addr.w.h & 0xff;
-			mem[0xfffd0 + 0x06] = mouse.call_addr.w.h >> 8;
+			mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
+			mem[DUMMY_TOP + 0x03] = mouse.call_addr.w.l & 0xff;
+			mem[DUMMY_TOP + 0x04] = mouse.call_addr.w.l >> 8;
+			mem[DUMMY_TOP + 0x05] = mouse.call_addr.w.h & 0xff;
+			mem[DUMMY_TOP + 0x06] = mouse.call_addr.w.h >> 8;
 			break;
 		}
 		for(int i = 0; i < 8; i++) {
@@ -16479,20 +16884,20 @@ void msdos_syscall(unsigned num)
 				REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 				REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 				
-				mem[0xfffd0 + 0x02] = 0x9a;	// call far
-				mem[0xfffd0 + 0x03] = mouse.call_addr_alt[i].w.l & 0xff;
-				mem[0xfffd0 + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
-				mem[0xfffd0 + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
-				mem[0xfffd0 + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
+				mem[DUMMY_TOP + 0x02] = 0x9a;	// call far
+				mem[DUMMY_TOP + 0x03] = mouse.call_addr_alt[i].w.l & 0xff;
+				mem[DUMMY_TOP + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
+				mem[DUMMY_TOP + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
+				mem[DUMMY_TOP + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
 				break;
 			}
 		}
 		// invalid call addr :-(
-		mem[0xfffd0 + 0x02] = 0x90;	// nop
-		mem[0xfffd0 + 0x03] = 0x90;	// nop
-		mem[0xfffd0 + 0x04] = 0x90;	// nop
-		mem[0xfffd0 + 0x05] = 0x90;	// nop
-		mem[0xfffd0 + 0x06] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x02] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x03] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x04] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x05] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x06] = 0x90;	// nop
 		break;
 	case 0x6b:
 		// end of irq12 (mouse)
@@ -16548,6 +16953,31 @@ void msdos_syscall(unsigned num)
 					break;
 				}
 			}
+		}
+		break;
+	case 0x6f:
+		// dummy interrupt for end of alter page map and call
+		{
+			UINT16 handles[4], pages[4];
+			
+			// pop old mapping data in new mapping
+			for(int i = 0; i < 4; i++) {
+				pages  [3 - i] = i386_pop16();
+				handles[3 - i] = i386_pop16();
+			}
+			
+			// restore old mapping
+			for(int i = 0; i < 4; i++) {
+				UINT16 handle = handles[i];
+				UINT16 page   = pages  [i];
+				
+				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+					ems_map_page(i, handle, page);
+				} else {
+					ems_unmap_page(i);
+				}
+			}
+			// do ret_far (pop cs/ip) in old mapping
 		}
 		break;
 	case 0x70:
@@ -16989,14 +17419,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffd:0018 irq0 (system timer)
-	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffc:0018 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 2) = DUMMY_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
 	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffd:0000 irq12 (mouse)
-	*(UINT16 *)(mem + 4 * 0x74 + 2) = 0xfffd;
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 irq12 (mouse)
+	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
 	
 	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
 	static const struct {
@@ -17122,61 +17552,70 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memcpy(mem + XMS_TOP + XMS_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
 	// irq12 routine (mouse)
-	mem[0xfffd0 + 0x00] = 0xcd;	// int 6ah (dummy)
-	mem[0xfffd0 + 0x01] = 0x6a;
-	mem[0xfffd0 + 0x02] = 0x9a;	// call far mouse
-	mem[0xfffd0 + 0x03] = 0xff;
-	mem[0xfffd0 + 0x04] = 0xff;
-	mem[0xfffd0 + 0x05] = 0xff;
-	mem[0xfffd0 + 0x06] = 0xff;
-	mem[0xfffd0 + 0x07] = 0xcd;	// int 6bh (dummy)
-	mem[0xfffd0 + 0x08] = 0x6b;
-	mem[0xfffd0 + 0x09] = 0xcf;	// iret
+	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 6ah (dummy)
+	mem[DUMMY_TOP + 0x01] = 0x6a;
+	mem[DUMMY_TOP + 0x02] = 0x9a;	// call far mouse
+	mem[DUMMY_TOP + 0x03] = 0xff;
+	mem[DUMMY_TOP + 0x04] = 0xff;
+	mem[DUMMY_TOP + 0x05] = 0xff;
+	mem[DUMMY_TOP + 0x06] = 0xff;
+	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
+	mem[DUMMY_TOP + 0x08] = 0x6b;
+	mem[DUMMY_TOP + 0x09] = 0xcf;	// iret
 	
 	// case map routine
-	mem[0xfffd0 + 0x0a] = 0xcd;	// int 6ch (dummy)
-	mem[0xfffd0 + 0x0b] = 0x6c;
-	mem[0xfffd0 + 0x0c] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x0a] = 0xcd;	// int 6ch (dummy)
+	mem[DUMMY_TOP + 0x0b] = 0x6c;
+	mem[DUMMY_TOP + 0x0c] = 0xcb;	// retf
 	
 	// font read routine
-	mem[0xfffd0 + 0x0d] = 0xcd;	// int 6dh (dummy)
-	mem[0xfffd0 + 0x0e] = 0x6d;
-	mem[0xfffd0 + 0x0f] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x0d] = 0xcd;	// int 6dh (dummy)
+	mem[DUMMY_TOP + 0x0e] = 0x6d;
+	mem[DUMMY_TOP + 0x0f] = 0xcb;	// retf
 	
 	// error message read routine
-	mem[0xfffd0 + 0x10] = 0xcd;	// int 6eh (dummy)
-	mem[0xfffd0 + 0x11] = 0x6e;
-	mem[0xfffd0 + 0x12] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x10] = 0xcd;	// int 6eh (dummy)
+	mem[DUMMY_TOP + 0x11] = 0x6e;
+	mem[DUMMY_TOP + 0x12] = 0xcb;	// retf
 	
 	// dummy loop to wait BIOS/DOS service is done
-	mem[0xfffd0 + 0x13] = 0xe6;	// out f7h, al
-	mem[0xfffd0 + 0x14] = 0xf7;
-	mem[0xfffd0 + 0x15] = 0x78;	// js/jns -4
-	mem[0xfffd0 + 0x16] = 0xfc;
-	mem[0xfffd0 + 0x17] = 0xcb;	// retf
+	mem[DUMMY_TOP + 0x13] = 0xe6;	// out f7h, al
+	mem[DUMMY_TOP + 0x14] = 0xf7;
+	mem[DUMMY_TOP + 0x15] = 0x78;	// js/jns -4
+	mem[DUMMY_TOP + 0x16] = 0xfc;
+	mem[DUMMY_TOP + 0x17] = 0xcb;	// retf
 	
 	// irq0 routine (system time)
-	mem[0xfffd0 + 0x18] = 0xcd;	// int 1ch
-	mem[0xfffd0 + 0x19] = 0x1c;
-	mem[0xfffd0 + 0x1a] = 0xea;	// jmp far (IRET_TOP >> 4):0008
-	mem[0xfffd0 + 0x1b] = 0x08;
-	mem[0xfffd0 + 0x1c] = 0x00;
-	mem[0xfffd0 + 0x1d] = ((IRET_TOP >> 4)     ) & 0xff;
-	mem[0xfffd0 + 0x1e] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	mem[DUMMY_TOP + 0x18] = 0xcd;	// int 1ch
+	mem[DUMMY_TOP + 0x19] = 0x1c;
+	mem[DUMMY_TOP + 0x1a] = 0xea;	// jmp far (IRET_TOP >> 4):0008
+	mem[DUMMY_TOP + 0x1b] = 0x08;
+	mem[DUMMY_TOP + 0x1c] = 0x00;
+	mem[DUMMY_TOP + 0x1d] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[DUMMY_TOP + 0x1e] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	
+	// alter page map and call routine
+	mem[DUMMY_TOP + 0x1f] = 0x9a;	// call far
+	mem[DUMMY_TOP + 0x20] = 0xff;
+	mem[DUMMY_TOP + 0x21] = 0xff;
+	mem[DUMMY_TOP + 0x22] = 0xff;
+	mem[DUMMY_TOP + 0x23] = 0xff;
+	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 6fh (dummy)
+	mem[DUMMY_TOP + 0x25] = 0x6f;
+	mem[DUMMY_TOP + 0x26] = 0xcb;	// retf
 	
 	// boot routine
-	mem[0xffff0] = 0xf4;	// halt
-	
-	mem[0xffff5] = '0';	// rom date
-	mem[0xffff6] = '2';
-	mem[0xffff7] = '/';
-	mem[0xffff8] = '2';
-	mem[0xffff9] = '2';
-	mem[0xffffa] = '/';
-	mem[0xffffb] = '0';
-	mem[0xffffc] = '6';
-	mem[0xffffe] = 0xfc;	// machine id
-	mem[0xfffff] = 0x00;
+	mem[0xffff0 + 0x00] = 0xf4;	// halt
+	mem[0xffff0 + 0x05] = '0';	// rom date
+	mem[0xffff0 + 0x06] = '2';
+	mem[0xffff0 + 0x07] = '/';
+	mem[0xffff0 + 0x08] = '2';
+	mem[0xffff0 + 0x09] = '2';
+	mem[0xffff0 + 0x0a] = '/';
+	mem[0xffff0 + 0x0b] = '0';
+	mem[0xffff0 + 0x0c] = '6';
+	mem[0xffff0 + 0x0e] = 0xfc;	// machine id
+	mem[0xffff0 + 0x0f] = 0x00;
 	
 	// param block
 	// + 0: param block (22bytes)

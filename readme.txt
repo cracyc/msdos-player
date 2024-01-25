@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/16/2017
+								7/12/2017
 
 ----- What's this
 
@@ -744,11 +744,14 @@ INT 2FH		Multiplex Interrupt
 	1213H	DOS 3.0+ internal - Uppercase Character
 	1214H	DOS 3.0+ internal - Compare Far Pointers
 	1216H	DOS 3.0+ internal - Get System File Table Entry
+	1217H	DOS 3.0+ internal - Get Current Directory Structure For Drive
 	121AH	DOS 3.0+ internal - Get File's Drive
 	121BH	DOS 3.0+ internal - Set Year/Length of February
 	121EH	DOS 3.0+ internal - Compare Filenames
+	121FH	DOS 3.0+ internal - Build Current Directory Structure
 	1220H	DOS 3.0+ internal - Get Job File Table Entry
 	1221H	DOS 3.0+ internal - Canonicalize File Name
+	1222H	DOS 3.0+ internal - Set Extended Error Info
 	1225H	DOS 3.0+ internal - Get Length of ASCIZ String
 	1226H	DOS 3.3+ internal - Open File
 	1227H	DOS 3.3+ internal - Close File
@@ -772,6 +775,7 @@ INT 2FH		Multiplex Interrupt
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1A00H	ANSI.SYS - Installation Check
+	1A01H	ANSI.SYS - Get Display Information (CL=7Fh)
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 	4300H	XMS - Installation Check
 	4308H	HIMEM.SYS - Get A20 Handler Number
@@ -801,6 +805,8 @@ INT 33H		Mouse
 	0006H	Return Button Release Data
 	0007H	Define Horizontal Cursor Range
 	0008H	Define Vertical Cursor Range
+	0009H	Define Graphics Cursor
+	000AH	Define Text Cursor
 	000BH	Read Motion Counters
 	000CH	Define Interrupt Sub Routine Parameters
 	000FH	Define Mickey/Pixel Ratio
@@ -821,10 +827,16 @@ INT 33H		Mouse
 	0022H	Set Language for Messages
 	0023H	Get Language for Messages
 	0024H	Get Software Version, Moouse Type, and IRQ Number (*7)
+	0025H	Get General Driver Information
 	0026H	Get Maximum Virtual Coordinates
+	0027H	Get Screen/Cursor Masks And Mickey Counts
+	0028H	Set Video Mode
+	0029H	Enumerate Video Modes
 	002AH	Get Cursor Host Spot
 	0031H	Get Current Minimum/Maximum Virtual Coordinates
 	0032H	Get Active Advanced Functions
+	004DH	Return Pointer To Copyright String
+	006DH	Get Version String
 
 INT 67H		LIM EMS
 
@@ -855,13 +867,22 @@ INT 67H		LIM EMS
 	5400H	LIM EMS 4.0 - Get Handle Directory
 	5401H	LIM EMS 4.0 - Search for Named Handle
 	5402H	LIM EMS 4.0 - Get Total Handles
+	55H	LIM EMS 4.0 - Alter Page Map And Jump
+	56H	LIM EMS 4.0 - Alter Page Map And Call
+	5602H	LIM EMS 4.0 - Get Page Map Stack Space Required
 	5700H	LIM EMS 4.0 - Move Memory Region
 	5701H	LIM EMS 4.0 - Exchange Memory Region
 	5800H	LIM EMS 4.0 - Get Mappable Physical Address Array
 	5801H	LIM EMS 4.0 - Get Mappable Physical Address Array Entries
+	5900H	LIM EMS 4.0 - Get Hardware Configuration Array
 	5901H	LIM EMS 4.0 - Get Unallocated Raw Page Count
 	5A00H	LIM EMS 4.0 - Allocate Standard Pages
 	5A01H	LIM EMS 4.0 - Allocate Raw Pages
+	5B00H	LIM EMS 4.0 - Get Alternate Map Register Set
+	5B01H	LIM EMS 4.0 - Set Alternate Map Register Set
+	5B02H	LIM EMS 4.0 - Get Alternate Map Save Array Size
+	7000H	EMS - Get Page Frame Status (NEC PC-9801 Only ???)
+	7001H	EMS - Enable/Disable Page Frame (NEC PC-9801 Only ???)
 
 CALL FAR XMS
 
