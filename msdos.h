@@ -192,6 +192,8 @@ public:
 
 #define MAX_FILES	128
 #define MAX_PROCESS	16
+#define MAX_DTAINFO	32
+#define LFN_DTA_LADDR	0x10FFF0
 
 #define DUP_STDIN	29
 #define DUP_STDOUT	30
@@ -435,8 +437,7 @@ static const struct {
 	int in;
 	int out;
 } file_mode[] = {
-//	{ _O_RDONLY | _O_BINARY, 1, 0 },
-	{ _O_RDWR   | _O_BINARY, 1, 0 }, // for bupdate.exe
+	{ _O_RDONLY | _O_BINARY, 1, 0 },
 	{ _O_WRONLY | _O_BINARY, 0, 1 },
 	{ _O_RDWR   | _O_BINARY, 1, 1 },
 };
@@ -448,13 +449,18 @@ typedef struct {
 	UINT8 switchar;
 	UINT8 verify;
 	int max_files;
-	HANDLE find_handle;
 	UINT8 allowable_mask;
 	UINT8 required_mask;
 	char volume_label[MAX_PATH];
 	bool parent_int_10h_feh_called;
 	bool parent_int_10h_ffh_called;
 } process_t;
+
+typedef struct {
+	UINT16 psp;
+	UINT32 dta;
+	HANDLE find_handle;
+} dtainfo_t;
 
 UINT8 major_version = 7;
 UINT8 minor_version = 10;
@@ -469,6 +475,7 @@ file_handler_t file_handler[MAX_FILES];
 UINT8 file_buffer[0x100000];
 
 process_t process[MAX_PROCESS];
+dtainfo_t dtalist[MAX_DTAINFO];
 
 UINT16 malloc_strategy = 0;
 UINT8 umb_linked = 0;
