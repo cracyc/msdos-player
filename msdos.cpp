@@ -2231,6 +2231,11 @@ void exit_handler()
 		delete key_buf_scan;
 		key_buf_scan = NULL;
 	}
+	if(key_buf_data != NULL) {
+		key_buf_data->release();
+		delete key_buf_data;
+		key_buf_data = NULL;
+	}
 #ifdef SUPPORT_XMS
 	msdos_xms_release();
 #endif
@@ -2396,7 +2401,11 @@ bool set_console_font_size(HANDLE hStdout, int width, int height)
 		if(lpfnGetCurrentConsoleFont && result) {
 			CONSOLE_FONT_INFO fi;
 			if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
-				result = (fi.dwFontSize.X == width && fi.dwFontSize.Y == height);
+				if(fi.dwFontSize.X == width && fi.dwFontSize.Y == height) {
+					*(UINT16 *)(mem + 0x485) = fi.dwFontSize.Y;
+				} else {
+					result = false;
+				}
 			}
 		}
 		FreeLibrary(hLibrary);
@@ -2934,6 +2943,7 @@ int main(int argc, char *argv[], char *envp[])
 	
 	key_buf_char = new FIFO(256);
 	key_buf_scan = new FIFO(256);
+	key_buf_data = new FIFO(256);
 	
 	hardware_init();
 	
@@ -3023,6 +3033,11 @@ int main(int argc, char *argv[], char *envp[])
 		key_buf_scan->release();
 		delete key_buf_scan;
 		key_buf_scan = NULL;
+	}
+	if(key_buf_data != NULL) {
+		key_buf_data->release();
+		delete key_buf_data;
+		key_buf_data = NULL;
 	}
 #ifdef USE_SERVICE_THREAD
 	DeleteCriticalSection(&input_crit_sect);
@@ -3240,8 +3255,9 @@ bool update_console_input()
 					}
 					
 					// set scan code of last pressed/release key to kbd_data (in-port 60h)
-					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode;
-					kbd_status |= 1;
+//					kbd_data = ir[i].Event.KeyEvent.wVirtualScanCode;
+//					kbd_status |= 1;
+					UINT8 tmp_data = ir[i].Event.KeyEvent.wVirtualScanCode;
 					
 					// update dos key buffer
 					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
@@ -3250,7 +3266,7 @@ bool update_console_input()
 					
 					if(ir[i].Event.KeyEvent.bKeyDown) {
 						// make
-						kbd_data &= 0x7f;
+						tmp_data &= 0x7f;
 						
 						if(chr == 0x00) {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
@@ -3346,36 +3362,51 @@ bool update_console_input()
 #endif
 							}
 						}
-					} else if(chr == 0x03 && (ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) {
-						// ctrl-break, ctrl-c
-						if(scn == 0x46) {
-							if(key_buf_char != NULL && key_buf_scan != NULL) {
-#ifdef USE_SERVICE_THREAD
-								EnterCriticalSection(&key_buf_crit_sect);
-#endif
-								pcbios_set_key_buffer(0x00, 0x00);
-#ifdef USE_SERVICE_THREAD
-								LeaveCriticalSection(&key_buf_crit_sect);
-#endif
-							}
-							ctrl_break_pressed = true;
-							mem[0x471] = 0x80;
-							raise_int_1bh = true;
-						} else {
-							if(key_buf_char != NULL && key_buf_scan != NULL) {
-#ifdef USE_SERVICE_THREAD
-								EnterCriticalSection(&key_buf_crit_sect);
-#endif
-								pcbios_set_key_buffer(chr, scn);
-#ifdef USE_SERVICE_THREAD
-								LeaveCriticalSection(&key_buf_crit_sect);
-#endif
-							}
-							ctrl_c_pressed = (scn == 0x2e);
-						}
 					} else {
+						if(chr == 0x03 && (ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) {
+							// ctrl-break, ctrl-c
+							if(scn == 0x46) {
+								if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+									EnterCriticalSection(&key_buf_crit_sect);
+#endif
+									pcbios_set_key_buffer(0x00, 0x00);
+#ifdef USE_SERVICE_THREAD
+									LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+								}
+								ctrl_break_pressed = true;
+								mem[0x471] = 0x80;
+								raise_int_1bh = true;
+							} else {
+								if(key_buf_char != NULL && key_buf_scan != NULL) {
+#ifdef USE_SERVICE_THREAD
+									EnterCriticalSection(&key_buf_crit_sect);
+#endif
+									pcbios_set_key_buffer(chr, scn);
+#ifdef USE_SERVICE_THREAD
+									LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+								}
+								ctrl_c_pressed = (scn == 0x2e);
+							}
+						}
 						// break
-						kbd_data |= 0x80;
+						tmp_data |= 0x80;
+					}
+					if(!(kbd_status & 1)) {
+						kbd_data = tmp_data;
+						kbd_status |= 1;
+					} else {
+						if(key_buf_data != NULL) {
+#ifdef USE_SERVICE_THREAD
+							EnterCriticalSection(&key_buf_crit_sect);
+#endif
+							key_buf_data->write(tmp_data);
+#ifdef USE_SERVICE_THREAD
+							LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+						}
 					}
 					result = key_changed = true;
 					// IME may be on and it may causes screen scroll up and cursor position change
@@ -17533,7 +17564,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
 	CONSOLE_FONT_INFO cfi;
-	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
+//	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
+	cfi.dwFontSize.Y = 18;
+	
+	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	if(hLibrary) {
+		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+		if(lpfnGetCurrentConsoleFont) {
+			lpfnGetCurrentConsoleFont(hStdout, FALSE, &cfi);
+		}
+		FreeLibrary(hLibrary);
+	}
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
 	text_vram_top_address = TEXT_VRAM_TOP;
@@ -17586,7 +17628,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x480) = 0x1e;
 	*(UINT16 *)(mem + 0x482) = 0x3e;
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
-	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
+	*(UINT16 *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 #ifdef EXT_BIOS_TOP
@@ -18362,13 +18404,42 @@ void hardware_update()
 			if(!key_changed || mouse.hidden == 0) {
 				update_console_input();
 			}
+			if(!(kbd_status & 1)) {
+				if(key_buf_data != NULL) {
+#ifdef USE_SERVICE_THREAD
+					EnterCriticalSection(&key_buf_crit_sect);
+#endif
+					if(!key_buf_data->empty()) {
+						kbd_data = key_buf_data->read();
+						kbd_status |= 1;
+						key_changed = true;
+					}
+#ifdef USE_SERVICE_THREAD
+					LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+				}
+			}
 			
-			// raise irq1 if key buffer is not empty
+			// raise irq1 if key is pressed/released or key buffer is not empty
 			if(!key_changed) {
 #ifdef USE_SERVICE_THREAD
 				EnterCriticalSection(&key_buf_crit_sect);
 #endif
-				key_changed = !pcbios_is_key_buffer_empty();
+				if(!pcbios_is_key_buffer_empty()) {
+/*
+					if(!(kbd_status & 1)) {
+						UINT16 head = *(UINT16 *)(mem + 0x41a);
+						UINT16 tail = *(UINT16 *)(mem + 0x41c);
+						if(head != tail) {
+							int key_char = mem[0x400 + (head++)];
+							int key_scan = mem[0x400 + (head++)];
+							kbd_data = key_char ? key_char : key_scan;
+							kbd_status |= 1;
+						}
+					}
+*/
+					key_changed = true;
+				}
 #ifdef USE_SERVICE_THREAD
 				LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -19960,8 +20031,10 @@ void kbd_init()
 
 UINT8 kbd_read_data()
 {
+	UINT8 data = kbd_data;
+	kbd_data = 0;
 	kbd_status &= ~1;
-	return(kbd_data);
+	return(data);
 }
 
 void kbd_write_data(UINT8 val)

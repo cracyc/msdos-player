@@ -1223,6 +1223,7 @@ bool cursor_moved;
 
 FIFO *key_buf_char = NULL;
 FIFO *key_buf_scan = NULL;
+FIFO *key_buf_data = NULL;
 bool key_changed = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
