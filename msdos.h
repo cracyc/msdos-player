@@ -279,27 +279,6 @@ void ems_release_pages(int handle);
 void ems_map_page(int physical, int handle, int logical);
 void ems_unmap_page(int physical);
 
-// xms
-
-#if defined(HAS_I286) || defined(HAS_I386)
-#define SUPPORT_XMS
-#endif
-
-#ifdef SUPPORT_XMS
-#define MAX_XMS_HANDLES 16
-#define MAX_XMS_SIZE_KB 0x8000	// 32MB
-
-typedef struct {
-	int seg;
-	int size_kb;
-	int lock;
-	bool allocated;
-} xms_handle_t;
-
-xms_handle_t xms_handles[MAX_XMS_HANDLES + 1];
-int xms_a20_local_enb_count;
-#endif
-
 // dma
 
 typedef struct {
@@ -453,8 +432,8 @@ typedef struct {
 	CRITICAL_SECTION csModemStat;
 } sio_mt_t;
 
-sio_t sio[2] = {0};
-sio_mt_t sio_mt[2];
+sio_t sio[4] = {0};
+sio_mt_t sio_mt[4];
 
 void sio_init();
 void sio_finish();
@@ -489,6 +468,11 @@ void kbd_write_command(UINT8 val);
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
+
+#if defined(HAS_I286) || defined(HAS_I386)
+#define SUPPORT_XMS
+//#define SUPPORT_HMA
+#endif
 
 #define VECTOR_TOP	0
 #define VECTOR_SIZE	0x400
@@ -551,7 +535,7 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 UINT32 IRET_TOP = 0;
 #define IRET_SIZE	0x100
 UINT32 XMS_TOP = 0;
-#define XMS_SIZE	0x20
+#define XMS_SIZE	0x20	/* 18 + 6 + 7 */
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000
@@ -594,6 +578,17 @@ typedef struct {
 	}
 } mcb_t;
 #pragma pack()
+
+#ifdef SUPPORT_HMA
+#pragma pack(1)
+typedef struct {
+	UINT8 ms[2];
+	UINT16 owner;
+	UINT16 size;
+	UINT16 next;
+} hma_mcb_t;
+#pragma pack()
+#endif
 
 #pragma pack(1)
 typedef struct {
@@ -1059,5 +1054,30 @@ UINT16 mouse_push_cx;
 UINT16 mouse_push_dx;
 UINT16 mouse_push_si;
 UINT16 mouse_push_di;
+
+// hma
+
+#ifdef SUPPORT_HMA
+bool is_hma_used_by_xms = false;
+bool is_hma_used_by_int_2fh = false;
+#endif
+
+// xms
+
+#ifdef SUPPORT_XMS
+#define MAX_XMS_HANDLES 16
+#define MAX_XMS_SIZE_KB 0x8000	// 32MB
+
+typedef struct {
+	int seg;
+	int size_kb;
+	int lock;
+	bool allocated;
+} xms_handle_t;
+
+xms_handle_t xms_handles[MAX_XMS_HANDLES + 1];
+int xms_a20_local_enb_count;
+UINT16 xms_dx_after_call_08h = 0;
+#endif
 
 #endif

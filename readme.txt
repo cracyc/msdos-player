@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/24/2016
+								7/30/2016
 
 ----- What's this
 
@@ -23,10 +23,10 @@ support game softwares. I recommend DOSBOx for this purpose.
 
 ----- How to use
 
-Start a command prompt and run this emulator with target command file
+Start a command prompt and run this emulator with a target command file
 and any options.
 
-For example, compile sample.c with LSI C-86 and execute the compiled binary:
+For example, compile a sample.c with LSI C-86 and execute the compiled binary:
 
 	> msdos lcc sample.c
 	> msdos sample.exe
@@ -35,7 +35,7 @@ For example, compile sample.c with LSI C-86 and execute the compiled binary:
 ----- Options
 
 Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
-             [-s[P1[,P2]]] [-vX.XX] [-x] (command file) [options]
+             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-x] (command file) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -73,19 +73,20 @@ To enable XMS (i286 or later) and LIM EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
 so the size of UMB is decreased from 224KB to 160KB.
 
-To enable the serial I/O, please specify the option '-s[P1[,P2]]'.
-If you specify '-s', the virtual COM1/2 are connected to the host's COM ports
-found in the first and second by SetupDiGetClassDevs() API.
-If you specify '-s3,4', the virtual COM1/2 are connected to the host's COM3/4.
+To enable the serial I/O, please specify the option '-s[P1[,P2[,P3[,P4]]]]'.
+If you specify '-s', the virtual COM1-COM4 are connected to the host's COM
+ports found by SetupDiGetClassDevs() API.
+You can specify the host's COM port numbers connected to the virtual COM ports
+by adding numbers to '-s' option, for example '-s3,4,1,2'.
 
 NOTE: The maximum baud rate is limited to 9600bps.
 
 
------ About the environment variable table
+----- Environment variable table
 
 Basically, the environment variable table on the host Windows is copied to
 the table on the virtual machine (hereinafter, referred to as "virtual table"),
-and in this time, PATH/TEMP/TMP values are converted to short path.
+and in this time, MSDOS_PATH/PATH/TEMP/TMP values are converted to short path.
 
 Some softwares (for example DoDiary Version 1.55) invite that the environment
 variable table should be less than 1024 bytes.
@@ -162,7 +163,7 @@ The active code page can be also stored with '-p' option, for example:
 	> chcp 437
 	> msdos -cSW1US32.EXE -p -s SW1US.EXE
 
-When you run cSW1US32.EXE, it starts SW1US.EXE with the code page 437 and
+When you run SW1US32.EXE, it starts SW1US.EXE with the code page 437 and
 serial I/O option enabled.
 
 At the execution time, an embedded command file will be extracted with
@@ -177,7 +178,7 @@ The extracted command file will be removed when the execution is finished.
 This archive contains 8 executable binaries:
 
 	i86_x86 	Emulates 8086  and supports both 32bit/64bit Windows
-	i86_x64		Emulates 8086  and supports only 64bit Windows
+	i86_x64 	Emulates 8086  and supports only 64bit Windows
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
 	i286_x64	Emulates 80286 and supports only 64bit Windows
 	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
@@ -190,7 +191,7 @@ If you don't need the protected mode or new mnemonics of 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
 The VC++ project file "msdos.vcproj" also has the configurations for 80186,
-V30, Pentium/PRO/MMX/2/3/4 and MediaGX.
+NEC V30, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
 You can build all binaries for several cpu models by running build8_all.bat.
 
 
@@ -200,15 +201,15 @@ This emulator provides a very simple IBM PC compatible hardware emulation:
 
 CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB, PC BIOS,
 DMA Controller (dummy), Interrupt Controller, System Timer,
-Parallel I/O (dummy), Serial I/O (COM1/COM2), Real Time Clock + CMOS Memory,
+Parallel I/O (dummy), Serial I/O (COM1-COM4), Real Time Clock + CMOS Memory,
 VGA Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
 and 3-Button Mouse
 
 NOTE:
 - Graphic/Sound hardwares are NOT implemented.
 - DMA Controller is implemented, but FDC and HDC are not connected.
-- Parallel I/O is implemented but is not connected to host's LPT ports.
-- Serial I/O is implemented and is connected to host's COM ports.
+- Parallel I/O is implemented but is not connected to the host's LPT ports.
+- Serial I/O is implemented and can be connected to the host's COM ports.
 
 
 ----- Memory map
@@ -221,7 +222,8 @@ NOTE:
 0C0000H -	EMS Page Frame (64K)
 0D0000H -	Upper Memory Block (160KB)
 ----------
-0F8000H -	V-TEXT Shadow Buffer (32KB-16B)
+0F8000H -	V-TEXT Shadow Buffer (32KB-48B)
+0FFFD0H		Dummy BIOS/DOS/Driver Service Routines
 0FFFF0H -	CPU Boot Address
 100000H -	Upper Memory (15MB/31MB)
 
@@ -511,9 +513,31 @@ INT 2EH		Pass Command to Command Interpreter for Execution
 
 INT 2FH		Multiplex Interrupt
 
-	1216H	Get System File Table Entry
-	1220H	Get Job File Table Entry
-	122EH	Get Error Table Addresses (DL=00H/02H/04H/06H) (*5)
+	1200H	DOS 3.0+ internal - Installation Check
+	1202H	DOS 3.0+ internal - Get Interrupt Address
+	1204H	DOS 3.0+ internal - Normalize Path Separator
+	1205H	DOS 3.0+ internal - Output Character to Standard Output
+	120DH	DOS 3.0+ internal - Get Date and Time
+	1211H	DOS 3.0+ internal - Normalize ASCIZ Filename
+	1212H	DOS 3.0+ internal - Get Length of ASCIZ String
+	1213H	DOS 3.0+ internal - Uppercase Character
+	1214H	DOS 3.0+ internal - Compare Far Pointers
+	1216H	DOS 3.0+ internal - Get System File Table Entry
+	121AH	DOS 3.0+ internal - Get File's Drive
+	121BH	DOS 3.0+ internal - Set Year/Length of February
+	121EH	DOS 3.0+ internal - Compare Filenames
+	1220H	DOS 3.0+ internal - Get Job File Table Entry
+	1221H	DOS 3.0+ internal - Canonicalize File Name
+	1225H	DOS 3.0+ internal - Get Length of ASCIZ String
+	1226H	DOS 3.3+ internal - Open File
+	1227H	DOS 3.3+ internal - Close File
+	1228H	DOS 3.3+ internal - Move File Pointer
+	1229H	DOS 3.3+ internal - Read From File
+	122BH	DOS 3.3+ internal - IOCTL
+	122CH	DOS 3.3+ internal - Get Device Chain
+	122DH	DOS 3.3+ internal - Get Extended Error Code
+	122EH	DOS 4.0+ internal - Get Error Table Addresses (*5)
+	122FH	DOS 4.0+ internal - Set DOS Version Number to Return
 	1400H	NLSFUNC.COM - Installation Check
 	1401H	NLSFUNC.COM - Change Code Page
 	1402H	NLSFUNC.COM - Get Extended Country Info
@@ -526,6 +550,10 @@ INT 2FH		Multiplex Interrupt
 	4300H	XMS - Installation Check
 	4310H	XMS - Get Driver Address
 	4810H	Read Input Line From Console
+	4A01H	DOS 5.0+ - Query Free HMA Space
+	4A02H	DOS 5.0+ - Allocate HMA Space
+	4A03H	Windows95 - (De)Allocate HMA Memory Block
+	4A04H	Windows95 - Get Start of HMA Memory Chain
 	AD00H	DISPLAY.SYS - Installation Check
 	AD01H	DISPLAY.SYS - Set Active Code Page
 	AD02H	DISPLAY.SYS - Get Active Code Page
@@ -623,6 +651,10 @@ CALL FAR XMS
 	10H	XMS - Request Upper Memory Block
 	11H	XMS - Release Upper Memory Block
 	12H	XMS 3.0 - Reallocate Upper Memory Block
+	88H	XMS 3.0 - Query Free Extended Memory
+	89H	XMS 3.0 - Allocate Any Extended Memory
+	8EH	XMS 3.0 - Get Extended EMB Handle Information
+	8FH	XMS 3.0 - Reallocate Any Extended Memory Block
 
 (*1) Not a Hercules-compatible video adapter
 (*2) MS-DOS Version: 7.10 (default) or specified version with -v option
@@ -630,8 +662,8 @@ CALL FAR XMS
 (*4) Support only floppy disk drive
 (*5) Returns a dummy error table
 (*6) Mouse Version: 8.05
-(*7) EMS Version: 3.2
-(*8) XMS Version: 2.70
+(*7) EMS Version: 4.0
+(*8) XMS Version: 3.95
 
 
 --- License
@@ -644,7 +676,8 @@ See also COPYING.txt for more details about the license.
 
 ----- Thanks
 
-80286 code is based on MAME 0.149.
+8086/80186/80286 code is based on MAME 0.149.
+NEC V30 instructions code is based on MAME 0.128
 80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.174 are applied.
 
 INT 15H AH=87H (copy extended memory), AH=89H (switch to protected mode),
