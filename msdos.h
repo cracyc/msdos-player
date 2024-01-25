@@ -557,6 +557,19 @@ void kbd_write_data(UINT8 val);
 UINT8 kbd_read_status();
 void kbd_write_command(UINT8 val);
 
+// beep
+
+WAVEFORMATEX wfe;
+HWAVEOUT hWaveOut;
+WAVEHDR whdr;
+double beep_freq;
+bool beep_playing;
+
+void beep_init();
+void beep_finish();
+void beep_release();
+void beep_update();
+
 // crtc
 
 UINT8 crtc_addr = 0;
