@@ -3553,12 +3553,7 @@ static void I386OP(group0FBA_16)()      // Opcode 0x0f ba
 			}
 			break;
 		default:
-			if( modrm >= 0xc0 ) {
-				UINT16 dst = LOAD_RM16(modrm);
-				UINT8 bit = FETCH();
-			} else {
-				UINT32 ea = GetEA(modrm,1);
-				UINT16 dst = READ16(ea);
+			if(ignore_illegal_insn) {
 				UINT8 bit = FETCH();
 			}
 			report_invalid_modrm("group0FBA_16", modrm);

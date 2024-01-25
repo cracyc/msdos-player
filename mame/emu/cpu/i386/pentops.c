@@ -2137,7 +2137,9 @@ static void I386OP(cyrix_svldt)() // Opcode 0f 7a
 			i386_trap(6, 0, 0);
 		}
 	} else {
-		UINT8 modrm = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 modrm = FETCH();
+		}
 		i386_trap(6, 0, 0);
 	}
 	CYCLES(1);     // TODO: correct cycle count
@@ -2174,7 +2176,9 @@ static void I386OP(cyrix_rsldt)() // Opcode 0f 7b
 			i386_trap(6, 0, 0);
 		}
 	} else {
-		UINT8 modrm = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 modrm = FETCH();
+		}
 		i386_trap(6, 0, 0);
 	}
 	CYCLES(1);     // TODO: correct cycle count
@@ -2204,7 +2208,9 @@ static void I386OP(cyrix_svts)() // Opcode 0f 7c
 			i386_trap(6, 0, 0);
 		}
 	} else {
-		UINT8 modrm = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 modrm = FETCH();
+		}
 		i386_trap(6, 0, 0);
 	}
 }
@@ -2236,7 +2242,9 @@ static void I386OP(cyrix_rsts)() // Opcode 0f 7d
 			i386_trap(6, 0, 0);
 		}
 	} else {
-		UINT8 modrm = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 modrm = FETCH();
+		}
 		i386_trap(6, 0, 0);
 	}
 	CYCLES(1);     // TODO: correct cycle count
@@ -4648,7 +4656,9 @@ static void SSEOP(pextrw_r16_r64_i8)() // Opcode 0f c5
 		else
 			STORE_REG16(modrm, MMX(modrm & 0x7).w[imm8 & 3]);
 	} else {
-		UINT8 imm8 = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 imm8 = FETCH();
+		}
 		report_invalid_modrm("pextrw_r16_r64_i8", modrm);
 	}
 	CYCLES(1);     // TODO: correct cycle count
@@ -4662,7 +4672,9 @@ static void SSEOP(pextrw_r32_r64_i8)() // Opcode 0f c5
 		UINT8 imm8 = FETCH();
 		STORE_REG32(modrm, MMX(modrm & 0x7).w[imm8 & 3]);
 	} else {
-		UINT8 imm8 = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 imm8 = FETCH();
+		}
 		report_invalid_modrm("pextrw_r32_r64_i8", modrm);
 	}
 	CYCLES(1);     // TODO: correct cycle count
@@ -4676,7 +4688,9 @@ static void SSEOP(pextrw_reg_r128_i8)() // Opcode 66 0f c5
 		STORE_REG32(modrm, XMM(modrm & 0x7).w[imm8 & 7]);
 	}
 	else {
-		UINT8 imm8 = FETCH();
+		if(ignore_illegal_insn) {
+			UINT8 imm8 = FETCH();
+		}
 		report_invalid_modrm("sse_pextrw_reg_r128_i8", modrm);
 	}
 	CYCLES(1);     // TODO: correct cycle count

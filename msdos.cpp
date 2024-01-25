@@ -8826,7 +8826,7 @@ inline void pcbios_int_15h_e8h()
 		break;
 #if defined(HAS_I386)
 	case 0x20:
-		if (REG32(EDX) == 0x534d4150 && REG32(ECX) >= 20) {
+		if(REG32(EDX) == 0x534d4150 && REG32(ECX) >= 20) {
 			if(REG32(EBX) < 3) {
 				UINT32 base = 0, len = 0, type = 0;
 				switch(REG32(EBX)) {
@@ -9942,7 +9942,6 @@ inline void msdos_int_21h_0fh()
 		fcb->record_size = 128;
 		fcb->file_size = GetFileSize(hFile, NULL);
 		fcb->handle = hFile;
-		fcb->cur_record = 0;
 	}
 }
 
@@ -10117,12 +10116,15 @@ inline void msdos_int_21h_14h()
 	DWORD num = 0;
 	
 	memset(mem + dta_laddr, 0, fcb->record_size);
+	SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN);
+	
 	if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
 		REG8(AL) = 1;
 	} else {
-		UINT32 position = fcb->current_block * fcb->record_size + fcb->cur_record + num;
-		fcb->current_block = (position & 0xffffff) / fcb->record_size;
-		fcb->cur_record = (position & 0xffffff) % fcb->record_size;
+		if(++fcb->cur_record >= 128) {
+			fcb->current_block += fcb->cur_record / 128;
+			fcb->cur_record %= 128;
+		}
 		REG8(AL) = (num == fcb->record_size) ? 0 : 3;
 	}
 }
@@ -10135,14 +10137,18 @@ inline void msdos_int_21h_15h()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	DWORD num = 0;
 	
-	if(!WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
+	SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN);
+	WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL);
+	fcb->file_size = GetFileSize(fcb->handle, NULL);
+	
+	if(num != fcb->record_size) {
 		REG8(AL) = 1;
 	} else {
-		fcb->file_size = GetFileSize(fcb->handle, NULL);
-		UINT32 position = fcb->current_block * fcb->record_size + fcb->cur_record + num;
-		fcb->current_block = (position & 0xffffff) / fcb->record_size;
-		fcb->cur_record = (position & 0xffffff) % fcb->record_size;
-		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
+		if(++fcb->cur_record >= 128) {
+			fcb->current_block += fcb->cur_record / 128;
+			fcb->cur_record %= 128;
+		}
+		REG8(AL) = 0;
 	}
 }
 
@@ -10161,7 +10167,6 @@ inline void msdos_int_21h_16h()
 		fcb->record_size = 128;
 		fcb->file_size = 0;
 		fcb->handle = hFile;
-		fcb->cur_record = 0;
 	}
 }
 
@@ -10173,8 +10178,7 @@ inline void msdos_int_21h_17h()
 	char path_src[MAX_PATH];
 	strcpy(path_src, msdos_fcb_path(fcb_src));
 	
-	ext_fcb_t *ext_fcb_dst = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX) + 16);
-	fcb_t *fcb_dst = (fcb_t *)(ext_fcb_dst + (ext_fcb_dst->flag == 0xff ? 1 : 0));
+	fcb_t *fcb_dst = (fcb_t *)(mem + SREG_BASE(DS) + REG16(DX) + 16 + (ext_fcb_src->flag == 0xff ? 7 : 0));
 //	const char *path_dst = msdos_fcb_path(fcb_dst);
 	char path_dst[MAX_PATH];
 	strcpy(path_dst, msdos_fcb_path(fcb_dst));
@@ -10276,8 +10280,12 @@ inline void msdos_int_21h_21h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	fcb->current_block = rec / 128;
+	fcb->cur_record = rec % 128;
+	
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
 		REG8(AL) = 1;
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
@@ -10287,8 +10295,6 @@ inline void msdos_int_21h_21h()
 		if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
 			REG8(AL) = 1;
 		} else {
-			fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
-			fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
 			REG8(AL) = (num == fcb->record_size) ? 0 : 3;
 		}
 	}
@@ -10298,17 +10304,19 @@ inline void msdos_int_21h_22h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-		REG8(AL) = 0xff;
+	fcb->current_block = rec / 128;
+	fcb->cur_record = rec % 128;
+	
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+		REG8(AL) = 1;
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 		DWORD num = 0;
 		WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL);
 		fcb->file_size = GetFileSize(fcb->handle, NULL);
-		fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
-		fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
 		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
 	}
 }
@@ -10324,7 +10332,9 @@ inline void msdos_int_21h_23h()
 		REG8(AL) = 0xff;
 	} else {
 		UINT32 size = GetFileSize(hFile, NULL);
-		fcb->rand_record = size / fcb->record_size + ((size % fcb->record_size) != 0);
+		UINT32 rec = size / fcb->record_size + ((size % fcb->record_size) != 0);
+		fcb->rand_record = (fcb->record_size >= 64) ? (fcb->rand_record & 0xff000000) | (rec & 0xffffff) : rec;
+		CloseHandle(hFile);
 		REG8(AL) = 0;
 	}
 }
@@ -10333,8 +10343,9 @@ inline void msdos_int_21h_24h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	UINT32 rec = fcb->current_block * 128 + fcb->cur_record;
 	
-	fcb->rand_record = fcb->current_block * fcb->record_size + fcb->cur_record;
+	fcb->rand_record = (fcb->record_size >= 64) ? (fcb->rand_record & 0xff000000) | (rec & 0xffffff) : rec;
 }
 
 inline void msdos_int_21h_25h()
@@ -10359,43 +10370,62 @@ inline void msdos_int_21h_27h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
 		REG8(AL) = 1;
+	} else if(REG16(CX) == 0) {
+		REG8(AL) = 0;
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
-		memset(mem + dta_laddr, 0, fcb->record_size * REG16(CX));
+		UINT32 len = fcb->record_size * REG16(CX);
+		memset(mem + dta_laddr, 0, len);
 		DWORD num = 0;
-		if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size * REG16(CX), &num, NULL) || num == 0) {
+		if(!ReadFile(fcb->handle, mem + dta_laddr, len, &num, NULL) || num == 0) {
 			REG8(AL) = 1;
 		} else {
-			fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
-			fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
-			REG8(AL) = (num == fcb->record_size) ? 0 : 3;
-			REG16(CX) = num / fcb->record_size + ((num % fcb->record_size) != 0);
+			UINT16 nrec = num / fcb->record_size + ((num % fcb->record_size) != 0);
+			rec += nrec;
+			fcb->rand_record = (fcb->record_size >= 64) ? (fcb->rand_record & 0xff000000) | (rec & 0xffffff) : rec;
+			REG8(AL) = (num == len) ? 0 : 3;
+			REG16(CX) = nrec;
 		}
 	}
+	fcb->current_block = rec / 128;
+	fcb->cur_record = rec % 128;
 }
 
 inline void msdos_int_21h_28h()
 {
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + SREG_BASE(DS) + REG16(DX));
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
+	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->rand_record & 0xffffff), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-		REG8(AL) = 0xff;
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+		REG8(AL) = 1;
+	} else if(REG16(CX) == 0) {
+		if(!SetEndOfFile(fcb->handle)) {
+			REG8(AL) = 1;
+		} else {
+			fcb->file_size = GetFileSize(fcb->handle, NULL);
+			REG8(AL) = 0;
+		}
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
+		UINT32 len = fcb->record_size * REG16(CX);
 		DWORD num = 0;
-		WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size * REG16(CX), &num, NULL);
+		WriteFile(fcb->handle, mem + dta_laddr, len, &num, NULL);
 		fcb->file_size = GetFileSize(fcb->handle, NULL);
-		fcb->current_block = (fcb->rand_record & 0xffffff) / fcb->record_size;
-		fcb->cur_record = (fcb->rand_record & 0xffffff) % fcb->record_size;
-		REG8(AL) = (num == fcb->record_size) ? 0 : 1;
-		REG16(CX) = num / fcb->record_size + ((num % fcb->record_size) != 0);
+		UINT16 nrec = num / fcb->record_size + ((num % fcb->record_size) != 0);
+		rec += nrec;
+		fcb->rand_record = (fcb->record_size >= 64) ? (fcb->rand_record & 0xff000000) | (rec & 0xffffff) : rec;
+		REG8(AL) = (num == len) ? 0 : 1;
+		REG16(CX) = nrec;
 	}
+	fcb->current_block = rec / 128;
+	fcb->cur_record = rec % 128;
 }
 
 inline void msdos_int_21h_29h()
@@ -10689,7 +10719,7 @@ inline void msdos_int_21h_34h()
 {
 	SREG(ES) = SDA_TOP >> 4;
 	i386_load_segment_descriptor(ES);
-	REG16(BX) = offsetof(sda_t, indos_flag);;
+	REG16(BX) = offsetof(sda_t, indos_flag);
 }
 
 inline void msdos_int_21h_35h()
@@ -11602,7 +11632,7 @@ inline void msdos_int_21h_44h()
 					*(UINT32 *)(mem + XMS_TOP + 0x18 + 0x199) = 0x00110000;	// physical address
 					
 					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 0x0018;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = XMS_TOP >> 4;;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = XMS_TOP >> 4;
 					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 4) = 0x0001; // version 1.0
 					REG16(AX) = 6; // number of bytes actually read
 				} else {
@@ -12513,6 +12543,9 @@ inline void msdos_int_21h_57h()
 	case 0x01:
 		mtime = &time;
 		break;
+//	case 0x02: // DOS 4.x only - Get Extended Attributes For File
+//	case 0x03: // DOS 4.x only - Get Extended Attribute Properties
+//		break;
 	case 0x04:
 	case 0x05:
 		atime = &time;
@@ -12713,7 +12746,7 @@ inline void msdos_int_21h_5ch()
 inline void msdos_int_21h_5dh()
 {
 	switch(REG8(AL)) {
-	case 0x00:
+	case 0x00: // DOS 3.1+ internal - Server Function Call
 		if(*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x12) == 0x0000) {
 			// current system
 			static bool reenter = false;
@@ -12741,20 +12774,25 @@ inline void msdos_int_21h_5dh()
 			m_CF = 1;
 		}
 		break;
-	case 0x06: // get address of dos swappable data area
+//	case 0x01: // DOS 3.1+ internal - Commit All Files For Specified Computer/Process
+//	case 0x02: // DOS 3.1+ internal - SHARE.EXE - Close File By Name
+//	case 0x03: // DOS 3.1+ internal - SHARE.EXE - Close ALL Files For Given Computer
+//	case 0x04: // DOS 3.1+ internal - SHARE.EXE - Close ALL Files For Given Process
+//	case 0x05: // DOS 3.1+ internal - SHARE.EXE - Get Open File List Entry
+	case 0x06: // DOS 3.0+ internal - Get Address Of DOS Swappable Data Area
 		SREG(DS) = (SDA_TOP >> 4);
 		i386_load_segment_descriptor(DS);
 		REG16(SI) = offsetof(sda_t, crit_error_flag);
 		REG16(CX) = 0x80;
 		REG16(DX) = 0x1a;
 		break;
-	case 0x07: // get redirected printer mode
-	case 0x08: // set redirected printer mode
-	case 0x09: // flush redirected printer output
+	case 0x07: // DOS 3.1+ network - Get Redirected Printer Mode
+	case 0x08: // DOS 3.1+ network - Set Redirected Printer Mode
+	case 0x09: // DOS 3.1+ network - Flush Redirected Printer Output
 		REG16(AX) = 0x49; //  network software not installed
 		m_CF = 1;
 		break;
-	case 0x0a: // set extended error information
+	case 0x0a: // DOS 3.1+ - Set Extended Error Information
 		{
 			sda_t *sda = (sda_t *)(mem + SDA_TOP);
 			sda->int21h_5d0ah_called    = 1;
@@ -12780,7 +12818,7 @@ inline void msdos_int_21h_5dh()
 			sda->last_error_pointer.w.h = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e); // ES
 		}
 		break;
-	case 0x0b: // get dos swappable data areas
+	case 0x0b: // DOS 4.x only - internal - Get DOS Swappable Data Areas
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -12795,7 +12833,7 @@ inline void msdos_int_21h_5dh()
 inline void msdos_int_21h_5eh()
 {
 	switch(REG8(AL)) {
-	case 0x00:
+	case 0x00: // DOS 3.1+ network - Get Machine Name
 		{
 			char name[256] = {0};
 			DWORD dwSize = 256;
@@ -12814,6 +12852,11 @@ inline void msdos_int_21h_5eh()
 			}
 		}
 		break;
+//	case 0x01: // DOS 3.1+ network - Set Machine Name
+//	case 0x02: // DOS 3.1+ network - Set Network Printer Setup String
+//	case 0x03: // DOS 3.1+ network - Get Network Printer Setup String
+//	case 0x04: // DOS 3.1+ network - Set Printer Mode
+//	case 0x05: // DOS 3.1+ network - Get Printer Mode
 	default:
 //		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 //		REG16(AX) = 0x01;
@@ -12826,14 +12869,16 @@ inline void msdos_int_21h_5eh()
 inline void msdos_int_21h_5fh()
 {
 	switch(REG8(AL)) {
-	case 0x05:
+//	case 0x00: // DOS 3.1+ network - Get Redirection Mode
+//	case 0x01: // DOS 3.1+ network - Set Redirection Mode
+	case 0x05: // DOS 4.0+ network - Get Extended Redirection List Entry
 		REG16(BP) = 0;
 		for(int i = 0; i < 26; i++) {
 			if(msdos_is_remote_drive(i)) {
 				REG16(BP)++;
 			}
 		}
-	case 0x02:
+	case 0x02: // DOS 3.1+ network - Get Redirection List Entry
 		for(int i = 0, index = 0; i < 26; i++) {
 			if(msdos_is_remote_drive(i)) {
 				if(index == REG16(BX)) {
@@ -12853,7 +12898,10 @@ inline void msdos_int_21h_5fh()
 		REG16(AX) = 0x12; // no more files
 		m_CF = 1;
 		break;
-	case 0x07:
+//	case 0x03: // DOS 3.1+ network - Redirect Device
+//	case 0x04: // DOS 3.1+ network - Cancel Redirection
+//	case 0x06: // Network - Get Full Redirection List
+	case 0x07: // DOS 5+ - Enable Drive
 		if(msdos_is_valid_drive(REG8(DL))) {
 			msdos_cds_update(REG8(DL));
 		} else {
@@ -12861,7 +12909,7 @@ inline void msdos_int_21h_5fh()
 			m_CF = 1;
 		}
 		break;
-	case 0x08:
+	case 0x08: // DOS 5+ - Disable Drive
 		if(msdos_is_valid_drive(REG8(DL))) {
 			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * REG8(DL));
 			cds->drive_attrib = 0x0000;

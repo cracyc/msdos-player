@@ -2575,9 +2575,8 @@ static void I386OP(loadall)()       // Opcode 0x0f 0x07 (0x0f 0x05 on 80286), un
 
 static void I386OP(invalid)()
 {
-	/* for ISH.COM */
-//	report_invalid_opcode();
-//	i386_trap(6, 0, 0);
+	report_invalid_opcode();
+	i386_trap(6, 0, 0);
 }
 
 static void I386OP(xlat)()          // Opcode 0xd7

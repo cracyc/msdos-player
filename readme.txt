@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								9/3/2017
+								10/26/2017
 
 ----- What's This
 
@@ -50,6 +50,11 @@ Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-v	set the DOS version
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
+
+ISH.COM contains any invalid instructions and it cause an error.
+Please specify the option '-i' to ignore the invalid instructions.
+
+	> msdos -i ish.com
 
 EDIT.COM does not work correctly when a free memory space is large.
 Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
@@ -1031,7 +1036,8 @@ INT 67H AX=DE01H (Get Protected Mode Interface),
 INT 67H AX=DE0CH (Switch To Protected Mode),
 and some DOS info block improvements are based on DOSBox.
 
-Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk), and Mr.Jason Hood.
+Patched by Mr.Sagawa, Mr.sava (lukewarm), Mr.Kimura (emk), Mr.Jason Hood,
+and Mr.N2583ZYOB6
 
 ----------------------------------------
 TAKEDA, toshiya
