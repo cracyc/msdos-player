@@ -144,11 +144,15 @@ static void i386_load_segment_descriptor(int segment )
 {
 	if (PROTECTED_MODE)
 	{
+		UINT16 old_flags = m_sreg[segment].flags;
 		if (!V8086_MODE)
 		{
 			i386_load_protected_mode_segment(&m_sreg[segment], NULL );
 			if(m_sreg[segment].selector)
+			{
 				i386_set_descriptor_accessed(m_sreg[segment].selector);
+				m_sreg[segment].flags |= 0x0001;
+			}
 		}
 		else
 		{
@@ -158,6 +162,8 @@ static void i386_load_segment_descriptor(int segment )
 			m_sreg[segment].d = 0;
 			m_sreg[segment].valid = true;
 		}
+//		if (segment == CS && m_sreg[segment].flags != old_flags)
+//			debugger_privilege_hook();
 	}
 	else
 	{
@@ -231,6 +237,7 @@ static UINT32 get_flags()
 
 static void set_flags(UINT32 f )
 {
+	f &= m_eflags_mask;;
 	m_CF = (f & 0x1) ? 1 : 0;
 	m_PF = (f & 0x4) ? 1 : 0;
 	m_AF = (f & 0x10) ? 1 : 0;
@@ -249,7 +256,7 @@ static void set_flags(UINT32 f )
 	m_VIF = (f & 0x80000) ? 1 : 0;
 	m_VIP = (f & 0x100000) ? 1 : 0;
 	m_ID = (f & 0x200000) ? 1 : 0;
-	m_eflags = f & m_eflags_mask;
+	m_eflags = f;
 }
 
 static void sib_byte(UINT8 mod, UINT32* out_ea, UINT8* out_segment)
@@ -390,12 +397,12 @@ static UINT32 GetNonTranslatedEA(UINT8 modrm,UINT8 *seg)
 	return ea;
 }
 
-static UINT32 GetEA(UINT8 modrm, int rwn)
+static UINT32 GetEA(UINT8 modrm, int rwn, UINT32 size)
 {
 	UINT8 segment;
 	UINT32 ea;
 	modrm_to_EA(modrm, &ea, &segment );
-	return i386_translate(segment, ea, rwn );
+	return i386_translate(segment, ea, rwn, size );
 }
 
 /* Check segment register for validity when changing privilege level after an RETF */
@@ -446,14 +453,14 @@ static void i386_check_sreg_validity(int reg)
 	}
 }
 
-static int i386_limit_check(int seg, UINT32 offset)
+static int i386_limit_check(int seg, UINT32 offset, UINT32 size)
 {
 	if(PROTECTED_MODE && !V8086_MODE)
 	{
 		if((m_sreg[seg].flags & 0x0018) == 0x0010 && m_sreg[seg].flags & 0x0004) // if expand-down data segment
 		{
 			// compare if greater then 0xffffffff when we're passed the access size
-			if((offset <= m_sreg[seg].limit) || ((m_sreg[seg].d)?0:(offset > 0xffff)))
+			if((offset <= m_sreg[seg].limit) || ((m_sreg[seg].d)?0:((offset + size - 1) > 0xffff)))
 			{
 				logerror("Limit check at 0x%08x failed. Segment %04x, limit %08x, offset %08x (expand-down)\n",m_pc,m_sreg[seg].selector,m_sreg[seg].limit,offset);
 				return 1;
@@ -461,7 +468,7 @@ static int i386_limit_check(int seg, UINT32 offset)
 		}
 		else
 		{
-			if(offset > m_sreg[seg].limit)
+			if((offset + size - 1) > m_sreg[seg].limit)
 			{
 				logerror("Limit check at 0x%08x failed. Segment %04x, limit %08x, offset %08x\n",m_pc,m_sreg[seg].selector,m_sreg[seg].limit,offset);
 				return 1;
@@ -1645,7 +1652,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 		if (operand32 != 0)  // if 32-bit
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) - 8 : (REG16(SP) - 8) & 0xffff);
-			if(i386_limit_check(SS, offset))
+			if(i386_limit_check(SS, offset, 8))
 			{
 				logerror("CALL (%08x): Stack has no room for return address.\n",m_pc);
 				FAULT(FAULT_SS,0)  // #SS(0)
@@ -1654,7 +1661,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 		else
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) - 4 : (REG16(SP) - 4) & 0xffff);
-			if(i386_limit_check(SS, offset))
+			if(i386_limit_check(SS, offset, 4))
 			{
 				logerror("CALL (%08x): Stack has no room for return address.\n",m_pc);
 				FAULT(FAULT_SS,0)  // #SS(0)
@@ -1905,7 +1912,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 					if (operand32 != 0)  // if 32-bit
 					{
 						UINT32 stkoff = (STACK_32BIT ? REG32(ESP) - 8 : (REG16(SP) - 8) & 0xffff);
-						if(i386_limit_check(SS, stkoff))
+						if(i386_limit_check(SS, stkoff, 8))
 						{
 							logerror("CALL: Stack has no room for return address.\n");
 							FAULT(FAULT_SS,0) // #SS(0)
@@ -1916,7 +1923,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 					else
 					{
 						UINT32 stkoff = (STACK_32BIT ? REG32(ESP) - 4 : (REG16(SP) - 4) & 0xffff);
-						if(i386_limit_check(SS, stkoff))
+						if(i386_limit_check(SS, stkoff, 4))
 						{
 							logerror("CALL: Stack has no room for return address.\n");
 							FAULT(FAULT_SS,0) // #SS(0)
@@ -2034,7 +2041,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 	I386_SREG desc;
 	UINT8 CPL, RPL, DPL;
 
-	UINT32 ea = i386_translate(SS, (STACK_32BIT)?REG32(ESP):REG16(SP), 0);
+	UINT32 ea = i386_translate(SS, (STACK_32BIT)?REG32(ESP):REG16(SP), 0, (operand32)?8:4);
 
 	if(operand32 == 0)
 	{
@@ -2118,7 +2125,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 		if(operand32 == 0)
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-			if(i386_limit_check(SS,offset+count+3) != 0)
+			if(i386_limit_check(SS,offset,count+4) != 0)
 			{
 				logerror("RETF (%08x): SP is past stack segment limit.\n",m_pc);
 				FAULT(FAULT_SS,0)
@@ -2127,7 +2134,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 		else
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-			if(i386_limit_check(SS,offset+count+7) != 0)
+			if(i386_limit_check(SS,offset,count+8) != 0)
 			{
 				logerror("RETF: ESP is past stack segment limit.\n");
 				FAULT(FAULT_SS,0)
@@ -2145,7 +2152,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 		if(operand32 == 0)
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-			if(i386_limit_check(SS,offset+count+7) != 0)
+			if(i386_limit_check(SS,offset,count+8) != 0)
 			{
 				logerror("RETF (%08x): SP is past stack segment limit.\n",m_pc);
 				FAULT(FAULT_SS,0)
@@ -2154,7 +2161,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 		else
 		{
 			UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-			if(i386_limit_check(SS,offset+count+15) != 0)
+			if(i386_limit_check(SS,offset,count+16) != 0)
 			{
 				logerror("RETF: ESP is past stack segment limit.\n");
 				FAULT(FAULT_SS,0)
@@ -2309,7 +2316,7 @@ static void i386_protected_mode_iret(int operand32)
 	UINT8 IOPL = m_IOP1 | (m_IOP2 << 1);
 
 	CPL = m_CPL;
-	UINT32 ea = i386_translate(SS, (STACK_32BIT)?REG32(ESP):REG16(SP), 0);
+	UINT32 ea = i386_translate(SS, (STACK_32BIT)?REG32(ESP):REG16(SP), 0, (operand32)?12:6);
 	if(operand32 == 0)
 	{
 		newEIP = READ16(ea) & 0xffff;
@@ -2425,7 +2432,7 @@ static void i386_protected_mode_iret(int operand32)
 			if(operand32 == 0)
 			{
 				UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-				if(i386_limit_check(SS,offset+3) != 0)
+				if(i386_limit_check(SS,offset,4) != 0)
 				{
 					logerror("IRET: Data on stack is past SS limit.\n");
 					FAULT(FAULT_SS,0)
@@ -2434,7 +2441,7 @@ static void i386_protected_mode_iret(int operand32)
 			else
 			{
 				UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-				if(i386_limit_check(SS,offset+7) != 0)
+				if(i386_limit_check(SS,offset,8) != 0)
 				{
 					logerror("IRET: Data on stack is past SS limit.\n");
 					FAULT(FAULT_SS,0)
@@ -2452,7 +2459,7 @@ static void i386_protected_mode_iret(int operand32)
 				if(operand32 == 0)
 				{
 					UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-					if(i386_limit_check(SS,offset+5) != 0)
+					if(i386_limit_check(SS,offset,6) != 0)
 					{
 						logerror("IRET (%08x): Data on stack is past SS limit.\n",m_pc);
 						FAULT(FAULT_SS,0)
@@ -2461,7 +2468,7 @@ static void i386_protected_mode_iret(int operand32)
 				else
 				{
 					UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-					if(i386_limit_check(SS,offset+11) != 0)
+					if(i386_limit_check(SS,offset,12) != 0)
 					{
 						logerror("IRET (%08x): Data on stack is past SS limit.\n",m_pc);
 						FAULT(FAULT_SS,0)
@@ -2559,7 +2566,7 @@ static void i386_protected_mode_iret(int operand32)
 				if(operand32 == 0)
 				{
 					UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-					if(i386_limit_check(SS,offset+9) != 0)
+					if(i386_limit_check(SS,offset,10) != 0)
 					{
 						logerror("IRET: SP is past SS limit.\n");
 						FAULT(FAULT_SS,0)
@@ -2568,7 +2575,7 @@ static void i386_protected_mode_iret(int operand32)
 				else
 				{
 					UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-					if(i386_limit_check(SS,offset+19) != 0)
+					if(i386_limit_check(SS,offset,20) != 0)
 					{
 						logerror("IRET: ESP is past SS limit.\n");
 						FAULT(FAULT_SS,0)

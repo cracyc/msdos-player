@@ -419,7 +419,7 @@ static void i80286_code_descriptor(UINT16 selector, UINT16 offset, int gate)
 	} else {
 		m_sregs[CS]=selector;
 		m_base[CS]=selector<<4;
-		m_rights[CS]=0x9a;
+		m_rights[CS]=0x93;
 		m_limit[CS]=0xffff;
 		m_pc=(m_base[CS]+offset)&AMASK;
 	}
@@ -830,7 +830,7 @@ static UINT16 i80286_far_return(int iret, int bytes)
 		m_regs.w[SP] += (iret?6:4) + bytes;
 		m_sregs[CS]=sel;
 		m_base[CS]=sel<<4;
-		m_rights[CS]=0x9a;
+		m_rights[CS]=0x93;
 		m_limit[CS]=0xffff;
 		m_pc=(m_base[CS]+off)&AMASK;
 	}

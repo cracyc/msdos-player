@@ -153,7 +153,7 @@ static void I386OP(adc_rm16_r16)()      // Opcode 0x11
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = ADC16(dst, src, m_CF);
@@ -173,7 +173,7 @@ static void I386OP(adc_r16_rm16)()      // Opcode 0x13
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = ADC16(dst, src, m_CF);
@@ -203,7 +203,7 @@ static void I386OP(add_rm16_r16)()      // Opcode 0x01
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = ADD16(dst, src);
@@ -223,7 +223,7 @@ static void I386OP(add_r16_rm16)()      // Opcode 0x03
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = ADD16(dst, src);
@@ -253,7 +253,7 @@ static void I386OP(and_rm16_r16)()      // Opcode 0x21
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = AND16(dst, src);
@@ -273,7 +273,7 @@ static void I386OP(and_r16_rm16)()      // Opcode 0x23
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = AND16(dst, src);
@@ -300,7 +300,7 @@ static void I386OP(bsf_r16_rm16)()      // Opcode 0x0f bc
 	if( modrm >= 0xc0 ) {
 		src = LOAD_RM16(modrm);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 	}
 
@@ -329,7 +329,7 @@ static void I386OP(bsr_r16_rm16)()      // Opcode 0x0f bd
 	if( modrm >= 0xc0 ) {
 		src = LOAD_RM16(modrm);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 	}
 
@@ -369,7 +369,7 @@ static void I386OP(bt_rm16_r16)()       // Opcode 0x0f a3
 		UINT32 ea = GetNonTranslatedEA(modrm,&segment);
 		UINT16 bit = LOAD_REG16(modrm);
 		ea += 2*(bit/16);
-		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),0);
+		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),0,2);
 		bit %= 16;
 		UINT16 dst = READ16(ea);
 
@@ -402,7 +402,7 @@ static void I386OP(btc_rm16_r16)()      // Opcode 0x0f bb
 		UINT32 ea = GetNonTranslatedEA(modrm,&segment);
 		UINT16 bit = LOAD_REG16(modrm);
 		ea += 2*(bit/16);
-		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1);
+		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1,2);
 		bit %= 16;
 		UINT16 dst = READ16(ea);
 
@@ -437,7 +437,7 @@ static void I386OP(btr_rm16_r16)()      // Opcode 0x0f b3
 		UINT32 ea = GetNonTranslatedEA(modrm,&segment);
 		UINT16 bit = LOAD_REG16(modrm);
 		ea += 2*(bit/16);
-		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1);
+		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1,2);
 		bit %= 16;
 		UINT16 dst = READ16(ea);
 
@@ -472,7 +472,7 @@ static void I386OP(bts_rm16_r16)()      // Opcode 0x0f ab
 		UINT32 ea = GetNonTranslatedEA(modrm,&segment);
 		UINT16 bit = LOAD_REG16(modrm);
 		ea += 2*(bit/16);
-		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1);
+		ea = i386_translate(segment,(m_address_size)?ea:(ea&0xffff),1,2);
 		bit %= 16;
 		UINT16 dst = READ16(ea);
 
@@ -542,7 +542,7 @@ static void I386OP(cmp_rm16_r16)()      // Opcode 0x39
 		SUB16(dst, src);
 		CYCLES(CYCLES_CMP_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		SUB16(dst, src);
@@ -560,7 +560,7 @@ static void I386OP(cmp_r16_rm16)()      // Opcode 0x3b
 		SUB16(dst, src);
 		CYCLES(CYCLES_CMP_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		SUB16(dst, src);
@@ -582,11 +582,11 @@ static void I386OP(cmpsw)()             // Opcode 0xa7
 	UINT32 eas, ead;
 	UINT16 src, dst;
 	if( m_segment_prefix ) {
-		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	} else {
-		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	}
-	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 0 );
+	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 0, 2 );
 	src = READ16(eas);
 	dst = READ16(ead);
 	SUB16(src,dst);
@@ -662,7 +662,7 @@ static void I386OP(imul_r16_rm16)()     // Opcode 0x0f af
 		src = (INT32)(INT16)LOAD_RM16(modrm);
 		CYCLES(CYCLES_IMUL16_REG_REG);     /* TODO: Correct multiply timing */
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = (INT32)(INT16)READ16(ea);
 		CYCLES(CYCLES_IMUL16_REG_MEM);     /* TODO: Correct multiply timing */
 	}
@@ -684,7 +684,7 @@ static void I386OP(imul_r16_rm16_i16)() // Opcode 0x69
 		dst = (INT32)(INT16)LOAD_RM16(modrm);
 		CYCLES(CYCLES_IMUL16_REG_IMM_REG);     /* TODO: Correct multiply timing */
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		dst = (INT32)(INT16)READ16(ea);
 		CYCLES(CYCLES_IMUL16_MEM_IMM_REG);     /* TODO: Correct multiply timing */
 	}
@@ -706,7 +706,7 @@ static void I386OP(imul_r16_rm16_i8)()  // Opcode 0x6b
 		dst = (INT32)(INT16)LOAD_RM16(modrm);
 		CYCLES(CYCLES_IMUL16_REG_IMM_REG);     /* TODO: Correct multiply timing */
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		dst = (INT32)(INT16)READ16(ea);
 		CYCLES(CYCLES_IMUL16_MEM_IMM_REG);     /* TODO: Correct multiply timing */
 	}
@@ -1235,9 +1235,9 @@ static void I386OP(lodsw)()             // Opcode 0xad
 {
 	UINT32 eas;
 	if( m_segment_prefix ) {
-		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	} else {
-		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	}
 	REG16(AX) = READ16(eas);
 	BUMP_SI(2);
@@ -1307,7 +1307,7 @@ static void I386OP(mov_rm16_r16)()      // Opcode 0x89
 		STORE_RM16(modrm, src);
 		CYCLES(CYCLES_MOV_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		WRITE16(ea, src);
 		CYCLES(CYCLES_MOV_REG_MEM);
@@ -1323,7 +1323,7 @@ static void I386OP(mov_r16_rm16)()      // Opcode 0x8b
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOV_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOV_MEM_REG);
@@ -1338,7 +1338,7 @@ static void I386OP(mov_rm16_i16)()      // Opcode 0xc7
 		STORE_RM16(modrm, value);
 		CYCLES(CYCLES_MOV_IMM_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 value = FETCH16();
 		WRITE16(ea, value);
 		CYCLES(CYCLES_MOV_IMM_MEM);
@@ -1355,9 +1355,9 @@ static void I386OP(mov_ax_m16)()        // Opcode 0xa1
 	}
 	/* TODO: Not sure if this is correct... */
 	if( m_segment_prefix ) {
-		ea = i386_translate(m_segment_override, offset, 0 );
+		ea = i386_translate(m_segment_override, offset, 0, 2 );
 	} else {
-		ea = i386_translate(DS, offset, 0 );
+		ea = i386_translate(DS, offset, 0, 2 );
 	}
 	REG16(AX) = READ16(ea);
 	CYCLES(CYCLES_MOV_MEM_ACC);
@@ -1373,9 +1373,9 @@ static void I386OP(mov_m16_ax)()        // Opcode 0xa3
 	}
 	/* TODO: Not sure if this is correct... */
 	if( m_segment_prefix ) {
-		ea = i386_translate(m_segment_override, offset, 1 );
+		ea = i386_translate(m_segment_override, offset, 1, 2 );
 	} else {
-		ea = i386_translate(DS, offset, 1 );
+		ea = i386_translate(DS, offset, 1, 2 );
 	}
 	WRITE16(ea, REG16(AX) );
 	CYCLES(CYCLES_MOV_ACC_MEM);
@@ -1434,11 +1434,11 @@ static void I386OP(movsw)()             // Opcode 0xa5
 	UINT32 eas, ead;
 	UINT16 v;
 	if( m_segment_prefix ) {
-		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	} else {
-		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0 );
+		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
 	}
-	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1 );
+	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1, 2 );
 	v = READ16(eas);
 	WRITE16(ead, v);
 	BUMP_SI(2);
@@ -1454,7 +1454,7 @@ static void I386OP(movsx_r16_rm8)()     // Opcode 0x0f be
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOVSX_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,1);
 		INT16 src = (INT8)READ8(ea);
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOVSX_MEM_REG);
@@ -1469,7 +1469,7 @@ static void I386OP(movzx_r16_rm8)()     // Opcode 0x0f b6
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOVZX_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,1);
 		UINT16 src = (UINT8)READ8(ea);
 		STORE_REG16(modrm, src);
 		CYCLES(CYCLES_MOVZX_MEM_REG);
@@ -1487,7 +1487,7 @@ static void I386OP(or_rm16_r16)()       // Opcode 0x09
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = OR16(dst, src);
@@ -1507,7 +1507,7 @@ static void I386OP(or_r16_rm16)()       // Opcode 0x0b
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = OR16(dst, src);
@@ -1545,7 +1545,7 @@ static void I386OP(out_ax_dx)()         // Opcode 0xef
 static void I386OP(pop_ax)()            // Opcode 0x58
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(AX) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1555,7 +1555,7 @@ static void I386OP(pop_ax)()            // Opcode 0x58
 static void I386OP(pop_cx)()            // Opcode 0x59
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(CX) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1565,7 +1565,7 @@ static void I386OP(pop_cx)()            // Opcode 0x59
 static void I386OP(pop_dx)()            // Opcode 0x5a
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(DX) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1575,7 +1575,7 @@ static void I386OP(pop_dx)()            // Opcode 0x5a
 static void I386OP(pop_bx)()            // Opcode 0x5b
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(BX) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1585,7 +1585,7 @@ static void I386OP(pop_bx)()            // Opcode 0x5b
 static void I386OP(pop_sp)()            // Opcode 0x5c
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(SP) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1595,7 +1595,7 @@ static void I386OP(pop_sp)()            // Opcode 0x5c
 static void I386OP(pop_bp)()            // Opcode 0x5d
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(BP) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1605,7 +1605,7 @@ static void I386OP(pop_bp)()            // Opcode 0x5d
 static void I386OP(pop_si)()            // Opcode 0x5e
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(SI) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1615,7 +1615,7 @@ static void I386OP(pop_si)()            // Opcode 0x5e
 static void I386OP(pop_di)()            // Opcode 0x5f
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		REG16(DI) = POP16();
 	else
 		FAULT(FAULT_SS,0)
@@ -1627,9 +1627,9 @@ static bool I386OP(pop_seg16)(int segment)
 	UINT32 ea, offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
 	UINT16 value;
 	bool fault;
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 	{
-		ea = i386_translate(SS, offset, 0);
+		ea = i386_translate(SS, offset, 0, 2);
 		value = READ16(ea);
 		i386_sreg_load(value, segment, &fault);
 		if(fault) return false;
@@ -1684,7 +1684,7 @@ static void I386OP(pop_rm16)()          // Opcode 0x8f
 	UINT16 value;
 	UINT32 ea, offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
 
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 	{
 		UINT32 temp_sp = REG32(ESP);
 		value = POP16();
@@ -1692,7 +1692,7 @@ static void I386OP(pop_rm16)()          // Opcode 0x8f
 		if( modrm >= 0xc0 ) {
 			STORE_RM16(modrm, value);
 		} else {
-			ea = GetEA(modrm,1);
+			ea = GetEA(modrm,1,2);
 			try
 			{
 				WRITE16(ea, value);
@@ -1713,7 +1713,7 @@ static void I386OP(popa)()              // Opcode 0x61
 {
 	UINT32 offset = (STACK_32BIT ? REG32(ESP) : REG16(SP));
 
-	if(i386_limit_check(SS,offset+15) == 0)
+	if(i386_limit_check(SS,offset,16) == 0)
 	{
 		REG16(DI) = POP16();
 		REG16(SI) = POP16();
@@ -1755,7 +1755,7 @@ static void I386OP(popf)()              // Opcode 0x9d
 		mask &= ~0x00003000;  // IOPL cannot be changed while in V8086 mode
 	}
 
-	if(i386_limit_check(SS,offset+1) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 	{
 		value = POP16();
 		set_flags((current & ~mask) | (value & mask));  // mask out reserved bits
@@ -1772,7 +1772,7 @@ static void I386OP(push_ax)()           // Opcode 0x50
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(AX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1786,7 +1786,7 @@ static void I386OP(push_cx)()           // Opcode 0x51
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(CX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1800,7 +1800,7 @@ static void I386OP(push_dx)()           // Opcode 0x52
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(DX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1814,7 +1814,7 @@ static void I386OP(push_bx)()           // Opcode 0x53
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(BX) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1828,7 +1828,7 @@ static void I386OP(push_sp)()           // Opcode 0x54
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(SP) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1842,7 +1842,7 @@ static void I386OP(push_bp)()           // Opcode 0x55
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(BP) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1856,7 +1856,7 @@ static void I386OP(push_si)()           // Opcode 0x56
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(SI) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1870,7 +1870,7 @@ static void I386OP(push_di)()           // Opcode 0x57
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(REG16(DI) );
 	else
 		FAULT(FAULT_SS,0)
@@ -1884,7 +1884,7 @@ static void I386OP(push_cs16)()         // Opcode 0x0e
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[CS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1898,7 +1898,7 @@ static void I386OP(push_ds16)()         // Opcode 0x1e
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[DS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1912,7 +1912,7 @@ static void I386OP(push_es16)()         // Opcode 0x06
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[ES].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1926,7 +1926,7 @@ static void I386OP(push_fs16)()         // Opcode 0x0f a0
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[FS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1940,7 +1940,7 @@ static void I386OP(push_gs16)()         // Opcode 0x0f a8
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[GS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1954,7 +1954,7 @@ static void I386OP(push_ss16)()         // Opcode 0x16
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(m_sreg[SS].selector );
 	else
 		FAULT(FAULT_SS,0)
@@ -1969,7 +1969,7 @@ static void I386OP(push_i16)()          // Opcode 0x68
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(value);
 	else
 		FAULT(FAULT_SS,0)
@@ -1984,7 +1984,7 @@ static void I386OP(pusha)()             // Opcode 0x60
 		offset = REG32(ESP) - 16;
 	else
 		offset = (REG16(SP) - 16) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,16) == 0)
 	{
 		PUSH16(REG16(AX) );
 		PUSH16(REG16(CX) );
@@ -2007,7 +2007,7 @@ static void I386OP(pushf)()             // Opcode 0x9c
 		offset = REG32(ESP) - 2;
 	else
 		offset = (REG16(SP) - 2) & 0xffff;
-	if(i386_limit_check(SS,offset) == 0)
+	if(i386_limit_check(SS,offset,2) == 0)
 		PUSH16(get_flags() & 0xffff );
 	else
 		FAULT(FAULT_SS,0)
@@ -2041,7 +2041,7 @@ static void I386OP(sbb_rm16_r16)()      // Opcode 0x19
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = SBB16(dst, src, m_CF);
@@ -2061,7 +2061,7 @@ static void I386OP(sbb_r16_rm16)()      // Opcode 0x1b
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = SBB16(dst, src, m_CF);
@@ -2084,7 +2084,7 @@ static void I386OP(scasw)()             // Opcode 0xaf
 {
 	UINT32 eas;
 	UINT16 src, dst;
-	eas = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 0 );
+	eas = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 0, 2 );
 	src = READ16(eas);
 	dst = REG16(AX);
 	SUB16(dst, src);
@@ -2116,7 +2116,7 @@ static void I386OP(shld16_i8)()         // Opcode 0x0f a4
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_SHLD_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 dst = READ16(ea);
 		UINT16 upper = LOAD_REG16(modrm);
 		UINT8 shift = FETCH();
@@ -2161,7 +2161,7 @@ static void I386OP(shld16_cl)()         // Opcode 0x0f a5
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_SHLD_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 dst = READ16(ea);
 		UINT16 upper = LOAD_REG16(modrm);
 		UINT8 shift = REG8(CL);
@@ -2206,7 +2206,7 @@ static void I386OP(shrd16_i8)()         // Opcode 0x0f ac
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_SHRD_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 dst = READ16(ea);
 		UINT16 upper = LOAD_REG16(modrm);
 		UINT8 shift = FETCH();
@@ -2251,7 +2251,7 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_SHRD_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 dst = READ16(ea);
 		UINT16 upper = LOAD_REG16(modrm);
 		UINT8 shift = REG8(CL);
@@ -2276,7 +2276,7 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 static void I386OP(stosw)()             // Opcode 0xab
 {
 	UINT32 ead;
-	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1 );
+	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1, 2 );
 	WRITE16(ead, REG16(AX));
 	BUMP_DI(2);
 	CYCLES(CYCLES_STOS);
@@ -2293,7 +2293,7 @@ static void I386OP(sub_rm16_r16)()      // Opcode 0x29
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = SUB16(dst, src);
@@ -2313,7 +2313,7 @@ static void I386OP(sub_r16_rm16)()      // Opcode 0x2b
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = SUB16(dst, src);
@@ -2356,7 +2356,7 @@ static void I386OP(test_rm16_r16)()     // Opcode 0x85
 		m_OF = 0;
 		CYCLES(CYCLES_TEST_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = src & dst;
@@ -2440,7 +2440,7 @@ static void I386OP(xchg_r16_rm16)()     // Opcode 0x87
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_XCHG_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		UINT16 src = READ16(ea);
 		UINT16 dst = LOAD_REG16(modrm);
 		STORE_REG16(modrm, src);
@@ -2460,7 +2460,7 @@ static void I386OP(xor_rm16_r16)()      // Opcode 0x31
 		STORE_RM16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		src = LOAD_REG16(modrm);
 		dst = READ16(ea);
 		dst = XOR16(dst, src);
@@ -2480,7 +2480,7 @@ static void I386OP(xor_r16_rm16)()      // Opcode 0x33
 		STORE_REG16(modrm, dst);
 		CYCLES(CYCLES_ALU_REG_REG);
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,2);
 		src = READ16(ea);
 		dst = LOAD_REG16(modrm);
 		dst = XOR16(dst, src);
@@ -2517,7 +2517,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = ADD16(dst, src);
@@ -2533,7 +2533,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = OR16(dst, src);
@@ -2549,7 +2549,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = ADC16(dst, src, m_CF);
@@ -2565,7 +2565,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = SBB16(dst, src, m_CF);
@@ -2581,7 +2581,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = AND16(dst, src);
@@ -2597,7 +2597,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = SUB16(dst, src);
@@ -2613,7 +2613,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				dst = XOR16(dst, src);
@@ -2628,7 +2628,7 @@ static void I386OP(group81_16)()        // Opcode 0x81
 				SUB16(dst, src);
 				CYCLES(CYCLES_CMP_REG_REG);
 			} else {
-				ea = GetEA(modrm,0);
+				ea = GetEA(modrm,0,2);
 				dst = READ16(ea);
 				src = FETCH16();
 				SUB16(dst, src);
@@ -2654,7 +2654,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = ADD16(dst, src);
@@ -2670,7 +2670,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = OR16(dst, src);
@@ -2686,7 +2686,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = ADC16(dst, src, m_CF);
@@ -2702,7 +2702,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = ((UINT16)(INT16)(INT8)FETCH());
 				dst = SBB16(dst, src, m_CF);
@@ -2718,7 +2718,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = AND16(dst, src);
@@ -2734,7 +2734,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = SUB16(dst, src);
@@ -2750,7 +2750,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_ALU_REG_REG);
 			} else {
-				ea = GetEA(modrm,1);
+				ea = GetEA(modrm,1,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				dst = XOR16(dst, src);
@@ -2765,7 +2765,7 @@ static void I386OP(group83_16)()        // Opcode 0x83
 				SUB16(dst, src);
 				CYCLES(CYCLES_CMP_REG_REG);
 			} else {
-				ea = GetEA(modrm,0);
+				ea = GetEA(modrm,0,2);
 				dst = READ16(ea);
 				src = (UINT16)(INT16)(INT8)FETCH();
 				SUB16(dst, src);
@@ -2787,7 +2787,7 @@ static void I386OP(groupC1_16)()        // Opcode 0xc1
 		dst = i386_shift_rotate16(modrm, dst, shift);
 		STORE_RM16(modrm, dst);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		dst = READ16(ea);
 		shift = FETCH() & 0x1f;
 		dst = i386_shift_rotate16(modrm, dst, shift);
@@ -2805,7 +2805,7 @@ static void I386OP(groupD1_16)()        // Opcode 0xd1
 		dst = i386_shift_rotate16(modrm, dst, 1);
 		STORE_RM16(modrm, dst);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		dst = READ16(ea);
 		dst = i386_shift_rotate16(modrm, dst, 1);
 		WRITE16(ea, dst);
@@ -2822,7 +2822,7 @@ static void I386OP(groupD3_16)()        // Opcode 0xd3
 		dst = i386_shift_rotate16(modrm, dst, REG8(CL));
 		STORE_RM16(modrm, dst);
 	} else {
-		UINT32 ea = GetEA(modrm,1);
+		UINT32 ea = GetEA(modrm,1,2);
 		dst = READ16(ea);
 		dst = i386_shift_rotate16(modrm, dst, REG8(CL));
 		WRITE16(ea, dst);
@@ -2844,7 +2844,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 				SetSZPF16(dst);
 				CYCLES(CYCLES_TEST_IMM_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,0);
+				UINT32 ea = GetEA(modrm,0,2);
 				UINT16 dst = READ16(ea);
 				UINT16 src = FETCH16();
 				dst &= src;
@@ -2860,7 +2860,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_NOT_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				dst = ~dst;
 				WRITE16(ea, dst);
@@ -2874,7 +2874,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_NEG_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				dst = SUB16(0, dst );
 				WRITE16(ea, dst);
@@ -2889,7 +2889,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 					src = LOAD_RM16(modrm);
 					CYCLES(CYCLES_MUL16_ACC_REG);      /* TODO: Correct multiply timing */
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					src = READ16(ea);
 					CYCLES(CYCLES_MUL16_ACC_MEM);      /* TODO: Correct multiply timing */
 				}
@@ -2910,7 +2910,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 					src = (INT32)(INT16)LOAD_RM16(modrm);
 					CYCLES(CYCLES_IMUL16_ACC_REG);     /* TODO: Correct multiply timing */
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					src = (INT32)(INT16)READ16(ea);
 					CYCLES(CYCLES_IMUL16_ACC_MEM);     /* TODO: Correct multiply timing */
 				}
@@ -2932,7 +2932,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 					src = LOAD_RM16(modrm);
 					CYCLES(CYCLES_DIV16_ACC_REG);
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					src = READ16(ea);
 					CYCLES(CYCLES_DIV16_ACC_MEM);
 				}
@@ -2964,7 +2964,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 					src = LOAD_RM16(modrm);
 					CYCLES(CYCLES_IDIV16_ACC_REG);
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					src = READ16(ea);
 					CYCLES(CYCLES_IDIV16_ACC_MEM);
 				}
@@ -3004,7 +3004,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_INC_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				dst = INC16(dst);
 				WRITE16(ea, dst);
@@ -3018,7 +3018,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_DEC_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				dst = DEC16(dst);
 				WRITE16(ea, dst);
@@ -3032,7 +3032,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 					address = LOAD_RM16(modrm);
 					CYCLES(CYCLES_CALL_REG);       /* TODO: Timing = 7 + m */
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					address = READ16(ea);
 					CYCLES(CYCLES_CALL_MEM);       /* TODO: Timing = 10 + m */
 				}
@@ -3050,7 +3050,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 				}
 				else
 				{
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,4);
 					address = READ16(ea + 0);
 					selector = READ16(ea + 2);
 					CYCLES(CYCLES_CALL_MEM_INTERSEG);      /* TODO: Timing = 10 + m */
@@ -3079,7 +3079,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 					address = LOAD_RM16(modrm);
 					CYCLES(CYCLES_JMP_REG);        /* TODO: Timing = 7 + m */
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					address = READ16(ea);
 					CYCLES(CYCLES_JMP_MEM);        /* TODO: Timing = 10 + m */
 				}
@@ -3097,7 +3097,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 				}
 				else
 				{
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,4);
 					address = READ16(ea + 0);
 					selector = READ16(ea + 2);
 					CYCLES(CYCLES_JMP_MEM_INTERSEG);       /* TODO: Timing = 10 + m */
@@ -3122,7 +3122,7 @@ static void I386OP(groupFF_16)()        // Opcode 0xff
 				if( modrm >= 0xc0 ) {
 					value = LOAD_RM16(modrm);
 				} else {
-					UINT32 ea = GetEA(modrm,0);
+					UINT32 ea = GetEA(modrm,0,2);
 					value = READ16(ea);
 				}
 				PUSH16(value);
@@ -3151,7 +3151,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					STORE_RM16(modrm, m_ldtr.segment);
 					CYCLES(CYCLES_SLDT_REG);
 				} else {
-					ea = GetEA(modrm,1);
+					ea = GetEA(modrm,1,2);
 					WRITE16(ea, m_ldtr.segment);
 					CYCLES(CYCLES_SLDT_MEM);
 				}
@@ -3168,7 +3168,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					STORE_RM16(modrm, m_task.segment);
 					CYCLES(CYCLES_STR_REG);
 				} else {
-					ea = GetEA(modrm,1);
+					ea = GetEA(modrm,1,2);
 					WRITE16(ea, m_task.segment);
 					CYCLES(CYCLES_STR_MEM);
 				}
@@ -3188,7 +3188,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					m_ldtr.segment = address;
 					CYCLES(CYCLES_LLDT_REG);
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,2);
 					m_ldtr.segment = READ16(ea);
 					CYCLES(CYCLES_LLDT_MEM);
 				}
@@ -3215,7 +3215,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					m_task.segment = address;
 					CYCLES(CYCLES_LTR_REG);
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,2);
 					m_task.segment = READ16(ea);
 					CYCLES(CYCLES_LTR_MEM);
 				}
@@ -3245,7 +3245,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					address = LOAD_RM16(modrm);
 					CYCLES(CYCLES_VERR_REG);
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,2);
 					address = READ16(ea);
 					CYCLES(CYCLES_VERR_MEM);
 				}
@@ -3293,7 +3293,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 					address = LOAD_RM16(modrm);
 					CYCLES(CYCLES_VERW_REG);
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,2);
 					address = READ16(ea);
 					CYCLES(CYCLES_VERW_MEM);
 				}
@@ -3346,9 +3346,9 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 			{
 				if( modrm >= 0xc0 ) {
 					address = LOAD_RM16(modrm);
-					ea = i386_translate(CS, address, 1 );
+					ea = i386_translate(CS, address, 1, 6 );
 				} else {
-					ea = GetEA(modrm,1);
+					ea = GetEA(modrm,1,6);
 				}
 				WRITE16(ea, m_gdtr.limit);
 				WRITE32(ea + 2, m_gdtr.base);
@@ -3360,11 +3360,11 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 				if (modrm >= 0xc0)
 				{
 					address = LOAD_RM16(modrm);
-					ea = i386_translate(CS, address, 1 );
+					ea = i386_translate(CS, address, 1, 6 );
 				}
 				else
 				{
-					ea = GetEA(modrm,1);
+					ea = GetEA(modrm,1,6);
 				}
 				WRITE16(ea, m_idtr.limit);
 				WRITE32(ea + 2, m_idtr.base);
@@ -3377,9 +3377,9 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					FAULT(FAULT_GP,0)
 				if( modrm >= 0xc0 ) {
 					address = LOAD_RM16(modrm);
-					ea = i386_translate(CS, address, 0 );
+					ea = i386_translate(CS, address, 0, 6 );
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,6);
 				}
 				m_gdtr.limit = READ16(ea);
 				m_gdtr.base = READ32(ea + 2) & 0xffffff;
@@ -3392,9 +3392,9 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					FAULT(FAULT_GP,0)
 				if( modrm >= 0xc0 ) {
 					address = LOAD_RM16(modrm);
-					ea = i386_translate(CS, address, 0 );
+					ea = i386_translate(CS, address, 0, 6 );
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,6);
 				}
 				m_idtr.limit = READ16(ea);
 				m_idtr.base = READ32(ea + 2) & 0xffffff;
@@ -3407,7 +3407,7 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					STORE_RM16(modrm, m_cr[0]);
 					CYCLES(CYCLES_SMSW_REG);
 				} else {
-					ea = GetEA(modrm,1);
+					ea = GetEA(modrm,1,2);
 					WRITE16(ea, m_cr[0]);
 					CYCLES(CYCLES_SMSW_MEM);
 				}
@@ -3422,7 +3422,7 @@ static void I386OP(group0F01_16)()      // Opcode 0x0f 01
 					b = LOAD_RM16(modrm);
 					CYCLES(CYCLES_LMSW_REG);
 				} else {
-					ea = GetEA(modrm,0);
+					ea = GetEA(modrm,0,2);
 					CYCLES(CYCLES_LMSW_MEM);
 				b = READ16(ea);
 				}
@@ -3456,7 +3456,7 @@ static void I386OP(group0FBA_16)()      // Opcode 0x0f ba
 
 				CYCLES(CYCLES_BT_IMM_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,0);
+				UINT32 ea = GetEA(modrm,0,2);
 				UINT16 dst = READ16(ea);
 				UINT8 bit = FETCH();
 
@@ -3482,7 +3482,7 @@ static void I386OP(group0FBA_16)()      // Opcode 0x0f ba
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_BTS_IMM_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				UINT8 bit = FETCH();
 
@@ -3510,7 +3510,7 @@ static void I386OP(group0FBA_16)()      // Opcode 0x0f ba
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_BTR_IMM_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				UINT8 bit = FETCH();
 
@@ -3538,7 +3538,7 @@ static void I386OP(group0FBA_16)()      // Opcode 0x0f ba
 				STORE_RM16(modrm, dst);
 				CYCLES(CYCLES_BTC_IMM_REG);
 			} else {
-				UINT32 ea = GetEA(modrm,1);
+				UINT32 ea = GetEA(modrm,1,2);
 				UINT16 dst = READ16(ea);
 				UINT8 bit = FETCH();
 
@@ -3577,7 +3577,7 @@ static void I386OP(lar_r16_rm16)()  // Opcode 0x0f 0x02
 		}
 		else
 		{
-			UINT32 ea = GetEA(modrm,0);
+			UINT32 ea = GetEA(modrm,0,2);
 			seg.selector = READ16(ea);
 			CYCLES(CYCLES_LAR_MEM);
 		}
@@ -3643,7 +3643,7 @@ static void I386OP(lsl_r16_rm16)()  // Opcode 0x0f 0x03
 		}
 		else
 		{
-			UINT32 ea = GetEA(modrm,0);
+			UINT32 ea = GetEA(modrm,0,2);
 			seg.selector = READ16(ea);
 		}
 		if(seg.selector == 0)
@@ -3704,7 +3704,7 @@ static void I386OP(bound_r16_m16_m16)() // Opcode 0x62
 	}
 	else
 	{
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,4);
 		low = READ16(ea + 0);
 		high = READ16(ea + 2);
 	}
@@ -3768,7 +3768,7 @@ static bool I386OP(load_far_pointer16)(int s)
 		i386_trap(6, 0, 0);
 		return false;
 	} else {
-		UINT32 ea = GetEA(modrm,0);
+		UINT32 ea = GetEA(modrm,0,4);
 		STORE_REG16(modrm, READ16(ea + 0));
 		selector = READ16(ea + 2);
 		i386_sreg_load(selector,s,NULL);

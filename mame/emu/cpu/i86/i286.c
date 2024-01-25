@@ -147,7 +147,7 @@ static CPU_RESET( i80286 )
 	m_sregs[DS]=m_sregs[SS]=m_sregs[ES]=0;
 	m_base[DS]=m_base[SS]=m_base[ES]=0;
 	m_rights[DS]=m_rights[SS]=m_rights[ES]=0x93;
-	m_rights[CS]=0x9a;
+	m_rights[CS]=0x93;
 	m_valid[CS]=m_valid[SS]=m_valid[DS]=m_valid[ES]=1;
 	m_msw=0xfff0;
 	m_flags=2;

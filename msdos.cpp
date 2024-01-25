@@ -329,6 +329,14 @@ const endianness_t ENDIANNESS_NATIVE = ENDIANNESS_BIG;
 #define ENDIAN_VALUE_NE_NNE(endian,leval,beval)	(((endian) == ENDIANNESS_NATIVE) ? (neval) : (nneval))
 
 /*****************************************************************************/
+/* src/emu/emumem.h */
+
+// helpers for checking address alignment
+#define WORD_ALIGNED(a)                 (((a) & 1) == 0)
+#define DWORD_ALIGNED(a)                (((a) & 3) == 0)
+#define QWORD_ALIGNED(a)                (((a) & 7) == 0)
+
+/*****************************************************************************/
 /* src/emu/memory.h */
 
 // address spaces
@@ -894,10 +902,10 @@ UINT16 i386_read_stack()
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) + 2;
-		ea = i386_translate(SS, new_esp - 2, 0);
+		ea = i386_translate(SS, new_esp - 2, 0, 2);
 	} else {
 		new_esp = REG16(SP) + 2;
-		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0);
+		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0, 2);
 	}
 	return READ16(ea);
 #else
@@ -912,10 +920,10 @@ void i386_write_stack(UINT16 value)
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) + 2;
-		ea = i386_translate(SS, new_esp - 2, 0);
+		ea = i386_translate(SS, new_esp - 2, 0, 2);
 	} else {
 		new_esp = REG16(SP) + 2;
-		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0);
+		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0, 2);
 	}
 	WRITE16(ea, value);
 #else
@@ -9836,6 +9844,7 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 		}
 	}
 	buf[p] = 0x0d;
+	msdos_putch(0x0d);
 	mem[ofs + 1] = p;
 	ctrl_break_detected = ctrl_break_pressed;
 	

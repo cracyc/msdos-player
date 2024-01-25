@@ -10,6 +10,8 @@
 #include "../../../lib/softfloat/softfloat.h"
 #include "../vtlb.h"
 
+#include <math.h>
+
 //#define DEBUG_MISSING_OPCODE
 
 #define I386OP(XX)      i386_##XX
@@ -489,7 +491,7 @@ union XMM_REG {
 //};
 
 extern int i386_parity_table[256];
-static int i386_limit_check(int seg, UINT32 offset);
+static int i386_limit_check(int seg, UINT32 offset, UINT32 size);
 
 #define FAULT_THROW(fault,error) { throw (UINT64)(fault | (UINT64)error << 32); }
 #define PF_THROW(error) { m_cr[2] = address; FAULT_THROW(FAULT_PF,error); }
@@ -563,14 +565,14 @@ extern MODRM_TABLE i386_MODRM_table[256];
 
 /***********************************************************************************/
 
-INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn)
+INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn, UINT32 size)
 {
 	// TODO: segment limit access size, execution permission, handle exception thrown from exception handler
 	if(PROTECTED_MODE && !V8086_MODE && (rwn != -1))
 	{
 		if(!(m_sreg[segment].valid))
 			FAULT_THROW((segment==SS)?FAULT_SS:FAULT_GP, 0);
-		if(i386_limit_check(segment, ip))
+		if(i386_limit_check(segment, ip, size))
 			FAULT_THROW((segment==SS)?FAULT_SS:FAULT_GP, 0);
 		if((rwn == 0) && ((m_sreg[segment].flags & 8) && !(m_sreg[segment].flags & 2)))
 			FAULT_THROW(FAULT_GP, 0);
@@ -726,7 +728,7 @@ INLINE int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
 
 INLINE void CHANGE_PC(UINT32 pc)
 {
-	m_pc = i386_translate(CS, pc, -1 );
+	m_pc = i386_translate(CS, pc, -1, 1 );
 }
 
 INLINE void NEAR_BRANCH(INT32 offs)
@@ -758,7 +760,7 @@ INLINE UINT16 FETCH16()
 	UINT16 value;
 	UINT32 address = m_pc, error;
 
-	if( (m_pc & 0xfff) == 0xfff ) {     /* Unaligned read */
+	if( !WORD_ALIGNED(address) ) {       /* Unaligned read */
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 	} else {
@@ -776,7 +778,7 @@ INLINE UINT32 FETCH32()
 	UINT32 value;
 	UINT32 address = m_pc, error;
 
-	if( (m_pc & 0xfff) > 0xffc ) {      /* Unaligned read */
+	if( !DWORD_ALIGNED(m_pc) ) {      /* Unaligned read */
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 		value |= (FETCH() << 16);
@@ -808,7 +810,7 @@ INLINE UINT16 READ16(UINT32 ea)
 	UINT16 value;
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned read */
+	if( !WORD_ALIGNED(ea) ) {        /* Unaligned read */
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 	} else {
@@ -825,7 +827,7 @@ INLINE UINT32 READ32(UINT32 ea)
 	UINT32 value;
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned read */
+	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned read */
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 		value |= (READ8( address+2 ) << 16),
@@ -845,7 +847,7 @@ INLINE UINT64 READ64(UINT32 ea)
 	UINT64 value;
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) > 0xff8 ) {        /* Unaligned read */
+	if( !QWORD_ALIGNED(ea) ) {        /* Unaligned read */
 		value = (((UINT64) READ8( address+0 )) << 0);
 		value |= (((UINT64) READ8( address+1 )) << 8);
 		value |= (((UINT64) READ8( address+2 )) << 16);
@@ -879,7 +881,7 @@ INLINE UINT16 READ16PL0(UINT32 ea)
 	UINT16 value;
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned read */
+	if( !WORD_ALIGNED(ea) ) {        /* Unaligned read */
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 	} else {
@@ -897,7 +899,7 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 	UINT32 value;
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned read */
+	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned read */
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 		value |= (READ8PL0( address+2 ) << 16);
@@ -933,7 +935,7 @@ INLINE void WRITE16(UINT32 ea, UINT16 value)
 {
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned write */
+	if( !WORD_ALIGNED(ea) ) {        /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 	} else {
@@ -948,7 +950,7 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 {
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned write */
+	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 		WRITE8( address+2, (value >> 16) & 0xff );
@@ -966,7 +968,7 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 {
 	UINT32 address = ea, error;
 
-	if( (ea & 0xfff) > 0xff8 ) {        /* Unaligned write */
+	if( !QWORD_ALIGNED(ea) ) {        /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 		WRITE8( address+2, (value >> 16) & 0xff );
@@ -1176,12 +1178,12 @@ INLINE void PUSH16(UINT16 value)
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) - 2;
-		ea = i386_translate(SS, new_esp, 1);
+		ea = i386_translate(SS, new_esp, 1, 2);
 		WRITE16(ea, value );
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = (REG16(SP) - 2) & 0xffff;
-		ea = i386_translate(SS, new_esp, 1);
+		ea = i386_translate(SS, new_esp, 1, 2);
 		WRITE16(ea, value );
 		REG16(SP) = new_esp;
 	}
@@ -1191,12 +1193,12 @@ INLINE void PUSH32(UINT32 value)
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) - 4;
-		ea = i386_translate(SS, new_esp, 1);
+		ea = i386_translate(SS, new_esp, 1, 4);
 		WRITE32(ea, value );
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = (REG16(SP) - 4) & 0xffff;
-		ea = i386_translate(SS, new_esp, 1);
+		ea = i386_translate(SS, new_esp, 1, 4);
 		WRITE32(ea, value );
 		REG16(SP) = new_esp;
 	}
@@ -1206,13 +1208,23 @@ INLINE void PUSH32SEG(UINT32 value)
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) - 4;
-		ea = i386_translate(SS, new_esp, 1);
-		((m_cpu_version & 0xf00) == 0x300) ? WRITE16(ea, value) : WRITE32(ea, value ); // 486 also?
+		if( (m_cpu_version & 0xf00) == 0x300 ) {
+			ea = i386_translate(SS, new_esp, 1, 2);
+			WRITE16(ea, value); // 486 also?
+		} else {
+			ea = i386_translate(SS, new_esp, 1, 4);
+			WRITE32(ea, value ); // 486 also?
+		}
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = (REG16(SP) - 4) & 0xffff;
-		ea = i386_translate(SS, new_esp, 1);
-		((m_cpu_version & 0xf00) == 0x300) ? WRITE16(ea, value) : WRITE32(ea, value );
+		if( (m_cpu_version & 0xf00) == 0x300 ) {
+			ea = i386_translate(SS, new_esp, 1, 2);
+			WRITE16(ea, value);
+		} else {
+			ea = i386_translate(SS, new_esp, 1, 4);
+			WRITE32(ea, value );
+		}
 		REG16(SP) = new_esp;
 	}
 }
@@ -1231,12 +1243,12 @@ INLINE UINT8 POP8()
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) + 1;
-		ea = i386_translate(SS, new_esp - 1, 0);
+		ea = i386_translate(SS, new_esp - 1, 0, 1);
 		value = READ8(ea );
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = REG16(SP) + 1;
-		ea = i386_translate(SS, (new_esp - 1) & 0xffff, 0);
+		ea = i386_translate(SS, (new_esp - 1) & 0xffff, 0, 1);
 		value = READ8(ea );
 		REG16(SP) = new_esp;
 	}
@@ -1248,12 +1260,12 @@ INLINE UINT16 POP16()
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) + 2;
-		ea = i386_translate(SS, new_esp - 2, 0);
+		ea = i386_translate(SS, new_esp - 2, 0, 2);
 		value = READ16(ea );
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = REG16(SP) + 2;
-		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0);
+		ea = i386_translate(SS, (new_esp - 2) & 0xffff, 0, 2);
 		value = READ16(ea );
 		REG16(SP) = new_esp;
 	}
@@ -1265,12 +1277,12 @@ INLINE UINT32 POP32()
 	UINT32 ea, new_esp;
 	if( STACK_32BIT ) {
 		new_esp = REG32(ESP) + 4;
-		ea = i386_translate(SS, new_esp - 4, 0);
+		ea = i386_translate(SS, new_esp - 4, 0, 4);
 		value = READ32(ea );
 		REG32(ESP) = new_esp;
 	} else {
 		new_esp = REG16(SP) + 4;
-		ea = i386_translate(SS, (new_esp - 4) & 0xffff, 0);
+		ea = i386_translate(SS, (new_esp - 4) & 0xffff, 0, 4);
 		value = READ32(ea );
 		REG16(SP) = new_esp;
 	}
