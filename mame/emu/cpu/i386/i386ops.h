@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
+// copyright-holders:Ville Linde, Barry Rodewald, Carl, Philip Bennett
 struct X86_OPCODE {
 	UINT8 opcode;
 	UINT32 flags;
@@ -305,6 +305,7 @@ static const X86_OPCODE x86_opcode_table[] =
 	{ 0x03,     OP_2BYTE|OP_I386,           I386OP(lsl_r16_rm16),           I386OP(lsl_r32_rm32),       false},
 	{ 0x06,     OP_2BYTE|OP_I386,           I386OP(clts),                   I386OP(clts),               false},
 	{ 0x07,     OP_2BYTE|OP_I386,           I386OP(loadall),                I386OP(loadall),            false},
+	{ 0x07,     OP_2BYTE|OP_I486,           I386OP(invalid),                I386OP(invalid),            false},
 	{ 0x08,     OP_2BYTE|OP_I486,           I486OP(invd),                   I486OP(invd),               false},
 	{ 0x09,     OP_2BYTE|OP_I486,           I486OP(wbinvd),                 I486OP(wbinvd),             false},
 	{ 0x0B,     OP_2BYTE|OP_PENTIUM,        PENTIUMOP(ud2),                 PENTIUMOP(ud2),             false},

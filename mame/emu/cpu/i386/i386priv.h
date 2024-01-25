@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
+// copyright-holders:Ville Linde, Barry Rodewald, Carl, Philip Bennett
 #pragma once
 
 #ifndef __I386_H__
@@ -1193,6 +1193,21 @@ INLINE void PUSH32(UINT32 value)
 		new_esp = (REG16(SP) - 4) & 0xffff;
 		ea = i386_translate(SS, new_esp, 1);
 		WRITE32(ea, value );
+		REG16(SP) = new_esp;
+	}
+}
+INLINE void PUSH32SEG(UINT32 value)
+{
+	UINT32 ea, new_esp;
+	if( STACK_32BIT ) {
+		new_esp = REG32(ESP) - 4;
+		ea = i386_translate(SS, new_esp, 1);
+		((m_cpu_version & 0xf00) == 0x300) ? WRITE16(ea, value) : WRITE32(ea, value ); // 486 also?
+		REG32(ESP) = new_esp;
+	} else {
+		new_esp = (REG16(SP) - 4) & 0xffff;
+		ea = i386_translate(SS, new_esp, 1);
+		((m_cpu_version & 0xf00) == 0x300) ? WRITE16(ea, value) : WRITE32(ea, value );
 		REG16(SP) = new_esp;
 	}
 }

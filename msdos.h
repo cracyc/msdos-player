@@ -158,6 +158,190 @@ public:
 };
 
 /* ----------------------------------------------------------------------------
+	MAME i86/i386
+---------------------------------------------------------------------------- */
+
+#if defined(HAS_I86)
+	#define CPU_MODEL i8086
+#elif defined(HAS_I186)
+	#define CPU_MODEL i80186
+#elif defined(HAS_V30)
+	#define CPU_MODEL v30
+#elif defined(HAS_I286)
+	#define CPU_MODEL i80286
+#elif defined(HAS_I386)
+	#define CPU_MODEL i386
+#else
+//	#if defined(HAS_I386SX)
+//		#define CPU_MODEL i386SX
+//	#else
+		#if defined(HAS_I486)
+			#define CPU_MODEL i486
+		#else
+			#if defined(HAS_PENTIUM)
+				#define CPU_MODEL pentium
+			#elif defined(HAS_MEDIAGX)
+				#define CPU_MODEL mediagx
+			#elif defined(HAS_PENTIUM_PRO)
+				#define CPU_MODEL pentium_pro
+			#elif defined(HAS_PENTIUM_MMX)
+				#define CPU_MODEL pentium_mmx
+			#elif defined(HAS_PENTIUM2)
+				#define CPU_MODEL pentium2
+			#elif defined(HAS_PENTIUM3)
+				#define CPU_MODEL pentium3
+			#elif defined(HAS_PENTIUM4)
+				#define CPU_MODEL pentium4
+			#endif
+			#define SUPPORT_RDTSC
+		#endif
+		#define SUPPORT_FPU
+//	#endif
+	#define HAS_I386
+#endif
+
+/* ----------------------------------------------------------------------------
+	PC/AT hardware emulation
+---------------------------------------------------------------------------- */
+
+void hardware_init();
+void hardware_finish();
+void hardware_run();
+void hardware_update();
+
+// memory
+
+#if defined(HAS_I386)
+#define MAX_MEM 0x2000000	/* 32MB */
+#elif defined(HAS_I286)
+#define MAX_MEM 0x1000000	/* 16MB */
+#else
+#define MAX_MEM 0x100000	/* 1MB */
+#endif
+UINT8 mem[MAX_MEM + 3];
+
+// ems
+
+#define MAX_EMS_HANDLES 16
+#define MAX_EMS_PAGES 2048	/* 32MB */
+
+struct {
+	char name[8];
+	UINT8* buffer;
+	int pages;
+	bool allocated;
+} ems_handles[MAX_EMS_HANDLES];
+
+struct {
+	UINT16 handle;
+	UINT16 page;
+	bool mapped;
+} ems_pages[4];
+
+int free_ems_pages;
+
+void ems_init();
+void ems_finish();
+void ems_allocate_pages(int handle, int pages);
+void ems_reallocate_pages(int handle, int pages);
+void ems_release_pages(int handle);
+void ems_map_page(int physical, int handle, int logical);
+void ems_unmap_page(int physical);
+
+// xms
+
+#if defined(HAS_I286) || defined(HAS_I386)
+#define SUPPORT_XMS
+#endif
+
+#ifdef SUPPORT_XMS
+#define MAX_XMS_HANDLES 16
+#define MAX_XMS_SIZE_KB 0x8000	// 32MB
+
+struct {
+	int seg;
+	int size_kb;
+	int lock;
+	bool allocated;
+} xms_handles[MAX_XMS_HANDLES + 1];
+#endif
+
+// pic
+
+typedef struct {
+	UINT8 imr, isr, irr, prio;
+	UINT8 icw1, icw2, icw3, icw4;
+	UINT8 ocw3;
+	UINT8 icw2_r, icw3_r, icw4_r;
+} pic_t;
+
+pic_t pic[2];
+int pic_req_chip, pic_req_level;
+UINT8 pic_req_bit;
+
+void pic_init();
+void pic_write(int c, UINT32 addr, UINT8 data);
+UINT8 pic_read(int c, UINT32 addr);
+void pic_req(int c, int level, int signal);
+int pic_ack();
+void pic_update();
+
+// pit
+
+#define PIT_ALWAYS_RUNNING
+
+typedef struct {
+	INT32 count;
+	UINT16 latch;
+	UINT16 count_reg;
+	UINT8 ctrl_reg;
+	int count_latched;
+	int low_read, high_read;
+	int low_write, high_write;
+	int mode;
+	int status_latched;
+	UINT8 status;
+	// constant clock
+	UINT32 expired_time;
+	UINT32 prev_time;
+} pit_t;
+
+pit_t pit[3];
+#ifndef PIT_ALWAYS_RUNNING
+int pit_active;
+#endif
+
+void pit_init();
+void pit_write(int ch, UINT8 val);
+UINT8 pit_read(int ch);
+int pit_run(int ch, UINT32 cur_time);
+void pit_latch_count(int ch);
+int pit_get_expired_time(int ch);
+
+UINT8 system_port = 0;
+
+// cmos
+
+UINT8 cmos[128];
+UINT8 cmos_addr;
+
+void cmos_init();
+void cmos_write(int addr, UINT8 val);
+UINT8 cmos_read(int addr);
+
+// kbd (a20)
+
+UINT8 kbd_data;
+UINT8 kbd_status;
+UINT8 kbd_command;
+
+void kbd_init();
+UINT8 kbd_read_data();
+void kbd_write_data(UINT8 val);
+UINT8 kbd_read_status();
+void kbd_write_command(UINT8 val);
+
+/* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
@@ -166,17 +350,17 @@ public:
 #define BIOS_TOP	(VECTOR_TOP + VECTOR_SIZE)
 #define BIOS_SIZE	0x100
 #define WORK_TOP	(BIOS_TOP + BIOS_SIZE)
-#define WORK_SIZE	0x300
-#define IRET_TOP	(WORK_TOP + WORK_SIZE)
-#define IRET_SIZE	0x100
-#define DOS_INFO_TOP	(IRET_TOP + IRET_SIZE)
-#define DOS_INFO_BASE	(DOS_INFO_TOP + 24)
+#define WORK_SIZE	0x200
+#define DOS_INFO_TOP	(WORK_TOP + WORK_SIZE)
+#define DOS_INFO_BASE	(DOS_INFO_TOP + 38)
 #define DOS_INFO_SIZE	0x100
 #define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
 #define DPB_SIZE	0x400
 #define FILE_TABLE_TOP	(DPB_TOP + DPB_SIZE)
 #define FILE_TABLE_SIZE	0x10
-#define CDS_TOP		(FILE_TABLE_TOP + FILE_TABLE_SIZE)
+#define DISK_BUF_TOP	(FILE_TABLE_TOP + FILE_TABLE_SIZE)
+#define DISK_BUF_SIZE	0x20
+#define CDS_TOP		(DISK_BUF_TOP + DISK_BUF_SIZE)
 #define CDS_SIZE	0x80
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
@@ -196,9 +380,19 @@ public:
 #define MEMORY_TOP	((MSDOS_SYSTEM_DATA_END + 15) & ~15U)
 #define MEMORY_END	0xb8000
 #define TEXT_VRAM_TOP	0xb8000
-#define UMB_TOP		0xc0000
+#define EMS_TOP		0xc0000
+#define EMS_SIZE	0x10000
+UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define UMB_END		0xf8000
 #define SHADOW_BUF_TOP	0xf8000
+#define EMB_TOP		0x10fff0
+#define EMB_END		MAX_MEM
+
+UINT32 IRET_TOP = 0;
+#define IRET_SIZE	0x100
+UINT32 XMS_TOP = 0;
+#define XMS_OFFSET	0x04
+#define XMS_SIZE	0x20
 
 //#define ENV_SIZE	0x800
 #define ENV_SIZE	0x2000
@@ -220,9 +414,22 @@ public:
 typedef struct {
 	UINT8 mz;
 	UINT16 psp;
-	UINT16 paragraphs;
-	UINT8 reserved[3];
+	union {
+		UINT8 reserved[5];
+		UINT16 paragraphs16;
+		UINT32 paragraphs32;
+	};
 	char prog_name[8];
+	// use 32bit paragraphs for emb
+	UINT32 paragraphs()
+	{
+		UINT32 offset = &(this->mz) - mem;
+		return (offset >= EMB_TOP) ? paragraphs32 : paragraphs16;
+	}
+	UINT32 size_kb()
+	{
+		return paragraphs() >> 6;
+	}
 } mcb_t;
 #pragma pack()
 
@@ -437,24 +644,53 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	UINT8 reserved_1[22];	// -24
+	UINT8 reserved_0[4];	// -38
+	UINT16 magic_word;	// -34 from DOSBox
+	UINT8 reserved_1[30];	// -32
 	UINT16 first_mcb;	// -2
 	PAIR32 first_dpb;	// +0
-	PAIR32 first_sft;	// +0
-	UINT8 reserved_2[14];
+	PAIR32 first_sft;	// +4
+	UINT8 reserved_2[8];	// +8
+	UINT16 max_sector_len;	// +16
+	PAIR32 disk_buf_info;	// +18 from DOSBox
 	PAIR32 cds;		// +22
 	PAIR32 fcb_table;	// +26
-	UINT8 reserved_3[3];
+	UINT8 reserved_3[3];	// +30
 	UINT8 last_drive;	// +33
-	UINT8 reserved_4[29];
+	struct {
+		UINT32 next_driver;	// +34
+		UINT16 attributes;	// +38
+		UINT16 strategy;	// +40
+		UINT16 interrupt;	// +42
+		char dev_name[8];	// +44
+	} nul_device;
+	UINT8 reserved_4[11];	// +52
 	UINT16 buffers_x;	// +63
 	UINT16 buffers_y;	// +65
 	UINT8 boot_drive;	// +67
 	UINT8 i386_or_later;	// +68
 	UINT16 ext_mem_size;	// +69
-	UINT8 reserved_5[25];
+	PAIR32 disk_buf_heads;	// +71 from DOSBox
+	UINT8 reserved_5[21];	// +75
 	UINT8 dos_flag;		// +96
 } dos_info_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	UINT16 date_format;
+	char currency_symbol[5];
+	char thou_sep[2];
+	char dec_sep[2];
+	char date_sep[2];
+	char time_sep[2];
+	char currency_format;
+	char currency_dec_digits;
+	char time_format;
+	PAIR32 case_map;
+	char list_sep[2];
+	char reserved[10];
+} country_info_t;
 #pragma pack()
 
 typedef struct {
@@ -488,6 +724,12 @@ typedef struct {
 	bool parent_int_10h_feh_called;
 	bool parent_int_10h_ffh_called;
 	UINT16 parent_ds;
+	struct {
+		UINT16 handle;
+		UINT16 page;
+		bool mapped;
+	} ems_pages[4];
+	bool ems_pages_stored;
 } process_t;
 
 typedef struct {
@@ -514,7 +756,6 @@ process_t process[MAX_PROCESS];
 dtainfo_t dtalist[MAX_DTAINFO];
 
 UINT16 malloc_strategy = 0;
-UINT8 umb_linked = 0;
 
 char comspec_path[MAX_PATH] = "C:\\COMMAND.COM";
 
@@ -561,143 +802,5 @@ UINT32 shadow_buffer_end_address;
 int vram_pages;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
-
-/* ----------------------------------------------------------------------------
-	MAME i86/i386
----------------------------------------------------------------------------- */
-
-#if defined(HAS_I86)
-	#define CPU_MODEL i8086
-#elif defined(HAS_I186)
-	#define CPU_MODEL i80186
-#elif defined(HAS_V30)
-	#define CPU_MODEL v30
-#elif defined(HAS_I286)
-	#define CPU_MODEL i80286
-#elif defined(HAS_I386)
-	#define CPU_MODEL i386
-#else
-//	#if defined(HAS_I386SX)
-//		#define CPU_MODEL i386SX
-//	#else
-		#if defined(HAS_I486)
-			#define CPU_MODEL i486
-		#else
-			#if defined(HAS_PENTIUM)
-				#define CPU_MODEL pentium
-			#elif defined(HAS_MEDIAGX)
-				#define CPU_MODEL mediagx
-			#elif defined(HAS_PENTIUM_PRO)
-				#define CPU_MODEL pentium_pro
-			#elif defined(HAS_PENTIUM_MMX)
-				#define CPU_MODEL pentium_mmx
-			#elif defined(HAS_PENTIUM2)
-				#define CPU_MODEL pentium2
-			#elif defined(HAS_PENTIUM3)
-				#define CPU_MODEL pentium3
-			#elif defined(HAS_PENTIUM4)
-				#define CPU_MODEL pentium4
-			#endif
-			#define SUPPORT_RDTSC
-		#endif
-		#define SUPPORT_FPU
-//	#endif
-	#define HAS_I386
-#endif
-
-/* ----------------------------------------------------------------------------
-	PC/AT hardware emulation
----------------------------------------------------------------------------- */
-
-void hardware_init();
-void hardware_finish();
-void hardware_run();
-void hardware_update();
-
-// memory
-
-#if defined(HAS_I386)
-#define MAX_MEM 0x2000000	/* 32MB */
-#elif defined(HAS_I286)
-#define MAX_MEM 0x1000000	/* 16MB */
-#else
-#define MAX_MEM 0x100000	/* 1MB */
-#endif
-UINT8 mem[MAX_MEM + 3];
-
-// pic
-
-typedef struct {
-	UINT8 imr, isr, irr, prio;
-	UINT8 icw1, icw2, icw3, icw4;
-	UINT8 ocw3;
-	UINT8 icw2_r, icw3_r, icw4_r;
-} pic_t;
-
-pic_t pic[2];
-int pic_req_chip, pic_req_level;
-UINT8 pic_req_bit;
-
-void pic_init();
-void pic_write(int c, UINT32 addr, UINT8 data);
-UINT8 pic_read(int c, UINT32 addr);
-void pic_req(int c, int level, int signal);
-int pic_ack();
-void pic_update();
-
-// pit
-
-#define PIT_ALWAYS_RUNNING
-
-typedef struct {
-	INT32 count;
-	UINT16 latch;
-	UINT16 count_reg;
-	UINT8 ctrl_reg;
-	int count_latched;
-	int low_read, high_read;
-	int low_write, high_write;
-	int mode;
-	int status_latched;
-	UINT8 status;
-	// constant clock
-	UINT32 expired_time;
-	UINT32 prev_time;
-} pit_t;
-
-pit_t pit[3];
-#ifndef PIT_ALWAYS_RUNNING
-int pit_active;
-#endif
-
-void pit_init();
-void pit_write(int ch, UINT8 val);
-UINT8 pit_read(int ch);
-int pit_run(int ch, UINT32 cur_time);
-void pit_latch_count(int ch);
-int pit_get_expired_time(int ch);
-
-UINT8 system_port = 0;
-
-// cmos
-
-UINT8 cmos[128];
-UINT8 cmos_addr;
-
-void cmos_init();
-void cmos_write(int addr, UINT8 val);
-UINT8 cmos_read(int addr);
-
-// kbd (a20)
-
-UINT8 kbd_data;
-UINT8 kbd_status;
-UINT8 kbd_command;
-
-void kbd_init();
-UINT8 kbd_read_data();
-void kbd_write_data(UINT8 val);
-UINT8 kbd_read_status();
-void kbd_write_command(UINT8 val);
 
 #endif

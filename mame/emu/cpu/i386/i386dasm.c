@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde
+// copyright-holders:Ville Linde, Peter Ferrie
 /*
    i386 Disassembler
 
@@ -426,10 +426,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 		"movupd\0"
 		"movsd\0"
 		"movss",            MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
-	{"movlps\0"
-		"movlpd\0"
-		"movddup\0"
-		"movsldup",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"group0F12",      GROUP|GROUP_MOD, 0,                  0,                  0                   },
 	{"movlps\0"
 		"movlpd\0"
 		"???\0"
@@ -3115,15 +3112,15 @@ int i386_dasm_one(char *buffer, offs_t eip, const UINT8 *oprom, int mode)
 
 CPU_DISASSEMBLE( x86_16 )
 {
-	return i386_dasm_one_ex(buffer, pc, oprom, 16);
+	return i386_dasm_one_ex(buffer, eip, oprom, 16);
 }
 
 CPU_DISASSEMBLE( x86_32 )
 {
-	return i386_dasm_one_ex(buffer, pc, oprom, 32);
+	return i386_dasm_one_ex(buffer, eip, oprom, 32);
 }
 
 CPU_DISASSEMBLE( x86_64 )
 {
-	return i386_dasm_one_ex(buffer, pc, oprom, 64);
+	return i386_dasm_one_ex(buffer, eip, oprom, 64);
 }

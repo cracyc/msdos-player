@@ -1,26 +1,32 @@
 MS-DOS Player for Win32-x64 console
-								11/7/2015
+								5/29/2016
 
 ----- What's this
 
 This is MS-DOS emulator running on Win32-x64 command prompt.
 16bit MS-DOS compatible commands can be executed on Win32-x64 envrionment.
 
+This emulator inherits the environment variables from the host Windows,
+and a target command can access the host's file path directly.
+
+So you can execute 16bit MS-DOS compatible commands on your 64bit Windows
+in the same sence as you did on 32bit Windows, and you do not need to copy
+any files to/from a virtual machine (VMware, Virtual PC, XP mode, or others).
+
+NOTE: This emulator DOES NOT support Win16 execution files.
+
 
 ----- How to use
 
-Start command prompt and run this emulator with target command file
+Start a command prompt and run this emulator with target command file
 and any options.
 
-For example compile sample.c with LSI C-86 and execute compiled binary:
+For example, compile sample.c with LSI C-86 and execute compiled binary:
 
 	> msdos lcc sample.c
 	> msdos sample
 
-The emulator can access host's file path and envrionment variables directly.
-
-
-Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-vX.XX] (command file) [options]
+Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-vX.XX] [-x] (command file) [options]
 
 	-b	stay busy during keyboard polling
 	-d	pretend running under straight DOS, not Windows
@@ -28,6 +34,7 @@ Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-vX.XX] (command file) [options]
 	-i	ignore invalid instructions
 	-m	restrict free memory to 0x7FFF paragraphs
 	-v	set the DOS version
+	-x	enable XMS/EMS
 
 Some softwares (for example DoDiary Version 1.55) invite that the environment
 variable table should be less than 1024 bytes.
@@ -39,9 +46,13 @@ In this case, please specify the option '-e' and only the minimum variables
 
 	> msdos -e dd.com
 
-COMSPEC value is always "C:\COMMAND.COM".
-If a program try to open the "C:\COMMAND.COM" file, the file is redirected to
-the COMMAND.COM that does exist
+The environment variable COMSPEC is not copied from the host, and its
+value is always "C:\COMMAND.COM".
+If a program tries to open the "C:\COMMAND.COM" file, the file is redirected
+to the file path specified by the environment variable MSDOS_COMSPEC
+(NOTE: this environment variable is not copied to the variable table)
+or the COMMAND.COM file that does exist:
+
 - in the same directory as the target program file,
 - in the same directory as msdos.exe,
 - in the current directory,
@@ -63,6 +74,12 @@ If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
 
+To enable XMS (i286 or later) and EMS, please specify the option '-x'.
+In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
+so the size of UMB is decreased from 224KB to 160KB.
+
+
+----- Binaries
 
 This archive contains 8 executable binaries:
 
@@ -86,15 +103,22 @@ You can build all binaries for several cpu models by running build8_all.bat.
 
 ----- Supported hardwares
 
-CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, PIC, PIT, RTC CMOS,
-Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
+This emulator provides a very simple IBM PC hardware emulation:
+
+CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, EMS 32MB, PIC, PIT, RTC CMOS,
+Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register, PC BIOS
 
 
 ----- Memory map
 
 000000H -	Conventional Memory (736KB)
 0B8000H -	VGA Text Video RAM (32KB)
+----------
 0C0000H -	Upper Memory Block (224KB)
+--- Or ---
+0C0000H -	EMS Page Frame (64K)
+0D0000H -	Upper Memory Block (160KB)
+----------
 0F8000H -	V-TEXT Shadow Buffer (32KB-16B)
 0FFFF0H -	CPU Boot Address
 100000H -	Upper Memory (15MB/31MB)
@@ -342,7 +366,7 @@ INT 24H		Critical Error Handler
 
 INT 25H		Absolute Disk Read
 
-INT 26H		Absolute Disk Write
+INT 26H		Absolute Disk Write (*3)
 
 INT 27H		Terminate and Stay Resident
 
@@ -356,26 +380,76 @@ INT 2FH		Multiplex Interrupt
 
 	1600H	Windows Enhanced Mode Installation Check
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
-	1A00H	ANSI.SYS Installation Check (*3)
-	4300H	XMS Installation Check (*4)
-	4A01H	Query Free HMA Space (*4)
-	4A02H	Allocate HMA Space (*4)
+	1A00H	ANSI.SYS Installation Check (*4)
+	4300H	XMS - Installation Check
+	4310H	XMS - Get Driver Address
+	4A01H	DOS 5+ - Query Free HMA Space (*5)
+	4A02H	DOS 5+ - Allocate HMA Space (*5)
+	4A03H	Windows95 - DOS KERNEL - (De)Allocate HMA Memory Block
+	4A04H	Windows95 - DOS KERNEL - Get Start Of HMA Memory Chain
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
-	AE00H	
-	AE01H	Execute
-	B700H	APPEND Installation Check (*4)
+	AE00H	Installable Command - Installation Check
+	AE01H	Installable Command - Execute
+	B700H	APPEND - Installation Check (*5)
+
+INT 67H		LIM EMS
+
+	00H	
+	40H	LIM EMS - Get Manager Status
+	41H	LIM EMS - Get Page Frame Segment
+	42H	LIM EMS - Get Number Of Pages
+	43H	LIM EMS - Get Handle And Allocate Memory
+	44H	LIM EMS - Map Memory
+	45H	LIM EMS - Release Handle And Memory
+	46H	LIM EMS - Get EMM Version (*6)
+	47H	LIM EMS - Save Mapping Context
+	48H	LIM EMS - Restore Mapping Context
+	4BH	LIM EMS - Get Number Of EMM Handles
+	4CH	LIM EMS - Get Pages Owned By Handle
+	4DH	LIM EMS - Get Pages For All Handles
+	51H	LIM EMS 4.0 - Reallocate Pages
+	5300H	LIM EMS 4.0 - Get Handle Name
+	5301H	LIM EMS 4.0 - Set Handle Name
+	5400H	LIM EMS 4.0 - Get Handle Directory
+	5401H	LIM EMS 4.0 - Search For Named Handle
+	5402H	LIM EMS 4.0 - Get Total Handles
+
+CALL FAR XMS
+
+	00H	XMS - Get XMS Version Number (*7)
+	01H	XMS - Request High Memory Area
+	02H	XMS - Release High Memory Area
+	03H	XMS - Global Enable A20
+	04H	XMS - Global Disable A20
+	05H	XMS - Local Enable A20
+	06H	XMS - Local Disable A20
+	07H	XMS - Query A20 State
+	08H	XMS - Query Free Extended Memory
+	09H	XMS - Allocate Extended Memory Block
+	0AH	XMS - Free Extended Memory Block
+	0BH	XMS - Move Extended Memory Block
+	0CH	XMS - Lock Extended Memory Block
+	0DH	XMS - Unlock Extended Memory Block
+	0EH	XMS - Get Handle Information
+	0FH	XMS - Reallocate Extended Memory Block
+	10H	XMS - Request Upper Memory Block
+	11H	XMS - Release Upper Memory Block
+	12H	XMS 3.0 - Reallocate Upper Memory Block
 
 (*1) Not a Hercules-compatible video adapter
 (*2) MS-DOS Version: 7.10
-(*3) ANSI.SYS is installed
-(*4) XMS/HMA/APPEND are not installed
+(*3) Support only floppy disk drive
+(*4) ANSI.SYS is installed
+(*5) HMA/APPEND are not installed
+(*6) EMS Version: 3.2
+(*7) XMS Version: 2.70
 
 
 ----- Thanks
 
 80286 code is based on MAME 0.149.
-80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.160 are applied.
+80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.174 are applied.
 
 INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
 are based on DOSBox.

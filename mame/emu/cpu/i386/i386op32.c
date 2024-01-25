@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
+// copyright-holders:Ville Linde, Barry Rodewald, Carl, Philip Bennett
 static UINT32 I386OP(shift_rotate32)(UINT8 modrm, UINT32 value, UINT8 shift)
 {
 	UINT32 dst, src;
@@ -475,7 +475,7 @@ static void I386OP(call_abs32)()        // Opcode 0x9a
 	}
 	else
 	{
-		PUSH32(m_sreg[CS].selector );
+		PUSH32SEG(m_sreg[CS].selector );
 		PUSH32(m_eip );
 		m_sreg[CS].selector = ptr;
 		m_performed_intersegment_jump = 1;
@@ -1724,7 +1724,7 @@ static void I386OP(push_cs32)()         // Opcode 0x0e
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[CS].selector );
+		PUSH32SEG(m_sreg[CS].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -1738,7 +1738,7 @@ static void I386OP(push_ds32)()         // Opcode 0x1e
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[DS].selector );
+		PUSH32SEG(m_sreg[DS].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -1752,7 +1752,7 @@ static void I386OP(push_es32)()         // Opcode 0x06
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[ES].selector );
+		PUSH32SEG(m_sreg[ES].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -1766,7 +1766,7 @@ static void I386OP(push_fs32)()         // Opcode 0x0f a0
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[FS].selector );
+		PUSH32SEG(m_sreg[FS].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -1780,7 +1780,7 @@ static void I386OP(push_gs32)()         // Opcode 0x0f a8
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[GS].selector );
+		PUSH32SEG(m_sreg[GS].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -1794,7 +1794,7 @@ static void I386OP(push_ss32)()         // Opcode 0x16
 	else
 		offset = (REG16(SP) - 4) & 0xffff;
 	if(i386_limit_check(SS,offset) == 0)
-		PUSH32(m_sreg[SS].selector );
+		PUSH32SEG(m_sreg[SS].selector );
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_PUSH_SREG);
@@ -2852,7 +2852,7 @@ static void I386OP(groupFF_32)()        // Opcode 0xff
 					}
 					else
 					{
-						PUSH32(m_sreg[CS].selector );
+						PUSH32SEG(m_sreg[CS].selector );
 						PUSH32(m_eip );
 						m_sreg[CS].selector = selector;
 						m_performed_intersegment_jump = 1;

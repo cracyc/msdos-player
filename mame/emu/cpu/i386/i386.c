@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ville Linde, Barry Rodewald, Carl, Phil Bennett
+// copyright-holders:Ville Linde, Barry Rodewald, Carl, Philip Bennett
 /*
     Intel 386 emulator
 
@@ -881,10 +881,10 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 					//logerror("IRQ (%08x): Interrupt during V8086 task\n",m_pc);
 					if(type & 0x08)
 					{
-						PUSH32(m_sreg[GS].selector & 0xffff);
-						PUSH32(m_sreg[FS].selector & 0xffff);
-						PUSH32(m_sreg[DS].selector & 0xffff);
-						PUSH32(m_sreg[ES].selector & 0xffff);
+						PUSH32SEG(m_sreg[GS].selector & 0xffff);
+						PUSH32SEG(m_sreg[FS].selector & 0xffff);
+						PUSH32SEG(m_sreg[DS].selector & 0xffff);
+						PUSH32SEG(m_sreg[ES].selector & 0xffff);
 					}
 					else
 					{
@@ -906,7 +906,7 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 				if(type & 0x08)
 				{
 					// 32-bit gate
-					PUSH32(oldSS);
+					PUSH32SEG(oldSS);
 					PUSH32(oldESP);
 				}
 				else
@@ -968,7 +968,7 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 			else
 			{
 				PUSH32(oldflags & 0x00ffffff );
-				PUSH32(m_sreg[CS].selector );
+				PUSH32SEG(m_sreg[CS].selector );
 				if(irq == 3 || irq == 4 || irq == 9 || irq_gate == 1)
 					PUSH32(m_eip );
 				else
@@ -1843,7 +1843,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 
 					if(operand32 != 0)
 					{
-						PUSH32(oldSS);
+						PUSH32SEG(oldSS);
 						PUSH32(oldESP);
 					}
 					else
@@ -1977,7 +1977,7 @@ static void i386_protected_mode_call(UINT16 seg, UINT32 off, int indirect, int o
 		else
 		{
 			/* 32-bit operand size */
-			PUSH32(m_sreg[CS].selector );
+			PUSH32SEG(m_sreg[CS].selector );
 			PUSH32(m_eip );
 			m_sreg[CS].selector = selector;
 			m_performed_intersegment_jump = 1;
@@ -2272,6 +2272,7 @@ static void i386_protected_mode_iret(int operand32)
 	I386_SREG desc,stack;
 	UINT8 CPL, RPL, DPL;
 	UINT32 newflags;
+	UINT8 IOPL = m_IOP1 | (m_IOP2 << 1);
 
 	CPL = m_CPL;
 	UINT32 ea = i386_translate(SS, (STACK_32BIT)?REG32(ESP):REG16(SP), 0);
@@ -2291,7 +2292,7 @@ static void i386_protected_mode_iret(int operand32)
 	if(V8086_MODE)
 	{
 		UINT32 oldflags = get_flags();
-		if(!m_IOP1 || !m_IOP2)
+		if(IOPL != 3)
 		{
 			logerror("IRET (%08x): Is in Virtual 8086 mode and IOPL != 3.\n",m_pc);
 			FAULT(FAULT_GP,0)
@@ -2363,6 +2364,8 @@ static void i386_protected_mode_iret(int operand32)
 			{
 				UINT32 oldflags = get_flags();
 				newflags = (newflags & ~0x00003000) | (oldflags & 0x00003000);
+				if(CPL > IOPL)
+					newflags = (newflags & ~0x200 ) | (oldflags & 0x200);
 			}
 			set_flags(newflags);
 			m_eip = POP32() & 0xffff;  // high 16 bits are ignored
@@ -2479,7 +2482,7 @@ static void i386_protected_mode_iret(int operand32)
 				}
 				if((desc.flags & 0x0080) == 0)
 				{
-					logerror("IRET: Return CS segment is not present.\n");
+					logerror("IRET: (%08x) Return CS segment is not present.\n", m_pc);
 					FAULT(FAULT_NP,newCS & ~0x03)
 				}
 				if(newEIP > desc.limit)
@@ -2492,6 +2495,8 @@ static void i386_protected_mode_iret(int operand32)
 				{
 					UINT32 oldflags = get_flags();
 					newflags = (newflags & ~0x00003000) | (oldflags & 0x00003000);
+					if(CPL > IOPL)
+						newflags = (newflags & ~0x200 ) | (oldflags & 0x200);
 				}
 
 				if(operand32 == 0)
@@ -2661,6 +2666,8 @@ static void i386_protected_mode_iret(int operand32)
 				{
 					UINT32 oldflags = get_flags();
 					newflags = (newflags & ~0x00003000) | (oldflags & 0x00003000);
+					if(CPL > IOPL)
+						newflags = (newflags & ~0x200 ) | (oldflags & 0x200);
 				}
 
 				if(operand32 == 0)
@@ -3220,6 +3227,7 @@ static CPU_RESET( i386 )
 	// Family 3 (386), Model 0 (DX), Stepping 8 (D1)
 	REG32(EAX) = 0;
 	REG32(EDX) = (3 << 8) | (0 << 4) | (8);
+	m_cpu_version = REG32(EDX);
 
 	m_CPL = 0;
 
@@ -3293,7 +3301,7 @@ static void pentium_smi()
 	WRITE32(REG32(ESI), smram_state+SMRAM_ESI);
 	WRITE32(REG32(EDI), smram_state+SMRAM_EDI);
 	WRITE32(m_eip, smram_state+SMRAM_EIP);
-	WRITE32(old_flags, smram_state+SMRAM_EAX);
+	WRITE32(old_flags, smram_state+SMRAM_EFLAGS);
 	WRITE32(m_cr[3], smram_state+SMRAM_CR3);
 	WRITE32(old_cr0, smram_state+SMRAM_CR0);
 
@@ -3479,6 +3487,7 @@ static CPU_RESET( i486 )
 	// Family 4 (486), Model 0/1 (DX), Stepping 3
 	REG32(EAX) = 0;
 	REG32(EDX) = (4 << 8) | (0 << 4) | (3);
+	m_cpu_version = REG32(EDX);
 
 	CHANGE_PC(m_eip);
 }

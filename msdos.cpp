@@ -61,18 +61,12 @@ bool no_windows = false;
 //bool ctrl_break = false;
 bool stay_busy = false;
 UINT32 iops = 0;
+bool support_ems = false;
+#ifdef SUPPORT_XMS
+bool support_xms = false;
+#endif
 
 BOOL is_vista_or_later;
-
-inline UINT32 get_ticks_since_midnight()
-{
-	SYSTEMTIME time;
-	
-	GetLocalTime(&time);
-	unsigned __int64 msec = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
-	unsigned __int64 tick = msec * 0x1800b0 / 24 / 60 / 60 / 1000;
-	return (UINT32)tick;
-}
 
 inline void maybe_idle()
 {
@@ -265,11 +259,6 @@ UINT16 read_word(offs_t byteaddress)
 
 UINT32 read_dword(offs_t byteaddress)
 {
-	if(byteaddress == 0x46c) {
-		UINT32 ticks = get_ticks_since_midnight();
-		*(UINT32 *)(mem + 0x46c) = ticks;
-		return ticks;
-	}
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
 		return *(UINT32 *)(mem + byteaddress);
@@ -715,6 +704,13 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-b", 2) == 0) {
 			stay_busy = true;
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-x", 2) == 0) {
+			UMB_TOP = EMS_TOP + EMS_SIZE;
+			support_ems = true;
+#ifdef SUPPORT_XMS
+			support_xms = true;
+#endif
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-n", 2) == 0) {
 			if(sscanf(argv[1] + 2, "%d,%d", &buf_height, &buf_width) != 2) {
 				buf_width = buf_height = 0;
@@ -743,7 +739,7 @@ int main(int argc, char *argv[], char *envp[])
 #else
 		fprintf(stderr, "MS-DOS Player (" CPU_MODEL_NAME(CPU_MODEL) ") for Win32 console\n\n");
 #endif
-		fprintf(stderr, "Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-n[L[,C]]] [-vX.XX] (command file) [options]\n"
+		fprintf(stderr, "Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-n[L[,C]]] [-vX.XX] [-x] (command file) [options]\n"
 				"\n"
 				"\t-b\tstay busy during keyboard polling\n"
 				"\t-d\tpretend running under straight DOS, not Windows\n"
@@ -751,7 +747,13 @@ int main(int argc, char *argv[], char *envp[])
 				"\t-i\tignore invalid instructions\n"
 				"\t-m\trestrict free memory to 0x7FFF paragraphs\n"
 				"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
-				"\t-v\tset the DOS version\n");
+				"\t-v\tset the DOS version\n"
+#ifdef SUPPORT_XMS
+				"\t-x\tenable XMS/EMS\n"
+#else
+				"\t-x\tenable EMS\n"
+#endif
+		);
 		
 		if(!is_started_from_command_prompt()) {
 			fprintf(stderr, "\nStart this program from a command prompt!\n\nHit any key to quit...");
@@ -2322,13 +2324,13 @@ void msdos_prn_out(char data)
 
 // memory control
 
-mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, UINT16 paragraphs)
+mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
 {
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	
 	mcb->mz = mz;
 	mcb->psp = psp;
-	mcb->paragraphs = paragraphs;
+	mcb->paragraphs32 = paragraphs;
 	return(mcb);
 }
 
@@ -2345,13 +2347,13 @@ int msdos_mem_split(int seg, int paragraphs)
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	msdos_mcb_check(mcb);
 	
-	if(mcb->paragraphs > paragraphs) {
+	if(mcb->paragraphs() > paragraphs) {
 		int new_seg = mcb_seg + 1 + paragraphs;
-		int new_paragraphs = mcb->paragraphs - paragraphs - 1;
+		int new_paragraphs = mcb->paragraphs() - paragraphs - 1;
 		
 		msdos_mcb_create(new_seg, mcb->mz, 0, new_paragraphs);
 		mcb->mz = 'M';
-		mcb->paragraphs = paragraphs;
+		mcb->paragraphs32 = paragraphs;
 		return(0);
 	}
 	return(-1);
@@ -2367,7 +2369,7 @@ void msdos_mem_merge(int seg)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		int next_seg = mcb_seg + 1 + mcb->paragraphs;
+		int next_seg = mcb_seg + 1 + mcb->paragraphs();
 		mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
 		msdos_mcb_check(next_mcb);
 		
@@ -2375,7 +2377,7 @@ void msdos_mem_merge(int seg)
 			break;
 		}
 		mcb->mz = next_mcb->mz;
-		mcb->paragraphs += 1 + next_mcb->paragraphs;
+		mcb->paragraphs32 = mcb->paragraphs() + 1 + next_mcb->paragraphs();
 	}
 }
 
@@ -2390,7 +2392,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 			msdos_mcb_check(mcb);
 		}
 		if(!(new_process && mcb->mz != 'Z')) {
-			if(mcb->psp == 0 && mcb->paragraphs >= paragraphs) {
+			if(mcb->psp == 0 && mcb->paragraphs() >= paragraphs) {
 				msdos_mem_split(mcb_seg + 1, paragraphs);
 				mcb->psp = current_psp;
 				return(mcb_seg + 1);
@@ -2399,7 +2401,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs;
+		mcb_seg += 1 + mcb->paragraphs();
 	}
 	return(-1);
 }
@@ -2409,12 +2411,12 @@ int msdos_mem_realloc(int seg, int paragraphs, int *max_paragraphs)
 	int mcb_seg = seg - 1;
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	msdos_mcb_check(mcb);
-	int current_paragraphs = mcb->paragraphs;
+	int current_paragraphs = mcb->paragraphs();
 	
 	msdos_mem_merge(seg);
-	if(paragraphs > mcb->paragraphs) {
+	if(paragraphs > mcb->paragraphs()) {
 		if(max_paragraphs) {
-			*max_paragraphs = mcb->paragraphs;
+			*max_paragraphs = mcb->paragraphs();
 		}
 		msdos_mem_split(seg, current_paragraphs);
 		return(-1);
@@ -2442,14 +2444,14 @@ int msdos_mem_get_free(int mcb_seg, int new_process)
 		msdos_mcb_check(mcb);
 		
 		if(!(new_process && mcb->mz != 'Z')) {
-			if(mcb->psp == 0 && mcb->paragraphs > max_paragraphs) {
-				max_paragraphs = mcb->paragraphs;
+			if(mcb->psp == 0 && mcb->paragraphs() > max_paragraphs) {
+				max_paragraphs = mcb->paragraphs();
 			}
 		}
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs;
+		mcb_seg += 1 + mcb->paragraphs();
 	}
 	return(max_paragraphs > 0x7fff && limit_max_memory ? 0x7fff : max_paragraphs);
 }
@@ -2468,9 +2470,69 @@ int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs;
+		mcb_seg += 1 + mcb->paragraphs();
 	}
 	return(last_seg);
+}
+
+int msdos_mem_get_umb_linked()
+{
+	int mcb_seg = first_mcb;
+	
+	while(1) {
+		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		msdos_mcb_check(mcb);
+		
+		if(mcb->mz == 'Z') {
+			if(mcb_seg >= (UMB_TOP >> 4)) {
+				return(-1);
+			}
+			break;
+		}
+		mcb_seg += 1 + mcb->paragraphs();
+	}
+	return(0);
+}
+
+int msdos_mem_link_umb()
+{
+	int mcb_seg = first_mcb;
+	
+	while(1) {
+		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		msdos_mcb_check(mcb);
+		mcb_seg += 1 + mcb->paragraphs();
+		
+		if(mcb->mz == 'Z') {
+			if(mcb_seg == (MEMORY_END >> 4) - 1) {
+				mcb->mz = 'M';
+				return(-1);
+			}
+			break;
+		}
+	}
+	return(0);
+}
+
+int msdos_mem_unlink_umb()
+{
+	int mcb_seg = first_mcb;
+	
+	while(1) {
+		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		msdos_mcb_check(mcb);
+		mcb_seg += 1 + mcb->paragraphs();
+		
+		if(mcb->mz == 'Z') {
+			break;
+		} else {
+			if(mcb_seg == (MEMORY_END >> 4) - 1) {
+				mcb->mz = 'Z';
+				return(-1);
+			}
+		}
+	}
+	return(0);
 }
 
 // environment
@@ -3019,6 +3081,7 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 				break;
 			case FixedMedia:	// hard disk
 			case RemovableMedia:
+			case Unknown:
 				dpb->media_type = 0xf8;
 				break;
 			default:
@@ -3042,10 +3105,37 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 
 // pc bios
 
+UINT32 get_ticks_since_midnight(UINT32 cur_msec)
+{
+	static unsigned __int64 start_msec_since_midnight = 0;
+	static unsigned __int64 start_msec_since_hostboot = 0;
+	
+	if(start_msec_since_midnight == 0) {
+		SYSTEMTIME time;
+		GetLocalTime(&time);
+		start_msec_since_midnight = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
+		start_msec_since_hostboot = cur_msec;
+	}
+	unsigned __int64 msec = (start_msec_since_midnight + cur_msec - start_msec_since_hostboot) % (24 * 60 * 60 * 1000);
+	unsigned __int64 tick = msec * 0x1800b0 / (24 * 60 * 60 * 1000);
+	return (UINT32)tick;
+}
+
+void pcbios_update_daily_timer_counter(UINT32 cur_msec)
+{
+	UINT32 prev_tick = *(UINT32 *)(mem + 0x46c);
+	UINT32 next_tick = get_ticks_since_midnight(cur_msec);
+	
+	if(prev_tick > next_tick) {
+		mem[0x470] = 1;
+	}
+	*(UINT32 *)(mem + 0x46c) = next_tick;
+}
+
 inline void pcbios_irq0()
 {
 	//++*(UINT32 *)(mem + 0x46c);
-	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight();
+	pcbios_update_daily_timer_counter(timeGetTime());
 }
 
 int pcbios_get_text_vram_address(int page)
@@ -4028,15 +4118,11 @@ inline void pcbios_int_16h_14h()
 
 inline void pcbios_int_1ah_00h()
 {
-	static WORD prev_day = 0;
-	SYSTEMTIME time;
-	
-	GetLocalTime(&time);
-	UINT32 tick = get_ticks_since_midnight();
-	REG16(CX) = (tick >> 16) & 0xffff;
-	REG16(DX) = (tick      ) & 0xffff;
-	REG8(AL) = (prev_day != 0 && prev_day != time.wDay) ? 1 : 0;
-	prev_day = time.wDay;
+	pcbios_update_daily_timer_counter(timeGetTime());
+	REG16(CX) = *(UINT16 *)(mem + 0x46e);
+	REG16(DX) = *(UINT16 *)(mem + 0x46c);
+	REG8(AL) = mem[0x470];
+	mem[0x470] = 0;
 }
 
 inline int to_bcd(int t)
@@ -4982,28 +5068,11 @@ inline void msdos_int_21h_37h()
 	}
 }
 
-#pragma pack(1)
-struct CI {
-	UINT16 date_format;
-	char currency_symbol[5];
-	char thou_sep[2];
-	char dec_sep[2];
-	char date_sep[2];
-	char time_sep[2];
-	char currency_format;
-	char currency_dec_digits;
-	char time_format;
-	UINT32 case_map;
-	char list_sep[2];
-	char reserved[10];
-};
-#pragma pack()
-
-int get_country_info(struct CI *ci)
+int get_country_info(country_info_t *ci)
 {
 	char LCdata[80];
 	
-	ZeroMemory(ci, offsetof(struct CI, reserved));
+	ZeroMemory(ci, offsetof(country_info_t, reserved));
 	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRDIGITS, LCdata, sizeof(LCdata));
 	ci->currency_dec_digits = atoi(LCdata);
 	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRENCY, LCdata, sizeof(LCdata));
@@ -5026,6 +5095,8 @@ int get_country_info(struct CI *ci)
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
+	ci->case_map.w.l = 0x000c;
+	ci->case_map.w.h = 0xffff;
 	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
 }
@@ -5034,7 +5105,7 @@ inline void msdos_int_21h_38h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		REG16(BX) = get_country_info((struct CI *)(mem + SREG_BASE(DS) + REG16(DX)));
+		REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)));
 		break;
 	default:
 		REG16(AX) = 2;
@@ -5534,15 +5605,22 @@ inline void msdos_int_21h_47h(int lfn)
 
 inline void msdos_int_21h_48h()
 {
-	int seg;
+	int seg, umb_linked;
 	
 	if((malloc_strategy & 0xf0) == 0x00) {
+		// unlink umb not to allocate memory in umb
+		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
+			msdos_mem_unlink_umb();
+		}
 		if((seg = msdos_mem_alloc(first_mcb, REG16(BX), 0)) != -1) {
 			REG16(AX) = seg;
 		} else {
 			REG16(AX) = 0x08;
 			REG16(BX) = msdos_mem_get_free(first_mcb, 0);
 			m_CF = 1;
+		}
+		if(umb_linked != 0) {
+			msdos_mem_link_umb();
 		}
 	} else if((malloc_strategy & 0xf0) == 0x40) {
 		if((seg = msdos_mem_alloc(UMB_TOP >> 4, REG16(BX), 0)) != -1) {
@@ -5876,13 +5954,15 @@ inline void msdos_int_21h_58h()
 		}
 		break;
 	case 0x02:
-		REG8(AL) = umb_linked;
+		REG8(AL) = msdos_mem_get_umb_linked() ? 1 : 0;
 		break;
 	case 0x03:
 		switch(REG16(BX)) {
 		case 0x0000:
+			msdos_mem_unlink_umb();
+			break;
 		case 0x0001:
-			umb_linked = REG8(BL);
+			msdos_mem_link_umb();
 			break;
 		default:
 			REG16(AX) = 0x01;
@@ -6079,13 +6159,13 @@ inline void msdos_int_21h_65h()
 	switch(REG8(AL)) {
 	case 0x01:
 		if(REG16(CX) >= 5) {
-			UINT8 data[1 + 2 + 2 + 2 + sizeof(struct CI)];
+			UINT8 data[1 + 2 + 2 + 2 + sizeof(country_info_t)];
 			if(REG16(CX) > sizeof(data))		// cx = actual transfer size
 				REG16(CX) = sizeof(data);
 			ZeroMemory(data, sizeof(data));
 			data[0] = 0x01;
 			*(UINT16 *)(data + 1) = REG16(CX) - 3;
-			*(UINT16 *)(data + 3) = get_country_info((struct CI*)(data + 7));
+			*(UINT16 *)(data + 3) = get_country_info((country_info_t*)(data + 7));
 			*(UINT16 *)(data + 5) = active_code_page;
 			memcpy(mem + SREG_BASE(ES) + REG16(DI), data, REG16(CX));
 			REG16(AX) = active_code_page;
@@ -6130,7 +6210,8 @@ inline void msdos_int_21h_65h()
 		REG16(CX) = 0x05;
 		break;
 	case 0x20:
-		sprintf(tmp, "%c", REG8(DL));
+		memset(tmp, 0, sizeof(tmp));
+		tmp[0] = REG8(DL);
 		my_strupr(tmp);
 		REG8(DL) = tmp[0];
 		break;
@@ -6711,13 +6792,25 @@ inline void msdos_int_25h()
 			REG8(AL) = 0x02; // drive not ready
 			m_CF = 1;
 		} else {
-			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
-				REG8(AL) = 0x02; // drive not ready
-				m_CF = 1;
-			} else if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+			UINT32 top_sector  = REG16(DX);
+			UINT16 sector_num  = REG16(CX);
+			UINT32 buffer_addr = SREG_BASE(DS) + REG16(BX);
+			
+			if(sector_num == 0xffff) {
+				top_sector  = *(UINT32 *)(mem + buffer_addr + 0);
+				sector_num  = *(UINT16 *)(mem + buffer_addr + 4);
+				UINT16 ofs  = *(UINT16 *)(mem + buffer_addr + 6);
+				UINT16 seg  = *(UINT16 *)(mem + buffer_addr + 8);
+				buffer_addr = (seg << 4) + ofs;
+			}
+//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//				REG8(AL) = 0x02; // drive not ready
+//				m_CF = 1;
+//			} else 
+			if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
 				REG8(AL) = 0x08; // sector not found
 				m_CF = 1;
-			} else if(ReadFile(hFile, mem + SREG_BASE(DS) + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
+			} else if(ReadFile(hFile, mem + buffer_addr, sector_num * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
 				REG8(AL) = 0x0b; // read error
 				m_CF = 1;
 			}
@@ -6762,13 +6855,24 @@ inline void msdos_int_26h()
 				REG8(AL) = 0x02; // drive not ready
 				m_CF = 1;
 			} else {
+				UINT32 top_sector  = REG16(DX);
+				UINT16 sector_num  = REG16(CX);
+				UINT32 buffer_addr = SREG_BASE(DS) + REG16(BX);
+				
+				if(sector_num == 0xffff) {
+					top_sector  = *(UINT32 *)(mem + buffer_addr + 0);
+					sector_num  = *(UINT16 *)(mem + buffer_addr + 4);
+					UINT16 ofs  = *(UINT16 *)(mem + buffer_addr + 6);
+					UINT16 seg  = *(UINT16 *)(mem + buffer_addr + 8);
+					buffer_addr = (seg << 4) + ofs;
+				}
 				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
 					REG8(AL) = 0x02; // drive not ready
 					m_CF = 1;
-				} else if(SetFilePointer(hFile, REG16(DX) * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+				} else if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
 					REG8(AL) = 0x08; // sector not found
 					m_CF = 1;
-				} else if(WriteFile(hFile, mem + SREG_BASE(DS) + REG16(BX), REG16(CX) * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
+				} else if(WriteFile(hFile, mem + buffer_addr, sector_num * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
 					REG8(AL) = 0x0a; // write error
 					m_CF = 1;
 				}
@@ -6875,8 +6979,18 @@ inline void msdos_int_2fh_43h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		// xms is not installed
-		REG8(AL) = 0;
+		// xms is installed ?
+#ifdef SUPPORT_XMS
+		if(support_xms) {
+			REG8(AL) = 0x80;
+		} else
+#endif
+		REG8(AL) = 0x00;
+		break;
+	case 0x10:
+		REG16(BX) = XMS_OFFSET;
+		SREG(ES) = XMS_TOP >> 4;
+		i386_load_segment_descriptor(ES);
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -6887,14 +7001,22 @@ inline void msdos_int_2fh_43h()
 
 inline void msdos_int_2fh_4ah()
 {
+	// hma is not installed
 	switch(REG8(AL)) {
 	case 0x01:
 	case 0x02:
-		// hma is not installed
+		// hma is not used
 		REG16(BX) = 0;
 		SREG(ES) = 0xffff;
 		i386_load_segment_descriptor(ES);
 		REG16(DI) = 0xffff;
+		break;
+	case 0x03:
+		// unable to allocate
+		REG16(DI) = 0xffff;
+		break;
+	case 0x04:
+		// function not supported, do not clear AX
 		break;
 	default:
 		REG16(AX) = 0x01;
@@ -6976,6 +7098,579 @@ inline void msdos_int_2fh_b7h()
 		break;
 	}
 }
+
+inline void msdos_int_67h_00h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = 0;
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated) {
+				REG16(BX)++;
+			}
+		}
+	}
+}
+
+inline void msdos_int_67h_40h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_41h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = EMS_TOP >> 4;
+	}
+}
+
+inline void msdos_int_67h_42h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = free_ems_pages;
+		REG16(DX) = MAX_EMS_PAGES;
+	}
+}
+
+inline void msdos_int_67h_43h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG16(BX) > MAX_EMS_PAGES) {
+		REG8(AH) = 0x87;
+	} else if(REG16(BX) > free_ems_pages) {
+		REG8(AH) = 0x88;
+	} else if(REG16(BX) == 0) {
+		REG8(AH) = 0x89;
+	} else {
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(!ems_handles[i].allocated) {
+				ems_allocate_pages(i, REG16(BX));
+				REG8(AH) = 0x00;
+				REG16(DX) = i;
+				return;
+			}
+		}
+		REG8(AH) = 0x85;
+	}
+}
+
+inline void msdos_int_67h_44h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(!(REG16(BX) == 0xffff || REG16(BX) < ems_handles[REG16(DX)].pages)) {
+		REG8(AH) = 0x8a;
+//	} else if(!(REG8(AL) < 4)) {
+//		REG8(AH) = 0x8b;
+	} else if(REG16(BX) == 0xffff) {
+		ems_unmap_page(REG8(AL) & 3);
+		REG8(AH) = 0x00;
+	} else {
+		ems_map_page(REG8(AL) & 3, REG16(DX), REG16(BX));
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_45h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else {
+		ems_release_pages(REG16(DX));
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_46h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG16(AX) = 0x0032; // EMS 3.2
+//		REG16(AX) = 0x0040; // EMS 4.0
+	}
+}
+
+inline void msdos_int_67h_47h()
+{
+	// NOTE: the map data should be stored in the specified ems page, not process data
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+//	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//		REG8(AH) = 0x83;
+	} else if(process->ems_pages_stored) {
+		REG8(AH) = 0x8d;
+	} else {
+		for(int i = 0; i < 4; i++) {
+			process->ems_pages[i].handle = ems_pages[i].handle;
+			process->ems_pages[i].page   = ems_pages[i].page;
+			process->ems_pages[i].mapped = ems_pages[i].mapped;
+		}
+		process->ems_pages_stored = true;
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_48h()
+{
+	// NOTE: the map data should be restored from the specified ems page, not process data
+	process_t *process = msdos_process_info_get(current_psp);
+	
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+//	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+//		REG8(AH) = 0x83;
+	} else if(!process->ems_pages_stored) {
+		REG8(AH) = 0x8e;
+	} else {
+		for(int i = 0; i < 4; i++) {
+			if(process->ems_pages[i].mapped) {
+				ems_map_page(i, process->ems_pages[i].handle, process->ems_pages[i].page);
+			} else {
+				ems_unmap_page(i);
+			}
+		}
+		process->ems_pages_stored = false;
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_4bh()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = 0;
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated) {
+				REG16(BX)++;
+			}
+		}
+	}
+}
+
+inline void msdos_int_67h_4ch()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = ems_handles[REG16(DX)].pages;
+	}
+}
+
+inline void msdos_int_67h_4dh()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else {
+		REG8(AH) = 0x00;
+		REG16(BX) = 0;
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated) {
+				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 0) = i;
+				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * REG16(BX) + 2) = ems_handles[i].pages;
+				REG16(BX)++;
+			}
+		}
+	}
+}
+
+inline void msdos_int_67h_51h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG16(BX) > MAX_EMS_PAGES) {
+		REG8(AH) = 0x87;
+	} else if(REG16(BX) > free_ems_pages + ems_handles[REG16(DX)].pages) {
+		REG8(AH) = 0x88;
+	} else {
+		ems_reallocate_pages(REG16(DX), REG16(BX));
+		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_53h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG8(AL) == 0x00) {
+		memcpy(mem + SREG_BASE(ES) + REG16(DI), ems_handles[REG16(DX)].name, 8);
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x01) {
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
+				REG8(AH) = 0xa1;
+				return;
+			}
+		}
+		REG8(AH) = 0x00;
+		memcpy(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8);
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x84;
+	}
+}
+
+inline void msdos_int_67h_54h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated) {
+				memcpy(mem + SREG_BASE(ES) + REG16(DI) + 10 * i + 2, ems_handles[i].name, 10);
+			} else {
+				memset(mem + SREG_BASE(ES) + REG16(DI) + 10 * i + 2, 0, 10);
+			}
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 10 * i + 0) = i;
+		}
+		REG8(AH) = 0x00;
+		REG8(AL) = MAX_EMS_HANDLES;
+	} else if(REG8(AL) == 0x01) {
+		REG8(AH) = 0xa0; // not found
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(ems_handles[i].allocated && memcmp(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8) == 0) {
+				REG8(AH) = 0x00;
+				REG16(DX) = i;
+				break;
+			}
+		}
+	} else if(REG8(AL) == 0x02) {
+		REG8(AH) = 0x00;
+		REG16(BX) = MAX_EMS_HANDLES;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x84;
+	}
+}
+
+#ifdef SUPPORT_XMS
+
+inline void msdos_call_xms_00h()
+{
+	REG16(AX) = 0x0270; // V2.70
+	REG16(BX) = 0x0000;
+//	REG16(DX) = 0x0000; // hma does not exist
+	REG16(DX) = 0x0001; // hma does exist
+}
+
+inline void msdos_call_xms_01h()
+{
+	REG16(AX) = 0x0000;
+//	REG8(BL) = 0x90; // hma does not exist
+	REG8(BL) = 0x91; // hma is already used
+}
+
+inline void msdos_call_xms_02h()
+{
+	REG16(AX) = 0x0000;
+//	REG8(BL) = 0x90; // hma does not exist
+	REG8(BL) = 0x91; // hma is already used
+}
+
+inline void msdos_call_xms_03h()
+{
+	i386_set_a20_line(1);
+	REG16(AX) = 0x0001;
+	REG8(BL) = 0x00;
+}
+
+inline void msdos_call_xms_04h()
+{
+	if((m_a20_mask >> 20) & 1) {
+		i386_set_a20_line(0);
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	} else {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0x94;
+	}
+}
+
+inline void msdos_call_xms_05h()
+{
+	i386_set_a20_line(1);
+	REG16(AX) = 0x0001;
+	REG8(BL) = 0x00;
+}
+
+void msdos_call_xms_06h()
+{
+	if((m_a20_mask >> 20) & 1) {
+		i386_set_a20_line(0);
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	} else {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0x94;
+	}
+}
+
+inline void msdos_call_xms_07h()
+{
+	REG16(AX) = (m_a20_mask >> 20) & 1;
+	REG8(BL) = 0x00;
+}
+
+inline void msdos_call_xms_08h()
+{
+	REG16(AX) = REG16(DX) = 0x0000;
+	
+	int mcb_seg = EMB_TOP >> 4;
+	
+	while(1) {
+		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+		
+		if(mcb->psp == 0) {
+			if(REG16(AX) < mcb->size_kb()) {
+				REG16(AX) = mcb->size_kb();
+			}
+			REG16(DX) += mcb->size_kb();
+		}
+		if(mcb->mz == 'Z') {
+			break;
+		}
+		mcb_seg += 1 + mcb->paragraphs();
+	}
+	
+	if(REG16(AX) == 0 && REG16(DX) == 0) {
+		REG8(BL) = 0xa0;
+	} else {
+		REG8(BL) = 0x00;
+	}
+}
+
+inline void msdos_call_xms_09h()
+{
+	for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
+		if(!xms_handles[i].allocated) {
+			if((xms_handles[i].seg = msdos_mem_alloc(EMB_TOP >> 4, REG16(DX) * 64, 0)) != -1) {
+				xms_handles[i].size_kb = REG16(DX);
+				xms_handles[i].lock = 0;
+				xms_handles[i].allocated = true;
+				
+				REG16(AX) = 0x0001;
+				REG16(DX) = i;
+				REG8(BL) = 0x00;
+			} else {
+				REG16(AX) = REG16(DX) = 0x0000;
+				REG8(BL) = 0xa0;
+			}
+			return;
+		}
+	}
+	REG16(AX) = REG16(DX) = 0x0000;
+	REG8(BL) = 0xa1;
+}
+
+inline void msdos_call_xms_0ah()
+{
+	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else if(xms_handles[REG16(DX)].lock > 0) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xab;
+	} else {
+		msdos_mem_free(xms_handles[REG16(DX)].seg);
+		xms_handles[REG16(DX)].allocated = false;
+		
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	}
+}
+
+inline void msdos_call_xms_0bh()
+{
+	UINT32 copy_length = *(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00);
+	UINT16 src_handle  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04);
+	UINT32 src_addr    = *(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06);
+	UINT16 dest_handle = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0a);
+	UINT32 dest_addr   = *(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c);
+	
+	UINT8 *src_buffer, *dest_buffer;
+	UINT32 src_addr_max, dest_addr_max;
+	
+	if(src_handle == 0) {
+		src_buffer = mem;
+		src_addr = (((src_addr >> 16) & 0xffff) << 4) + (src_addr & 0xffff);
+		src_addr_max = MAX_MEM;
+	} else {
+		if(!(src_handle >= 1 && src_handle <= MAX_XMS_HANDLES && xms_handles[src_handle].allocated)) {
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0xa3;
+			return;
+		}
+		src_buffer = mem + (xms_handles[src_handle].seg << 4);
+		src_addr_max = xms_handles[src_handle].size_kb * 1024;
+	}
+	if(dest_handle == 0) {
+		dest_buffer = mem;
+		dest_addr = (((dest_addr >> 16) & 0xffff) << 4) + (dest_addr & 0xffff);
+		dest_addr_max = MAX_MEM;
+	} else {
+		if(!(dest_handle >= 1 && dest_handle <= MAX_XMS_HANDLES && xms_handles[dest_handle].allocated)) {
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0xa5;
+			return;
+		}
+		dest_buffer = mem + (xms_handles[dest_handle].seg << 4);
+		dest_addr_max = xms_handles[dest_handle].size_kb * 1024;
+	}
+	for(int i = 0; i < copy_length; i++) {
+		if(src_addr < src_addr_max && dest_addr < dest_addr_max) {
+			dest_buffer[dest_addr++] = src_buffer[src_addr++];
+		} else {
+			break;
+		}
+	}
+	REG16(AX) = 0x0001;
+	REG8(BL) = 0x00;
+}
+
+inline void msdos_call_xms_0ch()
+{
+	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else {
+		xms_handles[REG16(DX)].lock++;
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+		UINT32 addr = xms_handles[REG16(DX)].seg << 4;
+		REG16(DX) = (addr >> 16) & 0xffff;
+		REG16(BX) = (addr      ) & 0xffff;
+	}
+}
+
+inline void msdos_call_xms_0dh()
+{
+	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else if(!(xms_handles[REG16(DX)].lock > 0)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xaa;
+	} else {
+		xms_handles[REG16(DX)].lock--;
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	}
+}
+
+inline void msdos_call_xms_0eh()
+{
+	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else {
+		REG16(AX) = 0x0001;
+		REG8(BH) = xms_handles[REG16(DX)].lock;
+		REG8(BL) = 0x00;
+		for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
+			if(!xms_handles[i].allocated) {
+				REG8(BL)++;
+			}
+		}
+		REG16(DX) = xms_handles[REG16(DX)].size_kb;
+	}
+}
+
+inline void msdos_call_xms_0fh()
+{
+	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else if(xms_handles[REG16(DX)].lock > 0) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xab;
+	} else if(msdos_mem_realloc(xms_handles[REG16(DX)].seg, REG16(BX) * 64, NULL)) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa0;
+	} else {
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	}
+}
+
+inline void msdos_call_xms_10h()
+{
+	int seg;
+	
+	if((seg = msdos_mem_alloc(UMB_TOP >> 4, REG16(DX), 0)) != -1) {
+		REG16(AX) = 0x0001;
+		REG16(BX) = seg;
+	} else {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xb0;
+		REG16(DX) = msdos_mem_get_free(UMB_TOP >> 4, 0);
+	}
+}
+
+inline void msdos_call_xms_11h()
+{
+	int mcb_seg = REG16(DX) - 1;
+	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+	
+	if(mcb->mz == 'M' || mcb->mz == 'Z') {
+		msdos_mem_free(REG16(DX));
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
+	} else {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xb2;
+	}
+}
+
+inline void msdos_call_xms_12h()
+{
+	int mcb_seg = REG16(DX) - 1;
+	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+	int max_paragraphs;
+	
+	if(mcb->mz == 'M' || mcb->mz == 'Z') {
+		if(!msdos_mem_realloc(REG16(DX), REG16(BX), &max_paragraphs)) {
+			REG16(AX) = 0x0001;
+			REG8(BL) = 0x00;
+		} else {
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0xb0;
+			REG16(DX) = max_paragraphs;
+		}
+	} else {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xb2;
+	}
+}
+
+#endif
 
 void msdos_syscall(unsigned num)
 {
@@ -7366,6 +8061,90 @@ void msdos_syscall(unsigned num)
 		case 0xb7: msdos_int_2fh_b7h(); break;
 		}
 		break;
+	case 0x68:
+		// dummy interrupt for EMS (int 67h)
+		switch(REG8(AH)) {
+		case 0x00: msdos_int_67h_00h(); break;
+		case 0x40: msdos_int_67h_40h(); break;
+		case 0x41: msdos_int_67h_41h(); break;
+		case 0x42: msdos_int_67h_42h(); break;
+		case 0x43: msdos_int_67h_43h(); break;
+		case 0x44: msdos_int_67h_44h(); break;
+		case 0x45: msdos_int_67h_45h(); break;
+		case 0x46: msdos_int_67h_46h(); break;
+		case 0x47: msdos_int_67h_47h(); break;
+		case 0x48: msdos_int_67h_48h(); break;
+		// 0x49: LIM EMS - reserved - GET I/O PORT ADDRESSES
+		// 0x4a: LIM EMS - reserved - GET TRANSLATION ARRAY
+		case 0x4b: msdos_int_67h_4bh(); break;
+		case 0x4c: msdos_int_67h_4ch(); break;
+		case 0x4d: msdos_int_67h_4dh(); break;
+		// 0x4e: LIM EMS - GET OR SET PAGE MAP
+		// 0x4f: LIM EMS 4.0 - GET/SET PARTIAL PAGE MAP
+		// 0x50: LIM EMS 4.0 - MAP/UNMAP MULTIPLE HANDLE PAGES
+		case 0x51: msdos_int_67h_51h(); break;
+		// 0x52: LIM EMS 4.0 - GET/SET HANDLE ATTRIBUTES
+		case 0x53: msdos_int_67h_53h(); break;
+		case 0x54: msdos_int_67h_54h(); break;
+		// 0x55: LIM EMS 4.0 - ALTER PAGE MAP AND JUMP
+		// 0x56: LIM EMS 4.0 - ALTER PAGE MAP AND CALL
+		// 0x57: LIM EMS 4.0 - MOVE/EXCHANGE MEMORY REGION
+		// 0x58: LIM EMS 4.0 - GET MAPPABLE PHYSICAL ADDRESS ARRAY
+		// 0x59: LIM EMS 4.0 - GET EXPANDED MEMORY HARDWARE INFORMATION
+		// 0x5a: LIM EMS 4.0 - ALLOCATE STANDARD/RAW PAGES
+		// 0x5b: LIM EMS 4.0 - ALTERNATE MAP REGISTER SET
+		// 0x5c: LIM EMS 4.0 - PREPARE EXPANDED MEMORY HARDWARE FOR WARM BOOT
+		// 0x5d: LIM EMS 4.0 - ENABLE/DISABLE OS FUNCTION SET FUNCTIONS
+		default:
+//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			REG8(AH) = 0x84;
+			break;
+		}
+		break;
+#ifdef SUPPORT_XMS
+	case 0x69:
+		// dummy interrupt for XMS (call far)
+		switch(REG8(AH)) {
+		case 0x00: msdos_call_xms_00h(); break;
+		case 0x01: msdos_call_xms_01h(); break;
+		case 0x02: msdos_call_xms_02h(); break;
+		case 0x03: msdos_call_xms_03h(); break;
+		case 0x04: msdos_call_xms_04h(); break;
+		case 0x05: msdos_call_xms_05h(); break;
+		case 0x06: msdos_call_xms_06h(); break;
+		case 0x07: msdos_call_xms_07h(); break;
+		case 0x08: msdos_call_xms_08h(); break;
+		case 0x09: msdos_call_xms_09h(); break;
+		case 0x0a: msdos_call_xms_0ah(); break;
+		case 0x0b: msdos_call_xms_0bh(); break;
+		case 0x0c: msdos_call_xms_0ch(); break;
+		case 0x0d: msdos_call_xms_0dh(); break;
+		case 0x0e: msdos_call_xms_0eh(); break;
+		case 0x0f: msdos_call_xms_0fh(); break;
+		case 0x10: msdos_call_xms_10h(); break;
+		case 0x11: msdos_call_xms_11h(); break;
+		case 0x12: msdos_call_xms_12h(); break;
+		// 0x88: XMS 3.0 - Query free extended memory
+		// 0x89: XMS 3.0 - Allocate any extended memory
+		// 0x8e: XMS 3.0 - Get extended EMB handle information
+		// 0x8f: XMS 3.0 - Reallocate any extended memory block
+		default:
+//			fatalerror("call XMS (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0x80;
+			break;
+		}
+		break;
+#endif
+	case 0x6a:
+		// dummy interrupt for case map routine pointed in the country info
+		if(REG8(AL) >= 0x80) {
+			char tmp[2] = {0};
+			tmp[0] = REG8(AL);
+			my_strupr(tmp);
+			REG8(AL) = tmp[0];
+		}
+		break;
 	case 0x70:
 	case 0x71:
 	case 0x72:
@@ -7427,15 +8206,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// init memory
 	memset(mem, 0, sizeof(mem));
-	for(int i = 0; i < 0x80; i++) {
-		*(UINT16 *)(mem + 4 * i + 0) = i;
-		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
-	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0xfea5;
-	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xf000;
-	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0xfff0;
-	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xf000;
-	memset(mem + IRET_TOP, 0xcf, IRET_SIZE);
 	
 	// bios data area
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -7479,8 +8249,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x461) = 7;
 	*(UINT8  *)(mem + 0x462) = 0;
 	*(UINT16 *)(mem + 0x463) = 0x3d4;
-	*(UINT8  *)(mem + 0x465) = 0x9;
-	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight();
+	*(UINT8  *)(mem + 0x465) = 0x09;
+	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
@@ -7499,11 +8269,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// dos info
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
+	dos_info->magic_word = 1;
 	dos_info->first_mcb = MEMORY_TOP >> 4;
 	dos_info->first_dpb.w.l = 0;
 	dos_info->first_dpb.w.h = DPB_TOP >> 4;
 	dos_info->first_sft.w.l = 0;
 	dos_info->first_sft.w.h = FILE_TABLE_TOP >> 4;
+	dos_info->max_sector_len = 512;
+	dos_info->disk_buf_info.w.l = offsetof(dos_info_t, disk_buf_heads);
+	dos_info->disk_buf_info.w.h = DOS_INFO_TOP >> 4;
 	dos_info->cds.w.l = 0;
 	dos_info->cds.w.h = CDS_TOP >> 4;
 	dos_info->fcb_table.w.l = 0;
@@ -7512,12 +8286,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->buffers_x = 20;
 	dos_info->buffers_y = 0;
 	dos_info->boot_drive = 'C' - 'A' + 1;
-	// dummy NUL driver
-	*(UINT32 *)((char *)dos_info + 24 + 34 + 0) = 0xffffffffU;	// next 
-	*(UINT16 *)((char *)dos_info + 24 + 34 + 4) = 0x8004U;		// attribute
-	*(UINT16 *)((char *)dos_info + 24 + 34 + 6) = 0xffffU;		// strategy
-	*(UINT16 *)((char *)dos_info + 24 + 34 + 8) = 0xffffU;		// commands
-	memcpy((char *)dos_info + 24 + 34 + 10, "NUL     ", 8);		// dev name
+	dos_info->nul_device.next_driver = 0xffffffffU;
+	dos_info->nul_device.attributes = 0x8004U;
+	dos_info->nul_device.strategy = 0xffffU;
+	dos_info->nul_device.interrupt = 0xffffU;
+	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
+	dos_info->disk_buf_heads.w.l = 0;
+	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
 	
 	char *env;
 	if((env = getenv("LASTDRIVE")) != NULL) {
@@ -7541,8 +8316,25 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
-	// environment
+	// init mcb
 	int seg = MEMORY_TOP >> 4;
+	
+	// iret table
+	// note: int 2eh vector should address the routine in command.com,
+	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
+	// so move iret table into allocated memory block
+	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
+	msdos_mcb_create(seg++, 'M', -1, IRET_SIZE >> 4);
+	IRET_TOP = seg << 4;
+	seg += IRET_SIZE >> 4;
+	memset(mem + IRET_TOP, 0xcf, IRET_SIZE);
+	
+	// dummy xms/ems device
+	msdos_mcb_create(seg++, 'M', -1, XMS_SIZE >> 4);
+	XMS_TOP = seg << 4;
+	seg += XMS_SIZE >> 4;
+	
+	// environment
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
@@ -7621,21 +8413,60 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
 	seg += (PSP_SIZE >> 4);
 	
-	// first mcb in conventional memory
-	msdos_mcb_create(seg, 'Z', 0, (MEMORY_END >> 4) - seg - 1);
+	// first free mcb in conventional memory
+	msdos_mcb_create(seg, 'Z', 0, (MEMORY_END >> 4) - seg - 2);
 	first_mcb = seg;
 	
-	// first mcb in upper memory block
+	// dummy mcb to link to umb
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+	
+	// first free mcb in upper memory block
 	msdos_mcb_create(UMB_TOP >> 4, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 1);
 	
+#ifdef SUPPORT_XMS
+	// first free mcb in extended memory block
+	msdos_mcb_create(EMB_TOP >> 4, 'Z', 0, (EMB_END >> 4) - (EMB_TOP >> 4) - 1);
+#endif
+	
+	// interrupt vector
+	for(int i = 0; i < 0x80; i++) {
+		*(UINT16 *)(mem + 4 * i + 0) = i;
+		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
+	}
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0005;	// irq0
+	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xffff;
+	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// boot
+	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
+	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0000;	// ems
+	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
+	
+	// ems (int 67h) and xms (call far)
+	mem[XMS_TOP + 0] = 0xcd;	// int 68h (dummy)
+	mem[XMS_TOP + 1] = 0x68;
+	mem[XMS_TOP + 2] = 0xcf;	// iret
+#ifdef SUPPORT_XMS
+	if(support_xms) {
+		mem[XMS_TOP + 4] = 0xcd;	// int 69h (dummy)
+		mem[XMS_TOP + 5] = 0x69;
+		mem[XMS_TOP + 6] = 0xcb;	// retf
+	} else
+#endif
+	mem[XMS_TOP + 4] = 0xcb;	// retf
+	memcpy(mem + XMS_TOP + 0x0a, "EMMXXXX0", 8);
+	
+	// case map routine (call far)
+	mem[0xffffc] = 0xcd;	// int 6ah (dummy)
+	mem[0xffffd] = 0x6a;
+	mem[0xffffe] = 0xcb;	// retf
+	
 	// have irq0 call system timer tick
-	mem[0xffea5] = 0xcd;	// int 1ch
-	mem[0xffea6] = 0x1c;
-	mem[0xffea7] = 0xea;	// jmp 80:08
-	mem[0xffea8] = 0x08;
-	mem[0xffea9] = 0x00;
-	mem[0xffeaa] = ((IRET_TOP >> 4)     ) & 0xff;
-	mem[0xffeab] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	mem[0xffff5] = 0xcd;	// int 1ch
+	mem[0xffff6] = 0x1c;
+	mem[0xffff7] = 0xea;	// jmp (IRET_TOP >> 4):0008
+	mem[0xffff8] = 0x08;
+	mem[0xffff9] = 0x00;
+	mem[0xffffa] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[0xffffb] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
 	// boot
 	mem[0xffff0] = 0xf4;	// halt
@@ -7675,6 +8506,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// system file table
 	*(UINT32 *)(mem + FILE_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FILE_TABLE_TOP + 4) = 0;
+	
+	// disk buffer header (from DOSBox)
+	*(UINT16 *)(mem + DISK_BUF_TOP +  0) = 0xffff;		// forward ptr
+	*(UINT16 *)(mem + DISK_BUF_TOP +  2) = 0xffff;		// backward ptr
+	*(UINT8  *)(mem + DISK_BUF_TOP +  4) = 0xff;		// not in use
+	*(UINT8  *)(mem + DISK_BUF_TOP + 10) = 0x01;		// number of FATs
+	*(UINT32 *)(mem + DISK_BUF_TOP + 13) = 0xffffffff;	// pointer to DPB
 	
 	// current directory structure
 	msdos_cds_update(_getdrive() - 1);
@@ -7735,6 +8573,7 @@ void hardware_init()
 #endif
 	i386_set_a20_line(0);
 	
+	ems_init();
 	pic_init();
 #ifdef PIT_ALWAYS_RUNNING
 	pit_init();
@@ -7750,6 +8589,7 @@ void hardware_finish()
 #if defined(HAS_I386)
 	vtlb_free(m_vtlb);
 #endif
+	ems_finish();
 }
 
 void hardware_run()
@@ -7761,9 +8601,9 @@ void hardware_run()
 		if(dasm) {
 			char buffer[256];
 #if defined(HAS_I386)
-			UINT64 eip = m_eip;
+			UINT32 eip = m_eip;
 #else
-			UINT64 eip = m_pc - SREG_BASE(CS);
+			UINT32 eip = m_pc - SREG_BASE(CS);
 #endif
 			UINT8 *oprom = mem + SREG_BASE(CS) + eip;
 			
@@ -7844,7 +8684,112 @@ void hardware_update()
 			}
 			prev_tick = cur_tick;
 		}
+		// update daily timer counter
+		pcbios_update_daily_timer_counter(cur_time);
 		prev_time = cur_time;
+	}
+}
+
+// ems
+
+void ems_init()
+{
+	memset(ems_handles, 0, sizeof(ems_handles));
+	memset(ems_pages, 0, sizeof(ems_pages));
+	free_ems_pages = MAX_EMS_PAGES;
+}
+
+void ems_finish()
+{
+	for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+		if(ems_handles[i].buffer) {
+			free(ems_handles[i].buffer);
+			ems_handles[i].buffer = NULL;
+		}
+	}
+}
+
+void ems_allocate_pages(int handle, int pages)
+{
+	if(pages > 0) {
+		ems_handles[handle].buffer = (UINT8 *)calloc(1, 0x4000 * pages);
+	} else {
+		ems_handles[handle].buffer = NULL;
+	}
+	ems_handles[handle].pages = pages;
+	ems_handles[handle].allocated = true;
+	free_ems_pages -= pages;
+}
+
+void ems_reallocate_pages(int handle, int pages)
+{
+	if(ems_handles[handle].allocated) {
+		if(ems_handles[handle].pages != pages) {
+			UINT8 *new_buffer = NULL;
+			
+			if(pages > 0) {
+				new_buffer = (UINT8 *)calloc(1, 0x4000 * pages);
+			}
+			if(ems_handles[handle].buffer) {
+				if(new_buffer) {
+					if(pages > ems_handles[handle].pages) {
+						memcpy(new_buffer, ems_handles[handle].buffer, 0x4000 * ems_handles[handle].pages);
+					} else {
+						memcpy(new_buffer, ems_handles[handle].buffer, 0x4000 * pages);
+					}
+				}
+				free(ems_handles[handle].buffer);
+				ems_handles[handle].buffer = NULL;
+			}
+			free_ems_pages += ems_handles[handle].pages;
+			
+			ems_handles[handle].buffer = new_buffer;
+			ems_handles[handle].pages = pages;
+			free_ems_pages -= pages;
+		}
+	} else {
+		ems_allocate_pages(handle, pages);
+	}
+}
+
+void ems_release_pages(int handle)
+{
+	if(ems_handles[handle].allocated) {
+		if(ems_handles[handle].buffer) {
+			free(ems_handles[handle].buffer);
+			ems_handles[handle].buffer = NULL;
+		}
+		free_ems_pages += ems_handles[handle].pages;
+		ems_handles[handle].allocated = false;
+	}
+}
+
+void ems_map_page(int physical, int handle, int logical)
+{
+	if(ems_pages[physical].mapped) {
+		if(ems_pages[physical].handle == handle && ems_pages[physical].page == logical) {
+			return;
+		}
+		ems_unmap_page(physical);
+	}
+	if(ems_handles[handle].allocated && ems_handles[handle].buffer && logical < ems_handles[handle].pages) {
+		memcpy(mem + EMS_TOP + 0x4000 * physical, ems_handles[handle].buffer + 0x4000 * logical, 0x4000);
+	}
+	ems_pages[physical].handle = handle;
+	ems_pages[physical].page = logical;
+	ems_pages[physical].mapped = true;
+}
+
+void ems_unmap_page(int physical)
+{
+	if(ems_pages[physical].mapped) {
+		int handle = ems_pages[physical].handle;
+		int logical = ems_pages[physical].page;
+		
+		if(ems_handles[handle].allocated && ems_handles[handle].buffer && logical < ems_handles[handle].pages) {
+			memcpy(ems_handles[handle].buffer + 0x4000 * logical, mem + EMS_TOP + 0x4000 * physical, 0x4000);
+		}
+		ems_pages[physical].mapped = false;
 	}
 }
 
