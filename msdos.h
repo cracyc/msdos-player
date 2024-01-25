@@ -432,13 +432,27 @@ void pic_update();
 
 typedef struct {
 	UINT8 data, stat, ctrl;
+	// code conversion
+	bool conv_mode;
+	bool jis_mode;
+	UINT8 sjis_hi;
+	UINT8 esc_buf[8];
+	UINT32 esc_len;
+	// printer to file
+	char path[MAX_PATH];
+	FILE *fp;
+	SYSTEMTIME time;
 } pio_t;
 
 pio_t pio[2];
 
 void pio_init();
+void pio_finish();
+void pio_release();
 void pio_write(int c, UINT32 addr, UINT8 data);
 UINT8 pio_read(int c, UINT32 addr);
+void printer_out(int c, UINT8 data);
+void pcbios_printer_out(int c, UINT8 data);
 
 // pit
 
@@ -652,7 +666,6 @@ UINT32 XMS_TOP = 0;
 #define DUP_STDPRN	31
 
 //#define MAP_AUX_DEVICE_TO_FILE
-//#define MAP_PRN_DEVICE_TO_FILE
 
 #pragma pack(1)
 typedef struct {
@@ -985,6 +998,8 @@ typedef struct {
 	int mode;
 	UINT16 info;
 	UINT16 psp;
+	int sio_port; // 1-4
+	int lpt_port; // 1-3
 } file_handler_t;
 
 static const struct {

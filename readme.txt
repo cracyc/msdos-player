@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/23/2017
+								2/26/2017
 
 ----- What's this
 
@@ -368,14 +368,15 @@ This emulator provides a very simple IBM PC compatible hardware emulation:
 
 CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
 PC BIOS, DMA Controller (dummy), Interrupt Controller, System Timer,
-Parallel I/O (dummy), Serial I/O (COM1-COM4), Real Time Clock + CMOS Memory,
+Parallel I/O (LPT1-3), Serial I/O (COM1-4), Real Time Clock + CMOS Memory,
 VGA Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
-and 3-Button Mouse
+and 2-Button Mouse
 
 NOTE:
 - Graphic/Sound hardwares are NOT implemented.
 - DMA Controller is implemented, but FDC and HDC are not connected.
-- Parallel I/O is implemented but is not connected to the host's LPT ports.
+- Parallel I/O is implemented and the output data is written to the file
+  "Year-Month-Day_Hour-Minute-Second.PRN" created in the TEMP directry.
 - Serial I/O is implemented and can be connected to the host's COM ports.
 
 
@@ -481,6 +482,19 @@ INT 16H		PC BIOS - Keyboard
 	10H	Get Keystroke
 	11H	Check for Keystroke
 	12H	Get Extended Shift States
+
+INT 17H		PC BIOS - Printer
+
+	00H	Write Character
+	01H	Initialize Port
+	02H	Get Status
+	03H	AX (Japanese AT) Printer - Output String without Conversion
+	5000H	AX (Japanese AT) Printer - Set Printer Country Code
+	5001H	AX (Japanese AT) Printer - Get Printer Country Code
+	51H	AX (Japanese AT) Printer - JIS to Shift-JIS Conversion
+	52H	AX (Japanese AT) Printer - Shift-JIS to JIS Conversion
+	84H	AX (Japanese AT) Printer - Output Character without Conversion
+	85H	AX (Japanese AT) Printer - Enable/Disable Character Conversion
 
 INT 1AH		PC BIOS - Timer
 

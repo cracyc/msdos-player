@@ -34,6 +34,7 @@ void exit_handler();
 		#define unimplemented_14h fatalerror
 		#define unimplemented_15h fatalerror
 		#define unimplemented_16h fatalerror
+		#define unimplemented_17h fatalerror
 		#define unimplemented_1ah fatalerror
 		#define unimplemented_21h fatalerror
 		#define unimplemented_2fh fatalerror
@@ -53,6 +54,9 @@ void exit_handler();
 #endif
 #ifndef unimplemented_16h
 	#define unimplemented_16h nolog
+#endif
+#ifndef unimplemented_17h
+	#define unimplemented_17h nolog
 #endif
 #ifndef unimplemented_1ah
 	#define unimplemented_1ah nolog
@@ -911,7 +915,7 @@ bool telnet_gets(char *str, int n)
 						telnet_command("\033[1C"); // move cursor forward
 					}
 				} else if(ptr < n - 1) {
-					if (buffer[i] >= 0x20 && buffer[i] <= 0x7e) {
+					if(buffer[i] >= 0x20 && buffer[i] <= 0x7e) {
 						str[ptr++] = buffer[i];
 					}
 				} else {
@@ -1219,7 +1223,7 @@ void debugger_main()
 					}
 					UINT64 start_addr = (data_seg << 4) + data_ofs;
 					UINT64 end_addr = (end_seg << 4) + end_ofs;
-//					bool sjis = false;
+//					bool is_sjis = false;
 					
 					for(UINT64 addr = (start_addr & ~0x0f); addr <= (end_addr | 0x0f); addr++) {
 						if((addr & 0x0f) == 0) {
@@ -1236,12 +1240,12 @@ void debugger_main()
 						} else {
 							UINT8 data = debugger_read_byte(addr & ADDR_MASK);
 							telnet_printf(" %02X", data);
-//							if(sjis) {
+//							if(is_sjis) {
 //								buffer[addr & 0x0f] = data;
-//								sjis = false;
+//								is_sjis = false;
 //							} else if(((data >= 0x81 && data <= 0x9f) || (data >= 0xe0 && data <= 0xef)) && (addr & 0x0f) < 0x0f) {
 //								buffer[addr & 0x0f] = data;
-//								sjis = true;
+//								is_sjis = true;
 //							} else
 							if((data >= 0x20 && data <= 0x7e)/* || (data >= 0xa1 && data <= 0xdf)*/) {
 								buffer[addr & 0x0f] = data;
@@ -4176,6 +4180,60 @@ int msdos_is_comm_path(char *path)
 	return(0);
 }
 
+void msdos_set_comm_params(int sio_port, char *path)
+{
+	// COM1:{110,150,300,600,1200,2400,4800,9600},{N,O,E,M,S},{8,7,6,5},{1,1.5,2}
+	char *p = NULL;
+	
+	if((p = strstr(path, ":")) != NULL) {
+		UINT8 selector = sio_read(sio_port - 1, 3);
+		
+		// baud rate
+		int baud = max(110, min(9600, atoi(p + 1)));
+		UINT16 divisor = 115200 / baud;
+		
+		if((p = strstr(p + 1, ",")) != NULL) {
+			// parity
+			if(p[1] == 'N' || p[1] == 'n') {
+				selector = (selector & ~0x38) | 0x00;
+			} else if(p[1] == 'O' || p[1] == 'o') {
+				selector = (selector & ~0x38) | 0x08;
+			} else if(p[1] == 'E' || p[1] == 'e') {
+				selector = (selector & ~0x38) | 0x18;
+			} else if(p[1] == 'M' || p[1] == 'm') {
+				selector = (selector & ~0x38) | 0x28;
+			} else if(p[1] == 'S' || p[1] == 's') {
+				selector = (selector & ~0x38) | 0x38;
+			}
+			if((p = strstr(p + 1, ",")) != NULL) {
+				// word length
+				if(p[1] == '8') {
+					selector = (selector & ~0x03) | 0x03;
+				} else if(p[1] == '7') {
+					selector = (selector & ~0x03) | 0x02;
+				} else if(p[1] == '6') {
+					selector = (selector & ~0x03) | 0x01;
+				} else if(p[1] == '5') {
+					selector = (selector & ~0x03) | 0x00;
+				}
+				if((p = strstr(p + 1, ",")) != NULL) {
+					// stop bits
+					float bits = atof(p + 1);
+					if(bits > 1.0F) {
+						selector |= 0x04;
+					} else {
+						selector &= ~0x04;
+					}
+				}
+			}
+		}
+		sio_write(sio_port - 1, 3, selector | 0x80);
+		sio_write(sio_port - 1, 0, divisor & 0xff);
+		sio_write(sio_port - 1, 1, divisor >> 8);
+		sio_write(sio_port - 1, 3, selector);
+	}
+}
+
 int msdos_is_prn_path(char *path)
 {
 	char full[MAX_PATH], *name;
@@ -4192,18 +4250,6 @@ int msdos_is_prn_path(char *path)
 		}
 	}
 	return(0);
-}
-
-char *msdos_create_comm_path(char *path, int port)
-{
-	static char tmp[MAX_PATH];
-	char *p = NULL;
-	
-	sprintf(tmp, "COM%d", port);
-	if((p = strchr(path, ':')) != NULL) {
-		strcat(tmp, p);
-	}
-	return(tmp);
 }
 
 bool msdos_is_existing_file(char *path)
@@ -4449,7 +4495,7 @@ int msdos_open(const char *filename, int oflag)
 	return fd;
 }
 
-void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg)
+void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg, int sio_port, int lpt_port)
 {
 	static int id = 0;
 	char full[MAX_PATH], *name;
@@ -4469,10 +4515,12 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	}
 	file_handler[fd].valid = 1;
 	file_handler[fd].id = id++;	// dummy id for int 21h ax=71a6h
-	file_handler[fd].atty = atty;
+	file_handler[fd].atty = (sio_port == 0 && lpt_port == 0) ? atty : 0;
 	file_handler[fd].mode = mode;
 	file_handler[fd].info = info;
 	file_handler[fd].psp = psp_seg;
+	file_handler[fd].sio_port = sio_port;
+	file_handler[fd].lpt_port = lpt_port;
 	
 	// init system file table
 	if(fd < 20) {
@@ -4517,6 +4565,11 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	}
 }
 
+void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg)
+{
+	 msdos_file_handler_open(fd, path, atty, mode, info, psp_seg, 0, 0);
+}
+
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 {
 	strcpy(file_handler[dst].path, file_handler[src].path);
@@ -4526,6 +4579,8 @@ void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 	file_handler[dst].mode = file_handler[src].mode;
 	file_handler[dst].info = file_handler[src].info;
 	file_handler[dst].psp = psp_seg;
+	file_handler[dst].sio_port = file_handler[src].sio_port;
+	file_handler[dst].lpt_port = file_handler[src].lpt_port;
 }
 
 void msdos_file_handler_close(int fd)
@@ -4618,13 +4673,37 @@ void msdos_stdio_reopen()
 	}
 	if(!file_handler[4].valid) {
 		_dup2(DUP_STDPRN, 4);
-		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0);
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
 	}
 	for(int i = 0; i < 5; i++) {
 		if(msdos_psp_get_file_table(i, current_psp) == 0xff) {
 			msdos_psp_set_file_table(i, i, current_psp);
 		}
 	}
+}
+
+int msdos_read(int fd, void *buffer, unsigned int count)
+{
+	if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].sio_port >= 1 && file_handler[fd].sio_port <= 4) {
+		// read from serial port
+		int read = 0;
+		if(sio_port_number[file_handler[fd].sio_port - 1] != 0) {
+			UINT8 *buf = (UINT8 *)buffer;
+			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
+			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
+			for(unsigned int i = 0; i < count; i++) {
+				if(!(sio_read(file_handler[fd].sio_port - 1, 5) & 0x01)) {
+					// data is nto ready
+					break;
+				}
+				buf[i] = sio_read(file_handler[fd].sio_port - 1, 0);
+				read++;
+			}
+			sio_write(file_handler[fd].sio_port - 1, 3, selector);
+		}
+		return(read);
+	}
+	return(_read(fd, buffer, count));
 }
 
 int msdos_kbhit()
@@ -4669,7 +4748,7 @@ int msdos_getch_ex(int echo)
 		// stdin is redirected to file
 retry:
 		char data;
-		if(_read(fd, &data, 1) == 1) {
+		if(msdos_read(fd, &data, 1) == 1) {
 			char tmp = data;
 			if(data == 0x0a) {
 				if(prev == 0x0d) {
@@ -4758,10 +4837,29 @@ inline int msdos_getche()
 
 int msdos_write(int fd, const void *buffer, unsigned int count)
 {
-	static int is_cr = 0;
-	
-	if(fd == 1 && !file_handler[1].atty) {
+	if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].sio_port >= 1 && file_handler[fd].sio_port <= 4) {
+		// write to serial port
+		if(sio_port_number[file_handler[fd].sio_port - 1] != 0) {
+			UINT8 *buf = (UINT8 *)buffer;
+			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
+			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
+			for(unsigned int i = 0; i < count; i++) {
+				sio_write(file_handler[fd].sio_port - 1, 0, buf[i]);
+			}
+			sio_write(file_handler[fd].sio_port - 1, 3, selector);
+		}
+		return(count);
+	} else if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].lpt_port >= 1 && file_handler[fd].lpt_port <= 3) {
+		// write to printer port
+		UINT8 *buf = (UINT8 *)buffer;
+		for(unsigned int i = 0; i < count; i++) {
+//			printer_out(file_handler[fd].lpt_port - 1, buf[i]);
+			pcbios_printer_out(file_handler[fd].lpt_port - 1, buf[i]);
+		}
+		return(count);
+	} else if(fd == 1 && file_handler[1].valid && !file_handler[1].atty) {
 		// CR+LF -> LF
+		static int is_cr = 0;
 		UINT8 *buf = (UINT8 *)buffer;
 		for(unsigned int i = 0; i < count; i++) {
 			UINT8 data = buf[i];
@@ -5114,7 +5212,7 @@ int msdos_aux_in()
 	
 	if(fd < process->max_files && file_handler[fd].valid && !eof(fd)) {
 		char data = 0;
-		_read(fd, &data, 1);
+		msdos_read(fd, &data, 1);
 		return(data);
 	} else {
 		return(EOF);
@@ -7588,6 +7686,316 @@ inline void pcbios_int_16h_6fh()
 	}
 }
 
+UINT16 pcbios_printer_jis2sjis(UINT16 jis)
+{
+	UINT8 hi = jis >> 8;
+	UINT8 lo = jis & 0xff;
+	
+	lo = (hi & 0x01) ? lo - 0x1f : lo + 0x7d;
+	hi = (hi - 0x21) / 2 + 0x81;
+	hi = (hi >= 0xa0) ? hi + 0x40 : hi;
+	lo = (lo >= 0x7f) ? lo + 0x01 : lo;
+	
+	return((hi << 8) + lo);
+}
+
+UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
+{
+	UINT8 hi = sjis >> 8;
+	UINT8 lo = sjis & 0xff;
+	
+	if(hi == 0x80 || (hi >= 0xeb && hi <= 0xef) || (hi >= 0xf4 && hi <= 0xff)) {
+		return(0x2121);
+	}
+	if((lo >= 0x00 && lo <= 0x3f) || lo == 0x7f || (lo >= 0xfd && lo <= 0xff)) {
+		return(0x2121);
+	}
+	if(hi >= 0xf0 && hi <= 0xf3) {
+		// gaiji
+		if(lo >= 0x40 && lo <= 0x7e) {
+			return(0x7721 + lo - 0x40 + (hi - 0xf0) * 0x200);
+		}
+		if(lo >= 0x80 && lo <= 0x9e) {
+			return(0x7760 + lo - 0x80 + (hi - 0xf0) * 0x200);
+		}
+		if(lo >= 0x9f && lo <= 0xfc) {
+			return(0x7821 + lo - 0x9f + (hi - 0xf0) * 0x200);
+		}
+	}
+	hi = (hi >= 0xe0) ? hi - 0x40 : hi;
+	lo = (lo >= 0x80) ? lo - 0x01 : lo;
+	hi = ((lo >= 0x9e) ? 1 : 0) + (hi - 0x81) * 2 + 0x21;
+	lo = ((lo >= 0x9e) ? lo - 0x9e : lo - 0x40) + 0x21;
+	
+	return((hi << 8) + lo);
+}
+
+// ESC/P Users Guide:
+// http://cweb.canon.jp/manual/satera-bj/pdf/bij1350-2350-escp.pdf
+
+void pcbios_printer_out(int c, UINT8 data)
+{
+	if(pio[c].conv_mode) {
+		if(pio[c].sjis_hi != 0) {
+			if(!pio[c].jis_mode) {
+				printer_out(c, 0x1c);
+				printer_out(c, 0x26);
+				pio[c].jis_mode = true;
+			}
+			UINT16 jis = pcbios_printer_sjis2jis((pio[c].sjis_hi << 8) | data);
+			printer_out(c, jis >> 8);
+			printer_out(c, jis & 0xff);
+			pio[c].sjis_hi = 0;
+		} else if(pio[c].esc_buf[0] == 0x1b) {
+			printer_out(c, data);
+			if(pio[c].esc_len < sizeof(pio[c].esc_buf)) {
+				pio[c].esc_buf[pio[c].esc_len] = data;
+			}
+			pio[c].esc_len++;
+			
+			switch(pio[c].esc_buf[1]) {
+			case 0x20: case 0x21: case 0x2b: case 0x2d:
+			case 0x33:
+			case 0x4a: case 0x4e:
+			case 0x51: case 0x52: case 0x53: case 0x55: case 0x57:
+			case 0x6b: case 0x6c:
+			case 0x70: case 0x71: case 0x72: case 0x74: case 0x77: case 0x78:
+				if(pio[c].esc_len == 3) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x24: case 0x25:
+			case 0x3a:
+			case 0x5c:
+				if(pio[c].esc_len == 4) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x2a:
+				if(pio[c].esc_len >= 3) {
+					switch(pio[c].esc_buf[2]) {
+					case 0: case 1: case 2: case 3: case 4: case 6:
+						if(pio[c].esc_len >= 5 && pio[c].esc_len == 5 + (pio[c].esc_buf[3] + pio[c].esc_buf[4] * 256) * 1) {
+							pio[c].esc_buf[0] = 0x00;
+						}
+						break;
+					case 32: case 33: case 38: case 39: case 40:
+						if(pio[c].esc_len >= 5 && pio[c].esc_len == 5 + (pio[c].esc_buf[3] + pio[c].esc_buf[4] * 256) * 3) {
+							pio[c].esc_buf[0] = 0x00;
+						}
+						break;
+					default:
+						pio[c].esc_buf[0] = 0x00;
+						break;
+					}
+				}
+				break;
+			case 0x40:
+				if(pio[c].jis_mode) {
+					printer_out(c, 0x1c);
+					printer_out(c, 0x2e);
+					pio[c].jis_mode = false;
+				}
+				pio[c].esc_buf[0] = 0x00;
+				break;
+			case 0x42: case 0x44:
+				if(pio[c].esc_len >= 3 && data == 0) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x43:
+				if(pio[c].esc_len >= 3 && data != 0) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			default:
+				pio[c].esc_buf[0] = 0x00;
+				break;
+			}
+		} else if(pio[c].esc_buf[0] == 0x1c) {
+			printer_out(c, data);
+			if(pio[c].esc_len < sizeof(pio[c].esc_buf)) {
+				pio[c].esc_buf[pio[c].esc_len] = data;
+			}
+			pio[c].esc_len++;
+			
+			switch(pio[c].esc_buf[1]) {
+			case 0x21: case 0x2d:
+			case 0x57:
+			case 0x6b:
+			case 0x72: case 0x78:
+				if(pio[c].esc_len == 3) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x26:
+				pio[c].jis_mode = true;
+				pio[c].esc_buf[0] = 0x00;
+				break;
+			case 0x2e:
+				pio[c].jis_mode = false;
+				pio[c].esc_buf[0] = 0x00;
+				break;
+			case 0x32:
+				if(pio[c].esc_len == 76) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x44:
+				if(pio[c].esc_len == 6) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			case 0x53: case 0x54:
+				if(pio[c].esc_len == 4) {
+					pio[c].esc_buf[0] = 0x00;
+				}
+				break;
+			default:
+				pio[c].esc_buf[0] = 0x00;
+				break;
+			}
+		} else if(data == 0x1b || data == 0x1c) {
+			printer_out(c, data);
+			pio[c].esc_buf[0] = data;
+			pio[c].esc_len = 1;
+		} else if((data >= 0x80 && data <= 0x9f) || (data >= 0xe0 && data <= 0xff)) {
+			pio[c].sjis_hi = data;
+		} else {
+			if(pio[c].jis_mode) {
+				printer_out(c, 0x1c);
+				printer_out(c, 0x2e);
+				pio[c].jis_mode = false;
+			}
+			printer_out(c, data);
+		}
+	} else {
+		if(pio[c].jis_mode) {
+			printer_out(c, 0x1c);
+			printer_out(c, 0x2e);
+			pio[c].jis_mode = false;
+		}
+		printer_out(c, data);
+	}
+}
+
+inline void pcbios_int_17h_00h()
+{
+	if(REG16(DX) < 3) {
+		pcbios_printer_out(REG16(DX), REG8(AL));
+		REG8(AH) = 0xd0;
+	}
+}
+
+inline void pcbios_int_17h_01h()
+{
+	if(REG16(DX) < 3) {
+		REG8(AH) = 0xd0;
+	}
+}
+
+inline void pcbios_int_17h_02h()
+{
+	if(REG16(DX) < 3) {
+		REG8(AH) = 0xd0;
+	}
+}
+
+inline void pcbios_int_17h_03h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		if(REG16(DX) < 3) {
+			if(pio[REG16(DX)].jis_mode) {
+				printer_out(REG16(DX), 0x1c);
+				printer_out(REG16(DX), 0x2e);
+				pio[REG16(DX)].jis_mode = false;
+			}
+			for(UINT16 i = 0; i < REG16(CX); i++) {
+				printer_out(REG16(DX), mem[SREG_BASE(ES) + REG16(BX) + i]);
+			}
+			REG16(CX) = 0x0000;
+			REG8(AH) = 0xd0;
+		}
+		break;
+	default:
+		unimplemented_17h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x17, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		break;
+	}
+}
+
+inline void pcbios_int_17h_50h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		if(REG16(DX) < 3) {
+			if(REG16(BX) = 0x0001) {
+				pio[REG16(DX)].conv_mode = false;
+				REG8(AL) = 0x00;
+			} else if(REG16(BX) = 0x0051) {
+				pio[REG16(DX)].conv_mode = true;
+				REG8(AL) = 0x00;
+			} else {
+				REG8(AL) = 0x01;
+			}
+		} else {
+			REG8(AL) = 0x02;
+		}
+		break;
+	case 0x01:
+		if(REG16(DX) < 3) {
+			if(pio[REG16(DX)].conv_mode) {
+				REG16(BX) = 0x0051;
+			} else {
+				REG16(BX) = 0x0001;
+			}
+			REG8(AL) = 0x00;
+		} else {
+			REG8(AL) = 0x02;
+		}
+		break;
+	default:
+		unimplemented_17h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x17, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		break;
+	}
+}
+
+inline void pcbios_int_17h_51h()
+{
+	if(REG8(DH) >= 0x21 && REG8(DH) <= 0x7e && REG8(DL) >= 0x21 && REG8(DL) <= 0x7e) {
+		REG16(DX) = pcbios_printer_jis2sjis(REG16(DX));
+	} else {
+		REG16(DX) = 0x0000;
+	}
+}
+
+inline void pcbios_int_17h_52h()
+{
+	if(((REG8(DH) >= 0x81 && REG8(DH) <= 0x9f) || (REG8(DH) >= 0xe0 && REG8(DH) <= 0xfc)) && (REG8(DL) >= 0x40 && REG8(DL) <= 0xfc && REG8(DL) != 0x7f)) {
+		REG16(DX) = pcbios_printer_sjis2jis(REG16(DX));
+	} else {
+		REG16(DX) = 0x0000;
+	}
+}
+
+inline void pcbios_int_17h_84h()
+{
+	if(REG16(DX) < 3) {
+		if(pio[REG16(DX)].jis_mode) {
+			printer_out(REG16(DX), 0x1c);
+			printer_out(REG16(DX), 0x2e);
+			pio[REG16(DX)].jis_mode = false;
+		}
+		printer_out(REG16(DX), REG8(AL));
+		REG8(AH) = 0xd0;
+	}
+}
+
+inline void pcbios_int_17h_85h()
+{
+	pio[0].conv_mode = (REG8(AL) == 0x00);
+}
+
 inline void pcbios_int_1ah_00h()
 {
 	pcbios_update_daily_timer_counter(timeGetTime());
@@ -8833,17 +9241,21 @@ inline void msdos_int_21h_3ch()
 {
 	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int attr = GetFileAttributes(path);
-	int fd = -1, c;
+	int fd = -1;
 	UINT16 info;
+	int sio_port = 0;
+	int lpt_port = 0;
 	
 	if(msdos_is_con_path(path)) {
 		fd = _open("CON", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
-	} else if((c = msdos_is_comm_path(path)) != 0 && sio_port_number[c - 1] != 0) {
-		if((fd = _open(msdos_create_comm_path(path, sio_port_number[c - 1]), _O_WRONLY | _O_BINARY)) == -1) {
-			fd = _open("NUL", _O_WRONLY | _O_BINARY);
-		}
+	} else if((sio_port = msdos_is_comm_path(path)) != 0) {
+		fd = _open("NUL", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
+		msdos_set_comm_params(sio_port, path);
+	} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
+		fd = _open("NUL", _O_WRONLY | _O_BINARY);
+		info = 0xa8c0;
 	} else if(msdos_is_device_path(path)) {
 		fd = _open("NUL", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
@@ -8857,7 +9269,7 @@ inline void msdos_int_21h_3ch()
 		}
 		SetFileAttributes(path, attr);
 		REG16(AX) = fd;
-		msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
+		msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp, sio_port, lpt_port);
 		msdos_psp_set_file_table(fd, fd, current_psp);
 	} else {
 		REG16(AX) = errno;
@@ -8869,18 +9281,22 @@ inline void msdos_int_21h_3dh()
 {
 	char *path = msdos_local_file_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), 0);
 	int mode = REG8(AL) & 0x03;
-	int fd = -1, c;
+	int fd = -1;
 	UINT16 info;
+	int sio_port = 0;
+	int lpt_port = 0;
 	
 	if(mode < 0x03) {
 		if(msdos_is_con_path(path)) {
 			fd = msdos_open("CON", file_mode[mode].mode);
 			info = 0x80d3;
-		} else if((c = msdos_is_comm_path(path)) != 0 && sio_port_number[c - 1] != 0) {
-			if((fd = _open(msdos_create_comm_path(path, sio_port_number[c - 1]), file_mode[mode].mode)) == -1) {
-				fd = msdos_open("NUL", file_mode[mode].mode);
-			}
+		} else if((sio_port = msdos_is_comm_path(path)) != 0) {
+			fd = msdos_open("NUL", file_mode[mode].mode);
 			info = 0x80d3;
+			msdos_set_comm_params(sio_port, path);
+		} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
+			fd = _open("NUL", file_mode[mode].mode);
+			info = 0xa8c0;
 		} else if(msdos_is_device_path(path)) {
 			fd = msdos_open("NUL", file_mode[mode].mode);
 			info = 0x80d3;
@@ -8890,7 +9306,7 @@ inline void msdos_int_21h_3dh()
 		}
 		if(fd != -1) {
 			REG16(AX) = fd;
-			msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
+			msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp, sio_port, lpt_port);
 			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
 			REG16(AX) = errno;
@@ -9024,7 +9440,7 @@ inline void msdos_int_21h_3fh()
 					REG16(AX) = 0;
 				}
 			} else {
-				REG16(AX) = _read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
+				REG16(AX) = msdos_read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
 		} else {
 			REG16(AX) = 0x05;
@@ -10531,17 +10947,21 @@ inline void msdos_int_21h_6ch(int lfn)
 		if(msdos_is_device_path(path) || msdos_is_existing_file(path)) {
 			// file exists
 			if(REG8(DL) & 1) {
-				int fd = -1, c;
+				int fd = -1;
 				UINT16 info;
+				int sio_port = 0;
+				int lpt_port = 0;
 				
 				if(msdos_is_con_path(path)) {
 					fd = msdos_open("CON", file_mode[mode].mode);
 					info = 0x80d3;
-				} else if((c = msdos_is_comm_path(path)) != 0 && sio_port_number[c - 1] != 0) {
-					if((fd = _open(msdos_create_comm_path(path, sio_port_number[c - 1]), file_mode[mode].mode)) == -1) {
-						fd = msdos_open("NUL", file_mode[mode].mode);
-					}
+				} else if((sio_port = msdos_is_comm_path(path)) != 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
+					msdos_set_comm_params(sio_port, path);
+				} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
+					info = 0xa8c0;
 				} else if(msdos_is_device_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
@@ -10552,7 +10972,7 @@ inline void msdos_int_21h_6ch(int lfn)
 				if(fd != -1) {
 					REG16(AX) = fd;
 					REG16(CX) = 1;
-					msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
+					msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
@@ -10560,17 +10980,21 @@ inline void msdos_int_21h_6ch(int lfn)
 				}
 			} else if(REG8(DL) & 2) {
 				int attr = GetFileAttributes(path);
-				int fd = -1, c;
+				int fd = -1;
 				UINT16 info;
+				int sio_port = 0;
+				int lpt_port = 0;
 				
 				if(msdos_is_con_path(path)) {
 					fd = msdos_open("CON", file_mode[mode].mode);
 					info = 0x80d3;
-				} else if((c = msdos_is_comm_path(path)) != 0 && sio_port_number[c - 1] != 0) {
-					if((fd = _open(msdos_create_comm_path(path, sio_port_number[c - 1]), file_mode[mode].mode)) == -1) {
-						fd = msdos_open("NUL", file_mode[mode].mode);
-					}
+				} else if((sio_port = msdos_is_comm_path(path)) != 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
+					msdos_set_comm_params(sio_port, path);
+				} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
+					info = 0xa8c0;
 				} else if(msdos_is_device_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
@@ -10585,7 +11009,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					SetFileAttributes(path, attr);
 					REG16(AX) = fd;
 					REG16(CX) = 3;
-					msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
+					msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
@@ -13836,7 +14260,21 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x17:
 		// PC BIOS - Printer
-//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 0;
+		switch(REG8(AH)) {
+		case 0x00: pcbios_int_17h_00h(); break;
+		case 0x01: pcbios_int_17h_01h(); break;
+		case 0x02: pcbios_int_17h_02h(); break;
+		case 0x03: pcbios_int_17h_03h(); break;
+		case 0x50: pcbios_int_17h_50h(); break;
+		case 0x51: pcbios_int_17h_51h(); break;
+		case 0x52: pcbios_int_17h_52h(); break;
+		case 0x84: pcbios_int_17h_84h(); break;
+		case 0x85: pcbios_int_17h_85h(); break;
+		default:
+			unimplemented_17h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			break;
+		}
 		break;
 	case 0x1a:
 		// PC BIOS - Timer
@@ -14539,12 +14977,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 		msdos_file_handler_open(3, "STDAUX", 0, 2, 0x80c0, 0);
 	}
-#ifdef MAP_PRN_DEVICE_TO_FILE
-	if(_open("stdprn.txt", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
-#else
 	if(_open("NUL", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
-#endif
-		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0);
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
 	}
 	_dup2(0, DUP_STDIN);
 	_dup2(1, DUP_STDOUT);
@@ -14608,8 +15042,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x404) = 0x3e8; // com3 port address
 	*(UINT16 *)(mem + 0x406) = 0x2e8; // com4 port address
 	*(UINT16 *)(mem + 0x408) = 0x378; // lpt1 port address
-//	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
-//	*(UINT16 *)(mem + 0x40c) = 0x3bc; // lpt3 port address
+	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
+	*(UINT16 *)(mem + 0x40c) = 0x3bc; // lpt3 port address
 #ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + 0x40e) = EXT_BIOS_TOP >> 4;
 #endif
@@ -14868,7 +15302,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 					if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, sub_key, 0, KEY_QUERY_VALUE, &hSubKey) == ERROR_SUCCESS) {
 						if(RegQueryValueEx(hSubKey, "Std", NULL, NULL, (LPBYTE)std_name, &(size = array_length(std_name))) == ERROR_SUCCESS) {
 							// search english timezone name from table
-							if (strcmp(std_name, tzi_std_name) == 0) {
+							if(strcmp(std_name, tzi_std_name) == 0) {
 								for(int j = 0; j < array_length(tz_table); j++) {
 									if(strcmp(reg_name, tz_table[j].name) == 0 && (tz_table[j].lcid == 0 || tz_table[j].lcid == GetUserDefaultLCID())) {
 										if(tz_table[j].std != NULL) {
@@ -15210,9 +15644,6 @@ void msdos_finish()
 #ifdef MAP_AUX_DEVICE_TO_FILE
 	remove_std_file("stdaux.txt");
 #endif
-#ifdef MAP_PRN_DEVICE_TO_FILE
-	remove_std_file("stdprn.txt");
-#endif
 #ifdef SUPPORT_XMS
 	msdos_xms_finish();
 #endif
@@ -15254,6 +15685,7 @@ void hardware_finish()
 	vtlb_free(m_vtlb);
 #endif
 	ems_finish();
+	pio_finish();
 	sio_finish();
 }
 
@@ -15270,6 +15702,7 @@ void hardware_release()
 	vtlb_free(m_vtlb);
 #endif
 	ems_release();
+	pio_release();
 	sio_release();
 }
 
@@ -15941,9 +16374,25 @@ void pic_update()
 void pio_init()
 {
 	memset(pio, 0, sizeof(pio));
+	
 	for(int c = 0; c < 2; c++) {
-		pio[c].stat = 0xde;
+		pio[c].stat = 0xdf;
 		pio[c].ctrl = 0x0c;
+	}
+}
+
+void pio_finish()
+{
+	pio_release();
+}
+
+void pio_release()
+{
+	for(int c = 0; c < 2; c++) {
+		if(pio[c].fp != NULL) {
+			fclose(pio[c].fp);
+			pio[c].fp = NULL;
+		}
 	}
 }
 
@@ -15954,6 +16403,17 @@ void pio_write(int c, UINT32 addr, UINT8 data)
 		pio[c].data = data;
 		break;
 	case 2:
+		if((pio[c].ctrl & 0x01) && !(data & 0x01)) {
+			// strobe H -> L
+			if(pio[c].data == 0x0d && (data & 0x02)) {
+				// auto feed
+				printer_out(c, 0x0d);
+				printer_out(c, 0x0a);
+			} else {
+				printer_out(c, pio[c].data);
+			}
+			pio[c].stat &= ~0x40; // set ack
+		}
 		pio[c].ctrl = data;
 		break;
 	}
@@ -15963,13 +16423,60 @@ UINT8 pio_read(int c, UINT32 addr)
 {
 	switch(addr & 3) {
 	case 0:
+		if(pio[c].ctrl & 0x20) {
+			// input mode
+			return(0xff);
+		}
 		return(pio[c].data);
 	case 1:
-		return(pio[c].stat);
+		{
+			UINT8 stat = pio[c].stat;
+			pio[c].stat |= 0x40; // clear ack
+			return(stat);
+		}
 	case 2:
 		return(pio[c].ctrl);
 	}
 	return(0xff);
+}
+
+void printer_out(int c, UINT8 data)
+{
+	SYSTEMTIME time;
+	
+	GetLocalTime(&time);
+	
+	if(pio[c].fp != NULL) {
+		// if at least 1000ms passed from last written, close the current file
+		FILETIME ftime1;
+		FILETIME ftime2;
+		SystemTimeToFileTime(&pio[c].time, &ftime1);
+		SystemTimeToFileTime(&time, &ftime2);
+		INT64 *time1 = (INT64 *)&ftime1;
+		INT64 *time2 = (INT64 *)&ftime2;
+		INT64 msec = (*time2 - *time1) / 10000;
+		
+		if(msec >= 1000) {
+			fclose(pio[c].fp);
+			pio[c].fp = NULL;
+		}
+	}
+	if(pio[c].fp == NULL) {
+		// create a new file in the temp folder
+		char file_name[MAX_PATH];
+		
+		sprintf(file_name, "%d-%0.2d-%0.2d_%0.2d-%0.2d-%0.2d.PRN", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
+		if(GetTempPath(MAX_PATH, pio[c].path)) {
+			strcat(pio[c].path, file_name);
+		} else {
+			strcpy(pio[c].path, file_name);
+		}
+		pio[c].fp = fopen(pio[c].path, "wb");
+	}
+	if(pio[c].fp != NULL) {
+		fputc(data, pio[c].fp);
+		pio[c].time = time;
+	}
 }
 
 // pit
@@ -16977,9 +17484,9 @@ UINT8 debugger_read_io_byte(offs_t addr)
 	case 0xd0: case 0xd2: case 0xd4: case 0xd6: case 0xd8: case 0xda: case 0xdc: case 0xde:
 		val = dma_read(1, (addr - 0xc0) >> 1);
 		break;
-//	case 0x278: case 0x279: case 0x27a:
-//		val = pio_read(1, addr);
-//		break;
+	case 0x278: case 0x279: case 0x27a:
+		val = pio_read(1, addr);
+		break;
 	case 0x2e8: case 0x2e9: case 0x2ea: case 0x2eb: case 0x2ec: case 0x2ed: case 0x2ee: case 0x2ef:
 		val = sio_read(3, addr);
 		break;
@@ -16991,6 +17498,9 @@ UINT8 debugger_read_io_byte(offs_t addr)
 		break;
 	case 0x3ba: case 0x3da:
 		val = vga_read_status();
+		break;
+	case 0x3bc: case 0x3bd: case 0x3be:
+		val = pio_read(2, addr);
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		val = sio_read(2, addr);
@@ -17134,9 +17644,9 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		finish_service_loop();
 		break;
 #endif
-//	case 0x278: case 0x279: case 0x27a:
-//		pio_write(1, addr, val);
-//		break;
+	case 0x278: case 0x279: case 0x27a:
+		pio_write(1, addr, val);
+		break;
 	case 0x2e8: case 0x2e9: case 0x2ea: case 0x2eb: case 0x2ec: case 0x2ed: case 0x2ee: case 0x2ef:
 		sio_write(3, addr, val);
 		break;
@@ -17145,6 +17655,9 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 		break;
 	case 0x378: case 0x379: case 0x37a:
 		pio_write(0, addr, val);
+		break;
+	case 0x3bc: case 0x3bd: case 0x3be:
+		pio_write(2, addr, val);
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		sio_write(2, addr, val);
