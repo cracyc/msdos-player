@@ -188,6 +188,7 @@ int sio_port_number[4] = {0, 0, 0, 0};
 BOOL is_winxp_or_later;
 BOOL is_xp_64_or_later;
 BOOL is_vista_or_later;
+BOOL is_win10_or_later;
 
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
@@ -419,12 +420,86 @@ UINT32 debugger_read_dword(UINT32 byteaddress)
 }
 
 // write accessors
+
+static const CHAR box_drawings_char[] = {
+	/*0x00*/ 0,
+	/*0x01*/ '+',	// BOX DRAWINGS DOUBLE DOWN AND RIGHT
+	/*0x02*/ '+',	// BOX DRAWINGS DOUBLE DOWN AND LEFT
+	/*0x03*/ '+',	// BOX DRAWINGS DOUBLE UP AND RIGHT
+	/*0x04*/ '+',	// BOX DRAWINGS DOUBLE UP AND LEFT
+	/*0x05*/ '|',	// BOX DRAWINGS DOUBLE VERTICAL
+	/*0x06*/ '-',	// BOX DRAWINGS DOUBLE HORIZONTAL
+	/*0x07*/ 0,
+	/*0x08*/ 0,
+	/*0x09*/ 0,
+	/*0x0A*/ 0,
+	/*0x0B*/ 0,
+	/*0x0C*/ 0,
+	/*0x0D*/ 0,
+	/*0x0E*/ 0,
+	/*0x0F*/ 0,
+	/*0x10*/ '+',	// BOX DRAWINGS DOUBLE VERTICAL AND HORIZONTAL
+	/*0x11*/ 0,
+	/*0x12*/ 0,
+	/*0x13*/ 0,
+	/*0x14*/ 0,
+	/*0x15*/ '-',	// BOX DRAWINGS DOUBLE UP AND HORIZONTAL
+	/*0x16*/ '-',	// BOX DRAWINGS DOUBLE DOWN AND HORIZONTAL
+	/*0x17*/ '|',	// BOX DRAWINGS DOUBLE VERTICAL AND LEFT
+	/*0x18*/ 0,
+	/*0x19*/ '|',	// BOX DRAWINGS DOUBLE VERTICAL AND RIGHT
+};
+
+COORD shift_coord(COORD origin, DWORD pos)
+{
+	COORD co;
+	
+	co.X = origin.X + pos;
+	co.Y = origin.Y;
+	
+	while(co.X >= scr_width) {
+		co.X -= scr_width;
+		co.Y += 1;
+	}
+	return co;
+}
+
+BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, DWORD nLength, COORD dwWriteCoord, LPDWORD lpNumberOfCharsWritten)
+{
+	if(is_win10_or_later && active_code_page == 932) {
+		DWORD written = 0, written_tmp;
+		
+		for(DWORD pos = 0, start_pos = 0; pos < nLength; pos++) {
+			CHAR code = lpCharacter[pos], replace;
+			
+			if(code >= 0x01 && code <= 0x19 && (replace = box_drawings_char[code]) != 0) {
+				if(pos > start_pos) {
+					WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos, shift_coord(dwWriteCoord, start_pos), &written_tmp);
+					written += written_tmp;
+				}
+				WriteConsoleOutputCharacterA(hConsoleOutput, &replace, 1, shift_coord(dwWriteCoord, pos), &written_tmp);
+				written += written_tmp;
+				start_pos = pos + 1;
+			} else if(pos == nLength - 1) {
+				if(pos > start_pos) {
+					WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos + 1, shift_coord(dwWriteCoord, start_pos), &written_tmp);
+					written += written_tmp;
+				}
+			}
+		}
+		*lpNumberOfCharsWritten = written;
+		return TRUE;
+	} else {
+		return WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter, nLength, dwWriteCoord, lpNumberOfCharsWritten);
+	}
+}
+
 #ifdef USE_VRAM_THREAD
 void vram_flush_char()
 {
 	if(vram_length_char != 0) {
 		DWORD num;
-		WriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length_char, vram_coord_char, &num);
+		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length_char, vram_coord_char, &num);
 		vram_length_char = vram_last_length_char = 0;
 	}
 }
@@ -477,7 +552,7 @@ void write_text_vram_char(UINT32 offset, UINT8 data)
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_char[0] = data;
-	WriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
+	MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
 #endif
 }
 
@@ -3138,9 +3213,10 @@ int main(int argc, char *argv[], char *envp[])
 		return(retval);
 	}
 	
-	is_winxp_or_later = is_greater_windows_version(5, 1, 0, 0);
-	is_xp_64_or_later = is_greater_windows_version(5, 2, 0, 0);
-	is_vista_or_later = is_greater_windows_version(6, 0, 0, 0);
+	is_winxp_or_later = is_greater_windows_version( 5, 1, 0, 0);
+	is_xp_64_or_later = is_greater_windows_version( 5, 2, 0, 0);
+	is_vista_or_later = is_greater_windows_version( 6, 0, 0, 0);
+	is_win10_or_later = is_greater_windows_version(10, 0, 0, 0);
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -7852,7 +7928,7 @@ inline void pcbios_int_10h_13h()
 					ofs += 2;
 				}
 			}
-			WriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
+			MyWriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
 			WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
 		} else {
 			for(int i = 0, dest = pcbios_get_shadow_buffer_address(CPU_BH, co.X, co.Y - scr_top); i < CPU_CX; i++) {
@@ -8045,7 +8121,7 @@ inline void pcbios_int_10h_ffh()
 			scr_attr[len] = mem[ofs++];
 		}
 		co.Y += scr_top;
-		WriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
+		MyWriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
 		WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
 	}
 	int_10h_ffh_called = true;
