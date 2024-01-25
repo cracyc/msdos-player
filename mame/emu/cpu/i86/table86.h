@@ -96,22 +96,29 @@ static void (*const PREFIX86(_instruction)[256])() =
 		PREFIX86(_pop_bp),           /* 0x5d */
 		PREFIX86(_pop_si),           /* 0x5e */
 		PREFIX86(_pop_di),           /* 0x5f */
-		PREFIX86(_invalid_2b), // PREFIX86(_pusha),            /* 0x60 */
-		PREFIX86(_invalid_2b), // PREFIX86(_popa),             /* 0x61 */
-		PREFIX86(_invalid_2b), // PREFIX86(_bound),            /* 0x62 */
-		PREFIX86(_invalid_2b),
-		PREFIX86(_invalid_2b),
-		PREFIX86(_invalid_2b),
-		PREFIX86(_invalid_2b),
-		PREFIX86(_invalid_2b),
-		PREFIX86(_invalid_2b), //i_push_d16),         /* 0x68 */
-		PREFIX86(_invalid_2b), //i_imul_d16),         /* 0x69 */
-		PREFIX86(_invalid_2b), //i_push_d8),          /* 0x6a */
-		PREFIX86(_invalid_2b), //i_imul_d8),          /* 0x6b */
-		PREFIX86(_invalid_2b), //i_insb),             /* 0x6c */
-		PREFIX86(_invalid_2b), //i_insw),             /* 0x6d */
-		PREFIX86(_invalid_2b), //i_outsb),            /* 0x6e */
-		PREFIX86(_invalid_2b), //i_outsw),            /* 0x6f */
+// 8086 'invalid opcodes', as documented at http://www.os2museum.com/wp/?p=2147 and tested on real hardware
+// - 0x60 - 0x6f are aliases to 0x70 - 0x7f.
+// - 0xc0, 0xc1, 0xc8, 0xc9 are also aliases where the CPU ignores BIT 1 (*).
+// - 0xf1 is an alias to 0xf0.
+//
+//      Instructions are used in the boot sector for some versions of
+//      MS-DOS  (e.g. the DEC Rainbow-100 version of DOS 2.x)
+		PREFIX86(_jo),               /* 0x60 */
+		PREFIX86(_jno),              /* 0x61 */
+		PREFIX86(_jb),               /* 0x62 */
+		PREFIX86(_jnb),              /* 0x63 */
+		PREFIX86(_jz),               /* 0x64 */
+		PREFIX86(_jnz),              /* 0x65 */
+		PREFIX86(_jbe),              /* 0x66 */
+		PREFIX86(_jnbe),             /* 0x67 */
+		PREFIX86(_js),               /* 0x68 */
+		PREFIX86(_jns),              /* 0x69 */
+		PREFIX86(_jp),               /* 0x6a */
+		PREFIX86(_jnp),              /* 0x6b */
+		PREFIX86(_jl),               /* 0x6c */
+		PREFIX86(_jnl),              /* 0x6d */
+		PREFIX86(_jle),              /* 0x6e */
+		PREFIX86(_jnle),             /* 0x6f */
 		PREFIX86(_jo),               /* 0x70 */
 		PREFIX86(_jno),              /* 0x71 */
 		PREFIX86(_jb),               /* 0x72 */
@@ -192,16 +199,16 @@ static void (*const PREFIX86(_instruction)[256])() =
 		PREFIX86(_mov_bpd16),        /* 0xbd */
 		PREFIX86(_mov_sid16),        /* 0xbe */
 		PREFIX86(_mov_did16),        /* 0xbf */
-		PREFIX86(_invalid), // PREFIX86(_rotshft_bd8),      /* 0xc0 */
-		PREFIX86(_invalid), // PREFIX86(_rotshft_wd8),      /* 0xc1 */
+		PREFIX86(_ret_d16),          /* 0xc0 is 0xc2 - see (*) */
+		PREFIX86(_ret),              /* 0xc1 is 0xc3 - see (*) */
 		PREFIX86(_ret_d16),          /* 0xc2 */
 		PREFIX86(_ret),              /* 0xc3 */
 		PREFIX86(_les_dw),           /* 0xc4 */
 		PREFIX86(_lds_dw),           /* 0xc5 */
 		PREFIX86(_mov_bd8),          /* 0xc6 */
 		PREFIX86(_mov_wd16),         /* 0xc7 */
-		PREFIX86(_invalid), //i_enter),            /* 0xc8 */
-		PREFIX86(_invalid), //leave),            /* 0xc9 */
+		PREFIX86(_retf_d16),         /* 0xc8 is 0xca - see (*) */
+		PREFIX86(_retf),             /* 0xc9 is 0xcb - see (*) */
 		PREFIX86(_retf_d16),         /* 0xca */
 		PREFIX86(_retf),             /* 0xcb */
 		PREFIX86(_int3),             /* 0xcc */
@@ -241,7 +248,7 @@ static void (*const PREFIX86(_instruction)[256])() =
 		PREFIX86(_outdxal),          /* 0xee */
 		PREFIX86(_outdxax),          /* 0xef */
 		PREFIX86(_lock),             /* 0xf0 */
-		PREFIX86(_invalid),          /* 0xf1 */
+		PREFIX86(_lock),             /* 0xf1 is 0xf0 - see (*) */
 		PREFIX86(_repne),            /* 0xf2 */
 		PREFIX86(_repe),             /* 0xf3 */
 		PREFIX86(_hlt),     /* 0xf4 */
@@ -359,22 +366,22 @@ static void (*const PREFIX86(_instruction)[256])() =
 	case 0x5d:    PREFIX86(_pop_bp)(); break;\
 	case 0x5e:    PREFIX86(_pop_si)(); break;\
 	case 0x5f:    PREFIX86(_pop_di)(); break;\
-			case 0x60:    PREFIX86(_invalid_2b)(); break;\
-			case 0x61:    PREFIX86(_invalid_2b)(); break;\
-			case 0x62:    PREFIX86(_invalid_2b)(); break;\
-	case 0x63:    PREFIX86(_invalid_2b)(); break;\
-	case 0x64:    PREFIX86(_invalid_2b)(); break;\
-	case 0x65:    PREFIX86(_invalid_2b)(); break;\
-	case 0x66:    PREFIX86(_invalid_2b)(); break;\
-	case 0x67:    PREFIX86(_invalid_2b)(); break;\
-			case 0x68:    PREFIX86(_invalid_2b)(); break;\
-			case 0x69:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6a:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6b:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6c:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6d:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6e:    PREFIX86(_invalid_2b)(); break;\
-			case 0x6f:    PREFIX86(_invalid_2b)(); break;\
+	case 0x60:    PREFIX86(_jo)(); break;\
+	case 0x61:    PREFIX86(_jno)(); break;\
+	case 0x62:    PREFIX86(_jb)(); break;\
+	case 0x63:    PREFIX86(_jnb)(); break;\
+	case 0x64:    PREFIX86(_jz)(); break;\
+	case 0x65:    PREFIX86(_jnz)(); break;\
+	case 0x66:    PREFIX86(_jbe)(); break;\
+	case 0x67:    PREFIX86(_jnbe)(); break;\
+	case 0x68:    PREFIX86(_js)(); break;\
+	case 0x69:    PREFIX86(_jns)(); break;\
+	case 0x6a:    PREFIX86(_jp)(); break;\
+	case 0x6b:    PREFIX86(_jnp)(); break;\
+	case 0x6c:    PREFIX86(_jl)(); break;\
+	case 0x6d:    PREFIX86(_jnl)(); break;\
+	case 0x6e:    PREFIX86(_jle)(); break;\
+	case 0x6f:    PREFIX86(_jnle)(); break;\
 	case 0x70:    PREFIX86(_jo)(); break;\
 	case 0x71:    PREFIX86(_jno)(); break;\
 	case 0x72:    PREFIX86(_jb)(); break;\
@@ -455,16 +462,16 @@ static void (*const PREFIX86(_instruction)[256])() =
 	case 0xbd:    PREFIX86(_mov_bpd16)(); break;\
 	case 0xbe:    PREFIX86(_mov_sid16)(); break;\
 	case 0xbf:    PREFIX86(_mov_did16)(); break;\
-			case 0xc0:    PREFIX86(_invalid)(); break;\
-			case 0xc1:    PREFIX86(_invalid)(); break;\
+	case 0xc0:    PREFIX86(_ret_d16)(); break;\
+	case 0xc1:    PREFIX86(_ret)(); break;\
 	case 0xc2:    PREFIX86(_ret_d16)(); break;\
 	case 0xc3:    PREFIX86(_ret)(); break;\
 	case 0xc4:    PREFIX86(_les_dw)(); break;\
 	case 0xc5:    PREFIX86(_lds_dw)(); break;\
 	case 0xc6:    PREFIX86(_mov_bd8)(); break;\
 	case 0xc7:    PREFIX86(_mov_wd16)(); break;\
-			case 0xc8:    PREFIX86(_invalid)(); break;\
-			case 0xc9:    PREFIX86(_invalid)(); break;\
+	case 0xc8:    PREFIX86(_retf_d16)(); break;\
+	case 0xc9:    PREFIX86(_retf)(); break;\
 	case 0xca:    PREFIX86(_retf_d16)(); break;\
 	case 0xcb:    PREFIX86(_retf)(); break;\
 	case 0xcc:    PREFIX86(_int3)(); break;\
@@ -504,7 +511,7 @@ static void (*const PREFIX86(_instruction)[256])() =
 	case 0xee:    PREFIX86(_outdxal)(); break;\
 	case 0xef:    PREFIX86(_outdxax)(); break;\
 	case 0xf0:    PREFIX86(_lock)(); break;\
-	case 0xf1:    PREFIX86(_invalid)(); break;\
+	case 0xf1:    PREFIX86(_lock)(); break;\
 	case 0xf2:    PREFIX86(_repne)(); break;\
 	case 0xf3:    PREFIX86(_repe)(); break;\
 	case 0xf4:    PREFIX86(_hlt)(); break;\

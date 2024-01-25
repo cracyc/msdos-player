@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/24/2017
+								5/31/2017
 
 ----- What's this
 
@@ -376,7 +376,7 @@ NOTE:
 - Graphic/Sound hardwares are NOT implemented.
 - DMA Controller is implemented, but FDC and HDC are not connected.
 - Parallel I/O is implemented and the output data is written to the file
-  "Year-Month-Day_Hour-Minute-Second.PRN" created in the TEMP directry.
+  "Year-Month-Day_Hour-Minute-Second.PRN" created in the TEMP directory.
 - Serial I/O is implemented and can be connected to the host's COM ports.
 
 
@@ -443,6 +443,20 @@ INT 10H		PC BIOS - Video
 INT 11H		PC BIOS - Get Equipment List
 
 INT 12H		PC BIOS - Get Memory Size
+
+INT 13H		PC BIOS - Disk I/O
+
+	00H	Reset Disk System
+	01H	Get Status of Last Operation
+	02H	Read Sectors Into Memory
+	03H	Write Disk Sectors (*2)
+	04H	Verify Disk Sectors
+	08H	Get Drive Parameters
+	0AH	Read Long Sectors
+	0BH	Write Long Sectors
+	0DH	Reset Hard Disks
+	10H	Check If Drive Ready
+	15H	Get Disk Type
 
 INT 14H		PC BIOS - Serial I/O
 
@@ -558,14 +572,14 @@ INT 21H		MS-DOS System Call
 	2DH	Set Time
 	2EH	Set/Reset Verify Switch
 	2FH	Get Disk Transfer Address
-	30H	Get Version Number (*2)
+	30H	Get Version Number (*3)
 	31H	Keep Process
 	32H	Get DOS Drive Parameter Block
 	3300H	Get Ctrl-Break Checking State
 	3301H	Set Ctrl-Break Checking State
 	3302H	Get/Set Ctrl-Break Checking State
 	3305H	Get Boot Drive
-	3306H	Get True Version Number (*3)
+	3306H	Get True Version Number (*4)
 	3307H	Windows95 - Set/Clear DOS_FLAG
 	34H	Get Address of InDOS Flag
 	35H	Get Vector
@@ -574,7 +588,7 @@ INT 21H		MS-DOS System Call
 	3701H	Set Switch Character
 	3702H	Get AvailDev Flag
 	3703H	Set AvailDev Flag
-	3800H	Get Current Country Specifiy Information
+	38H	Get Country Specific Information
 	39H	Create Subdirectory
 	3AH	Remove Subdirectory
 	3BH	Change Current Directory
@@ -632,7 +646,9 @@ INT 21H		MS-DOS System Call
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
 	5D06H	Get Address of DOS Swappable Data Area
+	5E00H	Get Machine Name
 	5F02H	Get Redirection List Entry
+	5F05H	Get Extended Redirection List Entry
 	60H	Canonicalize Filename Or Path
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
@@ -689,7 +705,7 @@ INT 24H		Critical Error Handler
 
 INT 25H		Absolute Disk Read
 
-INT 26H		Absolute Disk Write (*4)
+INT 26H		Absolute Disk Write (*2)
 
 INT 27H		Terminate and Stay Resident
 
@@ -824,6 +840,7 @@ INT 67H		LIM EMS
 	5701H	LIM EMS 4.0 - Exchange Memory Region
 	5800H	LIM EMS 4.0 - Get Mappable Physical Address Array
 	5801H	LIM EMS 4.0 - Get Mappable Physical Address Array Entries
+	5901H	LIM EMS 4.0 - Get Unallocated Raw Page Count
 	5A00H	LIM EMS 4.0 - Allocate Standard Pages
 	5A01H	LIM EMS 4.0 - Allocate Raw Pages
 
@@ -854,9 +871,9 @@ CALL FAR XMS
 	8FH	XMS 3.0 - Reallocate Any Extended Memory Block
 
 (*1) Not a Hercules-compatible video adapter
-(*2) MS-DOS Version: 7.10 (default) or specified version with -v option
-(*3) MS-DOS Version: 7.10, -v option is not affected
-(*4) Support only floppy disk drive
+(*2) Support only floppy disk drive
+(*3) MS-DOS Version: 7.10 (default) or specified version with -v option
+(*4) MS-DOS Version: 7.10, -v option is not affected
 (*5) Windows Version: 4.10 (default) or specified version with -w option
 (*6) Mouse Version: 8.05
 (*7) EMS Version: 4.0
@@ -873,15 +890,17 @@ See also COPYING.txt for more details about the license.
 
 ----- Thanks
 
-8086/80186/80286 code is based on MAME 0.149.
-NEC V30 instructions code is based on MAME 0.128
-80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.174 are applied.
+8086/80286 code is based on MAME 0.149 and fixes in MAME 0.150 to 0.185
+are applied.
+NEC V30 instructions code is based on MAME 0.128.
+8038/80486 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.185
+are applied.
 
 INT 15H AH=87H (Copy Extended Memory), AH=89H (Switch to Protected Mode),
 INT 33H AX=001FH (Disable Mouse Driver), AX=0020H (Enable Mouse Driver),
 and some DOS info block improvements are based on DOSBox.
 
-Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk) and Mr.Jason Hood.
+Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk), and Mr.Jason Hood.
 
 ----------------------------------------
 TAKEDA, toshiya

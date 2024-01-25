@@ -1396,7 +1396,8 @@ static void PREFIX86(_jl)()    /* Opcode 0x7c */
 static void PREFIX86(_jnl)()    /* Opcode 0x7d */
 {
 	int tmp = (int)((INT8)FETCH);
-	if (ZF||(SF==OF)) {
+//	if (ZF||(SF==OF)) {
+	if (SF==OF) {
 		m_pc += tmp;
 /* ASG - can probably assume this is safe
         CHANGE_PC(m_pc);*/
@@ -1670,12 +1671,16 @@ static void PREFIX86(_mov_r16w)()    /* Opcode 0x8b */
 static void PREFIX86(_mov_wsreg)()    /* Opcode 0x8c */
 {
 	unsigned ModRM = FETCH;
+#ifndef I8086
 	if (ModRM & 0x20) { /* HJB 12/13/98 1xx is invalid */
 		m_pc = m_prevpc;
 		return PREFIX86(_invalid)();
 	}
 
 	PutRMWord(ModRM,m_sregs[(ModRM & 0x38) >> 3]);
+#else
+	PutRMWord(ModRM,m_sregs[(ModRM & 0x18) >> 3]); /* confirmed on hw: modrm bit 5 ignored */
+#endif
 }
 
 static void PREFIX86(_lea)()    /* Opcode 0x8d */
@@ -2502,7 +2507,11 @@ static void PREFIX(_mov_sregw)()    /* Opcode 0x8e */
 		break;  /* doesn't do a jump far */
 	}
 #else
+#ifndef I80186
+	switch (ModRM & 0x18) /* confirmed on hw: modrm bit 5 ignored */
+#else
 	switch (ModRM & 0x38)
+#endif
 	{
 	case 0x00:  /* mov es,ew */
 		m_sregs[ES] = src;
@@ -2525,6 +2534,8 @@ static void PREFIX(_mov_sregw)()    /* Opcode 0x8e */
 		m_base[CS] = SegBase(CS);
 		m_pc = (ip + m_base[CS]) & AMASK;
 		CHANGE_PC(m_pc);
+#else
+		PREFIX86(_invalid)();
 #endif
 		break;
 	}

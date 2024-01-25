@@ -31,6 +31,7 @@ void exit_handler();
 	#endif
 	#ifdef ENABLE_DEBUG_UNIMPLEMENTED
 		#define unimplemented_10h fatalerror
+		#define unimplemented_13h fatalerror
 		#define unimplemented_14h fatalerror
 		#define unimplemented_15h fatalerror
 		#define unimplemented_16h fatalerror
@@ -45,6 +46,9 @@ void exit_handler();
 #endif
 #ifndef unimplemented_10h
 	#define unimplemented_10h nolog
+#endif
+#ifndef unimplemented_13h
+	#define unimplemented_13h nolog
 #endif
 #ifndef unimplemented_14h
 	#define unimplemented_14h nolog
@@ -4626,17 +4630,17 @@ int msdos_find_file_check_attribute(int attribute, int allowed_mask, int require
 int msdos_find_file_has_8dot3name(WIN32_FIND_DATA *fd)
 {
 	if(fd->cAlternateFileName[0]) {
-		return 1;
+		return(1);
 	}
 	size_t len = strlen(fd->cFileName);
 	if(len > 12) {
-		return 0;
+		return(0);
 	}
 	const char *ext = strrchr(fd->cFileName, '.');
 	if((ext ? ext - fd->cFileName : len) > 8) {
-		return 0;
+		return(0);
 	}
-	return 1;
+	return(1);
 }
 
 void msdos_find_file_conv_local_time(WIN32_FIND_DATA *fd)
@@ -6288,72 +6292,69 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 
 // drive
 
+int pcbios_update_drive_param(int drive_num, int force_update);
+
 int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int force_update)
 {
 	if(!(drive_num >= 0 && drive_num < 26)) {
 		return(0);
 	}
+	pcbios_update_drive_param(drive_num, force_update);
+	
+	drive_param_t *drive_param = &drive_params[drive_num];
 	*seg = DPB_TOP >> 4;
 	*ofs = sizeof(dpb_t) * drive_num;
 	dpb_t *dpb = (dpb_t *)(mem + (*seg << 4) + *ofs);
 	
-	if(!force_update && dpb->free_clusters != 0) {
-		return(dpb->bytes_per_sector ? 1 : 0);
-	}
 	memset(dpb, 0, sizeof(dpb_t));
 	
-	int res = 0;
-	char dev[64];
-	sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
-	
-	HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if(hFile != INVALID_HANDLE_VALUE) {
-		DISK_GEOMETRY geo;
-		DWORD dwSize;
-		if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
-			dpb->bytes_per_sector = (UINT16)geo.BytesPerSector;
-			dpb->highest_sector_num = (UINT8)(geo.SectorsPerTrack - 1);
-			dpb->highest_cluster_num = (UINT16)(geo.TracksPerCylinder * geo.Cylinders.QuadPart + 1);
-			dpb->maximum_cluster_num = (UINT32)(geo.TracksPerCylinder * geo.Cylinders.QuadPart + 1);
-			switch(geo.MediaType) {
-			case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
-				dpb->media_type = 0xff;
-				break;
-			case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
-				dpb->media_type = 0xfe;
-				break;
-			case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
-				dpb->media_type = 0xfd;
-				break;
-			case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
-				dpb->media_type = 0xfc;
-				break;
-			case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
-			case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
-				dpb->media_type = 0xf9;
-				break;
-			case FixedMedia:	// hard disk
-			case RemovableMedia:
-			case Unknown:
-				dpb->media_type = 0xf8;
-				break;
-			default:
-				dpb->media_type = 0xf0;
-				break;
-			}
-			res = 1;
-		}
-		dpb->info_sector = 0xffff;
-		dpb->backup_boot_sector = 0xffff;
-		dpb->free_clusters = 0xffff;
-		dpb->free_search_cluster = 0xffffffff;
-		CloseHandle(hFile);
-	}
 	dpb->drive_num = drive_num;
 	dpb->unit_num = drive_num;
+	
+	if(drive_param->valid) {
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		
+		dpb->bytes_per_sector = (UINT16)geo->BytesPerSector;
+		dpb->highest_sector_num = (UINT8)(geo->SectorsPerTrack - 1);
+		dpb->highest_cluster_num = (UINT16)(geo->TracksPerCylinder * geo->Cylinders.QuadPart + 1);
+		dpb->maximum_cluster_num = (UINT32)(geo->TracksPerCylinder * geo->Cylinders.QuadPart + 1);
+		switch(geo->MediaType) {
+		case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
+			dpb->media_type = 0xff;
+			break;
+		case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
+			dpb->media_type = 0xfe;
+			break;
+		case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
+			dpb->media_type = 0xfd;
+			break;
+		case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
+			dpb->media_type = 0xfc;
+			break;
+		case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
+		case F3_1Pt2_512:
+		case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
+		case F5_720_512:
+			dpb->media_type = 0xf9;
+			break;
+		case FixedMedia:	// hard disk
+		case RemovableMedia:
+		case Unknown:
+			dpb->media_type = 0xf8;
+			break;
+		default:
+			dpb->media_type = 0xf0;
+			break;
+		}
+	}
 	dpb->next_dpb_ofs = (drive_num == 25) ? 0xffff : *ofs + sizeof(dpb_t);
 	dpb->next_dpb_seg = (drive_num == 25) ? 0xffff : *seg;
-	return(res);
+	dpb->info_sector = 0xffff;
+	dpb->backup_boot_sector = 0xffff;
+	dpb->free_clusters = 0xffff;
+	dpb->free_search_cluster = 0xffffffff;
+	
+	return(drive_param->valid);
 }
 
 // pc bios
@@ -7252,6 +7253,296 @@ inline void pcbios_int_10h_ffh()
 		WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
 	}
 	int_10h_ffh_called = true;
+}
+
+int pcbios_update_drive_param(int drive_num, int force_update)
+{
+	if(drive_num >= 0 && drive_num < 26) {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		
+		if(force_update || !drive_param->initialized) {
+			drive_param->valid = 0;
+			char dev[64];
+			sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+			
+			HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+			if(hFile != INVALID_HANDLE_VALUE) {
+				DWORD dwSize;
+				if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &drive_param->geometry, sizeof(DISK_GEOMETRY), &dwSize, NULL)) {
+					drive_param->valid = 1;
+				}
+				CloseHandle(hFile);
+			}
+			drive_param->initialized = 1;
+		}
+		return(drive_param->valid);
+	}
+	return(0);
+}
+
+inline void pcbios_int_13h_00h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(pcbios_update_drive_param(drive_num, 1)) {
+		REG8(AH) = 0x00; // successful completion
+	} else {
+		if(REG8(DL) & 0x80) {
+			REG8(AH) = 0x05; // reset failed (hard disk)
+		} else {
+			REG8(AH) = 0x80; // timeout (not ready)
+		}
+		m_CF = 1;
+	}
+}
+
+inline void pcbios_int_13h_02h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(REG8(AL) == 0) {
+		REG8(AH) = 0x01; // invalid function in AH or invalid parameter
+		m_CF = 1;
+	} else if(!pcbios_update_drive_param(drive_num, 0)) {
+		REG8(AH) = 0xff; // sense operation failed (hard disk)
+		m_CF = 1;
+	} else {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		char dev[64];
+		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		
+		HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+		if(hFile == INVALID_HANDLE_VALUE) {
+			REG8(AH) = 0xff; // sense operation failed (hard disk)
+			m_CF = 1;
+		} else {
+			UINT32 sector_num = REG8(AL);
+			UINT32 cylinder = REG8(CH) | ((REG8(CL) & 0xc0) << 2);
+			UINT32 head = REG8(DH);
+			UINT32 sector = REG8(CL) & 0x3f;
+			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
+			UINT32 buffer_addr = SREG_BASE(ES) + REG16(BX);
+			DWORD dwSize;
+			
+//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//				REG8(AH) = 0xff; // sense operation failed (hard disk)
+//				m_CF = 1;
+//			} else 
+			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else if(ReadFile(hFile, mem + buffer_addr, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else {
+				REG8(AH) = 0x00; // successful completion
+			}
+			CloseHandle(hFile);
+		}
+	}
+}
+
+inline void pcbios_int_13h_03h()
+{
+	// this operation may cause serious damage for drives, so support only floppy disk...
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(REG8(AL) == 0) {
+		REG8(AH) = 0x01; // invalid function in AH or invalid parameter
+		m_CF = 1;
+	} else if(!pcbios_update_drive_param(drive_num, 0)) {
+		REG8(AH) = 0xff; // sense operation failed (hard disk)
+		m_CF = 1;
+	} else if(!drive_params[drive_num].is_fdd()) {
+		REG8(AH) = 0xff; // sense operation failed (hard disk)
+		m_CF = 1;
+	} else {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		char dev[64];
+		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		
+		HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+		if(hFile == INVALID_HANDLE_VALUE) {
+			REG8(AH) = 0xff; // sense operation failed (hard disk)
+			m_CF = 1;
+		} else {
+			UINT32 sector_num = REG8(AL);
+			UINT32 cylinder = REG8(CH) | ((REG8(CL) & 0xc0) << 2);
+			UINT32 head = REG8(DH);
+			UINT32 sector = REG8(CL) & 0x3f;
+			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
+			UINT32 buffer_addr = SREG_BASE(ES) + REG16(BX);
+			DWORD dwSize;
+			
+//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//				REG8(AH) = 0xff; // sense operation failed (hard disk)
+//				m_CF = 1;
+//			} else 
+			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else if(WriteFile(hFile, mem + buffer_addr, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else {
+				REG8(AH) = 0x00; // successful completion
+			}
+			CloseHandle(hFile);
+		}
+	}
+}
+
+inline void pcbios_int_13h_04h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(REG8(AL) == 0) {
+		REG8(AH) = 0x01; // invalid function in AH or invalid parameter
+		m_CF = 1;
+	} else if(!pcbios_update_drive_param(drive_num, 0)) {
+		REG8(AH) = 0xff; // sense operation failed (hard disk)
+		m_CF = 1;
+	} else {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		char dev[64];
+		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		
+		HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+		if(hFile == INVALID_HANDLE_VALUE) {
+			REG8(AH) = 0xff; // sense operation failed (hard disk)
+			m_CF = 1;
+		} else {
+			UINT32 sector_num = REG8(AL);
+			UINT32 cylinder = REG8(CH) | ((REG8(CL) & 0xc0) << 2);
+			UINT32 head = REG8(DH);
+			UINT32 sector = REG8(CL) & 0x3f;
+			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
+			UINT32 buffer_addr = SREG_BASE(ES) + REG16(BX);
+			DWORD dwSize;
+			UINT8 *tmp_buffer = (UINT8 *)malloc(sector_num * geo->BytesPerSector);
+			
+//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//				REG8(AH) = 0xff; // sense operation failed (hard disk)
+//				m_CF = 1;
+//			} else 
+			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else if(ReadFile(hFile, tmp_buffer, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+				REG8(AH) = 0x04; // sector not found/read error
+				m_CF = 1;
+			} else if(memcmp(mem + buffer_addr, tmp_buffer, sector_num * geo->BytesPerSector) != 0) {
+				REG8(AH) = 0x05; // data did not verify correctly (TI Professional PC)
+				m_CF = 1;
+			} else {
+				REG8(AH) = 0x00; // successful completion
+			}
+			free(tmp_buffer);
+			CloseHandle(hFile);
+		}
+	}
+}
+
+inline void pcbios_int_13h_08h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(pcbios_update_drive_param(drive_num, 1)) {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		
+		REG16(AX) = 0x0000;
+		switch(geo->MediaType) {
+		case F5_360_512:
+		case F5_320_512:
+		case F5_320_1024:
+		case F5_180_512:
+		case F5_160_512:
+			REG8(BL) = 0x01; // 320K/360K disk
+			break;
+		case F5_1Pt2_512:
+		case F3_1Pt2_512:
+		case F3_1Pt23_1024:
+		case F5_1Pt23_1024:
+			REG8(BL) = 0x02; // 1.2M disk
+			break;
+		case F3_720_512:
+		case F3_640_512:
+		case F5_640_512:
+		case F5_720_512:
+			REG8(BL) = 0x03; // 720K disk
+			break;
+		case F3_1Pt44_512:
+			REG8(BL) = 0x04; // 1.44M disk
+			break;
+		case F3_2Pt88_512:
+			REG8(BL) = 0x06; // 2.88M disk
+			break;
+		case RemovableMedia:
+			REG8(BL) = 0x10; // ATAPI Removable Media Device
+			break;
+		default:
+			REG8(BL) = 0x00; // unknown
+			break;
+		}
+		if(REG8(DL) & 0x80) {
+			switch(GetLogicalDrives() & 0x0c) {
+			case 0x00: REG8(DL) = 0x00; break;
+			case 0x04:
+			case 0x08: REG8(DL) = 0x01; break;
+			case 0x0c: REG8(DL) = 0x02; break;
+			}
+		} else {
+			switch(GetLogicalDrives() & 0x03) {
+			case 0x00: REG8(DL) = 0x00; break;
+			case 0x01:
+			case 0x02: REG8(DL) = 0x01; break;
+			case 0x03: REG8(DL) = 0x02; break;
+			}
+		}
+		REG8(DH) = drive_param->head_num();
+		int cyl = (geo->Cylinders.QuadPart > 0x3ff) ? 0x3ff : geo->Cylinders.QuadPart;
+		int sec = (geo->SectorsPerTrack > 0x3f) ? 0x3f : geo->SectorsPerTrack;
+		REG8(CH) = cyl & 0xff;
+		REG8(CL) = (sec & 0x3f) | ((cyl & 0x300) >> 2);
+	} else {
+		REG8(AH) = 0x07;
+		m_CF = 1;
+	}
+}
+
+inline void pcbios_int_13h_10h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(pcbios_update_drive_param(drive_num, 1)) {
+		REG8(AH) = 0x00; // successful completion
+	} else {
+		if(REG8(DL) & 0x80) {
+			REG8(AH) = 0xaa; // drive not ready (hard disk)
+		} else {
+			REG8(AH) = 0x80; // timeout (not ready)
+		}
+		m_CF = 1;
+	}
+}
+
+inline void pcbios_int_13h_15h()
+{
+	int drive_num = (REG8(DL) & 0x80) ? ((REG8(DL) & 0x7f) + 2) : (REG8(DL) < 2) ? REG8(DL) : -1;
+	
+	if(pcbios_update_drive_param(drive_num, 1)) {
+		if(REG8(DL) & 0x80) {
+			REG8(AH) = 0x02; // floppy (or other removable drive) with change-line support
+		} else {
+			REG8(AH) = 0x03; // hard disk
+		}
+	} else {
+		REG8(AH) = 0x00; // no such drive
+	}
 }
 
 inline void pcbios_int_14h_00h()
@@ -9382,38 +9673,224 @@ inline void msdos_int_21h_37h()
 	}
 }
 
-int get_country_info(country_info_t *ci)
+int get_country_info(country_info_t *ci, LCID locale)
 {
 	char LCdata[80];
 	
 	ZeroMemory(ci, offsetof(country_info_t, reserved));
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRDIGITS, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_ICURRDIGITS, LCdata, sizeof(LCdata));
 	ci->currency_dec_digits = atoi(LCdata);
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRENCY, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_ICURRENCY, LCdata, sizeof(LCdata));
 	ci->currency_format = *LCdata - '0';
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_IDATE, LCdata, sizeof(LCdata));
 	ci->date_format = *LCdata - '0';
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SCURRENCY, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_SCURRENCY, LCdata, sizeof(LCdata));
 	memcpy(&ci->currency_symbol, LCdata, 4);
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_SDATE, LCdata, sizeof(LCdata));
 	*ci->date_sep = *LCdata;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_SDECIMAL, LCdata, sizeof(LCdata));
 	*ci->dec_sep = *LCdata;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_SLIST, LCdata, sizeof(LCdata));
 	*ci->list_sep = *LCdata;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_STHOUSAND, LCdata, sizeof(LCdata));
 	*ci->thou_sep = *LCdata;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_STIME, LCdata, sizeof(LCdata));
 	*ci->time_sep = *LCdata;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_STIMEFORMAT, LCdata, sizeof(LCdata));
 	if(strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
 	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffd:000a
 	ci->case_map.w.h = 0xfffd;
-	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
+	GetLocaleInfo(locale, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
 	return atoi(LCdata);
 }
+
+int get_country_info(country_info_t *ci, USHORT usPrimaryLanguage, USHORT usSubLanguage)
+{
+	return get_country_info(ci, MAKELCID(MAKELANGID(usPrimaryLanguage, usSubLanguage), SORT_DEFAULT));
+}
+
+int get_country_info(country_info_t *ci)
+{
+	return get_country_info(ci, LOCALE_USER_DEFAULT);
+}
+
+#ifndef SUBLANG_SWAHILI
+	#define SUBLANG_SWAHILI 0x01
+#endif
+#ifndef SUBLANG_TSWANA_BOTSWANA
+	#define SUBLANG_TSWANA_BOTSWANA 0x02
+#endif
+#ifndef SUBLANG_LITHUANIAN_LITHUANIA
+	#define SUBLANG_LITHUANIAN_LITHUANIA 0x01
+#endif
+#ifndef LANG_BANGLA
+	#define LANG_BANGLA 0x45
+#endif
+#ifndef SUBLANG_BANGLA_BANGLADESH
+	#define SUBLANG_BANGLA_BANGLADESH 0x02
+#endif
+
+static const struct {
+	int code;
+	USHORT usPrimaryLanguage;
+	USHORT usSubLanguage;
+} country_table[] = {
+	{0x001, LANG_ENGLISH, SUBLANG_ENGLISH_US},				// United States
+	{0x002, LANG_FRENCH, SUBLANG_FRENCH_CANADIAN},				// Canadian-French
+	{0x004, LANG_ENGLISH, SUBLANG_ENGLISH_CAN},				// Canada (English)
+	{0x007, LANG_RUSSIAN, SUBLANG_RUSSIAN_RUSSIA},				// Russia
+	{0x014, LANG_ARABIC, SUBLANG_ARABIC_EGYPT},				// Egypt
+	{0x01B, LANG_ZULU, SUBLANG_ZULU_SOUTH_AFRICA},				// South Africa
+//	{0x01B, LANG_XHOSA, SUBLANG_XHOSA_SOUTH_AFRICA},			// South Africa
+//	{0x01B, LANG_AFRIKAANS, SUBLANG_AFRIKAANS_SOUTH_AFRICA},		// South Africa
+//	{0x01B, LANG_ENGLISH, SUBLANG_ENGLISH_SOUTH_AFRICA},			// South Africa
+//	{0x01B, LANG_SOTHO, SUBLANG_SOTHO_NORTHERN_SOUTH_AFRICA},		// South Africa
+//	{0x01B, LANG_TSWANA, SUBLANG_TSWANA_SOUTH_AFRICA},			// South Africa
+	{0x01E, LANG_GREEK, SUBLANG_GREEK_GREECE},				// Greece
+	{0x01F, LANG_DUTCH, SUBLANG_DUTCH},					// Netherlands
+//	{0x01F, LANG_FRISIAN, SUBLANG_FRISIAN_NETHERLANDS},			// Netherlands
+	{0x020, LANG_DUTCH, SUBLANG_DUTCH_BELGIAN},				// Belgium
+//	{0x020, LANG_FRENCH, SUBLANG_FRENCH_BELGIAN},				// Belgium
+	{0x021, LANG_FRENCH, SUBLANG_FRENCH},					// France
+	{0x022, LANG_SPANISH, SUBLANG_SPANISH},					// Spain
+	{0x023, LANG_BULGARIAN, SUBLANG_BULGARIAN_BULGARIA},			// Bulgaria???
+	{0x024, LANG_HUNGARIAN, SUBLANG_HUNGARIAN_HUNGARY},			// Hungary (not supported by DR DOS 5.0)
+	{0x027, LANG_ITALIAN, SUBLANG_ITALIAN},					// Italy / San Marino / Vatican City
+	{0x028, LANG_ROMANIAN, SUBLANG_ROMANIAN_ROMANIA},			// Romania
+	{0x029, LANG_GERMAN, SUBLANG_GERMAN_SWISS},				// Switzerland / Liechtenstein
+//	{0x029, LANG_FRENCH, SUBLANG_FRENCH_SWISS},				// Switzerland / Liechtenstein
+//	{0x029, LANG_ITALIAN, SUBLANG_ITALIAN_SWISS},				// Switzerland / Liechtenstein
+	{0x02A, LANG_SLOVAK, SUBLANG_SLOVAK_SLOVAKIA},				// Czechoslovakia / Tjekia / Slovakia (not supported by DR DOS 5.0)
+	{0x02B, LANG_GERMAN, SUBLANG_GERMAN_AUSTRIAN},				// Austria (DR DOS 5.0)
+	{0x02C, LANG_ENGLISH, SUBLANG_ENGLISH_UK},				// United Kingdom
+	{0x02D, LANG_DANISH, SUBLANG_DANISH_DENMARK},				// Denmark
+	{0x02E, LANG_SWEDISH, SUBLANG_SWEDISH},					// Sweden
+//	{0x02E, LANG_SAMI, SUBLANG_SAMI_NORTHERN_SWEDEN},			// Sweden
+//	{0x02E, LANG_SAMI, SUBLANG_SAMI_LULE_SWEDEN},				// Sweden
+//	{0x02E, LANG_SAMI, SUBLANG_SAMI_SOUTHERN_SWEDEN},			// Sweden
+	{0x02F, LANG_NORWEGIAN, SUBLANG_NORWEGIAN_BOKMAL},			// Norway
+//	{0x02F, LANG_NORWEGIAN, SUBLANG_NORWEGIAN_NYNORSK},			// Norway
+//	{0x02F, LANG_SAMI, SUBLANG_SAMI_NORTHERN_NORWAY},			// Norway
+//	{0x02F, LANG_SAMI, SUBLANG_SAMI_LULE_NORWAY},				// Norway
+//	{0x02F, LANG_SAMI, SUBLANG_SAMI_SOUTHERN_NORWAY},			// Norway
+	{0x030, LANG_POLISH, SUBLANG_POLISH_POLAND},				// Poland (not supported by DR DOS 5.0)
+	{0x031, LANG_GERMAN, SUBLANG_GERMAN},					// Germany
+	{0x033, LANG_SPANISH, SUBLANG_SPANISH_PERU},				// Peru
+//	{0x033, LANG_QUECHUA, SUBLANG_QUECHUA_PERU},				// Peru
+	{0x034, LANG_SPANISH, SUBLANG_SPANISH_MEXICAN},				// Mexico
+	{0x035, LANG_SPANISH, SUBLANG_NEUTRAL},					// Cuba
+	{0x036, LANG_SPANISH, SUBLANG_SPANISH_ARGENTINA},			// Argentina
+	{0x037, LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN},			// Brazil (not supported by DR DOS 5.0)
+	{0x038, LANG_SPANISH, SUBLANG_SPANISH_CHILE},				// Chile
+	{0x039, LANG_SPANISH, SUBLANG_SPANISH_COLOMBIA},			// Columbia
+	{0x03A, LANG_SPANISH, SUBLANG_SPANISH_VENEZUELA},			// Venezuela
+	{0x03C, LANG_MALAY, SUBLANG_MALAY_MALAYSIA},				// Malaysia
+	{0x03D, LANG_ENGLISH, SUBLANG_ENGLISH_AUS},				// International English / Australia
+	{0x03E, LANG_INDONESIAN, SUBLANG_INDONESIAN_INDONESIA},			// Indonesia / East Timor
+	{0x03F, LANG_ENGLISH, SUBLANG_ENGLISH_PHILIPPINES},			// Philippines
+	{0x040, LANG_ENGLISH, SUBLANG_ENGLISH_NZ},				// New Zealand
+	{0x041, LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE},			// Singapore
+//	{0x041, LANG_ENGLISH, SUBLANG_ENGLISH_SINGAPORE},			// Singapore
+	{0x042, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan???
+	{0x051, LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN},				// Japan (DR DOS 5.0, MS-DOS 5.0+)
+	{0x052, LANG_KOREAN, SUBLANG_KOREAN},					// South Korea (DR DOS 5.0)
+	{0x054, LANG_VIETNAMESE, SUBLANG_VIETNAMESE_VIETNAM},			// Vietnam
+	{0x056, LANG_CHINESE_SIMPLIFIED, SUBLANG_CHINESE_SIMPLIFIED},		// China (MS-DOS 5.0+)
+	{0x058, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (MS-DOS 5.0+)
+	{0x05A, LANG_TURKISH, SUBLANG_TURKISH_TURKEY},				// Turkey (MS-DOS 5.0+)
+	{0x05B, LANG_HINDI, SUBLANG_HINDI_INDIA},				// India
+	{0x05C, LANG_URDU, SUBLANG_URDU_PAKISTAN},				// Pakistan
+	{0x05D, LANG_PASHTO, SUBLANG_PASHTO_AFGHANISTAN},			// Afghanistan
+//	{0x05D, LANG_DARI, SUBLANG_DARI_AFGHANISTAN},				// Afghanistan
+	{0x05E, LANG_SINHALESE, SUBLANG_SINHALESE_SRI_LANKA},			// Sri Lanka
+//	{0x05E, LANG_TAMIL, SUBLANG_TAMIL_SRI_LANKA},				// Sri Lanka
+	{0x062, LANG_PERSIAN, SUBLANG_PERSIAN_IRAN},				// Iran
+	{0x070, LANG_BELARUSIAN, SUBLANG_BELARUSIAN_BELARUS},			// Belarus
+	{0x0C8, LANG_THAI, SUBLANG_THAI_THAILAND},				// Thailand
+	{0x0D4, LANG_ARABIC, SUBLANG_ARABIC_MOROCCO},				// Morocco
+	{0x0D5, LANG_ARABIC, SUBLANG_ARABIC_ALGERIA},				// Algeria
+	{0x0D8, LANG_ARABIC, SUBLANG_ARABIC_TUNISIA},				// Tunisia
+	{0x0DA, LANG_ARABIC, SUBLANG_ARABIC_LIBYA},				// Libya
+	{0x0DD, LANG_WOLOF, SUBLANG_WOLOF_SENEGAL},				// Senegal
+//	{0x0DD, LANG_PULAR, SUBLANG_PULAR_SENEGAL},				// Senegal
+	{0x0EA, LANG_HAUSA, SUBLANG_HAUSA_NIGERIA_LATIN},			// Nigeria
+//	{0x0EA, LANG_YORUBA, SUBLANG_YORUBA_NIGERIA},				// Nigeria
+//	{0x0EA, LANG_IGBO, SUBLANG_IGBO_NIGERIA},				// Nigeria
+	{0x0FB, LANG_AMHARIC, SUBLANG_AMHARIC_ETHIOPIA},			// Ethiopia
+//	{0x0FB, LANG_TIGRINYA, SUBLANG_TIGRINYA_ETHIOPIA},			// Ethiopia
+	{0x0FE, LANG_SWAHILI, SUBLANG_SWAHILI},					// Kenya
+	{0x107, LANG_ENGLISH, SUBLANG_ENGLISH_ZIMBABWE},			// Zimbabwe
+	{0x10B, LANG_TSWANA, SUBLANG_TSWANA_BOTSWANA},				// Botswana
+	{0x12A, LANG_FAEROESE, SUBLANG_FAEROESE_FAROE_ISLANDS},			// Faroe Islands
+	{0x12B, LANG_GREENLANDIC, SUBLANG_GREENLANDIC_GREENLAND},		// Greenland
+	{0x15F, LANG_PORTUGUESE, SUBLANG_PORTUGUESE},				// Portugal
+	{0x160, LANG_LUXEMBOURGISH, SUBLANG_LUXEMBOURGISH_LUXEMBOURG},		// Luxembourg
+//	{0x160, LANG_GERMAN, SUBLANG_GERMAN_LUXEMBOURG},			// Luxembourg
+//	{0x160, LANG_FRENCH, SUBLANG_FRENCH_LUXEMBOURG},			// Luxembourg
+	{0x161, LANG_IRISH, SUBLANG_IRISH_IRELAND},				// Ireland
+//	{0x161, LANG_ENGLISH, SUBLANG_ENGLISH_IRELAND},				// Ireland
+	{0x162, LANG_ICELANDIC, SUBLANG_ICELANDIC_ICELAND},			// Iceland
+	{0x163, LANG_ALBANIAN, SUBLANG_ALBANIAN_ALBANIA},			// Albania
+	{0x164, LANG_MALTESE, SUBLANG_MALTESE_MALTA},				// Malta
+	{0x166, LANG_FINNISH, SUBLANG_FINNISH_FINLAND},				// Finland
+//	{0x166, LANG_SAMI, SUBLANG_SAMI_NORTHERN_FINLAND},			// Finland
+//	{0x166, LANG_SAMI, SUBLANG_SAMI_SKOLT_FINLAND},				// Finland
+//	{0x166, LANG_SAMI, SUBLANG_SAMI_INARI_FINLAND},				// Finland
+	{0x167, LANG_BULGARIAN, SUBLANG_BULGARIAN_BULGARIA},			// Bulgaria
+	{0x172, LANG_LITHUANIAN, SUBLANG_LITHUANIAN_LITHUANIA},			// Lithuania
+	{0x173, LANG_LATVIAN, SUBLANG_LATVIAN_LATVIA},				// Latvia
+	{0x174, LANG_ESTONIAN, SUBLANG_ESTONIAN_ESTONIA},			// Estonia
+	{0x17D, LANG_SERBIAN, SUBLANG_SERBIAN_LATIN},				// Serbia / Montenegro
+	{0x180, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia???
+	{0x181, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia
+	{0x182, LANG_SLOVENIAN, SUBLANG_SLOVENIAN_SLOVENIA},			// Slovenia
+	{0x183, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_LATIN},	// Bosnia-Herzegovina (Latin)
+	{0x184, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_CYRILLIC},	// Bosnia-Herzegovina (Cyrillic)
+	{0x185, LANG_MACEDONIAN, SUBLANG_MACEDONIAN_MACEDONIA},			// FYR Macedonia
+	{0x1A5, LANG_CZECH, SUBLANG_CZECH_CZECH_REPUBLIC},			// Czech Republic
+	{0x1A6, LANG_SLOVAK, SUBLANG_SLOVAK_SLOVAKIA},				// Slovakia
+	{0x1F5, LANG_ENGLISH, SUBLANG_ENGLISH_BELIZE},				// Belize
+	{0x1F6, LANG_SPANISH, SUBLANG_SPANISH_GUATEMALA},			// Guatemala
+	{0x1F7, LANG_SPANISH, SUBLANG_SPANISH_EL_SALVADOR},			// El Salvador
+	{0x1F8, LANG_SPANISH, SUBLANG_SPANISH_HONDURAS},			// Honduras
+	{0x1F9, LANG_SPANISH, SUBLANG_SPANISH_NICARAGUA},			// Nicraragua
+	{0x1FA, LANG_SPANISH, SUBLANG_SPANISH_COSTA_RICA},			// Costa Rica
+	{0x1FB, LANG_SPANISH, SUBLANG_SPANISH_PANAMA},				// Panama
+	{0x24F, LANG_SPANISH, SUBLANG_SPANISH_BOLIVIA},				// Bolivia
+	{0x24F, LANG_QUECHUA, SUBLANG_QUECHUA_BOLIVIA},				// Bolivia
+	{0x251, LANG_SPANISH, SUBLANG_SPANISH_ECUADOR},				// Ecuador
+//	{0x251, LANG_QUECHUA, SUBLANG_QUECHUA_ECUADOR},				// Ecuador
+	{0x253, LANG_SPANISH, SUBLANG_SPANISH_PARAGUAY},			// Paraguay
+	{0x256, LANG_SPANISH, SUBLANG_SPANISH_URUGUAY},				// Uruguay
+	{0x2A1, LANG_MALAY, SUBLANG_MALAY_BRUNEI_DARUSSALAM},			// Brunei Darussalam
+	{0x311, LANG_ARABIC, SUBLANG_NEUTRAL},					// Arabic (Middle East/Saudi Arabia/etc.)
+	{0x324, LANG_UKRAINIAN, SUBLANG_UKRAINIAN_UKRAINE},			// Ukraine
+	{0x352, LANG_KOREAN, SUBLANG_KOREAN},					// North Korea
+	{0x354, LANG_CHINESE, SUBLANG_CHINESE_HONGKONG},			// Hong Kong
+	{0x355, LANG_CHINESE, SUBLANG_CHINESE_MACAU},				// Macao
+	{0x357, LANG_KHMER, SUBLANG_KHMER_CAMBODIA},				// Cambodia
+	{0x370, LANG_BANGLA, SUBLANG_BANGLA_BANGLADESH},			// Bangladesh
+	{0x376, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (DOS 6.22+)
+	{0x3C0, LANG_DIVEHI, SUBLANG_DIVEHI_MALDIVES},				// Maldives
+	{0x3C1, LANG_ARABIC, SUBLANG_ARABIC_LEBANON},				// Lebanon
+	{0x3C2, LANG_ARABIC, SUBLANG_ARABIC_JORDAN},				// Jordan
+	{0x3C3, LANG_ARABIC, SUBLANG_ARABIC_SYRIA},				// Syrian Arab Republic
+	{0x3C4, LANG_ARABIC, SUBLANG_ARABIC_IRAQ},				// Ireq
+	{0x3C5, LANG_ARABIC, SUBLANG_ARABIC_KUWAIT},				// Kuwait
+	{0x3C6, LANG_ARABIC, SUBLANG_ARABIC_SAUDI_ARABIA},			// Saudi Arabia
+	{0x3C7, LANG_ARABIC, SUBLANG_ARABIC_YEMEN},				// Yemen
+	{0x3C8, LANG_ARABIC, SUBLANG_ARABIC_OMAN},				// Oman
+	{0x3CB, LANG_ARABIC, SUBLANG_ARABIC_UAE},				// United Arab Emirates
+	{0x3CC, LANG_HEBREW, SUBLANG_HEBREW_ISRAEL},				// Israel (Hebrew) (DR DOS 5.0,MS-DOS 5.0+)
+	{0x3CD, LANG_ARABIC, SUBLANG_ARABIC_BAHRAIN},				// Bahrain
+	{0x3CE, LANG_ARABIC, SUBLANG_ARABIC_QATAR},				// Qatar
+	{0x3D0, LANG_MONGOLIAN, SUBLANG_MONGOLIAN_CYRILLIC_MONGOLIA},		// Mongolia
+//	{0x3D0, LANG_MONGOLIAN, SUBLANG_MONGOLIAN_PRC},				// Mongolia
+	{0x3D1, LANG_NEPALI, SUBLANG_NEPALI_NEPAL},				// Nepal
+	{-1, 0, 0},
+};
 
 inline void msdos_int_21h_38h()
 {
@@ -9422,9 +9899,18 @@ inline void msdos_int_21h_38h()
 		REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)));
 		break;
 	default:
-		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 2;
-		m_CF = 1;
+		for(int i = 0;; i++) {
+			if(country_table[i].code == (REG8(AL) != 0xff ? REG8(AL) : REG16(BX))) {
+				REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)), country_table[i].usPrimaryLanguage, country_table[i].usSubLanguage);
+				break;
+			} else if(country_table[i].code == -1) {
+//				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//				REG16(AX) = 2;
+//				m_CF = 1;
+				REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)));
+				break;
+			}
+		}
 		break;
 	}
 }
@@ -10013,110 +10499,105 @@ inline void msdos_int_21h_44h()
 			// lock physical volume
 		} else if(REG8(CL) == 0x60) {
 			// get device parameters
-			char dev[] = "\\\\.\\A:";
-			dev[4] = 'A' + (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
+			int drive_num = (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
 			
-			HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-			if(hFile != INVALID_HANDLE_VALUE) {
-				DISK_GEOMETRY geo;
-				DWORD dwSize;
-				if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
-					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x07; // ???
-					switch(geo.MediaType) {
-					case F5_360_512:
-					case F5_320_512:
-					case F5_320_1024:
-					case F5_180_512:
-					case F5_160_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // 320K/360K disk
-						break;
-					case F5_1Pt2_512:
-					case F3_1Pt2_512:
-					case F3_1Pt23_1024:
-					case F5_1Pt23_1024:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x01; // 1.2M disk
-						break;
-					case F3_720_512:
-					case F3_640_512:
-					case F5_640_512:
-					case F5_720_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02; // 720K disk
-						break;
-					case F8_256_128:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x03; // single-density 8-inch disk
-						break;
-					case FixedMedia:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
-						break;
-					case F3_1Pt44_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07; // (DOS 3.3+) other type of block device, normally 1.44M floppy
-						break;
-					case F3_2Pt88_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09; // (DOS 5+) 2.88M floppy
-						break;
-					default:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
-//						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // (DOS 3.3+) other type of block device, normally 1.44M floppy
-						break;
-					}
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x02) = (geo.MediaType == FixedMedia) ? 0x01 : 0x00;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = (geo.Cylinders.QuadPart > 0xffff) ? 0xffff : geo.Cylinders.QuadPart;
-					switch(geo.MediaType) {
-					case F5_360_512:
-					case F5_320_512:
-					case F5_320_1024:
-					case F5_180_512:
-					case F5_160_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x01; // 320K/360K disk
-						break;
-					default:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x00; // other drive types
-						break;
-					}
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x00) = geo.BytesPerSector;
-					*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x02) = geo.SectorsPerTrack * geo.TracksPerCylinder;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x03) = 0;
-					*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x05) = 0;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x06) = 0;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x08) = 0;
-					switch(geo.MediaType) {
-					case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xff;
-						break;
-					case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfe;
-						break;
-					case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfd;
-						break;
-					case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfc;
-						break;
-					case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
-					case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf9;
-						break;
-					case FixedMedia:	// hard disk
-					case RemovableMedia:
-					case Unknown:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf8;
-						break;
-					default:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf0;
-						break;
-					}
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0d) = geo.SectorsPerTrack;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0f) = 1;
-					*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x11) = 0;
-					*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x15) = geo.TracksPerCylinder * geo.Cylinders.QuadPart;
-					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x1f) = geo.Cylinders.QuadPart;
-					// 21h	BYTE	device type
-					// 22h	WORD	device attributes (removable or not, etc)
-				} else {
-					REG16(AX) = 0x0f; // invalid drive
-					m_CF = 1;
+			if(pcbios_update_drive_param(drive_num, 1)) {
+				drive_param_t *drive_param = &drive_params[drive_num];
+				DISK_GEOMETRY *geo = &drive_param->geometry;
+				
+				*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x07; // ???
+				switch(geo->MediaType) {
+				case F5_360_512:
+				case F5_320_512:
+				case F5_320_1024:
+				case F5_180_512:
+				case F5_160_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // 320K/360K disk
+					break;
+				case F5_1Pt2_512:
+				case F3_1Pt2_512:
+				case F3_1Pt23_1024:
+				case F5_1Pt23_1024:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x01; // 1.2M disk
+					break;
+				case F3_720_512:
+				case F3_640_512:
+				case F5_640_512:
+				case F5_720_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02; // 720K disk
+					break;
+				case F8_256_128:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x03; // single-density 8-inch disk
+					break;
+				case FixedMedia:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
+					break;
+				case F3_1Pt44_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07; // (DOS 3.3+) other type of block device, normally 1.44M floppy
+					break;
+				case F3_2Pt88_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09; // (DOS 5+) 2.88M floppy
+					break;
+				default:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
+//					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // (DOS 3.3+) other type of block device, normally 1.44M floppy
+					break;
 				}
-				CloseHandle(hFile);
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x02) = (geo->MediaType == FixedMedia) ? 0x01 : 0x00;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = (geo->Cylinders.QuadPart > 0xffff) ? 0xffff : geo->Cylinders.QuadPart;
+				switch(geo->MediaType) {
+				case F5_360_512:
+				case F5_320_512:
+				case F5_320_1024:
+				case F5_180_512:
+				case F5_160_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x01; // 320K/360K disk
+					break;
+				default:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x00; // other drive types
+					break;
+				}
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x00) = geo->BytesPerSector;
+				*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x02) = geo->SectorsPerTrack * geo->TracksPerCylinder;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x03) = 0;
+				*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x05) = 0;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x06) = 0;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x08) = 0;
+				switch(geo->MediaType) {
+				case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xff;
+					break;
+				case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfe;
+					break;
+				case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfd;
+					break;
+				case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfc;
+					break;
+				case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
+				case F3_1Pt2_512:
+				case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
+				case F5_720_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf9;
+					break;
+				case FixedMedia:	// hard disk
+				case RemovableMedia:
+				case Unknown:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf8;
+					break;
+				default:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf0;
+					break;
+				}
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0d) = geo->SectorsPerTrack;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0f) = 1;
+				*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x11) = 0;
+				*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x15) = geo->TracksPerCylinder * geo->Cylinders.QuadPart;
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x1f) = geo->Cylinders.QuadPart;
+				// 21h	BYTE	device type
+				// 22h	WORD	device attributes (removable or not, etc)
 			} else {
 				REG16(AX) = 0x0f; // invalid drive
 				m_CF = 1;
@@ -10147,38 +10628,31 @@ inline void msdos_int_21h_44h()
 			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 1;
 		} else if(REG8(CL) == 0x68) {
 			// sense media type
-			char dev[64];
-			sprintf(dev, "\\\\.\\%c:", 'A' + (REG8(BL) ? REG8(BL) : _getdrive()) - 1);
+			int drive_num = (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
 			
-			HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-			if(hFile != INVALID_HANDLE_VALUE) {
-				DISK_GEOMETRY geo;
-				DWORD dwSize;
-				if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
-					switch(geo.MediaType) {
-					case F3_720_512:
-					case F5_720_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02;
-						break;
-					case F3_1Pt44_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07;
-						break;
-					case F3_2Pt88_512:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09;
-						break;
-					default:
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x00;
-						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // ???
-						break;
-					}
-				} else {
-					REG16(AX) = 0x0f; // invalid drive
-					m_CF = 1;
+			if(pcbios_update_drive_param(drive_num, 1)) {
+				drive_param_t *drive_param = &drive_params[drive_num];
+				DISK_GEOMETRY *geo = &drive_param->geometry;
+				
+				switch(geo->MediaType) {
+				case F3_720_512:
+				case F5_720_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02;
+					break;
+				case F3_1Pt44_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07;
+					break;
+				case F3_2Pt88_512:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09;
+					break;
+				default:
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x00;
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // ???
+					break;
 				}
-				CloseHandle(hFile);
 			} else {
 				REG16(AX) = 0x0f; // invalid drive
 				m_CF = 1;
@@ -10831,9 +11305,54 @@ inline void msdos_int_21h_5dh()
 	}
 }
 
+inline void msdos_int_21h_5eh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		{
+			char name[256] = {0};
+			DWORD dwSize = 256;
+			
+			if(GetComputerName(name, &dwSize)) {
+				char *dest = (char *)(mem + SREG_BASE(DS) + REG16(DX));
+				for(int i = 0; i < 15; i++) {
+					dest[i] = (i < strlen(name)) ? name[i] : ' ';
+				}
+				dest[15] = '\0';
+				REG8(CH) = 0x01; // nonzero valid
+				REG8(CL) = 0x01; // NetBIOS number for machine name ???
+			} else {
+				REG16(AX) = 0x01;
+				m_CF = 1;
+			}
+		}
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_21h_5fh()
 {
 	switch(REG8(AL)) {
+	case 0x05:
+		{
+			DWORD drives = GetLogicalDrives();
+			UINT16 count = 0;
+			for(int i = 0; i < 26; i++) {
+				if(drives & (1 << i)) {
+					char volume[] = "A:\\";
+					volume[0] = 'A' + i;
+					if(GetDriveType(volume) == DRIVE_REMOTE) {
+						count++;
+					}
+				}
+			}
+			REG16(BP) = count;
+		}
 	case 0x02:
 		{
 			DWORD drives = GetLogicalDrives();
@@ -10849,7 +11368,7 @@ inline void msdos_int_21h_5fh()
 							WNetGetConnection(volume, (char *)(mem + SREG_BASE(ES) + REG16(DI)), &dwSize);
 							REG8(BH) = 0x00; // valid
 							REG8(BL) = 0x04; // disk drive
-							REG16(CX) = 0x00;
+							REG16(CX) = 0x00; // LANtastic
 							return;
 						}
 						index++;
@@ -11807,7 +12326,7 @@ inline void msdos_int_25h()
 
 inline void msdos_int_26h()
 {
-	// this operation may cause serious damage for drives, so always returns error...
+	// this operation may cause serious damage for drives, so support only floppy disk...
 	UINT16 seg, ofs;
 	DWORD dwSize;
 	
@@ -12287,8 +12806,16 @@ inline void msdos_int_2fh_14h()
 		REG8(AL) = get_extended_country_info(REG16(BP));
 		break;
 	case 0x04:
+		for(int i = 0;; i++) {
+			if(country_table[i].code == REG16(DX)) {
+				get_country_info((country_info_t *)(mem + SREG_BASE(ES) + REG16(DI)), country_table[i].usPrimaryLanguage, country_table[i].usSubLanguage);
+				break;
+			} else if(country_table[i].code == -1) {
+				get_country_info((country_info_t *)(mem + SREG_BASE(ES) + REG16(DI)));
+				break;
+			}
+		}
 		REG8(AL) = 0x00;
-		get_country_info((country_info_t *)(mem + SREG_BASE(ES) + REG16(DI)));
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -12654,22 +13181,65 @@ inline void msdos_int_2fh_4ah()
 		break;
 #endif
 	case 0x10:
-		if(REG16(BX) == 0x0000) {
-			// SMARTDRV is not installed
+		switch(REG16(BX)) {
+		case 0x0000:
+		case 0x0001:
+		case 0x0002:
+		case 0x0003:
+		case 0x0004:
+		case 0x0005:
+		case 0x0006:
+		case 0x0007:
+		case 0x0008:
+		case 0x000a:
+		case 0x1234:
+			// SMARTDRV v4.00+ is not installed
+			break;
+		default:
+			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x11:
+		switch(REG16(BX)) {
+		case 0x0000:
+		case 0x0001:
+		case 0x0002:
+		case 0x0003:
+		case 0x0004:
+		case 0x0005:
+		case 0x0006:
+		case 0x0007:
+		case 0x0008:
+		case 0x0009:
+		case 0x000a:
+		case 0x000b:
+		case 0xfffe:
+		case 0xffff:
+			// DBLSPACE.BIN is not installed
+			break;
+		default:
+			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x12:
+		if(REG16(CX) == 0x4d52 && REG16(DX) == 0x4349) {
+			// Microsoft Realtime Compression Interface (MRCI) is not installed
+		} else if(REG16(CX) == 0x5354 && REG16(DX) == 0x4143) {
+			// Stacker 4 LZS Compression Interface (LZSAPI) is not installed
 		} else {
 			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01;
 			m_CF = 1;
 		}
 		break;
-	case 0x11:
-		if(REG16(BX) == 0x0000) {
-			// DBLSPACE.BIN is not installed
-		} else {
-			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-			REG16(AX) = 0x01;
-			m_CF = 1;
-		}
+	case 0x13:
+		// DBLSPACE.BIN is not installed
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -13626,6 +14196,22 @@ inline void msdos_int_67h_58h()
 	}
 }
 
+inline void msdos_int_67h_59h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		REG8(AH) = 0xa4; // access denied by operating system
+	} else if(REG8(AL) == 0x01) {
+		REG8(AH) = 0x00;
+		REG16(BX) = free_ems_pages;
+		REG16(DX) = MAX_EMS_PAGES;
+	} else {
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x8f;
+	}
+}
+
 inline void msdos_int_67h_5ah()
 {
 	if(!support_ems) {
@@ -14392,10 +14978,44 @@ void msdos_syscall(unsigned num)
 		REG16(AX) = *(UINT16 *)(mem + 0x413);
 		break;
 	case 0x13:
-		// PC BIOS - Disk
-//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG8(AH) = 0xff;
-		m_CF = 1;
+		// PC BIOS - Disk I/O
+		{
+			static UINT8 last = 0x00;
+			switch(REG8(AH)) {
+			case 0x00: pcbios_int_13h_00h(); break;
+			case 0x01: // get last status
+				REG8(AH) = last;
+				break;
+			case 0x02: pcbios_int_13h_02h(); break;
+			case 0x03: pcbios_int_13h_03h(); break;
+			case 0x04: pcbios_int_13h_04h(); break;
+			case 0x08: pcbios_int_13h_08h(); break;
+			case 0x0a: pcbios_int_13h_02h(); break;
+			case 0x0b: pcbios_int_13h_03h(); break;
+			case 0x0d: pcbios_int_13h_00h(); break;
+			case 0x10: pcbios_int_13h_10h(); break;
+			case 0x15: pcbios_int_13h_15h(); break;
+			case 0x05: // format
+			case 0x06:
+			case 0x07:
+				REG8(AH) = 0x0c; // unsupported track or invalid media
+				m_CF = 1;
+				break;
+			case 0x09:
+			case 0x0c: // seek
+			case 0x11: // recalib
+			case 0x14:
+			case 0x17:
+				REG8(AH) = 0x00; // successful completion
+				break;
+			default:
+				unimplemented_13h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+				REG8(AH) = 0x01; // invalid function
+				m_CF = 1;
+				break;
+			}
+			last = REG8(AH);
+		}
 		break;
 	case 0x14:
 		// PC BIOS - Serial I/O
@@ -14617,7 +15237,7 @@ void msdos_syscall(unsigned num)
 			case 0x5b: msdos_int_21h_5bh(); break;
 			case 0x5c: msdos_int_21h_5ch(); break;
 			case 0x5d: msdos_int_21h_5dh(); break;
-			// 0x5e: MS-Network
+			case 0x5e: msdos_int_21h_5eh(); break;
 			case 0x5f: msdos_int_21h_5fh(); break;
 			case 0x60: msdos_int_21h_60h(0); break;
 			case 0x61: msdos_int_21h_61h(); break;
@@ -14816,19 +15436,19 @@ void msdos_syscall(unsigned num)
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
 		// Installation Check
-		case 0x01: // PRINT.COM
-		case 0x02: // PC LAN Program Redirector
-		case 0x06: // ASSIGN
-		case 0x08: // DRIVER.SYS
+		case 0x01: // DOS 3.0+ PRINT
+		case 0x02: // PC LAN PROGRAM REDIR/REDIRIFS internal
+		case 0x06: // DOS 3.0+ ASSIGN
+		case 0x08: // DRIVER.SYS support
 		case 0x10: // SHARE
-		case 0x17: // Clibboard functions
-		case 0x1b: // XMA2EMS.SYS
+		case 0x17: // MS Windows "WINOLDAP"
+		case 0x1b: // DOS 4+ XMA2EMS.SYS extension internal
 		case 0x23: // DR DOS 5.0 GRAFTABL
 		case 0x27: // DR-DOR 6.0 TaskMAX
 		case 0x2e: // Novell DOS 7 GRAFTABL
 		case 0x39: // Kingswood TSR INTERFACE
 		case 0x41: // DOS Enhanced LAN Manager 2.0+ MINIPOP/NETPOPUP
-		case 0x45: // PROF.COM
+		case 0x45: // Microsoft Profiler (PROF.COM/VPROD.386)
 		case 0x51: // ODIHELP.EXE
 		case 0x52: // JAM.SYS v1.10+
 		case 0x54: // POWER.EXE
@@ -14838,7 +15458,7 @@ void msdos_syscall(unsigned num)
 		case 0x72: // SRDISK v1.30+
 		case 0x7a: // Novell NetWare
 		case 0x7f: // PRINDIR v9.0
-		case 0x80: // FAX BIOS
+		case 0x80: // FaxBIOS interface
 		case 0x81: // Nanosoft, Inc. TurboNET redirector
 		case 0x82: // Nanosoft, Inc. CAPDOS
 		case 0x89: // WHOA!.COM
@@ -14850,17 +15470,18 @@ void msdos_syscall(unsigned num)
 		case 0x9e: // INTMON v2.1
 		case 0x9f: // INTCFG v2.1
 		case 0xa9: // METZTSR.COM
+		case 0xaa: // VIDCLOCK.COM
 		case 0xab: // SRSoft MODAL PC v2
-		case 0xac: // GRAPHICS.COM
+		case 0xac: // DOS 4.01+ GRAPHICS.COM
 		case 0xaf: // WinDOS v2.11
-		case 0xb0: // GRAFTABLE.COM
+		case 0xb0: // DOS 3.3+ GRAFTABL.COM
 		case 0xb4: // IBM PC3270 EMULATION PROG v3
 		case 0xb8: // NETWORK
-		case 0xb9: // RECEIVER.COM
-		case 0xbc: // EGA.SYS
+		case 0xb9: // PC Network RECEIVER.COM
+		case 0xbc: // Windows 3.0, DOS 5+ EGA.SYS
 		case 0xbe: // REDVIEW
-		case 0xbf: // PC LAN Program - REDIRIFS.EXE
-		case 0xc0: // Novell LSL.COM
+		case 0xbf: // PC LAN PROGRAM REDIRIFS.EXE internal
+		case 0xc0: // Novell ODI Link Support Layer (LSL.COM)
 		case 0xc1: // Personal NetWare - STPIPX v1.00
 		case 0xc3: // SETWPR.COM
 		case 0xc5: // PC-DOS Econet v1.05
@@ -14881,7 +15502,7 @@ void msdos_syscall(unsigned num)
 		case 0xdb: // ZyXEL ZFAX v2+
 		case 0xdc: // GOLD.COM
 		case 0xdd: // MIXFIX.EXE
-		case 0xde: // Novell Netware - RPRINTER, NPRINTER
+		case 0xde: // Quarterdeck QDPMI.SYS v1.0
 		case 0xdf: // HyperWare programs
 		case 0xe0: // SETDRVER.COM v2.10+
 		case 0xe1: // Phantom2 v1.1+
@@ -14894,6 +15515,7 @@ void msdos_syscall(unsigned num)
 		case 0xf4: // FINDIRQ.COM
 		case 0xf7: // AUTOPARK.COM
 		case 0xf8: // SuperStor PRO 2XON.COM
+		case 0xfa: // Watcom Debugger
 		case 0xfb: // AutoBraille v1.1A
 		case 0xfe: // PC-NFS ???
 		case 0xff: // Topware Network Operating System
@@ -14903,11 +15525,23 @@ void msdos_syscall(unsigned num)
 //				REG8(AL) = 0x00;
 				break;
 			case 0x01:
+				// Quarterdeck RPCI - QEMM/QRAM - PCL-838.EXE is not installed
+				if(REG8(AH) == 0xd2 && REG16(BX) == 0x5145 && REG16(CX) == 0x4d4d && REG16(DX) == 0x3432) {
+					break;
+				}
 				// Banyan VINES v4+ is not installed
 				if(REG8(AH) == 0xd7 && REG16(BX) == 0x0000) {
 					break;
 				}
+				// Quarterdeck QDPMI.SYS v1.0 is not installed
+				if(REG8(AH) == 0xde && REG16(BX) == 0x4450 && REG16(CX) == 0x4d49 && REG16(DX) == 0x8f4f) {
+					break;
+				}
 			default:
+				// NORTON UTILITIES 5.0+
+				if(REG8(AH) == 0xfe && REG16(DI) == 0x4e55) {
+					break;
+				}
 				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x01;
 				m_CF = 1;
@@ -15001,7 +15635,7 @@ void msdos_syscall(unsigned num)
 		// 0x56: LIM EMS 4.0 - Alter Page Map And CALL
 		case 0x57: msdos_int_67h_57h(); break;
 		case 0x58: msdos_int_67h_58h(); break;
-		// 0x59: LIM EMS 4.0 - Get Expanded Memory Hardware Information (for DOS Kernel)
+		case 0x59: msdos_int_67h_59h(); break;
 		case 0x5a: msdos_int_67h_5ah(); break;
 		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
 		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
@@ -15825,17 +16459,16 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
 	
 	// drive parameter block
-	for(int i = 0; i < 26; i++) {
-#if 0
-		UINT16 seg, ofs;
-		msdos_drive_param_block_update(i, &seg, &ofs, 1);
-#else
+	for(int i = 0; i < 2; i++) {
 		dpb_t *dpb = (dpb_t *)(mem + DPB_TOP + sizeof(dpb_t) * i);
 		dpb->drive_num = i;
 		dpb->unit_num = i;
 		dpb->next_dpb_ofs = (i == 25) ? 0xffff : sizeof(dpb_t) * (i + 1);
 		dpb->next_dpb_seg = (i == 25) ? 0xffff : DPB_TOP >> 4;
-#endif
+	}
+	for(int i = 2; i < 26; i++) {
+		UINT16 seg, ofs;
+		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}
 	
 	// nls stuff

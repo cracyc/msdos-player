@@ -227,7 +227,7 @@ static void i80286_switch_task(UINT16 ntask, int type)
 	UINT8 r, lr;
 	UINT32 naddr, oaddr, ldtaddr;
 	int i;
-	logerror("This program uses TSSs, how rare. Please report this to the developers.\n");
+	logerror("i286: %06x This program uses TSSs, how rare. Please report this to the developers.\n",m_pc);
 	if (TBL(ntask)) throw TRAP(INVALID_TSS,IDXTBL(ntask));
 	if ((naddr = i80286_selector_address(ntask)) == -1) throw TRAP(INVALID_TSS,IDXTBL(ntask));
 	oaddr = i80286_selector_address(m_tr.sel);
@@ -239,7 +239,6 @@ static void i80286_switch_task(UINT16 ntask, int type)
 	if (SEGDESC(r) || ((GATE(r) & ~2) != TSSDESCIDLE)) throw TRAP(GENERAL_PROTECTION_FAULT,IDXTBL(ntask));
 	if (!PRES(r)) throw TRAP(SEG_NOT_PRESENT, IDXTBL(ntask));
 	if (LIMIT(ndesc) < 43) throw TRAP(INVALID_TSS,IDXTBL(ntask));
-	for (i = 0; i < 44; i+=2) ntss[i/2] = ReadWord(BASE(ndesc)+i);
 
 	m_flags = CompressFlags();
 	if (type == CALL) WriteWord(BASE(ndesc)+TSS_BACK*2, m_tr.sel);
@@ -259,9 +258,9 @@ static void i80286_switch_task(UINT16 ntask, int type)
 	otss[TSS_CS] = m_sregs[CS];
 	otss[TSS_SS] = m_sregs[SS];
 	otss[TSS_DS] = m_sregs[DS];
-	otss[TSS_LDT] = m_ldtr.sel;
 
-	for (i = 14; i < 44; i+=2) WriteWord(m_tr.base+i, otss[i/2]);
+	for (i = 14; i < 42; i+=2) WriteWord(m_tr.base+i, otss[i/2]);
+	for (i = 0; i < 44; i+=2) ntss[i/2] = ReadWord(BASE(ndesc)+i);
 
 	// jmp does both
 	if (type != CALL) {
@@ -641,7 +640,9 @@ static void PREFIX286(_0fpre)()
 		else {
 			desc[2] = ReadWord(addr+4);
 			r = RIGHTS(desc);
-			if (DPL(r)>=PMAX(RPL(tmp),CPL) || (SEGDESC(r) && CODE(r) && CONF(r))) {
+			if (!SEGDESC(r) && ((GATE(r) > TRAPGATE) || !GATE(r)))
+				m_ZeroVal = 1;
+			else if (DPL(r)>=PMAX(RPL(tmp),CPL) || (SEGDESC(r) && CODE(r) && CONF(r))) {
 				m_ZeroVal = 0;
 				// rights are expected to be in upper byte
 				RegWord(ModRM) = r << 8;
@@ -658,7 +659,8 @@ static void PREFIX286(_0fpre)()
 		else {
 			desc[2] = ReadWord(addr+4);
 			r = RIGHTS(desc);
-			if (!SEGDESC(r) && (GATE(r) >= CALLGATE)) m_ZeroVal = 1; // not valid for gates
+			if (!SEGDESC(r) && ((GATE(r) >= CALLGATE) || !GATE(r)))
+				m_ZeroVal = 1; // not valid for gates
 			else if (DPL(r)>=PMAX(RPL(tmp),CPL) || (SEGDESC(r) && CODE(r) && CONF(r))) {
 				m_ZeroVal = 0;
 				RegWord(ModRM) = ReadWord(addr);

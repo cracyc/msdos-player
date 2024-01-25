@@ -336,6 +336,83 @@ void hardware_release();
 void hardware_run();
 void hardware_update();
 
+// drive
+
+typedef struct {
+	int initialized;
+	int valid;
+	DISK_GEOMETRY geometry;
+	
+	int is_fdd()
+	{
+		if(initialized && valid) {
+			switch(geometry.MediaType) {
+			case F5_1Pt2_512:
+			case F3_1Pt44_512:
+			case F3_2Pt88_512:
+			case F3_20Pt8_512:
+			case F3_720_512:
+			case F5_360_512:
+			case F5_320_512:
+			case F5_320_1024:
+			case F5_180_512:
+			case F5_160_512:
+			case F3_120M_512:
+			case F3_640_512:
+			case F5_640_512:
+			case F5_720_512:
+			case F3_1Pt2_512:
+			case F3_1Pt23_1024:
+			case F5_1Pt23_1024:
+			case F3_128Mb_512:
+			case F3_230Mb_512:
+			case F8_256_128:
+			case F3_200Mb_512:
+			case F3_240M_512:
+			case F3_32M_512:
+				return(1);
+			}
+		}
+		return(0);
+	}
+	int head_num()
+	{
+		if(initialized && valid) {
+			switch(geometry.MediaType) {
+			case F5_1Pt2_512:
+			case F3_1Pt44_512:
+			case F3_2Pt88_512:
+			case F3_20Pt8_512:
+			case F3_720_512:
+			case F5_360_512:
+			case F5_320_512:
+			case F5_320_1024:
+//			case F5_180_512:
+//			case F5_160_512:
+			case F3_120M_512:
+			case F3_640_512:
+			case F5_640_512:
+			case F5_720_512:
+			case F3_1Pt2_512:
+			case F3_1Pt23_1024:
+			case F5_1Pt23_1024:
+			case F3_128Mb_512:
+			case F3_230Mb_512:
+//			case F8_256_128:
+			case F3_200Mb_512:
+			case F3_240M_512:
+			case F3_32M_512:
+				return(2);
+			default:
+				return(1);
+			}
+		}
+		return(0);
+	}
+} drive_param_t;
+
+drive_param_t drive_params[26] = {0};
+
 // memory
 
 #if defined(HAS_I386)
