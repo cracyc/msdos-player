@@ -258,6 +258,7 @@ static CPU_EXECUTE( i8086 )
 			Sleep(10);
 		}
 	}
+	add_cpu_trace(m_pc, m_sregs[CS], m_pc - m_base[CS]);
 	m_prev_cs = m_sregs[CS];
 	m_prev_eip = m_pc - m_base[CS];
 #endif
@@ -323,6 +324,7 @@ static CPU_EXECUTE( i80186 )
 			Sleep(10);
 		}
 	}
+	add_cpu_trace(m_pc, m_sregs[CS], m_pc - m_base[CS]);
 	m_prev_cs = m_sregs[CS];
 	m_prev_eip = m_pc - m_base[CS];
 #endif
@@ -381,6 +383,7 @@ static CPU_EXECUTE( v30 )
 			Sleep(10);
 		}
 	}
+	add_cpu_trace(m_pc, m_sregs[CS], m_pc - m_base[CS]);
 	m_prev_cs = m_sregs[CS];
 	m_prev_eip = m_pc - m_base[CS];
 #endif

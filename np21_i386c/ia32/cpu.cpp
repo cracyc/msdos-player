@@ -141,7 +141,12 @@ exec_1step(void)
 
 	for (prefix = 0; prefix < MAX_PREFIX; prefix++) {
 		GET_PCBYTE(op);
-		if (prefix == 0) CPU_PREV_PC = codefetch_address;
+		if (prefix == 0) {
+			CPU_PREV_PC = codefetch_address;
+#if defined(USE_DEBUGGER)
+			add_cpu_trace(CPU_PREV_PC, CPU_PREV_CS, CPU_PREV_EIP);
+#endif
+		}
 #if defined(IA32_INSTRUCTION_TRACE)
 		ctx[ctx_index].op[prefix] = op;
 		ctx[ctx_index].opbytes++;
@@ -318,9 +323,9 @@ exec_allstep(void)
 	
 	do {
 
-#if defined(USE_DEBUGGER)
+	#if defined(USE_DEBUGGER)
 		CPU_PREV_CS = CPU_CS;
-#endif
+	#endif
 		CPU_PREV_EIP = CPU_EIP;
 		CPU_STATSAVE.cpu_inst = CPU_STATSAVE.cpu_inst_default;
 
@@ -371,7 +376,12 @@ exec_allstep(void)
 
 		for (prefix = 0; prefix < MAX_PREFIX; prefix++) {
 			GET_PCBYTE(op);
-			if (prefix == 0) CPU_PREV_PC = codefetch_address;
+			if (prefix == 0) {
+				CPU_PREV_PC = codefetch_address;
+	#if defined(USE_DEBUGGER)
+				add_cpu_trace(CPU_PREV_PC, CPU_PREV_CS, CPU_PREV_EIP);
+	#endif
+			}
 	#if defined(IA32_INSTRUCTION_TRACE)
 			ctx[ctx_index].op[prefix] = op;
 			ctx[ctx_index].opbytes++;

@@ -670,3 +670,21 @@ void CPU_WRITE_STACK(UINT16 value)
 	UINT16 sp = m_regs.w[SP] + 2;
 	WriteWord(((m_base[SS] + ((sp - 2) & 0xffff)) & AMASK), value);
 }
+
+#ifdef USE_DEBUGGER
+UINT32 CPU_GET_PREV_PC()
+{
+	return m_prevpc;
+}
+
+UINT32 CPU_GET_NEXT_PC()
+{
+	return m_pc;
+}
+
+UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
+{
+	// FIXME: Protected Mode
+	return (seg << 4) + (ofs & 0xffff);
+}
+#endif

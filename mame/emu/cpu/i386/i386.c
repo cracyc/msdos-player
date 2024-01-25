@@ -3454,6 +3454,8 @@ static CPU_EXECUTE( i386 )
 
 		m_segment_prefix = 0;
 #ifdef USE_DEBUGGER
+		add_cpu_trace(m_pc, m_sreg[CS].selector, m_eip);
+		m_prev_pc = m_pc;
 		m_prev_cs = m_sreg[CS].selector;
 #endif
 		m_prev_eip = m_eip;

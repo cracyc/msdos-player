@@ -220,6 +220,20 @@ int msdos_exit = 0;
 
 #ifdef USE_DEBUGGER
 int msdos_intnum = -1;
+
+cpu_trace_t cpu_trace[MAX_CPU_TRACE] = {0};
+int cpu_trace_ptr = 0;
+UINT32 prev_trace_pc = -1;
+
+void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip)
+{
+	if(prev_trace_pc != pc) {
+		cpu_trace[cpu_trace_ptr].pc = prev_trace_pc = pc;
+		cpu_trace[cpu_trace_ptr].cs = cs;
+		cpu_trace[cpu_trace_ptr].eip = eip;
+		cpu_trace_ptr = (cpu_trace_ptr + 1) & (MAX_CPU_TRACE - 1);
+	}
+}
 #endif
 
 #if defined(HAS_IA32)
@@ -705,6 +719,14 @@ void debugger_init()
 	memset(&int_break_point, 0, sizeof(int_break_point_t));
 }
 
+bool check_file_extension(const char *file_path, const char *ext)
+{
+	int nam_len = strlen(file_path);
+	int ext_len = strlen(ext);
+	
+	return (nam_len >= ext_len && strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
+}
+
 void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
@@ -836,13 +858,13 @@ void telnet_set_color(int color)
 	telnet_command("\033[%dm\033[3%dm", (color >> 3) & 1, (color & 7));
 }
 
-int debugger_dasm(char *buffer, size_t buffer_len, UINT32 cs, UINT32 eip)
+int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip)
 {
-//	UINT8 *oprom = mem + (((cs << 4) + eip) & (MAX_MEM - 1));
+//	UINT8 *oprom = mem + (pc & ADDR_MASK);
 	UINT8 oprom[16];
 	
 	for(int i = 0; i < 16; i++) {
-		oprom[i] = debugger_read_byte(((cs << 4) + (eip + i)) & ADDR_MASK);
+		oprom[i] = debugger_read_byte((pc++) & ADDR_MASK);
 	}
 	
 #if defined(HAS_I386)
@@ -860,7 +882,7 @@ void debugger_regs_info(char *buffer)
 #if defined(HAS_I386)
 	if(CPU_INST_OP32) {
 		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
-		CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SP, CPU_BP, CPU_SI, CPU_DI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
+		CPU_EAX, CPU_EBX, CPU_ECX, CPU_EDX, CPU_ESP, CPU_EBP, CPU_ESI, CPU_EDI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
 		CPU_STAT_PM ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
 		(flags & 0x20000) ? 'V' : '-',
@@ -983,6 +1005,26 @@ UINT32 debugger_get_ofs(const char *str)
 	return(debugger_get_val(tmp));
 }
 
+UINT8 debugger_hexatob(char *value)
+{
+	char tmp[3];
+	tmp[0] = value[0];
+	tmp[1] = value[1];
+	tmp[2] = '\0';
+	return (UINT8)strtoul(tmp, NULL, 16);
+}
+
+UINT16 debugger_hexatow(char *value)
+{
+	char tmp[5];
+	tmp[0] = value[0];
+	tmp[1] = value[1];
+	tmp[2] = value[2];
+	tmp[3] = value[3];
+	tmp[4] = '\0';
+	return (UINT16)strtoul(tmp, NULL, 16);
+}
+
 void debugger_main()
 {
 	telnet_command("\033[20h"); // cr-lf
@@ -1011,21 +1053,23 @@ void debugger_main()
 	debugger_regs_info(buffer);
 	telnet_printf("%s", buffer);
 	telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-	telnet_printf("breaked at %04X:%04X\n", CPU_CS, CPU_EIP);
+	telnet_printf("breaked at %08X(%04X:%04X)\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 	telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-	debugger_dasm(buffer, sizeof(buffer), CPU_CS, CPU_EIP);
-	telnet_printf("next\t%04X:%04X  %s\n", CPU_CS, CPU_EIP, buffer);
+	debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
+	telnet_printf("next\t%08X(%04X:%04X)  %s\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, buffer);
 	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 	
 	#define MAX_COMMAND_LEN	64
 	
 	char command[MAX_COMMAND_LEN + 1];
 	char prev_command[MAX_COMMAND_LEN + 1] = {0};
+	char file_path[_MAX_PATH] = "debug.bin";
 	
 	UINT32 data_seg = CPU_DS;
 	UINT32 data_ofs = 0;
 	UINT32 dasm_seg = CPU_CS;
 	UINT32 dasm_ofs = CPU_EIP;
+	UINT32 dasm_adr = CPU_GET_NEXT_PC();
 	
 	while(!msdos_exit) {
 		telnet_printf("- ");
@@ -1059,8 +1103,9 @@ void debugger_main()
 		}
 		
 		if(!msdos_exit && command[0] != 0) {
-			char *params[32], *token = NULL;
+			char *params[32], *token = NULL, *context = NULL;
 			int num = 0;
+			FILE *fp = NULL;
 			
 			if((token = strtok(command, " ")) != NULL) {
 				params[num++] = token;
@@ -1313,16 +1358,18 @@ void debugger_main()
 					if(num >= 2) {
 						dasm_seg = debugger_get_seg(params[1], dasm_seg);
 						dasm_ofs = debugger_get_ofs(params[1]);
+						dasm_adr = CPU_TRANS_ADDR(dasm_seg, dasm_ofs);
 					}
 					if(num == 3) {
 						UINT32 end_seg = debugger_get_seg(params[2], dasm_seg);
 						UINT32 end_ofs = debugger_get_ofs(params[2]);
+						UINT32 end_adr = CPU_TRANS_ADDR(end_seg, end_ofs);
 						
-						while((dasm_seg << 4) + dasm_ofs <= (end_seg << 4) + end_ofs) {
-							int len = debugger_dasm(buffer, sizeof(buffer), dasm_seg, dasm_ofs);
-							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
+						while(dasm_adr <= end_adr) {
+							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
+							telnet_printf("%08X(%04X:%04X)  ", dasm_adr, dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+								telnet_printf("%02X", debugger_read_byte((dasm_adr + i) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
@@ -1332,13 +1379,14 @@ void debugger_main()
 								dasm_seg += 0x1000;
 								dasm_ofs -= 0x10000;
 							}
+							dasm_adr += len;
 						}
 					} else {
 						for(int i = 0; i < 16; i++) {
-							int len = debugger_dasm(buffer, sizeof(buffer), dasm_seg, dasm_ofs);
-							telnet_printf("%04X:%04X  ", dasm_seg, dasm_ofs);
+							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
+							telnet_printf("%08X(%04X:%04X)  ", dasm_adr, dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte(((dasm_seg << 4) + (dasm_ofs + i)) & ADDR_MASK));
+								telnet_printf("%02X", debugger_read_byte((dasm_adr + i) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
@@ -1348,9 +1396,33 @@ void debugger_main()
 								dasm_seg += 0x1000;
 								dasm_ofs -= 0x10000;
 							}
+							dasm_adr += len;
 						}
 					}
 					prev_command[1] = '\0'; // remove parameters to disassemble continuously
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "UT") == 0) {
+				if(num <= 3) {
+					int steps = 128;
+					if(num >= 2) {
+						steps = min((int)debugger_get_val(params[1]), MAX_CPU_TRACE);
+					}
+					for(int i = MAX_CPU_TRACE - steps; i < MAX_CPU_TRACE; i++) {
+						int index = (cpu_trace_ptr + i) & (MAX_CPU_TRACE - 1);
+						if(cpu_trace[index].pc != 0) {
+							int len = debugger_dasm(buffer, sizeof(buffer), cpu_trace[index].pc, cpu_trace[index].eip);
+							telnet_printf("%08X(%04X:%04X)  ", cpu_trace[index].pc, cpu_trace[index].cs, cpu_trace[index].eip);
+							for(int i = 0; i < len; i++) {
+								telnet_printf("%02X", debugger_read_byte((cpu_trace[index].pc + i) & ADDR_MASK));
+							}
+							for(int i = len; i < 8; i++) {
+								telnet_printf("  ");
+							}
+							telnet_printf("  %s\n", buffer);
+						}
+					}
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -1359,6 +1431,122 @@ void debugger_main()
 					UINT32 l = debugger_get_val(params[1]);
 					UINT32 r = debugger_get_val(params[2]);
 					telnet_printf("%08X  %08X\n", l + r, l - r);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "N") == 0) {
+				if(num >= 2 && params[1][0] == '\"') {
+					strcpy_s(buffer, sizeof(buffer), prev_command);
+					if((token = strtok_s(buffer, "\"", &context)) != NULL && (token = strtok_s(NULL, "\"", &context)) != NULL) {
+						strcpy_s(file_path, _MAX_PATH, token);
+					} else {
+						telnet_printf("invalid parameter\n");
+					}
+				} else if(num == 2) {
+					strcpy_s(file_path, _MAX_PATH, params[1]);
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(stricmp(params[0], "L") == 0) {
+				if(check_file_extension(file_path, ".hex")) {
+					if((fp = fopen(file_path, "r")) != NULL) {
+						UINT32 start_seg = data_seg;
+						UINT32 start_ofs = 0; // temporary
+						if(num >= 2) {
+							start_seg = debugger_get_seg(params[1], start_seg);
+							start_ofs = debugger_get_ofs(params[1]);
+						}
+						UINT32 start_addr = (start_seg << 4) + start_ofs;
+						UINT32 linear = 0, segment = 0;
+						char line[1024];
+						while(fgets(line, sizeof(line), fp) != NULL) {
+							if(line[0] != ':') continue;
+							int type = debugger_hexatob(line + 7);
+							if(type == 0x00) {
+								UINT32 bytes = debugger_hexatob(line + 1);
+								UINT32 addr = debugger_hexatow(line + 3) + start_addr + linear + segment;
+								for(UINT32 i = 0; i < bytes; i++) {
+									debugger_write_byte((addr + i) & ADDR_MASK, debugger_hexatob(line + 9 + 2 * i));
+								}
+							} else if(type == 0x01) {
+								break;
+							} else if(type == 0x02) {
+								segment = debugger_hexatow(line + 9) << 4;
+								start_addr = 0;
+							} else if(type == 0x04) {
+								linear = debugger_hexatow(line + 9) << 16;
+								start_addr = 0;
+							}
+						}
+						fclose(fp);
+					} else {
+						telnet_printf("can't open %s\n", file_path);
+					}
+				} else {
+					if((fp = fopen(file_path, "rb")) != NULL) {
+						UINT32 start_seg = data_seg;
+						UINT32 start_ofs = 0x100; // temporary
+						if(num >= 2) {
+							start_seg = debugger_get_seg(params[1], start_seg);
+							start_ofs = debugger_get_ofs(params[1]);
+						}
+						UINT32 end_seg = start_seg;
+						UINT32 end_ofs = 0xffff;
+						if(num == 3) {
+							end_seg = debugger_get_seg(params[2], end_seg);
+							end_ofs = debugger_get_ofs(params[2]);
+						}
+						UINT32 start_addr = (start_seg << 4) + start_ofs;
+						UINT32 end_addr = (end_seg << 4) + end_ofs;
+						for(UINT32 addr = start_addr; addr <= end_addr; addr++) {
+							int data = fgetc(fp);
+							if(data == EOF) {
+								break;
+							}
+							debugger_write_byte(addr & ADDR_MASK, data);
+						}
+						fclose(fp);
+					} else {
+						telnet_printf("can't open %s\n", file_path);
+					}
+				}
+			} else if(stricmp(params[0], "W") == 0) {
+				if(num == 3) {
+					UINT32 start_seg = debugger_get_seg(params[1], data_seg);
+					UINT32 start_ofs = debugger_get_ofs(params[1]);
+					UINT32 end_seg = debugger_get_seg(params[2], start_seg);
+					UINT32 end_ofs = debugger_get_ofs(params[2]);
+					UINT32 start_addr = (start_seg << 4) + start_ofs;
+					UINT32 end_addr = (end_seg << 4) + end_ofs;
+					if(check_file_extension(file_path, ".hex")) {
+						if((fp = fopen(file_path, "w")) != NULL) {
+							UINT32 addr = start_addr;
+							while(addr <= end_addr) {
+								UINT32 len = min(end_addr - addr + 1, (UINT32)16);
+								UINT32 sum = len + ((addr >> 8) & 0xff) + (addr & 0xff) + 0x00;
+								fprintf(fp, ":%02X%04X%02X", len, addr & 0xffff, 0x00);
+								for(UINT32 i = 0; i < len; i++) {
+									UINT8 data = debugger_read_byte((addr++) & ADDR_MASK);
+									sum += data;
+									fprintf(fp, "%02X", data);
+								}
+								fprintf(fp, "%02X\n", (0x100 - (sum & 0xff)) & 0xff);
+							}
+							fprintf(fp, ":00000001FF\n");
+							fclose(fp);
+						} else {
+							telnet_printf("can't open %s\n", file_path);
+						}
+					} else {
+						if((fp = fopen(file_path, "wb")) != NULL) {
+							for(UINT32 addr = start_addr; addr <= end_addr; addr++) {
+								fputc(debugger_read_byte(addr & ADDR_MASK),fp);
+							}
+							fclose(fp);
+						} else {
+							telnet_printf("can't open %s\n", file_path);
+						}
+					}
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -1593,7 +1781,7 @@ void debugger_main()
 						memset(&break_point, 0, sizeof(break_point_t));
 						break_points_stored = true;
 						
-						break_point.table[0].addr = (CPU_CS << 4) + CPU_EIP + debugger_dasm(buffer, sizeof(buffer), CPU_CS, CPU_EIP);
+						break_point.table[0].addr = CPU_GET_NEXT_PC() + debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
 						break_point.table[0].status = 1;
 					} else if(num >= 2) {
 						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
@@ -1636,10 +1824,11 @@ void debugger_main()
 					}
 					dasm_seg = CPU_CS;
 					dasm_ofs = CPU_EIP;
+					dasm_adr = CPU_GET_NEXT_PC();
 					
 					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-					debugger_dasm(buffer, sizeof(buffer), CPU_PREV_CS, CPU_PREV_EIP);
-					telnet_printf("done\t%04X:%04X  %s\n", CPU_PREV_CS, CPU_PREV_EIP, buffer);
+					debugger_dasm(buffer, sizeof(buffer), CPU_GET_PREV_PC(), CPU_PREV_EIP);
+					telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 					
 					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 					debugger_regs_info(buffer);
@@ -1648,48 +1837,48 @@ void debugger_main()
 					if(break_point.hit) {
 						if(stricmp(params[0], "G") == 0 && num == 1) {
 							telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-							telnet_printf("breaked at %04X:%04X: break point is hit\n", CPU_CS, CPU_EIP);
+							telnet_printf("breaked at %08X(%04X:%04X): break point is hit\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 						}
 					} else if(rd_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was read at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): memory %04X:%04X was read at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						rd_break_point.table[rd_break_point.hit - 1].seg, rd_break_point.table[rd_break_point.hit - 1].ofs,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(wr_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was written at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): memory %04X:%04X was written at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						wr_break_point.table[wr_break_point.hit - 1].seg, wr_break_point.table[wr_break_point.hit - 1].ofs,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(in_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: port %04X was read at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): port %04X was read at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						in_break_point.table[in_break_point.hit - 1].addr,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(out_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: port %04X was written at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): port %04X was written at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						out_break_point.table[out_break_point.hit - 1].addr,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(int_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: INT %02x", CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
+						telnet_printf("breaked at %08X(%04X:%04X): INT %02x", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
 						if(int_break_point.table[int_break_point.hit - 1].ah_registered) {
 							telnet_printf(" AH=%02x", int_break_point.table[int_break_point.hit - 1].ah);
 						}
 						if(int_break_point.table[int_break_point.hit - 1].al_registered) {
 							telnet_printf(" AL=%02x", int_break_point.table[int_break_point.hit - 1].al);
 						}
-						telnet_printf(" is raised at %04X:%04X\n", CPU_PREV_CS, CPU_PREV_EIP);
+						telnet_printf(" is raised at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
 					} else {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: enter key was pressed\n", CPU_CS, CPU_EIP);
+						telnet_printf("breaked at %08X(%04X:%04X): enter key was pressed\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 					}
 					if(break_points_stored) {
 						memcpy(&break_point, &break_point_stored, sizeof(break_point_t));
 					}
 					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-					debugger_dasm(buffer, sizeof(buffer), CPU_CS, CPU_EIP);
-					telnet_printf("next\t%04X:%04X  %s\n", CPU_CS, CPU_EIP, buffer);
+					debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
+					telnet_printf("next\t%08X(%04X:%04X)  %s\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, buffer);
 					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1715,10 +1904,11 @@ void debugger_main()
 						}
 						dasm_seg = CPU_CS;
 						dasm_ofs = CPU_EIP;
+						dasm_adr = CPU_GET_NEXT_PC();
 						
 						telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-						debugger_dasm(buffer, sizeof(buffer), CPU_PREV_CS, CPU_PREV_EIP);
-						telnet_printf("done\t%04X:%04X  %s\n", CPU_PREV_CS, CPU_PREV_EIP, buffer);
+						debugger_dasm(buffer, sizeof(buffer), CPU_GET_PREV_PC(), CPU_PREV_EIP);
+						telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 						
 						telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 						debugger_regs_info(buffer);
@@ -1745,44 +1935,44 @@ void debugger_main()
 					}
 					if(break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: break point is hit\n", CPU_CS, CPU_EIP);
+						telnet_printf("breaked at %08X(%04X:%04X): break point is hit\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 					} else if(rd_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was read at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): memory %04X:%04X was read at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						rd_break_point.table[rd_break_point.hit - 1].seg, rd_break_point.table[rd_break_point.hit - 1].ofs,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(wr_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: memory %04X:%04X was written at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): memory %04X:%04X was written at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						wr_break_point.table[wr_break_point.hit - 1].seg, wr_break_point.table[wr_break_point.hit - 1].ofs,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(in_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: port %04X was read at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): port %04X was read at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						in_break_point.table[in_break_point.hit - 1].addr,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(out_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: port %04X was written at %04X:%04X\n", CPU_CS, CPU_EIP,
+						telnet_printf("breaked at %08X(%04X:%04X): port %04X was written at %04X:%04X\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP,
 						out_break_point.table[out_break_point.hit - 1].addr,
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(int_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: INT %02x", CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
+						telnet_printf("breaked at %08X(%04X:%04X): INT %02x", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
 						if(int_break_point.table[int_break_point.hit - 1].ah_registered) {
 							telnet_printf(" AH=%02x", int_break_point.table[int_break_point.hit - 1].ah);
 						}
 						if(int_break_point.table[int_break_point.hit - 1].al_registered) {
 							telnet_printf(" AL=%02x", int_break_point.table[int_break_point.hit - 1].al);
 						}
-						telnet_printf(" is raised at %04X:%04X\n", CPU_PREV_CS, CPU_PREV_EIP);
+						telnet_printf(" is raised at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(steps > 0) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %04X:%04X: enter key was pressed\n", CPU_CS, CPU_EIP);
+						telnet_printf("breaked at %08X(%04X:%04X): enter key was pressed\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 					}
 					telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-					debugger_dasm(buffer, sizeof(buffer), CPU_CS, CPU_EIP);
-					telnet_printf("next\t%04X:%04X  %s\n", CPU_CS, CPU_EIP, buffer);
+					debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
+					telnet_printf("next\t%08X(%04X:%04X)  %s\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, buffer);
 					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1823,8 +2013,12 @@ void debugger_main()
 				telnet_printf("R <reg> <value> - edit register\n");
 				telnet_printf("S <start> <end> <list> - search\n");
 				telnet_printf("U [<start> [<end>]] - unassemble\n");
+				telnet_printf("UT [<steps>] - unassemble trace\n");
 				
 				telnet_printf("H <value> <value> - hexadd\n");
+				telnet_printf("N <filename> - name\n");
+				telnet_printf("L [<range>] - load binary/hex file\n");
+				telnet_printf("W <range> - write binary/hex file\n");
 				
 				telnet_printf("BP <address> - set breakpoint\n");
 				telnet_printf("{R,W}BP <address> - set breakpoint (break at memory access)\n");
@@ -1904,14 +2098,30 @@ const char *debugger_get_putty_x86_path()
 
 const char *debugger_get_telnet_path()
 {
-	// NOTE: When you run 32bit version of msdos.exe on Windows x64,
-	// C:\Windows\System32\telnet.exe is redirected to telnet.exe in SysWOW64.
-	// But 32bit version of telnet.exe will not be installed in SysWOW64
-	// and 64bit version of telnet.exe will be installed in System32.
 	static char path[MAX_PATH] = {0};
 	
 	if(getenv("windir") != NULL) {
+#ifdef _WIN64
 		sprintf(path, "%s\\System32\\telnet.exe", getenv("windir"));
+#else
+		// prevent System32 is redirected to SysWOW64 in 32bit process on Windows x64
+		sprintf(path, "%s\\Sysnative\\telnet.exe", getenv("windir"));
+#endif
+	}
+	return(path);
+}
+
+const char *debugger_get_telnet_x86_path()
+{
+	static char path[MAX_PATH] = {0};
+	
+	if(getenv("windir") != NULL) {
+#ifdef _WIN64
+		sprintf(path, "%s\\SysWOW64\\telnet.exe", getenv("windir"));
+#else
+		// System32 will be redirected to SysWOW64 in 32bit process on Windows x64
+		sprintf(path, "%s\\System32\\telnet.exe", getenv("windir"));
+#endif
 	}
 	return(path);
 }
@@ -1962,6 +2172,8 @@ DWORD WINAPI debugger_thread(LPVOID)
 				sprintf(command, "%s -telnet localhost %d", debugger_get_putty_x86_path(), port);
 			} else if(_access(debugger_get_telnet_path(), 0) == 0) {
 				sprintf(command, "%s -t vt100 localhost %d", debugger_get_telnet_path(), port);
+			} else if(_access(debugger_get_telnet_x86_path(), 0) == 0) {
+				sprintf(command, "%s -t vt100 localhost %d", debugger_get_telnet_x86_path(), port);
 			}
 			if(command[0] != '\0') {
 				memset(&si, 0, sizeof(STARTUPINFOA));
@@ -2931,7 +3143,8 @@ int main(int argc, char *argv[], char *envp[])
 		   _access(debugger_get_ttermpro_x86_path(), 0) == 0 ||
 		   _access(debugger_get_putty_path(), 0) == 0 ||
 		   _access(debugger_get_putty_x86_path(), 0) == 0 ||
-		   _access(debugger_get_telnet_path(), 0) == 0) {
+		   _access(debugger_get_telnet_path(), 0) == 0 ||
+		   _access(debugger_get_telnet_x86_path(), 0) == 0) {
 			for(int i = 0; i < 100 && cli_socket == 0; i++) {
 				Sleep(100);
 			}

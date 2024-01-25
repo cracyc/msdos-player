@@ -135,6 +135,8 @@ typedef signed long long INT64;
 
 // interface
 
+#define IRET_SIZE	0x100
+
 void msdos_syscall(unsigned num);
 
 UINT8 read_byte(UINT32 byteaddress);
@@ -157,10 +159,12 @@ void CPU_RESET();
 
 // debugger
 
+// remove comment-out if you want to enable the internal debugger
 //#define USE_DEBUGGER
 
 #ifdef USE_DEBUGGER
 #define MAX_BREAK_POINTS	8
+#define MAX_CPU_TRACE		1024
 
 typedef struct {
 	struct {
@@ -181,6 +185,14 @@ typedef struct {
 	} table[MAX_BREAK_POINTS];
 	int hit;
 } int_break_point_t;
+
+typedef struct {
+	UINT32 pc;
+	UINT16 cs;
+	UINT32 eip;
+} cpu_trace_t;
+
+void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip);
 #endif
 
 #endif

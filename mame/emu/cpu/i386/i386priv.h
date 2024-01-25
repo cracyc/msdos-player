@@ -351,6 +351,7 @@ union XMM_REG {
 	UINT32 m_eip;
 	UINT32 m_pc;
 #ifdef USE_DEBUGGER
+	UINT32 m_prev_pc;
 	UINT32 m_prev_cs;
 #endif
 	UINT32 m_prev_eip;

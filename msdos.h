@@ -167,6 +167,8 @@ UINT32 debugger_read_io_dword(UINT32 addr);
 void debugger_write_io_byte(UINT32 addr, UINT8 val);
 void debugger_write_io_word(UINT32 addr, UINT16 val);
 void debugger_write_io_dword(UINT32 addr, UINT32 val);
+
+void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip);
 #endif
 
 /* ----------------------------------------------------------------------------
@@ -608,7 +610,7 @@ UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define EMB_END		MAX_MEM
 
 UINT32 IRET_TOP = 0;
-#define IRET_SIZE	0x100
+//#define IRET_SIZE	0x100	// moved into common.h
 UINT32 XMS_TOP = 0;
 // XMS_TOP + 0x000	EMMXXXX0 driver
 // XMS_TOP + 0x012	EMS dummy routine

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								4/6/2020
+								4/9/2020
 
 ----- What's This
 
@@ -341,19 +341,19 @@ This archive contains 12 executable binaries:
 	ia32_x86	Emulates IA32 and supports both 32bit/64bit Windows
 	ia32_x64	Emulates IA32 and supports only 64bit Windows
 
-8086 binaries are much faster than 80286/80386/80486 binaries.
+8086 binaries are much faster than 80286/80386/80486/IA32 binaries.
 If you don't need the protected mode or new mnemonics of 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
 NEC V30 binaries support 8080 emulation mode.
-If you try CP/M80 emulator using 8080 emulation mode, use these binaries.
+If you try CP/M-80 emulator using 8080 emulation mode, use these binaries.
 
-IA32 binaries use Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
+IA32 binaries include Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
 These binaries will emulate the protected mode more correctly.
 
 The VC++ project file "msdos.vcproj/vcxproj" also contains the configurations
 for 80186, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
-You can build all binaries for several cpu models by running build8_all.bat
+You can build all binaries for several cpu models by running build9_all.bat
 or build12_all.bat.
 (You need VC++ 2008 with Service Pack 1 or VC++ 2013 with Update 5.)
 
@@ -363,7 +363,7 @@ or build12_all.bat.
 MS-DOS Player contains the internal debugger for developers, but it is
 disabled on the binaries in the archive.
 To enable the internal debugger, please remove the comment out of definition
-"//#define USE_DEBUGGER" in msdos.h and build the binary.
+"//#define USE_DEBUGGER" in common.h and build the binary.
 
 MS-DOS Player opens the telnet port.
 The port number is 23 in default, but if it is already used, 9000 or later.

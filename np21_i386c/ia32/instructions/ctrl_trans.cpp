@@ -43,7 +43,6 @@
  */
 extern UINT32 CPU_PREV_PC;
 extern UINT32 IRET_TOP;
-#define IRET_SIZE	0x100
 #ifdef USE_DEBUGGER
 extern int msdos_intnum;
 #endif

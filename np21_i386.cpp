@@ -295,10 +295,10 @@ UINT32 convert_address(UINT32 cs_base, UINT32 eip)
 		
 		if(CPU_STAT_PAGING) {
 			UINT32 pde_addr = CPU_STAT_PDE_BASE + ((addr >> 20) & 0xffc);
-			UINT32 pde = read_dword(pde_addr);
+			UINT32 pde = read_dword(pde_addr & CPU_ADRSMASK);
 			/* XXX: check */
 			UINT32 pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((addr >> 10) & 0xffc);
-			UINT32 pte = read_dword(pte_addr);
+			UINT32 pte = read_dword(pte_addr & CPU_ADRSMASK);
 			/* XXX: check */
 			addr = (pte & CPU_PTE_BASEADDR_MASK) + (addr & CPU_PAGE_MASK);
 		}
@@ -461,3 +461,20 @@ void CPU_WRITE_STACK(UINT16 reg)
 //		CPU_ESP = __new_esp;
 	}
 }
+
+#ifdef USE_DEBUGGER
+UINT32 CPU_GET_PREV_PC()
+{
+	return CPU_PREV_PC;
+}
+
+UINT32 CPU_GET_NEXT_PC()
+{
+	return convert_address(CS_BASE, CPU_EIP);
+}
+
+UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
+{
+	return convert_address(seg << 4, ofs);
+}
+#endif

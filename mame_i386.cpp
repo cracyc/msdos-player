@@ -453,3 +453,34 @@ void CPU_WRITE_STACK(UINT16 value)
 	}
 	WRITE16(ea, value);
 }
+
+#ifdef USE_DEBUGGER
+UINT32 CPU_GET_PREV_PC()
+{
+	return m_prev_pc;
+}
+
+UINT32 CPU_GET_NEXT_PC()
+{
+	return m_pc;
+}
+
+UINT32 CPU_TRANS_ADDR(UINT32 seg, UINT32 ofs)
+{
+	if(PROTECTED_MODE) {
+		UINT32 addr = (seg << 4) + ofs;
+		
+		if(m_cr[0] & (1 << 31)) {
+			UINT32 pde_addr = (m_cr[3] & 0xfffff000) + ((addr >> 20) & 0xffc);
+			UINT32 pde = read_dword(pde_addr & m_a20_mask);
+			/* XXX: check */
+			UINT32 pte_addr = (pde & 0xfffff000) + ((addr >> 10) & 0xffc);
+			UINT32 pte = read_dword(pte_addr & m_a20_mask);
+			/* XXX: check */
+			addr = (pte & 0xfffff000) + (addr & 0xfff);
+		}
+		return addr;
+	}
+	return (seg << 4) + (ofs & 0xffff);
+}
+#endif
