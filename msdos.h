@@ -1227,6 +1227,7 @@ bool key_changed = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
+bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
 void pcbios_set_key_buffer(int key_char, int key_scan);
 bool pcbios_get_key_buffer(int *key_char, int *key_scan);

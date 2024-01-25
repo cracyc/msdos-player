@@ -377,7 +377,7 @@ UINT16 debugger_read_word(offs_t byteaddress)
 #ifdef USE_SERVICE_THREAD
 			EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			bool empty = key_buf_char->empty();
+			bool empty = pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -892,7 +892,7 @@ void i386_write_stack(UINT16 value)
 int svr_socket = 0;
 int cli_socket = 0;
 
-process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error = true);
+process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error);
 
 void debugger_init()
 {
@@ -3340,7 +3340,7 @@ bool update_key_buffer()
 #ifdef USE_SERVICE_THREAD
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
-		bool empty = key_buf_char->empty();
+		bool empty = pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -4952,7 +4952,7 @@ int msdos_kbhit()
 #ifdef USE_SERVICE_THREAD
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
-		bool empty = key_buf_char->empty();
+		bool empty = pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -5002,7 +5002,7 @@ retry:
 #ifdef USE_SERVICE_THREAD
 				EnterCriticalSection(&key_buf_crit_sect);
 #endif
-				bool empty = key_buf_char->empty();
+				bool empty = pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
 				LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -8432,6 +8432,11 @@ inline void pcbios_int_15h_e8h()
 	}
 }
 
+bool pcbios_is_key_buffer_empty()
+{
+	return(*(UINT16 *)(mem + 0x41a) == *(UINT16 *)(mem + 0x41c));
+}
+
 void pcbios_clear_key_buffer()
 {
 	key_buf_char->clear();
@@ -8443,9 +8448,6 @@ void pcbios_clear_key_buffer()
 
 void pcbios_set_key_buffer(int key_char, int key_scan)
 {
-	key_buf_char->write(key_char);
-	key_buf_scan->write(key_scan);
-	
 	// update key buffer
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
@@ -8457,19 +8459,17 @@ void pcbios_set_key_buffer(int key_char, int key_scan)
 		*(UINT16 *)(mem + 0x41c) = next;
 		mem[0x400 + (tail++)] = key_char;
 		mem[0x400 + (tail++)] = key_scan;
+	} else {
+		// store to extra key buffer
+		if(key_buf_char != NULL && key_buf_scan != NULL) {
+			key_buf_char->write(key_char);
+			key_buf_scan->write(key_scan);
+		}
 	}
 }
 
 bool pcbios_get_key_buffer(int *key_char, int *key_scan)
 {
-	if(key_buf_char->empty()) {
-		*key_char = 0x00;
-		*key_scan = 0x00;
-		return(false);
-	}
-	*key_char = key_buf_char->read();
-	*key_scan = key_buf_scan->read();
-	
 	// update key buffer
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
@@ -8479,10 +8479,21 @@ bool pcbios_get_key_buffer(int *key_char, int *key_scan)
 	}
 	if(head != tail) {
 		*(UINT16 *)(mem + 0x41a) = next;
-//		*key_char = mem[0x400 + (head++)];
-//		*key_scan = mem[0x400 + (head++)];
+		*key_char = mem[0x400 + (head++)];
+		*key_scan = mem[0x400 + (head++)];
+		
+		// restore from extra key buffer
+		if(key_buf_char != NULL && key_buf_scan != NULL) {
+			if(!key_buf_char->empty()) {
+				pcbios_set_key_buffer(key_buf_char->read(), key_buf_scan->read());
+			}
+		}
+		return(true);
+	} else {
+		*key_char = 0x00;
+		*key_scan = 0x00;
+		return(false);
 	}
-	return(true);
 }
 
 void pcbios_update_key_code(bool wait)
@@ -8491,7 +8502,7 @@ void pcbios_update_key_code(bool wait)
 #ifdef USE_SERVICE_THREAD
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
-		bool empty = key_buf_char->empty();
+		bool empty = pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -18263,11 +18274,18 @@ void hardware_update()
 			if(!key_changed || mouse.hidden == 0) {
 				update_console_input();
 			}
+			key_changed = false;
 			
-			// raise irq1 if key is pressed/released
-			if(key_changed) {
+			// raise irq1 if key buffer is not empty
+#ifdef USE_SERVICE_THREAD
+			EnterCriticalSection(&key_buf_crit_sect);
+#endif
+			bool empty = pcbios_is_key_buffer_empty();
+#ifdef USE_SERVICE_THREAD
+			LeaveCriticalSection(&key_buf_crit_sect);
+#endif
+			if(!empty) {
 				pic_req(0, 1, 1);
-				key_changed = false;
 			}
 			
 			// raise irq12 if mouse status is changed
