@@ -778,10 +778,15 @@ static void I386OP(iret32)()            // Opcode 0xcf
 		m_int_num = (old - IRET_TOP);
 #else
 		// Call msdos_syscall() here for better processing speed
-		// XXX: We need to consider the debug exception by m_TF
 		if(m_lock)
 			m_lock = false;
+#ifdef SUPPORT_RDTSC
+		m_tsc += (m_base_cycles - m_cycles);
+#endif
 		msdos_syscall(old - IRET_TOP);
+#ifdef SUPPORT_RDTSC
+		m_cycles = m_base_cycles = 1;
+#endif
 #endif
 	}
 }

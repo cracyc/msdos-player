@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/14/2017
+								7/24/2017
 
 ----- What's this
 
@@ -264,6 +264,19 @@ https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
 
 NOTE: MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TZ) are not copied to the virtual
 table, but MSDOS_PATH is copied to, because some softwares may refer it.
+
+
+----- Recommended Configurations
+
+Create C:\DOS and C:\TEMP folders.
+Copy COMMAND.COM (I recommend the Windows 98's COMMAND.COM Version 7.10) and
+other DOS command files (ex. MORE.COM) into C:\DOS folder.
+
+Set the environment variables:
+
+MSDOS_COMSPEC = C:\DOS\COMMAND.COM
+MSDOS_PATH = C:\DOS
+MSDOS_TEMP = C:\TEMP
 
 
 ----- Convert command file to 32bit or 64bit execution file

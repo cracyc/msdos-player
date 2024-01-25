@@ -348,26 +348,16 @@ UINT16 debugger_read_word(offs_t byteaddress)
 {
 	if(byteaddress == 0x41c) {
 		// pointer to first free slot in keyboard buffer
-		// XXX: the buffer itself doesn't actually exist in DOS memory
 		if(key_buf_char != NULL && key_buf_scan != NULL) {
 #ifdef USE_SERVICE_THREAD
 			EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			int count = min(key_buf_char->count(), 15);
-			// write to top of key buffer
-			for(int i = 0; i < count; i++) {
-				mem[0x41e + 2 * i + 0] = key_buf_char->read_not_remove(i);
-				mem[0x41e + 2 * i + 1] = key_buf_scan->read_not_remove(i);
-			}
+			bool empty = key_buf_char->empty();
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
-			if(count == 0) {
-				maybe_idle();
-			}
-			return (UINT16)(0x1e + 2 * count);
+			if(empty) maybe_idle();
 		}
-		return 0x1e;
 	}
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
@@ -621,11 +611,13 @@ void debugger_write_word(offs_t byteaddress, UINT16 data)
 #endif
 {
 	if(byteaddress < MEMORY_END) {
-		if(byteaddress == 0x450 + mem[0x462] * 2) {
-			COORD co;
-			co.X = data & 0xff;
-			co.Y = (data >> 8) + scr_top;
-			SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+		if(byteaddress == cursor_position_address) {
+			if(*(UINT16 *)(mem + byteaddress) != data) {
+				COORD co;
+				co.X = data & 0xff;
+				co.Y = (data >> 8) + scr_top;
+				SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
@@ -2159,8 +2151,7 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 #ifdef USE_SERVICE_THREAD
 			EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			key_buf_char->clear();
-			key_buf_scan->clear();
+			pcbios_clear_key_buffer();
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -2512,7 +2503,10 @@ int main(int argc, char *argv[], char *envp[])
 			limit_max_memory = true;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-n", 2) == 0) {
-			if(sscanf(argv[1] + 2, "%d,%d", &buf_height, &buf_width) != 2) {
+			int result = sscanf(argv[i] + 2, "%d,%d", &buf_height, &buf_width);
+			if(result == 1) {
+				buf_width = 0;
+			} else if(result != 2) {
 				buf_width = buf_height = 0;
 			}
 			if(buf_width <= 0 || buf_width > 0x7fff) {
@@ -3143,6 +3137,7 @@ bool update_console_input()
 					// update dos key buffer
 					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
 					UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
+					UINT8 scn_old = scn;
 					
 					if(ir[i].Event.KeyEvent.bKeyDown) {
 						// make
@@ -3211,17 +3206,15 @@ bool update_console_input()
 								scn += 0x85 - 0x57;
 							}
 							// ignore shift, ctrl, alt, win and menu keys
-							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && (scn < 0x5b || scn > 0x5e)) {
+							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d && scn == scn_old)) {
 								if(key_buf_char != NULL && key_buf_scan != NULL) {
 #ifdef USE_SERVICE_THREAD
 									EnterCriticalSection(&key_buf_crit_sect);
 #endif
 									if(chr == 0) {
-										key_buf_char->write(0x00);
-										key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+										pcbios_set_key_buffer(0x00, ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
 									}
-									key_buf_char->write(chr);
-									key_buf_scan->write(scn);
+									pcbios_set_key_buffer(chr, scn);
 #ifdef USE_SERVICE_THREAD
 									LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -3238,8 +3231,7 @@ bool update_console_input()
 #ifdef USE_SERVICE_THREAD
 								EnterCriticalSection(&key_buf_crit_sect);
 #endif
-								key_buf_char->write(chr);
-								key_buf_scan->write(scn);
+								pcbios_set_key_buffer(chr, scn);
 #ifdef USE_SERVICE_THREAD
 								LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -3252,8 +3244,7 @@ bool update_console_input()
 #ifdef USE_SERVICE_THREAD
 								EnterCriticalSection(&key_buf_crit_sect);
 #endif
-								key_buf_char->write(0x00);
-								key_buf_scan->write(0x00);
+								pcbios_set_key_buffer(0x00, 0x00);
 #ifdef USE_SERVICE_THREAD
 								LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -3266,8 +3257,7 @@ bool update_console_input()
 #ifdef USE_SERVICE_THREAD
 								EnterCriticalSection(&key_buf_crit_sect);
 #endif
-								key_buf_char->write(chr);
-								key_buf_scan->write(scn);
+								pcbios_set_key_buffer(chr, scn);
 #ifdef USE_SERVICE_THREAD
 								LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -4982,8 +4972,7 @@ retry:
 #ifdef USE_SERVICE_THREAD
 						EnterCriticalSection(&key_buf_crit_sect);
 #endif
-						key_buf_char->write(_getch());
-						key_buf_scan->write(0x00);
+						pcbios_set_key_buffer(_getch(), 0x00);
 #ifdef USE_SERVICE_THREAD
 						LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -5005,11 +4994,7 @@ retry:
 #ifdef USE_SERVICE_THREAD
 			EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			key_char = key_buf_char->read();
-			key_scan = key_buf_scan->read();
-			// write to bottom of key buffer
-			mem[0x43c] = (UINT8)key_char;
-			mem[0x43d] = (UINT8)key_scan;
+			pcbios_get_key_buffer(&key_char, &key_scan);
 #ifdef USE_SERVICE_THREAD
 			LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -5090,8 +5075,6 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 
 void msdos_putch(UINT8 data)
 {
-	static bool reenter = false;
-	
 	msdos_stdio_reopen();
 	
 	process_t *process = msdos_process_info_get(current_psp);
@@ -5115,12 +5098,12 @@ void msdos_putch(UINT8 data)
 		// we can not call int 29h because it causes a critial issue to control cpu running in main thread :-(
 		msdos_putch_fast(data);
 #endif
-	} else if(reenter) {
+	} else if(in_service_29h) {
 		// disallow reentering call int 29h routine to prevent an infinite loop :-(
 		msdos_putch_fast(data);
 	} else {
 		// this is called from main thread, so we can call int 29h :-)
-		reenter = true;
+		in_service_29h = true;
 		try {
 			UINT32 tmp_pc = m_pc;
 			UINT16 tmp_ax = REG16(AX);
@@ -5141,7 +5124,7 @@ void msdos_putch(UINT8 data)
 			REG16(BX) = tmp_bx;
 		} catch(...) {
 		}
-		reenter = false;
+		in_service_29h = false;
 	}
 }
 
@@ -5366,8 +5349,7 @@ void msdos_putch_tmp(UINT8 data)
 							EnterCriticalSection(&key_buf_crit_sect);
 #endif
 							for(int i = 0; i < len; i++) {
-								key_buf_char->write(tmp[i]);
-								key_buf_scan->write(0x00);
+								pcbios_set_key_buffer(tmp[i], 0x00);
 							}
 #ifdef USE_SERVICE_THREAD
 							LeaveCriticalSection(&key_buf_crit_sect);
@@ -6731,6 +6713,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	text_vram_end_address = text_vram_top_address + width * height * 2;
 	shadow_buffer_top_address = pcbios_get_shadow_buffer_address(0);
 	shadow_buffer_end_address = shadow_buffer_top_address + width * height * 2;
+	cursor_position_address = 0x450 + mem[0x462] * 2;
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	if(clr_screen) {
@@ -6892,6 +6875,7 @@ inline void pcbios_int_10h_05h()
 	text_vram_end_address = text_vram_top_address + regen;
 	shadow_buffer_top_address = pcbios_get_shadow_buffer_address(mem[0x462]);
 	shadow_buffer_end_address = shadow_buffer_top_address + regen;
+	cursor_position_address = 0x450 + mem[0x462] * 2;
 }
 
 inline void pcbios_int_10h_06h()
@@ -8094,10 +8078,14 @@ inline void pcbios_int_15h_86h()
 {
 	if(!(REG16(CX) == 0 && REG16(DX) == 0)) {
 #ifdef USE_SERVICE_THREAD
-		start_service_loop(pcbios_int_15h_86h_thread);
-#else
-		pcbios_int_15h_86h_thread(NULL);
-		REQUEST_HARDWRE_UPDATE();
+		if(!in_service && !in_service_29h) {
+			start_service_loop(pcbios_int_15h_86h_thread);
+		} else {
+#endif
+			pcbios_int_15h_86h_thread(NULL);
+			REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+		}
 #endif
 	}
 }
@@ -8231,6 +8219,59 @@ inline void pcbios_int_15h_e8h()
 	}
 }
 
+void pcbios_clear_key_buffer()
+{
+	key_buf_char->clear();
+	key_buf_scan->clear();
+	
+	// update key buffer
+	*(UINT16 *)(mem + 0x41a) = *(UINT16 *)(mem + 0x41c); // head = tail
+}
+
+void pcbios_set_key_buffer(int key_char, int key_scan)
+{
+	key_buf_char->write(key_char);
+	key_buf_scan->write(key_scan);
+	
+	// update key buffer
+	UINT16 head = *(UINT16 *)(mem + 0x41a);
+	UINT16 tail = *(UINT16 *)(mem + 0x41c);
+	UINT16 next = tail + 2;
+	if(next >= *(UINT16 *)(mem + 0x482)) {
+		next = *(UINT16 *)(mem + 0x480);
+	}
+	if(next != head) {
+		*(UINT16 *)(mem + 0x41c) = next;
+		mem[0x400 + (tail++)] = key_char;
+		mem[0x400 + (tail++)] = key_scan;
+	}
+}
+
+bool pcbios_get_key_buffer(int *key_char, int *key_scan)
+{
+	if(key_buf_char->empty()) {
+		*key_char = 0x00;
+		*key_scan = 0x00;
+		return(false);
+	}
+	*key_char = key_buf_char->read();
+	*key_scan = key_buf_scan->read();
+	
+	// update key buffer
+	UINT16 head = *(UINT16 *)(mem + 0x41a);
+	UINT16 tail = *(UINT16 *)(mem + 0x41c);
+	UINT16 next = head + 2;
+	if(next >= *(UINT16 *)(mem + 0x482)) {
+		next = *(UINT16 *)(mem + 0x480);
+	}
+	if(head != tail) {
+		*(UINT16 *)(mem + 0x41a) = next;
+//		*key_char = mem[0x400 + (head++)];
+//		*key_scan = mem[0x400 + (head++)];
+	}
+	return(true);
+}
+
 void pcbios_update_key_code(bool wait)
 {
 	if(key_buf_char != NULL && key_buf_scan != NULL) {
@@ -8255,25 +8296,16 @@ void pcbios_update_key_code(bool wait)
 #ifdef USE_SERVICE_THREAD
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
-		if(key_buf_char->count() != 0) {
-			int key_char = key_buf_char->read();
-			int key_scan = key_buf_scan->read();
+		int key_char, key_scan;
+		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
 			key_code  = key_char << 0;
 			key_code |= key_scan << 8;
 			key_recv  = 0x0000ffff;
-			// write to bottom of key buffer
-			mem[0x43c] = (UINT8)key_char;
-			mem[0x43d] = (UINT8)key_scan;
 		}
-		if(key_buf_char->count() != 0) {
-			int key_char = key_buf_char->read();
-			int key_scan = key_buf_scan->read();
+		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
 			key_code |= key_char << 16;
 			key_code |= key_scan << 24;
 			key_recv |= 0xffff0000;
-			// write to bottom of key buffer
-			mem[0x43c] = (UINT8)key_char;
-			mem[0x43d] = (UINT8)key_scan;
 		}
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
@@ -8309,10 +8341,14 @@ DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 inline void pcbios_int_16h_00h()
 {
 #ifdef USE_SERVICE_THREAD
-	start_service_loop(pcbios_int_16h_00h_thread);
-#else
-	pcbios_int_16h_00h_thread(NULL);
-	REQUEST_HARDWRE_UPDATE();
+	if(!in_service && !in_service_29h) {
+		start_service_loop(pcbios_int_16h_00h_thread);
+	} else {
+#endif
+		pcbios_int_16h_00h_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+	}
 #endif
 }
 
@@ -8382,8 +8418,7 @@ inline void pcbios_int_16h_05h()
 #ifdef USE_SERVICE_THREAD
 		EnterCriticalSection(&key_buf_crit_sect);
 #endif
-		key_buf_char->write(REG8(CL));
-		key_buf_scan->write(REG8(CH));
+		pcbios_set_key_buffer(REG8(CL), REG8(CH));
 #ifdef USE_SERVICE_THREAD
 		LeaveCriticalSection(&key_buf_crit_sect);
 #endif
@@ -8866,7 +8901,8 @@ DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 inline void msdos_int_21h_01h()
 {
 #ifdef USE_SERVICE_THREAD
-	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+	if(!in_service && !in_service_29h &&
+	   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// msdos_putch() will be used in this service
 		// if int 29h is hooked, run this service in main thread to call int 29h
@@ -8942,10 +8978,14 @@ DWORD WINAPI msdos_int_21h_07h_thread(LPVOID)
 inline void msdos_int_21h_07h()
 {
 #ifdef USE_SERVICE_THREAD
-	start_service_loop(msdos_int_21h_07h_thread);
-#else
-	msdos_int_21h_07h_thread(NULL);
-	REQUEST_HARDWRE_UPDATE();
+	if(!in_service && !in_service_29h) {
+		start_service_loop(msdos_int_21h_07h_thread);
+	} else {
+#endif
+		msdos_int_21h_07h_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+	}
 #endif
 }
 
@@ -8963,10 +9003,14 @@ DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 inline void msdos_int_21h_08h()
 {
 #ifdef USE_SERVICE_THREAD
-	start_service_loop(msdos_int_21h_08h_thread);
-#else
-	msdos_int_21h_08h_thread(NULL);
-	REQUEST_HARDWRE_UPDATE();
+	if(!in_service && !in_service_29h) {
+		start_service_loop(msdos_int_21h_08h_thread);
+	} else {
+#endif
+		msdos_int_21h_08h_thread(NULL);
+		REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+	}
 #endif
 }
 
@@ -9075,7 +9119,8 @@ inline void msdos_int_21h_0ah()
 {
 	if(mem[SREG_BASE(DS) + REG16(DX)] != 0x00) {
 #ifdef USE_SERVICE_THREAD
-		if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+		if(!in_service && !in_service_29h &&
+		   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 		   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 			// msdos_putch() will be used in this service
 			// if int 29h is hooked, run this service in main thread to call int 29h
@@ -10499,7 +10544,8 @@ inline void msdos_int_21h_3fh()
 				// BX is stdin or is redirected to stdin
 				if(REG16(CX) != 0) {
 #ifdef USE_SERVICE_THREAD
-					if(*(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
+					if(!in_service && !in_service_29h &&
+					   *(UINT16 *)(mem + 4 * 0x29 + 0) == 0x29 &&
 					   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 						// msdos_putch() will be used in this service
 						// if int 29h is hooked, run this service in main thread to call int 29h
@@ -17161,6 +17207,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	text_vram_end_address = text_vram_top_address + regen;
 	shadow_buffer_top_address = SHADOW_BUF_TOP;
 	shadow_buffer_end_address = shadow_buffer_top_address + regen;
+	cursor_position_address = 0x450 + mem[0x462] * 2;
 	
 	if(regen > 0x4000) {
 		regen = 0x8000;
@@ -17884,12 +17931,12 @@ void hardware_release()
 
 void hardware_run()
 {
-	m_halted = 0;
-	m_int_num = -1;
-	
 #ifdef EXPORT_DEBUG_TO_FILE
 	// open debug log file after msdos_init() is done not to use the standard file handlers
 	fp_debug_log = fopen("debug.log", "w");
+#endif
+#ifdef USE_DEBUGGER
+	m_int_num = -1;
 #endif
 	while(!m_halted) {
 		hardware_run_cpu();

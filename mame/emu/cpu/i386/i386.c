@@ -3392,9 +3392,7 @@ static void i386_set_a20_line(int state)
 static CPU_EXECUTE( i386 )
 {
 #ifdef SUPPORT_RDTSC
-	m_cycles = 1;
-	int cycles = m_cycles;
-	m_base_cycles = cycles;
+	m_cycles = m_base_cycles = 1;
 #endif
 	CHANGE_PC(m_eip);
 
@@ -3482,7 +3480,7 @@ static CPU_EXECUTE( i386 )
 #endif
 //	}
 #ifdef SUPPORT_RDTSC
-	m_tsc += (cycles - m_cycles);
+	m_tsc += (m_base_cycles - m_cycles);
 #endif
 }
 

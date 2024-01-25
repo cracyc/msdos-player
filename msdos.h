@@ -177,16 +177,6 @@ public:
 		}
 		return(val);
 	}
-	int read_not_remove(int pt) {
-		if(pt >= 0 && pt < cnt) {
-			pt += rpt;
-			if(pt >= size) {
-				pt -= size;
-			}
-			return buf[pt];
-		}
-		return 0;
-	}
 	int count() {
 		return(cnt);
 	}
@@ -324,6 +314,8 @@ DWORD main_thread_id;
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
 #endif
+
+bool in_service_29h = false;
 
 /* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
@@ -1229,6 +1221,10 @@ bool key_changed = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
+void pcbios_clear_key_buffer();
+void pcbios_set_key_buffer(int key_char, int key_scan);
+bool pcbios_get_key_buffer(int *key_char, int *key_scan);
+
 UINT8 ctrl_break_checking = 0x00; // ???
 bool ctrl_break_detected = false;
 bool ctrl_break_pressed = false;
@@ -1243,6 +1239,7 @@ UINT32 text_vram_top_address;
 UINT32 text_vram_end_address;
 UINT32 shadow_buffer_top_address;
 UINT32 shadow_buffer_end_address;
+UINT32 cursor_position_address;
 int vram_pages;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
