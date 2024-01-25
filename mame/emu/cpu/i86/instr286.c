@@ -105,6 +105,8 @@ static void i80286_trap2(UINT32 error)
 		case DOUBLE_FAULT:
 			i80286_interrupt_descriptor(number,1,0);
 			break;
+		case ILLEGAL_INSTRUCTION:
+			m_int6h_skip_pc = m_pc;
 		default:
 			i80286_interrupt_descriptor(number,1,-1);
 		}
@@ -516,8 +518,8 @@ static void PREFIX286(_0fpre)()
 
 	switch (next) {
 	case 0:
-		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		ModRM=FETCHOP;
+		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		switch (ModRM&0x38) {
 		case 0: /* sldt */
 			PutRMWord(ModRM, m_ldtr.sel);
@@ -628,8 +630,8 @@ static void PREFIX286(_0fpre)()
 		}
 		break;
 	case 2: /* LAR */
-		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		ModRM = FETCHOP;
+		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		tmp=GetRMWord(ModRM);
 		if ((addr = i80286_selector_address(tmp)) == -1) m_ZeroVal = 1;
 		else {
@@ -645,8 +647,8 @@ static void PREFIX286(_0fpre)()
 		}
 		break;
 	case 3: /* LSL */
-		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		ModRM = FETCHOP;
+		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		tmp=GetRMWord(ModRM);
 		if ((addr = i80286_selector_address(tmp)) == -1) m_ZeroVal = 1;
 		else {
@@ -716,9 +718,9 @@ static void PREFIX286(_0fpre)()
 static void PREFIX286(_arpl)() /* 0x63 */
 {
 	UINT16 ModRM, tmp, source;
-	if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 
 	ModRM=FETCHOP;
+	if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 	tmp=GetRMWord(ModRM);
 	source=RegWord(ModRM);
 

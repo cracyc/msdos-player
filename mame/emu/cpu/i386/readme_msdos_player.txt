@@ -6,5 +6,8 @@ All registers can be accessed directly without cpustate->.
 
 cycle_table_rm/pm are changed from dynamic array to static array.
 
+Modified to raise INT 06h (illegal opcode) after all params are fetched.
+This is to get the EIP of the next opcode as correct as possible.
+
 Mr.Jason Hood fixed to use unaligned reads/writes only when necessary
 for a minor speed improvement.

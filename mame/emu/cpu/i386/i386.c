@@ -639,6 +639,9 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 		}
 	}
 #endif
+	if(irq == 6) {
+		m_int6h_skip_eip = m_eip;
+	}
 
 	if( !(PROTECTED_MODE) )
 	{

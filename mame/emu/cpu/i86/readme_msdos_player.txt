@@ -6,3 +6,6 @@ global variables.
 All registers can be accessed directly without cpustate->.
 
 Timing codes are removed.
+
+Modified to raise INT 06h (illegal opcode) after all params are fetched.
+This is to get the IP of the next opcode as correct as possible.

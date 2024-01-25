@@ -3232,13 +3232,13 @@ static void I386OP(group0F01_32)()      // Opcode 0x0f 01
 static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 {
 	UINT8 modrm = FETCH();
+	UINT8 bit = FETCH();
 
 	switch( (modrm >> 3) & 0x7 )
 	{
 		case 4:         /* BT Rm32, i8 */
 			if( modrm >= 0xc0 ) {
 				UINT32 dst = LOAD_RM32(modrm);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3249,7 +3249,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 			} else {
 				UINT32 ea = GetEA(modrm,0);
 				UINT32 dst = READ32(ea);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3262,7 +3261,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 		case 5:         /* BTS Rm32, i8 */
 			if( modrm >= 0xc0 ) {
 				UINT32 dst = LOAD_RM32(modrm);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3275,7 +3273,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 			} else {
 				UINT32 ea = GetEA(modrm,1);
 				UINT32 dst = READ32(ea);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3290,7 +3287,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 		case 6:         /* BTR Rm32, i8 */
 			if( modrm >= 0xc0 ) {
 				UINT32 dst = LOAD_RM32(modrm);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3303,7 +3299,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 			} else {
 				UINT32 ea = GetEA(modrm,1);
 				UINT32 dst = READ32(ea);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3318,7 +3313,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 		case 7:         /* BTC Rm32, i8 */
 			if( modrm >= 0xc0 ) {
 				UINT32 dst = LOAD_RM32(modrm);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;
@@ -3331,7 +3325,6 @@ static void I386OP(group0FBA_32)()      // Opcode 0x0f ba
 			} else {
 				UINT32 ea = GetEA(modrm,1);
 				UINT32 dst = READ32(ea);
-				UINT8 bit = FETCH();
 
 				if( dst & (1 << bit) )
 					m_CF = 1;

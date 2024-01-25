@@ -42,6 +42,7 @@ union i80286basicregs
 	UINT32  m_prev_cs;
 	UINT32  m_prev_eip;
 #endif
+	UINT32 m_int6h_skip_pc;
 	UINT16  m_flags;
 	UINT16  m_msw;
 	UINT32  m_base[4];

@@ -5259,14 +5259,24 @@ void msdos_prn_out(char data)
 
 // memory control
 
-mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
+mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, char *prog_name)
 {
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	
 	mcb->mz = mz;
 	mcb->psp = psp;
 	mcb->paragraphs = paragraphs;
+	
+	if(prog_name != NULL) {
+		memset(mcb->prog_name, 0, 8);
+		memcpy(mcb->prog_name, prog_name, min(8, strlen(prog_name)));
+	}
 	return(mcb);
+}
+
+mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
+{
+	return(msdos_mcb_create(mcb_seg, mz, psp, paragraphs, NULL));
 }
 
 void msdos_mcb_check(mcb_t *mcb)
@@ -5282,7 +5292,7 @@ void msdos_mcb_check(mcb_t *mcb)
 	}
 }
 
-int msdos_mem_split(int seg, int paragraphs)
+void msdos_mem_split(int seg, int paragraphs)
 {
 	int mcb_seg = seg - 1;
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
@@ -5295,9 +5305,7 @@ int msdos_mem_split(int seg, int paragraphs)
 		msdos_mcb_create(new_seg, mcb->mz, 0, new_paragraphs);
 		mcb->mz = 'M';
 		mcb->paragraphs = paragraphs;
-		return(0);
 	}
-	return(-1);
 }
 
 void msdos_mem_merge(int seg)
@@ -5449,6 +5457,8 @@ void msdos_mem_link_umb()
 	
 	mcb->mz = 'M';
 	mcb->paragraphs = (UMB_TOP >> 4) - (MEMORY_END >> 4);
+	
+	((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked |= 0x01;
 }
 
 void msdos_mem_unlink_umb()
@@ -5458,6 +5468,8 @@ void msdos_mem_unlink_umb()
 	
 	mcb->mz = 'Z';
 	mcb->paragraphs = 0;
+	
+	((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked &= ~0x01;
 }
 
 #ifdef SUPPORT_HMA
@@ -5773,6 +5785,7 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name = NULL, name_tmp[MAX_PATH];
 	char pipe_stdin_path[MAX_PATH] = {0};
 	char pipe_stdout_path[MAX_PATH] = {0};
+	char pipe_stderr_path[MAX_PATH] = {0};
 	
 	int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
 	int opt_len = mem[opt_ofs];
@@ -5840,34 +5853,55 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 						strcpy(command, token);
 						char tmp[MAX_PATH];
 						strcpy(tmp, token + strlen(token) + 1);
-						strcpy(opt, tmp);
+						strcpy(opt, "");
+						for(int i = 0; i < strlen(tmp); i++) {
+							if(tmp[i] != ' ') {
+								strcpy(opt, tmp + i);
+								break;
+							}
+						}
+						strcpy(tmp, opt);
 						
 						if(al == 0x00) {
-							if((token = strstr(opt, "<")) != NULL) {
-								token++;
-								while(*token == ' ') {
-									token++;
-								}
-								char *ptr = token;
-								while(*ptr != ' ' && *ptr != '\0') {
-									ptr++;
-								}
-								*ptr = '\0';
+							#define GET_FILE_PATH() { \
+								if(token[0] != '>' && token[0] != '<') { \
+									token++; \
+								} \
+								token++; \
+								while(*token == ' ') { \
+									token++; \
+								} \
+								char *ptr = token; \
+								while(*ptr != ' ' && *ptr != '\r' && *ptr != '\0') { \
+									ptr++; \
+								} \
+								*ptr = '\0'; \
+							}
+							if((token = strstr(opt, "0<")) != NULL || (token = strstr(opt, "<")) != NULL) {
+								GET_FILE_PATH();
 								strcpy(pipe_stdin_path, token);
 								strcpy(opt, tmp);
 							}
-							if((token = strstr(opt, ">")) != NULL) {
-								token++;
-								while(*token == ' ') {
-									token++;
-								}
-								char *ptr = token;
-								while(*ptr != ' ' && *ptr != '\0') {
-									ptr++;
-								}
-								*ptr = '\0';
+							if((token = strstr(opt, "1>")) != NULL || (token = strstr(opt, ">")) != NULL) {
+								GET_FILE_PATH();
 								strcpy(pipe_stdout_path, token);
 								strcpy(opt, tmp);
+							}
+							if((token = strstr(opt, "2>")) != NULL) {
+								GET_FILE_PATH();
+								strcpy(pipe_stderr_path, token);
+								strcpy(opt, tmp);
+							}
+							#undef GET_FILE_PATH
+							
+							if((token = strstr(opt, "0<")) != NULL) {
+								*token = '\0';
+							}
+							if((token = strstr(opt, "1>")) != NULL) {
+								*token = '\0';
+							}
+							if((token = strstr(opt, "2>")) != NULL) {
+								*token = '\0';
 							}
 							if((token = strstr(opt, "<")) != NULL) {
 								*token = '\0';
@@ -5875,6 +5909,9 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 							if((token = strstr(opt, ">")) != NULL) {
 								*token = '\0';
 							}
+						}
+						for(int i = strlen(opt) - 1; i >= 0 && opt[i] == ' '; i--) {
+							opt[i] = '\0';
 						}
 						opt_len = strlen(opt);
 						mem[opt_ofs] = opt_len;
@@ -6120,9 +6157,6 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		
 		// pipe
 		if(pipe_stdin_path[0] != '\0') {
-			if(pipe_stdin_path[strlen(pipe_stdin_path) - 1] == 0x0d) {
-				pipe_stdin_path[strlen(pipe_stdin_path) - 1] = '\0';
-			}
 			if((fd = _open(pipe_stdin_path, _O_RDONLY | _O_BINARY)) != -1) {
 				UINT16 info = msdos_drive_number(pipe_stdin_path);
 				msdos_file_handler_open(fd, pipe_stdin_path, _isatty(fd), 0, info, current_psp);
@@ -6131,10 +6165,6 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 			}
 		}
 		if(pipe_stdout_path[0] != '\0') {
-			// LIST.COM specifies the file path with '\r'
-			if(pipe_stdout_path[strlen(pipe_stdout_path) - 1] == 0x0d) {
-				pipe_stdout_path[strlen(pipe_stdout_path) - 1] = '\0';
-			}
 			if(_access(pipe_stdout_path, 0) == 0) {
 				SetFileAttributes(pipe_stdout_path, FILE_ATTRIBUTE_NORMAL);
 				DeleteFile(pipe_stdout_path);
@@ -6143,6 +6173,18 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 				UINT16 info = msdos_drive_number(pipe_stdout_path);
 				msdos_file_handler_open(fd, pipe_stdout_path, _isatty(fd), 1, info, current_psp);
 				psp->file_table[1] = fd;
+				msdos_psp_set_file_table(fd, fd, current_psp);
+			}
+		}
+		if(pipe_stderr_path[0] != '\0') {
+			if(_access(pipe_stderr_path, 0) == 0) {
+				SetFileAttributes(pipe_stderr_path, FILE_ATTRIBUTE_NORMAL);
+				DeleteFile(pipe_stderr_path);
+			}
+			if((fd = _open(pipe_stderr_path, _O_WRONLY | _O_BINARY | _O_CREAT)) != -1) {
+				UINT16 info = msdos_drive_number(pipe_stderr_path);
+				msdos_file_handler_open(fd, pipe_stderr_path, _isatty(fd), 2, info, current_psp);
+				psp->file_table[2] = fd;
 				msdos_psp_set_file_table(fd, fd, current_psp);
 			}
 		}
@@ -9100,9 +9142,9 @@ inline void msdos_int_21h_31h()
 			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
 			
 			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC");
 			} else {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0);
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC");
 			}
 		} else {
 			mcb->mz = 'Z';
@@ -11762,9 +11804,9 @@ inline void msdos_int_27h()
 			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
 			
 			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4));
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC");
 			} else {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0);
+				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC");
 			}
 		} else {
 			mcb->mz = 'Z';
@@ -14180,9 +14222,11 @@ void msdos_syscall(unsigned num)
 			}
 		} else {
 #if defined(HAS_I386)
-			m_eip++;
+			m_eip = m_int6h_skip_eip;
+#elif defined(HAS_I286)
+			m_pc = m_int6h_skip_pc;
 #else
-			m_pc++;
+			// 8086/80186 ignore an invalid opcode
 #endif
 		}
 		break;
@@ -15445,9 +15489,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// dummy mcb to link to umb
 #if 0
-	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4)); // link umb
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC"); // link umb
 #else
-	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0); // unlink umb
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC"); // unlink umb
 #endif
 	
 	// first free mcb in upper memory block
@@ -15546,6 +15590,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
 	dos_info->disk_buf_heads.w.l = 0;
 	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
+	dos_info->umb_linked = (((mcb_t *)(mem + MEMORY_END - 16))->mz == 'M' ? 0x01 : 0x00);
 	dos_info->first_umb_fcb = UMB_TOP >> 4;
 	dos_info->first_mcb_2 = MEMORY_TOP >> 4;
 	memcpy(mem + DOS_INFO_TOP + DOS_INFO_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
