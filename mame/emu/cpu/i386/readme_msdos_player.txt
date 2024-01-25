@@ -5,3 +5,6 @@ i386_state are removed and all its members are changed to global variables.
 All registers can be accessed directly without cpustate->.
 
 cycle_table_rm/pm are changed from dynamic array to static array.
+
+Mr.Jason Hood fixed to use unaligned reads/writes only when necessary
+for a minor speed improvement.

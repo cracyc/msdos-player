@@ -45,11 +45,11 @@ union i80286basicregs
 	UINT16  m_limit[4];
 	UINT8 m_rights[4];
 	bool m_valid[4];
-	struct {
+	struct _anon1 {
 		UINT32 base;
 		UINT16 limit;
 	} m_gdtr, m_idtr;
-	struct {
+	struct _anon2 {
 		UINT16 sel;
 		UINT32 base;
 		UINT16 limit;

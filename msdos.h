@@ -8,6 +8,9 @@
 #ifndef _MSDOS_H_
 #define _MSDOS_H_
 
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x501
+#endif
 #include <windows.h>
 #include <winioctl.h>
 #include <tchar.h>
@@ -192,8 +195,9 @@ public:
 
 #define MAX_FILES	128
 #define MAX_PROCESS	16
-#define MAX_DTAINFO	32
+#define MAX_DTAINFO	128
 #define LFN_DTA_LADDR	0x10FFF0
+#define FIND_MAGIC	0x46696e64
 
 #define DUP_STDIN	29
 #define DUP_STDOUT	30
@@ -245,7 +249,9 @@ typedef struct {
 	UINT8 file_table[20];
 	UINT16 env_seg;
 	PAIR32 stack;
-	UINT8 reserved_2[30];
+	UINT16 file_table_size;
+	PAIR32 file_table_ptr;
+	UINT8 reserved_2[24];
 	UINT8 service[3];
 	UINT8 reserved_3[2];
 	UINT8 ex_fcb[7];
@@ -291,7 +297,10 @@ typedef struct {
 	UINT32 file_size;
 	UINT16 date;
 	UINT16 time;
-	UINT8 reserved[8];
+	union {
+		UINT8 reserved[8];
+		HANDLE handle;
+	};
 	UINT8 cur_record;
 	UINT32 rand_record;
 } fcb_t;
@@ -317,7 +326,13 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	UINT8 reserved[21];
+	union {
+		UINT8 reserved[21];
+		struct {
+			UINT32 find_magic;
+			UINT32 dta_index;
+		};
+	};
 	UINT8 attrib;
 	UINT16 time;
 	UINT16 date;
@@ -389,6 +404,15 @@ typedef struct {
 	UINT16 next_dpb_seg;
 	UINT16 first_free_cluster;
 	UINT16 free_clusters;
+	// extended
+	UINT16 fat_mirroring;
+	UINT16 info_sector;
+	UINT16 backup_boot_sector;
+	UINT32 first_cluster_sector;
+	UINT32 maximum_cluster_num;
+	UINT32 fat_sectors;
+	UINT32 root_cluster;
+	UINT32 free_search_cluster;
 } dpb_t;
 #pragma pack()
 
@@ -449,16 +473,17 @@ typedef struct {
 	UINT8 switchar;
 	UINT8 verify;
 	int max_files;
-	UINT8 allowable_mask;
-	UINT8 required_mask;
 	char volume_label[MAX_PATH];
 	bool parent_int_10h_feh_called;
 	bool parent_int_10h_ffh_called;
+	UINT16 parent_ds;
 } process_t;
 
 typedef struct {
 	UINT16 psp;
 	UINT32 dta;
+	UINT8 allowable_mask;
+	UINT8 required_mask;
 	HANDLE find_handle;
 } dtainfo_t;
 
@@ -480,13 +505,16 @@ dtainfo_t dtalist[MAX_DTAINFO];
 UINT16 malloc_strategy = 0;
 UINT8 umb_linked = 0;
 
+char comspec_path[MAX_PATH] = "C:\\COMMAND.COM";
+
 void msdos_syscall(unsigned num);
 int msdos_init(int argc, char *argv[], char *envp[], int standard_env);
 void msdos_finish();
 
 // console
 
-#define SCR_BUF_SIZE	1200
+#define SCR_BUF_WIDTH	256
+#define SCR_BUF_HEIGHT	128
 
 #define SET_RECT(rect, l, t, r, b) { \
 	rect.Left = l; \
@@ -497,12 +525,13 @@ void msdos_finish();
 
 HANDLE hStdin;
 HANDLE hStdout;
-CHAR_INFO scr_buf[SCR_BUF_SIZE][80];
-char scr_char[80 * 25];
-WORD scr_attr[80 * 25];
+CHAR_INFO scr_buf[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
+char scr_char[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
+WORD scr_attr[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 COORD scr_buf_size;
 COORD scr_buf_pos;
 int scr_width, scr_height;
+int scr_top;
 bool restore_console_on_exit = false;
 bool cursor_moved;
 
@@ -514,10 +543,11 @@ UINT32 key_code = 0;
 int active_code_page;
 int system_code_page;
 
-UINT32 text_vram_top_address = TEXT_VRAM_TOP;
-UINT32 text_vram_end_address = TEXT_VRAM_TOP + 4000;
-UINT32 shadow_buffer_top_address = SHADOW_BUF_TOP;
-UINT32 shadow_buffer_end_address = SHADOW_BUF_TOP + 4000;
+UINT32 text_vram_top_address;
+UINT32 text_vram_end_address;
+UINT32 shadow_buffer_top_address;
+UINT32 shadow_buffer_end_address;
+int vram_pages;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
 

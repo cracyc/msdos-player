@@ -753,7 +753,7 @@ INLINE UINT16 FETCH16()
 	UINT16 value;
 	UINT32 address = m_pc, error;
 
-	if( address & 0x1 ) {       /* Unaligned read */
+	if( (m_pc & 0xfff) == 0xfff ) {     /* Unaligned read */
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 	} else {
@@ -771,7 +771,7 @@ INLINE UINT32 FETCH32()
 	UINT32 value;
 	UINT32 address = m_pc, error;
 
-	if( m_pc & 0x3 ) {      /* Unaligned read */
+	if( (m_pc & 0xfff) > 0xffc ) {      /* Unaligned read */
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 		value |= (FETCH() << 16);
@@ -803,7 +803,7 @@ INLINE UINT16 READ16(UINT32 ea)
 	UINT16 value;
 	UINT32 address = ea, error;
 
-	if( ea & 0x1 ) {        /* Unaligned read */
+	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned read */
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 	} else {
@@ -820,7 +820,7 @@ INLINE UINT32 READ32(UINT32 ea)
 	UINT32 value;
 	UINT32 address = ea, error;
 
-	if( ea & 0x3 ) {        /* Unaligned read */
+	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned read */
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 		value |= (READ8( address+2 ) << 16),
@@ -840,7 +840,7 @@ INLINE UINT64 READ64(UINT32 ea)
 	UINT64 value;
 	UINT32 address = ea, error;
 
-	if( ea & 0x7 ) {        /* Unaligned read */
+	if( (ea & 0xfff) > 0xff8 ) {        /* Unaligned read */
 		value = (((UINT64) READ8( address+0 )) << 0);
 		value |= (((UINT64) READ8( address+1 )) << 8);
 		value |= (((UINT64) READ8( address+2 )) << 16);
@@ -874,7 +874,7 @@ INLINE UINT16 READ16PL0(UINT32 ea)
 	UINT16 value;
 	UINT32 address = ea, error;
 
-	if( ea & 0x1 ) {        /* Unaligned read */
+	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned read */
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 	} else {
@@ -892,7 +892,7 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 	UINT32 value;
 	UINT32 address = ea, error;
 
-	if( ea & 0x3 ) {        /* Unaligned read */
+	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned read */
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 		value |= (READ8PL0( address+2 ) << 16);
@@ -928,7 +928,7 @@ INLINE void WRITE16(UINT32 ea, UINT16 value)
 {
 	UINT32 address = ea, error;
 
-	if( ea & 0x1 ) {        /* Unaligned write */
+	if( (ea & 0xfff) == 0xfff ) {       /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 	} else {
@@ -943,7 +943,7 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 {
 	UINT32 address = ea, error;
 
-	if( ea & 0x3 ) {        /* Unaligned write */
+	if( (ea & 0xfff) > 0xffc ) {        /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 		WRITE8( address+2, (value >> 16) & 0xff );
@@ -952,7 +952,7 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
 			PF_THROW(error);
 
-		ea &= m_a20_mask;
+		address &= m_a20_mask;
 		write_dword(address, value);
 	}
 }
@@ -961,7 +961,7 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 {
 	UINT32 address = ea, error;
 
-	if( ea & 0x7 ) {        /* Unaligned write */
+	if( (ea & 0xfff) > 0xff8 ) {        /* Unaligned write */
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 		WRITE8( address+2, (value >> 16) & 0xff );
@@ -974,7 +974,7 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
 			PF_THROW(error);
 
-		ea &= m_a20_mask;
+		address &= m_a20_mask;
 		write_dword(address+0, value & 0xffffffff);
 		write_dword(address+4, (value >> 32) & 0xffffffff);
 	}

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								4/24/2015
+								10/17/2015
 
 ----- What's this
 
@@ -19,27 +19,50 @@ For example compile sample.c with LSI C-86 and execute compiled binary:
 
 The emulator can access host's file path and envrionment variables directly.
 
+
+Usage: MSDOS [-b] [-d] [-e] [-i] [-m] [-vX.XX] (command file) [options]
+
+	-b	stay busy during keyboard polling
+	-d	pretend running under straight DOS, not Windows
+	-e	use a reduced environment block
+	-i	ignore invalid instructions
+	-m	restrict free memory to 0x7FFF paragraphs
+	-v	set the DOS version
+
 Some softwares (for example DoDiary Version 1.55) invite that the environment
 variable table should be less than 1024 bytes.
-On the Windows OS, there are many variables and the variable table size will
-be more than 1024 bytes and it causes an error.
+On the Windows OS, there are too many variables and the variable table size
+will be more than 1024 bytes and it causes an error.
 
 In this case, please specify the option '-e' and only the minimum variables
 (COMSPEC/INCLUDE/LIB/PATH/PROMPT/TEMP/TMP/TZ) are copied to the table.
 
 	> msdos -e dd.com
 
-If COMMAND.COM file does exist
+COMSPEC value is always "C:\COMMAND.COM".
+If a program try to open the "C:\COMMAND.COM" file, the file is redirected to
+the COMMAND.COM that does exist
 - in the same directory as the target program file,
 - in the same directory as msdos.exe,
 - in the current directory,
-- in the directory that is in your PATH environment variable,
-the COMMAND.COM file path is copied to COMSPEC.
+- in the directory that is in your PATH and MSDOS_PATH environment variables
+
+EDIT.COM does not work correctly when a free memory space is large.
+Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
+
+	> msdos -m edit.com
+
+"Windows Enhanced Mode Installation Check" API (INT 2FH, AX=1600H) returns
+the version of host Windows.
+If you want to pretend that Windows is not running, specify the option '-d'.
+
+	> msdos -d command.com
 
 "Get Version Number" API (INT 21H, AH=30H) returns the version number 7.10.
 If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
+
 
 This archive contains 8 executable binaries:
 
@@ -52,13 +75,13 @@ This archive contains 8 executable binaries:
 	i486_x86	Emulates 80486 and supports both 32bit/64bit Windows
 	i486_x64	Emulates 80486 and supports only 64bit Windows
 
-80286 binaries are much faster than 80386/80486.
-If you don't need the protected mode or mnemonics added with 80386/80486,
-I recommend i286_x86 or i286_x64 binary.
+8086 binaries are much faster than 80286/80386/80486.
+If you don't need the protected mode or mnemonics added with 80286/80386/80486,
+I recommend i86_x86 or i86_x64 binary.
 
 You can change the cpu model from 80486 to Pentium/PRO/MMX/2/3/4 or MediaGX.
 Replace "HAS_I486" with for example "HAS_PENTIUM" in source/msdos.vcproj.
-See also source/msdos.cpp, line 26-58.
+See also source/msdos.cpp, line 91-126.
 
 
 ----- Supported hardwares
@@ -70,14 +93,16 @@ Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 ----- Memory map
 
 000000H -	Conventional Memory (736KB)
-0B8000H -	VGA Text Video RAM
+0B8000H -	VGA Text Video RAM (32KB)
 0C0000H -	Upper Memory Block (224KB)
-0F8000H -	V-TEXT Shadow Buffer
+0F8000H -	V-TEXT Shadow Buffer (32KB-16B)
 0FFFF0H -	CPU Boot Address
 100000H -	Upper Memory (15MB)
 
 
 ----- Supported system calls
+
+INT 08H		PC BIOS - System Timer
 
 INT 10H		PC BIOS - Video
 
@@ -92,11 +117,17 @@ INT 10H		PC BIOS - Video
 	0AH	Write Character Only at Cursor Position
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
+	1111H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
+	1112H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
+	1114H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
+	1130H	Get Font Information
+	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
 	1310H	Read Characters and Standard Attributes
 	1311H	Read Characters and Extended Attributes
 	1320H	Write Characters and Standard Attributes
 	1321H	Write Characters and Extended Attributes
+	1A00H	Get Display Combination Code
 	1BH	Perform Gray-Scale Summing
 	8200H	Get/Set Scroll Mode
 	EFH	Get Video Adapter Type and Mode (*1)
@@ -109,6 +140,7 @@ INT 12H		PC BIOS - Get Memory Size
 
 INT 15H		PC BIOS
 
+	1000H	TopView Pause
 	2300H	Get CMOS Data
 	2301H	Set CMOS Data
 	2400H	Disable A20 Gate
@@ -160,9 +192,12 @@ INT 21H		MS-DOS System Call
 	0CH	Character Input with Buffer Flush
 	0DH	Disk Reset
 	0EH	Select Disk
+	0FH	Open File with FCB
+	10H	Close File with FCB
 	11H	Search First Entry with FCB
 	12H	Search Next Entry with FCB
 	13H	Delete File with FCB
+	16H	Create New File with FCB
 	18H	Null Function for CP/M Compatibility
 	19H	Current Disk
 	1AH	Set Disk Transfer Address
@@ -172,6 +207,8 @@ INT 21H		MS-DOS System Call
 	1EH	Null Function for CP/M Compatibility
 	1FH	Get Drive Parameter Block for Default Drive
 	20H	Null Function for CP/M Compatibility
+	21H	Random Read with FCB
+	22H	Randome Write with FCB
 	25H	Set Vector
 	26H	Create New Program Segment Prefix
 	29H	Parse File Name
@@ -192,6 +229,7 @@ INT 21H		MS-DOS System Call
 	35H	Get Vector
 	36H	Get Disk Free Space
 	3700H	Set Switch Character
+	3800H	Get Current Country Specifiy Information
 	39H	Create Subdirectory
 	3AH	Remove Subdirectory
 	3BH	Change Current Directory
@@ -218,6 +256,7 @@ INT 21H		MS-DOS System Call
 	4AH	Modify Allocated Memory Blocks
 	4B00H	Load and Execute Program
 	4B01H	Load Program
+	4B03H	Load Overlay
 	4CH	Terminate Process
 	4DH	Get Subprocess Return Code
 	4EH	Find First Matching File
@@ -275,6 +314,8 @@ INT 21H		MS-DOS System Call
 	71A6H	Windows95 - LFN - Get File Information by Handle
 	71A7H	Windows95 - LFN - Convert File Time/DOS Time
 	71A8H	Windows95 - LFN - Generate Short File Name
+	7300H	Windows95 - FAT32 - Get Drive Locking
+	7302H	Windows95 - FAT32 - Get Extended DPB
 	7303H	Windows95 - FAT32 - Get Extended Free Space on Drive
 
 INT 23H		Ctrl-Break Address
@@ -296,6 +337,7 @@ INT 2EH		Pass Command to Command Interpreter for Execution
 INT 2FH		Multiplex Interrupt
 
 	1600H	Windows Enhanced Mode Installation Check
+	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1A00H	ANSI.SYS Installation Check (*3)
 	4300H	XMS Installation Check (*4)
 	4A01H	Query Free HMA Space (*4)
@@ -320,6 +362,7 @@ INT 2FH		Multiplex Interrupt
 INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
 are based on DOSBox.
 
+Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk) and Mr.Jason Hood.
 
 ----------------------------------------
 TAKEDA, toshiya
