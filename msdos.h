@@ -314,6 +314,7 @@ typedef struct {
 	// constant clock
 	UINT32 expired_time;
 	UINT32 prev_time;
+	UINT64 accum;
 } pit_t;
 
 pit_t pit[3];
@@ -374,8 +375,10 @@ void kbd_write_command(UINT8 val);
 #define CDS_SIZE	0x80
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
+#define ERR_TABLE_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
+#define ERR_TABLE_SIZE	0x10
 // nls tables
-#define UPPERTABLE_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
+#define UPPERTABLE_TOP	(ERR_TABLE_TOP + ERR_TABLE_SIZE)
 #define UPPERTABLE_SIZE	0x82
 #define FILENAME_UPPERTABLE_TOP (UPPERTABLE_TOP + UPPERTABLE_SIZE)
 #define FILENAME_UPPERTABLE_SIZE 0x82

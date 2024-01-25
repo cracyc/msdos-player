@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/3/2016
+								6/7/2016
 
 ----- What's this
 
@@ -63,7 +63,8 @@ Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
 
 	> msdos -m edit.com
 
-"Windows Enhanced Mode Installation Check" API (INT 2FH, AX=1600H) returns
+"Windows Enhanced Mode Installation Check" API (INT 2FH, AX=1600H) and
+"Identify Windows Version and Type" API (INT 2FH, AX=160AH) return
 the version of host Windows.
 If you want to pretend that Windows is not running, specify the option '-d'.
 
@@ -73,6 +74,9 @@ If you want to pretend that Windows is not running, specify the option '-d'.
 If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
+
+NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
+the version number 7.10 and '-v' option is not affected.
 
 To enable XMS (i286 or later) and EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
@@ -158,6 +162,9 @@ INT 10H		PC BIOS - Video
 	1A00H	Get Display Combination Code
 	1BH	Perform Gray-Scale Summing
 	8200H	Get/Set Scroll Mode
+	8300H	Get Video RAM Address
+	90H	Get Physical Workstation Display Mode
+	91H	Get Physical Workstation Adapter Type
 	EFH	Get Video Adapter Type and Mode (*1)
 	FEH	Get Shadow Buffer
 	FFH	Update Screen from Shadow Buffer
@@ -261,11 +268,14 @@ INT 21H		MS-DOS System Call
 	3300H	Get Ctrl-Break
 	3301H	Set Ctrl-Break
 	3305H	Get Boot Drive
-	3306H	Get MS-DOS Version (*2)
+	3306H	Get True Version Number (*3)
 	3307H	Windows95 - Set/Clear DOS_FLAG
 	35H	Get Vector
 	36H	Get Disk Free Space
-	3700H	Set Switch Character
+	3700H	Get Switch Character
+	3701H	Set Switch Character
+	3702H	Get AvailDev Flag
+	3703H	Set AvailDev Flag
 	3800H	Get Current Country Specifiy Information
 	39H	Create Subdirectory
 	3AH	Remove Subdirectory
@@ -286,6 +296,10 @@ INT 21H		MS-DOS System Call
 	4408H	Device Removable Query
 	4409H	Device Local or Remote Query
 	440AH	Handle Local or Remote Query
+	440CH	Generic Character Device Request
+	440DH	Generic Block Device Request
+	4410H	Query Generic IOCTRL Capability (Handle)
+	4411H	Query Generic IOCTRL Capability (Drive)
 	45H	Duplicate File Handle
 	46H	Force Duplicate of Handle
 	47H	Get Current Directory
@@ -358,6 +372,7 @@ INT 21H		MS-DOS System Call
 	71A6H	Windows95 - LFN - Get File Information by Handle
 	71A7H	Windows95 - LFN - Convert File Time/DOS Time
 	71A8H	Windows95 - LFN - Generate Short File Name
+	71AAH	Windows95 - LFN - Create/Terminate/Query SUBST
 	7300H	Windows95 - FAT32 - Get Drive Locking
 	7302H	Windows95 - FAT32 - Get Extended DPB
 	7303H	Windows95 - FAT32 - Get Extended Free Space on Drive
@@ -368,7 +383,7 @@ INT 24H		Critical Error Handler
 
 INT 25H		Absolute Disk Read
 
-INT 26H		Absolute Disk Write (*3)
+INT 26H		Absolute Disk Write (*4)
 
 INT 27H		Terminate and Stay Resident
 
@@ -382,39 +397,36 @@ INT 2FH		Multiplex Interrupt
 
 	1216H	Get System File Table Entry
 	1220H	Get Job File Table Entry
-	1600H	Windows Enhanced Mode Installation Check
+	122EH	Get Error Table Addresses (DL=00H/02H/04H/06H) (*5)
+	1600H	Windows - Windows Enhanced Mode Installation Check
+	160AH	Windows - Identify Windows Version and Type
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
-	168FH	Windows95 - Close Awareness
-	1A00H	ANSI.SYS Installation Check (*4)
+	1A00H	ANSI.SYS Installation Check
 	4300H	XMS - Installation Check
 	4310H	XMS - Get Driver Address
-	4A01H	DOS 5+ - Query Free HMA Space (*5)
-	4A02H	DOS 5+ - Allocate HMA Space (*5)
-	4A03H	Windows95 - DOS KERNEL - (De)Allocate HMA Memory Block
-	4A04H	Windows95 - DOS KERNEL - Get Start Of HMA Memory Chain
+	4810H	Read Input Line From Console
 	4F00H	BILING - Get Version
 	4F01H	BILING - Get Code Page
 	AE00H	Installable Command - Installation Check
 	AE01H	Installable Command - Execute
-	B700H	APPEND - Installation Check (*5)
 
 INT 67H		LIM EMS
 
 	40H	LIM EMS - Get Manager Status
 	41H	LIM EMS - Get Page Frame Segment
-	42H	LIM EMS - Get Number Of Pages
-	43H	LIM EMS - Get Handle And Allocate Memory
+	42H	LIM EMS - Get Number of Pages
+	43H	LIM EMS - Get Handle and Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
-	45H	LIM EMS - Release Handle And Memory
+	45H	LIM EMS - Release Handle and Memory
 	46H	LIM EMS - Get EMM Version (*6)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
-	4BH	LIM EMS - Get Number Of EMM Handles
+	4BH	LIM EMS - Get Number of EMM Handles
 	4CH	LIM EMS - Get Pages Owned By Handle
-	4DH	LIM EMS - Get Pages For All Handles
+	4DH	LIM EMS - Get Pages for All Handles
 	4E00H	LIM EMS - Get Page Map
 	4E01H	LIM EMS - Set Page Map
-	4E02H	LIM EMS - Get And Set Page Map
+	4E02H	LIM EMS - Get and Set Page Map
 	4E03H	LIM EMS - Get Page Map Array Size
 	4F00H	LIM EMS 4.0 - Get Partial Page Map
 	4F01H	LIM EMS 4.0 - Set Partial Page Map
@@ -425,7 +437,7 @@ INT 67H		LIM EMS
 	5300H	LIM EMS 4.0 - Get Handle Name
 	5301H	LIM EMS 4.0 - Set Handle Name
 	5400H	LIM EMS 4.0 - Get Handle Directory
-	5401H	LIM EMS 4.0 - Search For Named Handle
+	5401H	LIM EMS 4.0 - Search for Named Handle
 	5402H	LIM EMS 4.0 - Get Total Handles
 	5700H	LIM EMS 4.0 - Move Memory Region
 	5701H	LIM EMS 4.0 - Exchange Memory Region
@@ -458,9 +470,9 @@ CALL FAR XMS
 
 (*1) Not a Hercules-compatible video adapter
 (*2) MS-DOS Version: 7.10 (default) or specified version with -v option
-(*3) Support only floppy disk drive
-(*4) ANSI.SYS is installed
-(*5) HMA/APPEND are not installed
+(*3) MS-DOS Version: 7.10, -v option is not affected
+(*4) Support only floppy disk drive
+(*5) Returns a dummy error table
 (*6) EMS Version: 3.2
 (*7) XMS Version: 2.70
 

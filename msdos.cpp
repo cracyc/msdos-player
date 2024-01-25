@@ -7,15 +7,64 @@
 
 #include "msdos.h"
 
-#define my_strchr(str, chr) (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr))
-#define my_strtok(tok, del) (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del))
-#define my_strupr(str) (char *)_mbsupr((unsigned char *)(str))
-
 #define fatalerror(...) { \
 	fprintf(stderr, __VA_ARGS__); \
 	exit(1); \
 }
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
+#define nolog(...)
+
+//#define ENABLE_DEBUG
+#ifdef ENABLE_DEBUG
+	#define EXPORT_DEBUG_TO_FILE
+	#define ENABLE_DEBUG_DASM
+	#define ENABLE_DEBUG_SYSCALL
+	#define ENABLE_DEBUG_UNIMPLEMENTED
+	
+	#ifdef EXPORT_DEBUG_TO_FILE
+		FILE* fdebug = NULL;
+	#else
+		#define fdebug stderr
+	#endif
+	#ifdef ENABLE_DEBUG_UNIMPLEMENTED
+		#define unimplemented_10h fatalerror
+		#define unimplemented_15h fatalerror
+		#define unimplemented_16h fatalerror
+		#define unimplemented_1ah fatalerror
+		#define unimplemented_21h fatalerror
+		#define unimplemented_2fh fatalerror
+		#define unimplemented_67h fatalerror
+		#define unimplemented_xms fatalerror
+	#endif
+#endif
+#ifndef unimplemented_10h
+	#define unimplemented_10h nolog
+#endif
+#ifndef unimplemented_15h
+	#define unimplemented_15h nolog
+#endif
+#ifndef unimplemented_16h
+	#define unimplemented_16h nolog
+#endif
+#ifndef unimplemented_1ah
+	#define unimplemented_1ah nolog
+#endif
+#ifndef unimplemented_21h
+	#define unimplemented_21h nolog
+#endif
+#ifndef unimplemented_2fh
+	#define unimplemented_2fh nolog
+#endif
+#ifndef unimplemented_67h
+	#define unimplemented_67h nolog
+#endif
+#ifndef unimplemented_xms
+	#define unimplemented_xms nolog
+#endif
+
+#define my_strchr(str, chr) (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr))
+#define my_strtok(tok, del) (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del))
+#define my_strupr(str) (char *)_mbsupr((unsigned char *)(str))
 
 #if defined(__MINGW32__)
 extern "C" int _CRT_glob = 0;
@@ -81,8 +130,6 @@ inline void maybe_idle()
 /* ----------------------------------------------------------------------------
 	MAME i86/i386
 ---------------------------------------------------------------------------- */
-
-//#define SUPPORT_DISASSEMBLER
 
 #ifndef __BIG_ENDIAN__
 #define LSB_FIRST
@@ -522,9 +569,9 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 #else
 	#include "mame/emu/cpu/i86/i86.c"
 #endif
-#ifdef SUPPORT_DISASSEMBLER
+#ifdef ENABLE_DEBUG_DASM
 	#include "mame/emu/cpu/i386/i386dasm.c"
-	bool dasm = false;
+	int dasm = 0;
 #endif
 
 #if defined(HAS_I386)
@@ -1180,7 +1227,7 @@ void msdos_cds_update(int drv)
 void msdos_upper_table_update()
 {
 	*(UINT16 *)(mem + UPPERTABLE_TOP) = 0x80;
-	for(unsigned i=0; i<0x80; ++i) {
+	for(unsigned i = 0; i < 0x80; ++i) {
 		UINT8 c[4];
 		*(UINT32 *)c = 0;				// reset internal conversion state
 		CharUpperBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage) 
@@ -1196,7 +1243,7 @@ void msdos_filename_upper_table_init()
 	// depended on (file)system, not on active codepage
 	// temporary solution: just filling data
 	*(UINT16 *)(mem + FILENAME_UPPERTABLE_TOP) = 0x80;
-	for(unsigned i=0; i<0x80; ++i) {
+	for(unsigned i = 0; i < 0x80; ++i) {
 		mem[FILENAME_UPPERTABLE_TOP + 2 + i] = 0x80 + i;
 	}
 }
@@ -1226,7 +1273,7 @@ void msdos_collating_table_update()
 {
 	// temporary solution: just filling data
 	*(UINT16 *)(mem + COLLATING_TABLE_TOP) = 0x100;
-	for(unsigned i=0; i<256; ++i) {
+	for(unsigned i = 0; i < 256; ++i) {
 		mem[COLLATING_TABLE_TOP + 2 + i] = i;
 	}
 }
@@ -1301,7 +1348,7 @@ int msdos_lead_byte_check(UINT8 code)
 
 int msdos_ctrl_code_check(UINT8 code)
 {
-	return (code >= 0x01 && code <= 0x1a && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+	return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
 }
 
 // file control
@@ -3809,6 +3856,7 @@ inline void pcbios_int_10h_13h()
 		}
 		break;
 	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
@@ -3823,6 +3871,7 @@ inline void pcbios_int_10h_1ah()
 		REG8(BH) = 0x00;
 		break;
 	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
@@ -3837,6 +3886,34 @@ inline void pcbios_int_10h_1dh()
 		REG16(BX) = 0;
 		break;
 	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_10h_4fh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AH) = 0x02; // not supported
+		break;
+	case 0x01:
+	case 0x02:
+	case 0x03:
+	case 0x04:
+	case 0x05:
+	case 0x06:
+	case 0x07:
+	case 0x08:
+	case 0x09:
+	case 0x0a:
+	case 0x0b:
+	case 0x0c:
+		REG8(AH) = 0x01; // failed
+		break;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
@@ -3847,16 +3924,50 @@ inline void pcbios_int_10h_82h()
 	static UINT8 mode = 0;
 	
 	switch(REG8(AL)) {
-	case 0:
+	case 0x00:
 		if(REG8(BL) != 0xff) {
 			mode = REG8(BL);
 		}
 		REG8(AL) = mode;
 		break;
 	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
+}
+
+inline void pcbios_int_10h_83h()
+{
+	static UINT8 mode = 0;
+	
+	switch(REG8(AL)) {
+	case 0x00:
+		REG16(AX) = 0; // offset???
+		SREG(ES) = (SHADOW_BUF_TOP >> 4);
+		i386_load_segment_descriptor(ES);
+		REG16(BX) = (SHADOW_BUF_TOP & 0x0f);
+		break;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_10h_90h()
+{
+	REG8(AL) = mem[0x449];
+}
+
+inline void pcbios_int_10h_91h()
+{
+	REG8(AL) = 0x04; // VGA
+}
+
+inline void pcbios_int_10h_efh()
+{
+	REG16(DX) = 0xffff;
 }
 
 inline void pcbios_int_10h_feh()
@@ -3895,10 +4006,13 @@ inline void pcbios_int_10h_ffh()
 
 inline void pcbios_int_15h_10h()
 {
-	if(REG8(AL) == 0) {
+	switch(REG8(AL)) {
+	case 0x00:
 		Sleep(10);
 		hardware_update();
-	} else {
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x86;
 		m_CF = 1;
 	}
@@ -3907,15 +4021,16 @@ inline void pcbios_int_15h_10h()
 inline void pcbios_int_15h_23h()
 {
 	switch(REG8(AL)) {
-	case 0:
+	case 0x00:
 		REG8(CL) = cmos_read(0x2d);
 		REG8(CH) = cmos_read(0x2e);
 		break;
-	case 1:
+	case 0x01:
 		cmos_write(0x2d, REG8(CL));
 		cmos_write(0x2e, REG8(CH));
 		break;
 	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x86;
 		m_CF = 1;
 		break;
@@ -3925,22 +4040,27 @@ inline void pcbios_int_15h_23h()
 inline void pcbios_int_15h_24h()
 {
 	switch(REG8(AL)) {
-	case 0:
+	case 0x00:
 		i386_set_a20_line(0);
 		REG8(AH) = 0;
 		break;
-	case 1:
+	case 0x01:
 		i386_set_a20_line(1);
 		REG8(AH) = 0;
 		break;
-	case 2:
+	case 0x02:
 		REG8(AH) = 0;
 		REG8(AL) = (m_a20_mask >> 20) & 1;
 		REG16(CX) = 0;
 		break;
-	case 3:
+	case 0x03:
 		REG16(AX) = 0;
 		REG16(BX) = 0;
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x86;
+		m_CF = 1;
 		break;
 	}
 }
@@ -3949,6 +4069,33 @@ inline void pcbios_int_15h_49h()
 {
 	REG8(AH) = 0;
 	REG8(BL) = 0;	// DOS/V
+}
+
+inline void pcbios_int_15h_50h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+	case 0x01:
+		if(REG8(BH) != 0x00 && REG8(BH) != 0x01) {
+			REG8(AH) = 0x01; // invalid font type in bh
+			m_CF = 1;
+		} else if(REG8(BL) != 0) {
+			REG8(AH) = 0x02; // bl not zero
+			m_CF = 1;
+		} else if(REG16(BP) != 0 && REG16(BP) != 437 && REG16(BP) != 932 && REG16(BP) != 934 && REG16(BP) != 936 && REG16(BP) != 938) {
+			REG8(AH) = 0x04; // invalid code page
+			m_CF = 1;
+		} else {
+			REG8(AH) = 0x86; // finally, this function is not supported
+			m_CF = 1;
+		}
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x86;
+		m_CF = 1;
+		break;
+	}
 }
 
 inline void pcbios_int_15h_86h()
@@ -4052,7 +4199,7 @@ inline void pcbios_int_15h_c9h()
 inline void pcbios_int_15h_cah()
 {
 	switch(REG8(AL)) {
-	case 0:
+	case 0x00:
 		if(REG8(BL) > 0x3f) {
 			REG8(AH) = 0x03;
 			m_CF = 1;
@@ -4063,7 +4210,7 @@ inline void pcbios_int_15h_cah()
 			REG8(CL) = cmos_read(REG8(BL));
 		}
 		break;
-	case 1:
+	case 0x01:
 		if(REG8(BL) > 0x3f) {
 			REG8(AH) = 0x03;
 			m_CF = 1;
@@ -4075,19 +4222,29 @@ inline void pcbios_int_15h_cah()
 		}
 		break;
 	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x86;
 		m_CF = 1;
 		break;
 	}
 }
 
-#if defined(HAS_I386)
-inline void pcbios_int_15h_e801h()
+inline void pcbios_int_15h_e8h()
 {
-	REG16(AX) = REG16(CX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
-	REG16(BX) = REG16(DX) = ((max(MAX_MEM, 0x1000000) - 0x1000000) >> 16);
-}
+	switch(REG8(AL)) {
+#if defined(HAS_I386)
+	case 0x01:
+		REG16(AX) = REG16(CX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
+		REG16(BX) = REG16(DX) = ((max(MAX_MEM, 0x1000000) - 0x1000000) >> 16);
+		break;
 #endif
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x86;
+		m_CF = 1;
+		break;
+	}
+}
 
 UINT32 pcbios_get_key_code(bool clear_buffer)
 {
@@ -4221,6 +4378,7 @@ inline void pcbios_int_16h_13h()
 		REG16(DX) = status;
 		break;
 	default:
+		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
@@ -4239,6 +4397,7 @@ inline void pcbios_int_16h_14h()
 		REG8(AL) = status;
 		break;
 	default:
+		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		m_CF = 1;
 		break;
 	}
@@ -4470,8 +4629,9 @@ inline void msdos_int_21h_0ch()
 		msdos_int_21h_0ah();
 		break;
 	default:
-		REG16(AX) = 0x01;
-		m_CF = 1;
+//		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+//		REG16(AX) = 0x01;
+//		m_CF = 1;
 		break;
 	}
 }
@@ -5181,6 +5341,7 @@ inline void msdos_int_21h_33h()
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -5210,18 +5371,46 @@ inline void msdos_int_21h_36h()
 
 inline void msdos_int_21h_37h()
 {
-	process_t *process = msdos_process_info_get(current_psp);
+	static UINT8 dev_flag = 0xff;
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		REG8(AL) = 0x00;
-		REG8(DL) = process->switchar;
+		{
+			process_t *process = msdos_process_info_get(current_psp);
+			REG8(AL) = 0x00;
+			REG8(DL) = process->switchar;
+		}
 		break;
 	case 0x01:
-		REG8(AL) = 0x00;
-		process->switchar = REG8(DL);
+		{
+			process_t *process = msdos_process_info_get(current_psp);
+			REG8(AL) = 0x00;
+			process->switchar = REG8(DL);
+		}
+		break;
+	case 0x02:
+		REG8(DL) = dev_flag;
+		break;
+	case 0x03:
+		dev_flag = REG8(DL);
+		break;
+	case 0xd0:
+	case 0xd1:
+	case 0xd2:
+	case 0xd3:
+	case 0xd4:
+	case 0xd5:
+	case 0xd6:
+	case 0xd7:
+	case 0xdc:
+	case 0xdd:
+	case 0xde:
+	case 0xdf:
+		// diet ???
+		REG16(AX) = 1;
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 1;
 		break;
 	}
@@ -5267,6 +5456,7 @@ inline void msdos_int_21h_38h()
 		REG16(BX) = get_country_info((country_info_t *)(mem + SREG_BASE(DS) + REG16(DX)));
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 2;
 		m_CF = 1;
 		break;
@@ -5619,6 +5809,7 @@ inline void msdos_int_21h_43h(int lfn)
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -5627,6 +5818,8 @@ inline void msdos_int_21h_43h(int lfn)
 
 inline void msdos_int_21h_44h()
 {
+	static UINT16 iteration_count = 0;
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
@@ -5726,7 +5919,311 @@ inline void msdos_int_21h_44h()
 		break;
 	case 0x0b: // set retry count
 		break;
+	case 0x0c: // generic character device request
+		if(REG8(CL) == 0x45) {
+			// set iteration (retry) count
+			iteration_count = *(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX));
+		} else if(REG8(CL) == 0x4a) {
+			// select code page
+			active_code_page = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2);
+			msdos_nls_tables_update();
+		} else if(REG8(CL) == 0x65) {
+			// get iteration (retry) count
+			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(DX)) = iteration_count;
+		} else if(REG8(CL) == 0x6a) {
+			// query selected code page
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = 2; // FIXME
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 2) = active_code_page;
+			
+			CPINFO info;
+			GetCPInfo(active_code_page, &info);
+			
+			if(info.MaxCharSize != 1) {
+				for(int i = 0;; i++) {
+					UINT8 lo = info.LeadByte[2 * i + 0];
+					UINT8 hi = info.LeadByte[2 * i + 1];
+					
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 4 + 4 * i + 0) = lo;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 4 + 4 * i + 2) = hi;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0) + 4;
+					
+					if(lo == 0 && hi == 0) {
+						break;
+					}
+				}
+			}
+		} else if(REG8(CL) == 0x7f) {
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00) = 0;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x01) = 0;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02) = 14;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04) = 1;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06) = 1;
+			*(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x07) = 0;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08) = 4;
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a) =  8 * (*(UINT16 *)(mem + 0x44a));
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c) = 16 * (*(UINT8  *)(mem + 0x484) + 1);
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e) = *(UINT16 *)(mem + 0x44a);
+			*(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x10) = *(UINT8  *)(mem + 0x484) + 1;
+		} else {
+			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01; // invalid function
+			m_CF = 1;
+		}
+		break;
+	case 0x0d: // generic block device request
+		if(REG8(CL) == 0x40) {
+			// set device parameters
+		} else if(REG8(CL) == 0x46) {
+			// set volume serial number
+		} else if(REG8(CL) == 0x4a) {
+			// lock logical volume
+		} else if(REG8(CL) == 0x4b) {
+			// lock physical volume
+		} else if(REG8(CL) == 0x60) {
+			// get device parameters
+			char dev[] = "\\\\.\\A:";
+			dev[4] = 'A' + (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
+			
+			HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+			if(hFile != INVALID_HANDLE_VALUE) {
+				DISK_GEOMETRY geo;
+				DWORD dwSize;
+				if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
+					*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x07; // ???
+					switch(geo.MediaType) {
+					case F5_360_512:
+					case F5_320_512:
+					case F5_320_1024:
+					case F5_180_512:
+					case F5_160_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // 320K/360K disk
+						break;
+					case F5_1Pt2_512:
+					case F3_1Pt2_512:
+					case F3_1Pt23_1024:
+					case F5_1Pt23_1024:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x01; // 1.2M disk
+						break;
+					case F3_720_512:
+					case F3_640_512:
+					case F5_640_512:
+					case F5_720_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02; // 720K disk
+						break;
+					case F8_256_128:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x03; // single-density 8-inch disk
+						break;
+					case FixedMedia:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
+						break;
+					case F3_1Pt44_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07; // (DOS 3.3+) other type of block device, normally 1.44M floppy
+						break;
+					case F3_2Pt88_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09; // (DOS 5+) 2.88M floppy
+						break;
+					default:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // fixed disk
+//						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x05; // (DOS 3.3+) other type of block device, normally 1.44M floppy
+						break;
+					}
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x02) = (geo.MediaType == FixedMedia) ? 0x01 : 0x00;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04) = (geo.Cylinders.QuadPart > 0xffff) ? 0xffff : geo.Cylinders.QuadPart;
+					switch(geo.MediaType) {
+					case F5_360_512:
+					case F5_320_512:
+					case F5_320_1024:
+					case F5_180_512:
+					case F5_160_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x01; // 320K/360K disk
+						break;
+					default:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x06) = 0x00; // other drive types
+						break;
+					}
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x00) = geo.BytesPerSector;
+					*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x02) = geo.SectorsPerTrack * geo.TracksPerCylinder;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x03) = 0;
+					*(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x05) = 0;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x06) = 0;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x08) = 0;
+					switch(geo.MediaType) {
+					case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xff;
+						break;
+					case F5_160_512:	// floppy, single-sided, 8 sectors per track (160K)
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfe;
+						break;
+					case F5_360_512:	// floppy, double-sided, 9 sectors per track (360K)
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfd;
+						break;
+					case F5_180_512:	// floppy, single-sided, 9 sectors per track (180K)
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xfc;
+						break;
+					case F5_1Pt2_512:	// floppy, double-sided, 15 sectors per track (1.2M)
+					case F3_720_512:	// floppy, double-sided, 9 sectors per track (720K,3.5")
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf9;
+						break;
+					case FixedMedia:	// hard disk
+					case RemovableMedia:
+					case Unknown:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf8;
+						break;
+					default:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0a) = 0xf0;
+						break;
+					}
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0d) = geo.SectorsPerTrack;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x0f) = 1;
+					*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x11) = 0;
+					*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x15) = geo.TracksPerCylinder * geo.Cylinders.QuadPart;
+					*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07 + 0x1f) = geo.Cylinders.QuadPart;
+					// 21h	BYTE	device type
+					// 22h	WORD	device attributes (removable or not, etc)
+				} else {
+					REG16(AX) = 0x0f; // invalid drive
+					m_CF = 1;
+				}
+				CloseHandle(hFile);
+			} else {
+				REG16(AX) = 0x0f; // invalid drive
+				m_CF = 1;
+			}
+		} else if(REG8(CL) == 0x66) {
+			// get volume serial number
+			char path[] = "A:\\";
+			char volume_label[MAX_PATH];
+			DWORD serial_number = 0;
+			char file_system[MAX_PATH];
+			
+			path[0] = 'A' + (REG8(BL) ? REG8(BL) : _getdrive()) - 1;
+			
+			if(GetVolumeInformation(path, volume_label, MAX_PATH, &serial_number, NULL, NULL, file_system, MAX_PATH)) {
+				*(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0;
+				*(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x02) = serial_number;
+				memset(mem + SREG_BASE(DS) + REG16(SI) + 0x06, 0x20, 11);
+				memcpy(mem + SREG_BASE(DS) + REG16(SI) + 0x06, volume_label, min(strlen(volume_label), 11));
+				memset(mem + SREG_BASE(DS) + REG16(SI) + 0x11, 0x20,  8);
+				memcpy(mem + SREG_BASE(DS) + REG16(SI) + 0x11, file_system, min(strlen(file_system), 8));
+			} else {
+				REG16(AX) = 0x0f; // invalid drive
+				m_CF = 1;
+			}
+		} else if(REG8(CL) == 0x67) {
+			// get access flag
+			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0;
+			*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 1;
+		} else if(REG8(CL) == 0x68) {
+			// sense media type
+			char dev[64];
+			sprintf(dev, "\\\\.\\%c:", 'A' + (REG8(BL) ? REG8(BL) : _getdrive()) - 1);
+			
+			HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+			if(hFile != INVALID_HANDLE_VALUE) {
+				DISK_GEOMETRY geo;
+				DWORD dwSize;
+				if(DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &geo, sizeof(geo), &dwSize, NULL)) {
+					switch(geo.MediaType) {
+					case F3_720_512:
+					case F5_720_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x02;
+						break;
+					case F3_1Pt44_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x07;
+						break;
+					case F3_2Pt88_512:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x01;
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x09;
+						break;
+					default:
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00) = 0x00;
+						*(UINT8 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x01) = 0x00; // ???
+						break;
+					}
+				} else {
+					REG16(AX) = 0x0f; // invalid drive
+					m_CF = 1;
+				}
+				CloseHandle(hFile);
+			} else {
+				REG16(AX) = 0x0f; // invalid drive
+				m_CF = 1;
+			}
+		} else if(REG8(CL) == 0x6a) {
+			// unlock logical volume
+		} else if(REG8(CL) == 0x6b) {
+			// unlock physical volume
+		} else {
+			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01; // invalid function
+			m_CF = 1;
+		}
+		break;
+	case 0x0e: // get logical drive map
+		{
+			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
+			if(!(GetLogicalDrives() & bits)) {
+				REG16(AX) = 0x0f; // invalid drive
+				m_CF = 1;
+			} else {
+				REG8(AL) = 0;
+			}
+		}
+		break;
+	case 0x0f: // set logical drive map
+		{
+			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
+			if(!(GetLogicalDrives() & bits)) {
+				REG16(AX) = 0x0f; // invalid drive
+				m_CF = 1;
+			}
+		}
+		break;
+	case 0x10: // query generic ioctrl capability (handle)
+		switch(REG8(CL)) {
+		case 0x45:
+		case 0x4a:
+		case 0x65:
+		case 0x6a:
+		case 0x7f:
+			REG16(AX) = 0x0000; // supported
+			break;
+		default:
+			REG8(AL) = 0x01; // ioctl capability not available
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x11: // query generic ioctrl capability (drive)
+		switch(REG8(CL)) {
+		case 0x40:
+		case 0x46:
+		case 0x4a:
+		case 0x4b:
+		case 0x60:
+		case 0x66:
+		case 0x67:
+		case 0x68:
+		case 0x6a:
+		case 0x6b:
+			REG16(AX) = 0x0000; // supported
+			break;
+		default:
+			REG8(AL) = 0x01; // ioctl capability not available
+			m_CF = 1;
+			break;
+		}
+		break;
+	case 0x12: // determine dos type
+	case 0x51: // concurrent dos v3.2+ - installation check
+	case 0x52: // determine dos type/get dr dos versuin
+		REG16(AX) = 0x01; // this  is not DR-DOS
+		m_CF = 1;
+		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -5916,6 +6413,7 @@ inline void msdos_int_21h_4bh()
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6106,6 +6604,7 @@ inline void msdos_int_21h_57h()
 		ctime = &time;
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		return;
@@ -6147,6 +6646,7 @@ inline void msdos_int_21h_58h()
 			malloc_strategy = REG16(BX);
 			break;
 		default:
+			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01;
 			m_CF = 1;
 			break;
@@ -6164,12 +6664,14 @@ inline void msdos_int_21h_58h()
 			msdos_mem_link_umb();
 			break;
 		default:
+			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01;
 			m_CF = 1;
 			break;
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6299,6 +6801,26 @@ inline void msdos_int_21h_5ch()
 	}
 }
 
+inline void msdos_int_21h_5dh()
+{
+	switch(REG8(AL)) {
+	case 0x06: // get address of dos swappable data area
+	case 0x0b: // get dos swappable data reas
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	case 0x08: // set redirected printer mode
+	case 0x09: // flush redirected printer output
+	case 0x0a: // set extended error information
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_21h_60h(int lfn)
 {
 	char full[MAX_PATH], *path;
@@ -6347,7 +6869,12 @@ inline void msdos_int_21h_63h()
 		REG16(SI) = (DBCS_TABLE & 0x0f);
 		REG8(AL) = 0x00;
 		break;
+	case 0x01: // set korean input mode
+	case 0x02: // get korean input mode
+		REG8(AL) = 0xff; // not supported
+		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6427,6 +6954,7 @@ inline void msdos_int_21h_65h()
 		my_strupr((char *)(mem + SREG_BASE(DS) + REG16(DX)));
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6453,6 +6981,7 @@ inline void msdos_int_21h_66h()
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6899,6 +7428,7 @@ inline void msdos_int_21h_71a7h()
 		}
 		break;
 	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -6925,6 +7455,53 @@ inline void msdos_int_21h_71a8h()
 		memcpy((char *)(mem + SREG_BASE(ES) + REG16(DI)), fcb, 11);
 	} else {
 		strcpy((char *)(mem + SREG_BASE(ES) + REG16(DI)), msdos_short_path((char *)(mem + SREG_BASE(DS) + REG16(SI))));
+	}
+}
+
+inline void msdos_int_21h_71aah()
+{
+	char drv[] = "A:", path[MAX_PATH];
+	char *hoge=(char *)(mem + SREG_BASE(DS) + REG16(DX));
+	
+	if(REG8(BL) == 0) {
+		drv[0] = 'A' + _getdrive() - 1;
+	} else {
+		drv[0] = 'A' + REG8(BL) - 1;
+	}
+	switch(REG8(BH)) {
+	case 0x00:
+		if(DefineDosDevice(0, drv, (char *)(mem + SREG_BASE(DS) + REG16(DX))) == 0) {
+			DWORD bits = 1 << ((REG8(BL) ? REG8(BL) : _getdrive()) - 1);
+			if(GetLogicalDrives() & bits) {
+				REG16(AX) = 0x0f; // invalid drive
+			} else {
+				REG16(AX) = 0x03; // path not found
+			}
+			m_CF = 1;
+		}
+		break;
+	case 0x01:
+		if(DefineDosDevice(DDD_REMOVE_DEFINITION, drv, NULL) == 0) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		}
+		break;
+	case 0x02:
+		if(QueryDosDevice(drv, path, MAX_PATH) == 0) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else if(strncmp(path, "\\??\\", 4) != 0) {
+			REG16(AX) = 0x0f; // invalid drive
+			m_CF = 1;
+		} else {
+			strcpy((char *)(mem + SREG_BASE(DS) + REG16(DX)), path + 4);
+		}
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
 	}
 }
 
@@ -7147,12 +7724,96 @@ inline void msdos_int_2eh()
 	REG8(AL) = 0;
 }
 
+inline void msdos_int_2fh_01h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // print.com is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_05h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // critical error handler is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_06h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // assign is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_08h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // driver.sys is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_10h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // share is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_11h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // mscdex is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_2fh_12h()
 {
 	switch(REG8(AL)) {
-//	case 0x00:
-//		REG8(AL) = 0xff;
-//		break;
+	case 0x00:
+		REG8(AL) = 0xff;
+		break;
 	case 0x16:
 		if(REG16(BX) < 20) {
 			SREG(ES) = SFT_TOP >> 4;
@@ -7195,7 +7856,49 @@ inline void msdos_int_2fh_12h()
 			}
 		}
 		break;
+	case 0x2e:
+		if(REG8(DL) == 0x00 || REG8(DL) == 0x02 || REG8(DL) == 0x04 || REG8(DL) == 0x06) {
+			SREG(ES) = ERR_TABLE_TOP >> 4;
+			i386_load_segment_descriptor(ES);
+			REG16(DI) = 0;
+		}
+		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_14h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		REG8(AL) = 0x01; // nlsfunc.com is not installed, can't install
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_15h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// function not supported, do not clear AX
+		break;
+	case 0x0b:
+		// mscdex.exe is not installed
+		break;
+	case 0xff:
+		// corelcdx is not installed
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7217,10 +7920,34 @@ inline void msdos_int_2fh_16h()
 			REG8(AH) = osvi.dwMinorVersion;
 		}
 		break;
+	case 0x0a:
+		if(!no_windows) {
+			OSVERSIONINFO osvi;
+			ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+			osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+			GetVersionEx(&osvi);
+			REG16(AX) = 0x0000;
+			REG8(BH) = osvi.dwMajorVersion;
+			REG8(BL) = osvi.dwMinorVersion;
+			REG16(CX) = 0x0003; // enhanced
+		}
+		break;
+	case 0x0e:
+	case 0x0f:
+	case 0x11:
+	case 0x12:
+	case 0x13:
+	case 0x14:
+	case 0x87:
+		// function not supported, do not clear AX
+		break;
 	case 0x80:
 		Sleep(10);
 		hardware_update();
 		REG8(AL) = 0;
+		break;
+	case 0x8e:
+		REG16(AX) = 0x00; // failed
 		break;
 	case 0x8f:
 		switch(REG8(DH)) {
@@ -7235,6 +7962,29 @@ inline void msdos_int_2fh_16h()
 		}
 		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_19h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// shellb.com is not installed
+		REG8(AL) = 0x00;
+		break;
+	case 0x01:
+	case 0x02:
+	case 0x03:
+	case 0x04:
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7249,6 +7999,22 @@ inline void msdos_int_2fh_1ah()
 		REG8(AL) = 0xff;
 		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_1bh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// xma2ems.sys is not installed
+		REG8(AL) = 0x00;
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7273,6 +8039,39 @@ inline void msdos_int_2fh_43h()
 		i386_load_segment_descriptor(ES);
 		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_46h()
+{
+	switch(REG8(AL)) {
+	case 0x80:
+		// windows v3.0 is not installed
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_48h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// doskey is not installed
+		break;
+	case 0x10:
+		msdos_int_21h_0ah();
+		REG16(AX) = 0x00;
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7298,7 +8097,25 @@ inline void msdos_int_2fh_4ah()
 	case 0x04:
 		// function not supported, do not clear AX
 		break;
+	case 0x10: // smartdrv installation check
+	case 0x11: // dblspace installation check
+		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_4bh()
+{
+	switch(REG8(AL)) {
+	case 0x02:
+		// task switcher not loaded, do not clear AX
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7318,6 +8135,22 @@ inline void msdos_int_2fh_4fh()
 		REG16(BX) = active_code_page;
 		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void msdos_int_2fh_55h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+	case 0x01:
+//		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7359,6 +8192,7 @@ inline void msdos_int_2fh_aeh()
 		}
 		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7372,7 +8206,11 @@ inline void msdos_int_2fh_b7h()
 		// append is not installed
 		REG8(AL) = 0;
 		break;
+	case 0x07:
+	case 0x11:
+		break;
 	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
@@ -7593,7 +8431,7 @@ inline void msdos_int_67h_4eh()
 		REG8(AH) = 0x00;
 		REG8(AL) = 4 * 4;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7649,7 +8487,7 @@ inline void msdos_int_67h_4fh()
 		REG8(AH) = 0x00;
 		REG8(AL) = 2 + REG16(BX) * 6;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7683,7 +8521,7 @@ inline void msdos_int_67h_50h()
 		}
 		REG8(AH) = 0x00;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7723,7 +8561,7 @@ inline void msdos_int_67h_52h()
 		REG8(AL) = 0x00; // only volatile handles supported
 		REG8(AH) = 0x00;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7747,7 +8585,7 @@ inline void msdos_int_67h_53h()
 		REG8(AH) = 0x00;
 		memcpy(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8);
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7780,7 +8618,7 @@ inline void msdos_int_67h_54h()
 		REG8(AH) = 0x00;
 		REG16(BX) = MAX_EMS_HANDLES;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7879,7 +8717,7 @@ inline void msdos_int_67h_57h()
 			}
 		}
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7899,7 +8737,7 @@ inline void msdos_int_67h_58h()
 		REG8(AH) = 0x00;
 		REG16(CX) = 4;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -7925,7 +8763,7 @@ inline void msdos_int_67h_5ah()
 		}
 		REG8(AH) = 0x85;
 	} else {
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0x8f;
 	}
 }
@@ -8234,6 +9072,20 @@ inline void msdos_call_xms_12h()
 
 void msdos_syscall(unsigned num)
 {
+#ifdef ENABLE_DEBUG_SYSCALL
+	if(num == 0x68) {
+		// dummy interrupt for EMS (int 67h)
+		fprintf(fdebug, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+	} else if(num == 0x69) {
+		// dummy interrupt for XMS (call far)
+		fprintf(fdebug, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+	} else if(num == 0x6a) {
+		// dummy interrupt for case map routine pointed in the country info
+	} else {
+		fprintf(fdebug, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+	}
+#endif
+	
 	switch(num) {
 	case 0x00:
 		error("division by zero\n");
@@ -8300,12 +9152,25 @@ void msdos_syscall(unsigned num)
 		case 0x1b: break;
 		case 0x1c: REG8(AL) = 0x00; break;
 		case 0x1d: pcbios_int_10h_1dh(); break;
+		case 0x4f: pcbios_int_10h_4fh(); break;
+		case 0x80: m_CF = 1; break; // unknown
+		case 0x81: m_CF = 1; break; // unknown
 		case 0x82: pcbios_int_10h_82h(); break;
-		case 0xef: REG16(DX) = 0xffff; break;
+		case 0x83: pcbios_int_10h_83h(); break;
+		case 0x8b: break;
+		case 0x8c: m_CF = 1; break; // unknown
+		case 0x8d: m_CF = 1; break; // unknown
+		case 0x8e: m_CF = 1; break; // unknown
+		case 0x90: pcbios_int_10h_90h(); break;
+		case 0x91: pcbios_int_10h_91h(); break;
+		case 0x92: break;
+		case 0x93: break;
+		case 0xef: pcbios_int_10h_efh(); break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
-//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			m_CF = 1;
 			break;
 		}
 		break;
@@ -8323,13 +9188,13 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x13:
 		// PC BIOS - Disk
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0xff;
 		m_CF = 1;
 		break;
 	case 0x14:
 		// PC BIOS - Serial I/O
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG8(AH) = 0xff;
 		m_CF = 1;
 		break;
@@ -8341,28 +9206,26 @@ void msdos_syscall(unsigned num)
 		case 0x23: pcbios_int_15h_23h(); break;
 		case 0x24: pcbios_int_15h_24h(); break;
 		case 0x49: pcbios_int_15h_49h(); break;
+		case 0x50: pcbios_int_15h_50h(); break;
 		case 0x86: pcbios_int_15h_86h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
 		case 0x8a: pcbios_int_15h_8ah(); break;
+		case 0xc0: // PS/2 ???
+		case 0xc1:
+		case 0xc2:
+			REG8(AH) = 0x86;
+			m_CF = 1;
+			break;
 #if defined(HAS_I386)
 		case 0xc9: pcbios_int_15h_c9h(); break;
 #endif
 		case 0xca: pcbios_int_15h_cah(); break;
-		case 0xe8:
-			switch(REG8(AL)) {
-#if defined(HAS_I386)
-			case 0x01: pcbios_int_15h_e801h(); break;
-#endif
-			default:
-				REG8(AH)=0x86;
-				m_CF = 1;
-			}
-			break;
+		case 0xe8: pcbios_int_15h_e8h(); break;
 		default:
-//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
-			REG8(AH)=0x86;
+			unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG8(AH) = 0x86;
 			m_CF = 1;
 			break;
 		}
@@ -8381,14 +9244,16 @@ void msdos_syscall(unsigned num)
 		case 0x12: pcbios_int_16h_12h(); break;
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
+		case 0xda: break; // unknown
+		case 0xff: break; // unknown
 		default:
-//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
 		}
 		break;
 	case 0x17:
 		// PC BIOS - Printer
-		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		break;
 	case 0x1a:
 		// PC BIOS - Timer
@@ -8406,7 +9271,7 @@ void msdos_syscall(unsigned num)
 		case 0x36: break; // Word Perfect Third Party Interface
 		case 0x70: break; // SNAP? (Simple Network Application Protocol)
 		default:
-			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_1ah("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
 		}
 		break;
@@ -8510,6 +9375,7 @@ void msdos_syscall(unsigned num)
 		case 0x5a: msdos_int_21h_5ah(); break;
 		case 0x5b: msdos_int_21h_5bh(); break;
 		case 0x5c: msdos_int_21h_5ch(); break;
+		case 0x5d: msdos_int_21h_5dh(); break;
 		// 0x5e: ms-network
 		// 0x5f: ms-network
 		case 0x60: msdos_int_21h_60h(0); break;
@@ -8550,9 +9416,9 @@ void msdos_syscall(unsigned num)
 			case 0xa7: msdos_int_21h_71a7h(); break;
 			case 0xa8: msdos_int_21h_71a8h(); break;
 			// 0xa9: server create/open file
-			// 0xaa: create/terminate SUBST
+			case 0xaa: msdos_int_21h_71aah(); break;
 			default:
-//				fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x7100;
 				m_CF = 1;
 				break;
@@ -8568,14 +9434,14 @@ void msdos_syscall(unsigned num)
 			case 0x03: msdos_int_21h_7303h(); break;
 			// 0x04: set dpb to use for formatting
 			default:
-//				fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x7300;
 				m_CF = 1;
 				break;
 			}
 			break;
 		default:
-//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x01;
 			m_CF = 1;
 			break;
@@ -8613,14 +9479,39 @@ void msdos_syscall(unsigned num)
 	case 0x2f:
 		// multiplex interrupt
 		switch(REG8(AH)) {
+		case 0x00: break;
+		case 0x01: msdos_int_2fh_01h(); break;
+		case 0x05: msdos_int_2fh_05h(); break;
+		case 0x06: msdos_int_2fh_06h(); break;
+		case 0x08: msdos_int_2fh_08h(); break;
+		case 0x10: msdos_int_2fh_10h(); break;
+		case 0x11: msdos_int_2fh_11h(); break;
 		case 0x12: msdos_int_2fh_12h(); break;
+		case 0x14: msdos_int_2fh_14h(); break;
+		case 0x15: msdos_int_2fh_15h(); break;
 		case 0x16: msdos_int_2fh_16h(); break;
+		case 0x19: msdos_int_2fh_19h(); break;
 		case 0x1a: msdos_int_2fh_1ah(); break;
+		case 0x1b: msdos_int_2fh_1bh(); break;
 		case 0x43: msdos_int_2fh_43h(); break;
+		case 0x46: msdos_int_2fh_46h(); break;
+		case 0x48: msdos_int_2fh_48h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
+		case 0x4b: msdos_int_2fh_4bh(); break;
+		case 0x4c: break; // unknown
+		case 0x4d: break; // unknown
+		case 0x4e: break; // unknown
 		case 0x4f: msdos_int_2fh_4fh(); break;
+		case 0x55: msdos_int_2fh_55h(); break;
+		case 0x58: break; // unknown
+		case 0x74: break; // unknown
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
+		case 0xe9: break; // unknown
+		case 0xfe: break; // norton utilities ???
+		default:
+			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			break;
 		}
 		break;
 	case 0x68:
@@ -8657,7 +9548,7 @@ void msdos_syscall(unsigned num)
 		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
 		// 0x5d: LIM EMS 4.0 - Enable/Disable OS Function Set Functions (for DOS Kernel)
 		default:
-//			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG8(AH) = 0x84;
 			break;
 		}
@@ -8690,7 +9581,7 @@ void msdos_syscall(unsigned num)
 		// 0x8e: XMS 3.0 - Get extended EMB handle information
 		// 0x8f: XMS 3.0 - Reallocate any extended memory block
 		default:
-//			fatalerror("call XMS (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+			unimplemented_xms("call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG16(AX) = 0x0000;
 			REG8(BL) = 0x80;
 			break;
@@ -8721,7 +9612,7 @@ void msdos_syscall(unsigned num)
 		pic_update();
 		break;
 	default:
-//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+//		fatalerror("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		break;
 	}
 	
@@ -9092,6 +9983,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
 	
+	// error table
+	*(UINT8 *)(mem + ERR_TABLE_TOP + 0) = 0xff;
+	*(UINT8 *)(mem + ERR_TABLE_TOP + 1) = 0x04;
+	*(UINT8 *)(mem + ERR_TABLE_TOP + 2) = 0x00;
+	*(UINT8 *)(mem + ERR_TABLE_TOP + 3) = 0x00;
+	
 	// nls stuff
 	msdos_nls_tables_init();
 	
@@ -9169,13 +10066,18 @@ void hardware_run()
 {
 	int ops = 0;
 	
+#ifdef EXPORT_DEBUG_TO_FILE
+	fdebug = fopen("debug.log", "w");
+#endif
 	while(!m_halted) {
-#ifdef SUPPORT_DISASSEMBLER
-		if(dasm) {
+#ifdef ENABLE_DEBUG_DASM
+		if(dasm > 0) {
 			char buffer[256];
 #if defined(HAS_I386)
+			UINT32 flags = get_flags();
 			UINT32 eip = m_eip;
 #else
+			UINT32 flags = CompressFlags();
 			UINT32 eip = m_pc - SREG_BASE(CS);
 #endif
 			UINT8 *oprom = mem + SREG_BASE(CS) + eip;
@@ -9186,7 +10088,31 @@ void hardware_run()
 			} else
 #endif
 			CPU_DISASSEMBLE_CALL(x86_16);
-			fprintf(stderr, "%04x:%04x\t%s\n", SREG(CS), (unsigned)eip, buffer);
+			
+			fprintf(fdebug, "AX=%04X  BX=%04X CX=%04X DX=%04X SP=%04X  BP=%04X  SI=%04X  DI=%04X\nDS=%04X  ES=%04X SS=%04X CS=%04X IP=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+			REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SP), REG16(BP), REG16(SI), REG16(DI), SREG(DS), SREG(ES), SREG(SS), SREG(CS), eip,
+#if defined(HAS_I386)
+			PROTECTED_MODE ? "PE" : "--",
+#else
+			"--",
+#endif
+			(flags & 0x40000) ? 'A' : '-',
+			(flags & 0x20000) ? 'V' : '-',
+			(flags & 0x10000) ? 'R' : '-',
+			(flags & 0x04000) ? 'N' : '-',
+			(flags & 0x02000) ? '1' : '0',
+			(flags & 0x01000) ? '1' : '0',
+			(flags & 0x00800) ? 'O' : '-',
+			(flags & 0x00400) ? 'D' : '-',
+			(flags & 0x00200) ? 'I' : '-',
+			(flags & 0x00100) ? 'T' : '-',
+			(flags & 0x00080) ? 'S' : '-',
+			(flags & 0x00040) ? 'Z' : '-',
+			(flags & 0x00010) ? 'A' : '-',
+			(flags & 0x00004) ? 'P' : '-',
+			(flags & 0x00001) ? 'C' : '-');
+			fprintf(fdebug, "%04X:%04X\t%s\n", SREG(CS), (unsigned)eip, buffer);
+			dasm--;
 		}
 #endif
 #if defined(HAS_I386)
@@ -9207,6 +10133,9 @@ void hardware_run()
 			ops = 0;
 		}
 	}
+#ifdef EXPORT_DEBUG_TO_FILE
+	fclose(fdebug);
+#endif
 }
 
 void hardware_update()
@@ -9554,7 +10483,7 @@ void pic_update()
 
 // pit
 
-#define PIT_FREQ 1193182
+#define PIT_FREQ 1193182ULL
 #define PIT_COUNT_VALUE(n) ((pit[n].count_reg == 0) ? 0x10000 : (pit[n].mode == 3 && pit[n].count_reg == 1) ? 0x10001 : pit[n].count_reg)
 
 void pit_init()
@@ -9726,8 +10655,10 @@ void pit_latch_count(int ch)
 
 int pit_get_expired_time(int ch)
 {
-	UINT32 val = (1000 * pit[ch].count) / PIT_FREQ;
-	return((val > 0) ? val : 1);
+	pit[ch].accum += 1024ULL * 1000ULL * (UINT64)pit[ch].count / PIT_FREQ;
+	UINT64 val = pit[ch].accum >> 10;
+	pit[ch].accum -= val << 10;
+	return((val != 0) ? val : 1);
 }
 
 // cmos
