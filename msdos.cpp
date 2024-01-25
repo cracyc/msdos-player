@@ -273,6 +273,11 @@ UINT8 read_byte(UINT32 byteaddress)
 UINT8 debugger_read_byte(UINT32 byteaddress)
 #endif
 {
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		return vga_read(byteaddress - VGA_VRAM_TOP, 1);
+	}
+#endif
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM) {
 		return mem[byteaddress];
@@ -317,6 +322,18 @@ UINT16 debugger_read_word(UINT32 byteaddress)
 			if(empty) maybe_idle();
 		}
 	}
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		if(byteaddress <= VGA_VRAM_LAST - 1) {
+			return vga_read(byteaddress - VGA_VRAM_TOP, 2);
+		} else {
+			UINT16 value;
+			value  = read_byte(byteaddress    );
+			value |= read_byte(byteaddress + 1) << 8;
+			return value;
+		}
+	}
+#endif
 #if defined(HAS_I386)
 //	if(byteaddress < MAX_MEM - 1) {
 	if(byteaddress < MAX_MEM) {
@@ -349,6 +366,24 @@ UINT32 read_dword(UINT32 byteaddress)
 UINT32 debugger_read_dword(UINT32 byteaddress)
 #endif
 {
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3)) {
+		if(byteaddress <= VGA_VRAM_LAST - 3) {
+			return vga_read(byteaddress - VGA_VRAM_TOP, 4);
+		} else {
+			UINT16 value;
+			if(byteaddress & 1) {
+				value  = read_byte(byteaddress    );
+				value |= read_word(byteaddress + 1) <<  8;
+				value |= read_byte(byteaddress + 3) << 24;
+			} else {
+				value  = read_word(byteaddress    );
+				value |= read_word(byteaddress + 2) << 16;
+			}
+			return value;
+		}
+	}
+#endif
 #if defined(HAS_I386)
 //	if(byteaddress < MAX_MEM - 3) {
 	if(byteaddress < MAX_MEM) {
@@ -531,6 +566,10 @@ void debugger_write_byte(UINT32 byteaddress, UINT8 data)
 {
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3) && (mem[0x449] != 7)) {
+		vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
@@ -585,6 +624,15 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 	} else if(byteaddress < MEMORY_END) {
 		write_byte(byteaddress    , (data     ) & 0xff);
 		write_byte(byteaddress + 1, (data >> 8) & 0xff);
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3) && (mem[0x449] != 7)) {
+		if(byteaddress <= VGA_VRAM_LAST - 1) {
+			vga_write(byteaddress - VGA_VRAM_TOP, data, 2);
+		} else {
+			write_byte(byteaddress    , (data     ) & 0xff);
+			write_byte(byteaddress + 1, (data >> 8) & 0xff);
+		}
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(byteaddress < text_vram_end_address - 1) {
 			if(!restore_console_on_exit) {
@@ -646,6 +694,21 @@ void debugger_write_dword(UINT32 byteaddress, UINT32 data)
 			write_word(byteaddress    , (data      ) & 0xffff);
 			write_word(byteaddress + 2, (data >> 16) & 0xffff);
 		}
+#ifdef SUPPORT_GRAPHIC_SCREEN
+	} else if((byteaddress >= VGA_VRAM_TOP) && (byteaddress <= VGA_VRAM_LAST) && (mem[0x449] > 3) && (mem[0x449] != 7)) {
+		if(byteaddress <= VGA_VRAM_LAST -3) {
+			vga_write(byteaddress - VGA_VRAM_TOP, data, 4);
+		} else {
+			if(byteaddress & 1) {
+				write_byte(byteaddress    , (data      ) & 0x00ff);
+				write_word(byteaddress + 1, (data >>  8) & 0xffff);
+				write_byte(byteaddress + 3, (data >> 24) & 0x00ff);
+			} else {
+				write_word(byteaddress    , (data      ) & 0xffff);
+				write_word(byteaddress + 2, (data >> 16) & 0xffff);
+			}
+		}
+#endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(byteaddress < text_vram_end_address - 3) {
 			if(!restore_console_on_exit) {
@@ -6968,6 +7031,22 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 
 // pc bios
 
+void prepare_service_loop()
+{
+	CPU_AX_in_service = CPU_AX;
+	CPU_CX_in_service = CPU_CX;
+	CPU_DX_in_service = CPU_DX;
+	CPU_DS_BASE_in_service = CPU_DS_BASE;
+}
+
+void cleanup_service_loop()
+{
+	CPU_AX = CPU_AX_in_service;
+//	CPU_CX = CPU_CX_in_service;
+//	CPU_DX = CPU_DX_in_service;
+//	CPU_DS_BASE = CPU_DS_BASE_in_service;
+}
+
 #ifdef USE_SERVICE_THREAD
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 {
@@ -6980,11 +7059,24 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 	}
 	
 	// dummy loop to wait BIOS/DOS service is done is at fffc:0013
+	UINT16 tmp_cs = CPU_CS;
+	UINT32 tmp_eip = CPU_EIP;
+	
+	prepare_service_loop();
+	
 	CPU_CALL_FAR(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
-	done_ax = CPU_AX;
 	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
+
+	// run cpu until dummy loop routine is done
+	while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
+		try {
+			hardware_run_cpu();
+		} catch(...) {
+		}
+	}
+	cleanup_service_loop();
 }
 
 void finish_service_loop()
@@ -6996,7 +7088,6 @@ void finish_service_loop()
 			CPU_SET_S_FLAG(1);
 		}
 		in_service = false;
-		CPU_AX = done_ax;
 	}
 }
 #endif
@@ -7129,6 +7220,18 @@ void pcbios_update_cursor_position()
 	mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
 	mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
 }
+
+#ifdef SUPPORT_GRAPHIC_SCREEN
+static UINT32 vga_read(UINT32 addr, int size)
+{
+	UINT32 ret = 0;
+	return ret;
+}
+
+static void vga_write(UINT32 addr, UINT32 data, int size)
+{
+}
+#endif
 
 inline void pcbios_int_10h_00h()
 {
@@ -8465,7 +8568,7 @@ inline void pcbios_int_15h_84h()
 
 DWORD WINAPI pcbios_int_15h_86h_thread(LPVOID)
 {
-	UINT32 usec = (CPU_CX << 16) | CPU_DX;
+	UINT32 usec = (CPU_CX_in_service << 16) | CPU_DX_in_service;
 	UINT32 msec = usec / 1000;
 	
 	while(msec && !msdos_exit) {
@@ -8491,7 +8594,9 @@ inline void pcbios_int_15h_86h()
 			start_service_loop(pcbios_int_15h_86h_thread);
 		} else {
 #endif
+			prepare_service_loop();
 			pcbios_int_15h_86h_thread(NULL);
+			cleanup_service_loop();
 			REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 		}
@@ -8962,7 +9067,7 @@ DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 	}
 	if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
 		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
-			if(CPU_AH == 0x10) {
+			if((CPU_AX_in_service >> 8) == 0x10) {
 				key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
 			} else {
 				key_code = ((key_code >> 16) & 0xff00);
@@ -8970,7 +9075,8 @@ DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 			key_recv >>= 16;
 		}
 	}
-	done_ax = key_code & 0xffff;
+	CPU_AX_in_service = key_code & 0xffff;
+	
 	key_code >>= 16;
 	key_recv >>= 16;
 	
@@ -8987,7 +9093,9 @@ inline void pcbios_int_16h_00h()
 		start_service_loop(pcbios_int_16h_00h_thread);
 	} else {
 #endif
+		prepare_service_loop();
 		pcbios_int_16h_00h_thread(NULL);
+		cleanup_service_loop();
 		REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 	}
@@ -9561,7 +9669,9 @@ inline void msdos_int_21h_00h()
 
 DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 {
-	done_ax = (done_ax & 0xff00) | msdos_getche();
+	CPU_AX_in_service &= 0xff00;
+	CPU_AX_in_service |= msdos_getche();
+	
 	ctrl_break_detected = ctrl_break_pressed;
 	
 #ifdef USE_SERVICE_THREAD
@@ -9581,7 +9691,9 @@ inline void msdos_int_21h_01h()
 		start_service_loop(msdos_int_21h_01h_thread);
 	} else {
 #endif
+		prepare_service_loop();
 		msdos_int_21h_01h_thread(NULL);
+		cleanup_service_loop();
 		REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 	}
@@ -9631,7 +9743,8 @@ inline void msdos_int_21h_06h()
 
 DWORD WINAPI msdos_int_21h_07h_thread(LPVOID)
 {
-	done_ax = (done_ax & 0xff00) | msdos_getch();
+	CPU_AX_in_service &= 0xff00;
+	CPU_AX_in_service |= msdos_getch();
 	
 #ifdef USE_SERVICE_THREAD
 	service_exit = true;
@@ -9646,7 +9759,9 @@ inline void msdos_int_21h_07h()
 		start_service_loop(msdos_int_21h_07h_thread);
 	} else {
 #endif
+		prepare_service_loop();
 		msdos_int_21h_07h_thread(NULL);
+		cleanup_service_loop();
 		REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 	}
@@ -9655,7 +9770,9 @@ inline void msdos_int_21h_07h()
 
 DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 {
-	done_ax = (done_ax & 0xff00) | msdos_getch();
+	CPU_AX_in_service &= 0xff00;
+	CPU_AX_in_service |= msdos_getch();
+	
 	ctrl_break_detected = ctrl_break_pressed;
 	
 #ifdef USE_SERVICE_THREAD
@@ -9671,7 +9788,9 @@ inline void msdos_int_21h_08h()
 		start_service_loop(msdos_int_21h_08h_thread);
 	} else {
 #endif
+		prepare_service_loop();
 		msdos_int_21h_08h_thread(NULL);
+		cleanup_service_loop();
 		REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 	}
@@ -9705,7 +9824,7 @@ inline void msdos_int_21h_09h()
 
 DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 {
-	int ofs = CPU_DS_BASE + CPU_DX;
+	int ofs = CPU_DS_BASE_in_service + CPU_DX_in_service;
 	int max = mem[ofs] - 1;
 	UINT8 *buf = mem + ofs + 2;
 	int chr, p = 0;
@@ -9792,7 +9911,9 @@ inline void msdos_int_21h_0ah()
 			start_service_loop(msdos_int_21h_0ah_thread);
 		} else {
 #endif
+			prepare_service_loop();
 			msdos_int_21h_0ah_thread(NULL);
+			cleanup_service_loop();
 			REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 		}
@@ -11133,8 +11254,8 @@ inline void msdos_int_21h_3eh()
 
 DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 {
-	UINT8 *buf = mem + CPU_DS_BASE + CPU_DX;
-	int max = CPU_CX;
+	UINT8 *buf = mem + CPU_DS_BASE_in_service + CPU_DX_in_service;
+	int max = CPU_CX_in_service;
 	int p = 0;
 	
 	while(max > p) {
@@ -11210,7 +11331,7 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 			msdos_putch(chr);
 		}
 	}
-	done_ax = p;
+	CPU_AX_in_service = p;
 	
 #ifdef USE_SERVICE_THREAD
 	service_exit = true;
@@ -11237,7 +11358,9 @@ inline void msdos_int_21h_3fh()
 						start_service_loop(msdos_int_21h_3fh_thread);
 					} else {
 #endif
+						prepare_service_loop();
 						msdos_int_21h_3fh_thread(NULL);
+						cleanup_service_loop();
 						REQUEST_HARDWRE_UPDATE();
 #ifdef USE_SERVICE_THREAD
 					}
