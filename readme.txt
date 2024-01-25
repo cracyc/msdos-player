@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/26/2017
+								5/24/2017
 
 ----- What's this
 
@@ -403,6 +403,7 @@ INT 08H		PC BIOS - System Timer
 INT 10H		PC BIOS - Video
 
 	00H	Set Video Mode
+	01H	Set Text-Mode Cursor Shape
 	02H	Set Cursor Position
 	03H	Get Cursor Position and Size
 	05H	Select Active Display Page
@@ -411,6 +412,8 @@ INT 10H		PC BIOS - Video
 	08H	Read Character and Attribute at Cursor Position
 	09H	Write Character and Attribute at Cursor Position
 	0AH	Write Character Only at Cursor Position
+	0CH	Write Graphics Pixel
+	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
 	1101H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)

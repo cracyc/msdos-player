@@ -111,11 +111,15 @@ static void i80286_trap2(UINT32 error)
 			i80286_interrupt_descriptor(number,1,-1);
 		}
 	} catch(UINT32 e) { i80286_trap2(e); }
-	if(m_trap_level == 3)
+	if(m_trap_level == 3) {
 		// this is supposed to triggered by support hardware
 		// create a shutdown output line that causes a reset
 		// NMI can wake processor without reset
+		UINT16 offset = ReadWord(0x467);
+		UINT16 selector = ReadWord(0x469);
 		CPU_RESET_CALL(CPU_MODEL);
+		i80286_code_descriptor(selector, offset, 1);
+	}
 	m_trap_level = 0;
 }
 

@@ -6794,6 +6794,64 @@ inline void pcbios_int_10h_0ah()
 	}
 }
 
+HDC get_console_window_device_context()
+{
+	static HWND hwndFound = 0;
+	
+	if(hwndFound == 0) {
+		// https://support.microsoft.com/en-us/help/124103/how-to-obtain-a-console-window-handle-hwnd
+		char pszNewWindowTitle[1024];
+		char pszOldWindowTitle[1024];
+		
+		GetConsoleTitle(pszOldWindowTitle, 1024);
+		wsprintf(pszNewWindowTitle,"%d/%d", GetTickCount(), GetCurrentProcessId());
+		SetConsoleTitle(pszNewWindowTitle);
+		Sleep(100);
+		hwndFound = FindWindow(NULL, pszNewWindowTitle);
+		SetConsoleTitle(pszOldWindowTitle);
+	}
+	return GetDC(hwndFound);
+}
+
+inline void pcbios_int_10h_0ch()
+{
+	HDC hdc = get_console_window_device_context();
+	
+	if(hdc != NULL) {
+		BYTE r = (REG8(AL) & 2) ? 255 : 0;
+		BYTE g = (REG8(AL) & 4) ? 255 : 0;
+		BYTE b = (REG8(AL) & 1) ? 255 : 0;
+		
+		if(REG8(AL) & 0x80) {
+			COLORREF color = GetPixel(hdc, REG16(CX), REG16(DX));
+			if(color != CLR_INVALID) {
+				r ^= ((DWORD)color & 0x0000ff) ? 255 : 0;
+				g ^= ((DWORD)color & 0x00ff00) ? 255 : 0;
+				b ^= ((DWORD)color & 0xff0000) ? 255 : 0;
+			}
+		}
+		SetPixel(hdc, REG16(CX), REG16(DX), RGB(r, g, b));
+	}
+}
+
+inline void pcbios_int_10h_0dh()
+{
+	HDC hdc = get_console_window_device_context();
+	BYTE r = 0;
+	BYTE g = 0;
+	BYTE b = 0;
+	
+	if(hdc != NULL) {
+		COLORREF color = GetPixel(hdc, REG16(CX), REG16(DX));
+		if(color != CLR_INVALID) {
+			r = ((DWORD)color & 0x0000ff) ? 255 : 0;
+			g = ((DWORD)color & 0x00ff00) ? 255 : 0;
+			b = ((DWORD)color & 0xff0000) ? 255 : 0;
+		}
+	}
+	REG8(AL) = ((b != 0) ? 1 : 0) | ((r != 0) ? 2 : 0) | ((g != 0) ? 4 : 0);
+}
+
 inline void pcbios_int_10h_0eh()
 {
 	DWORD num;
@@ -14271,8 +14329,8 @@ void msdos_syscall(unsigned num)
 		case 0x09: pcbios_int_10h_09h(); break;
 		case 0x0a: pcbios_int_10h_0ah(); break;
 		case 0x0b: break;
-		case 0x0c: break;
-		case 0x0d: break;
+		case 0x0c: pcbios_int_10h_0ch(); break;
+		case 0x0d: pcbios_int_10h_0dh(); break;
 		case 0x0e: pcbios_int_10h_0eh(); break;
 		case 0x0f: pcbios_int_10h_0fh(); break;
 		case 0x10: break;
@@ -15200,6 +15258,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x463) = 0x3d4;
 	*(UINT8  *)(mem + 0x465) = 0x09;
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
+	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
@@ -17540,7 +17599,9 @@ void kbd_write_command(UINT8 val)
 				pic[0].imr = pic[1].imr = 0xff;
 			}
 			CPU_RESET_CALL(CPU_MODEL);
-			i386_jmp_far(0x40, 0x67);
+			UINT16 address = *(UINT16 *)(mem + 0x467);
+			UINT16 selector = *(UINT16 *)(mem + 0x469);
+			i386_jmp_far(selector, address);
 		}
 		i386_set_a20_line((val >> 1) & 1);
 		break;
