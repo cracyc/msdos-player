@@ -4691,13 +4691,17 @@ int msdos_read(int fd, void *buffer, unsigned int count)
 			UINT8 *buf = (UINT8 *)buffer;
 			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
 			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
-			for(unsigned int i = 0; i < count; i++) {
-				if(!(sio_read(file_handler[fd].sio_port - 1, 5) & 0x01)) {
-					// data is nto ready
-					break;
+			DWORD timeout = timeGetTime() + 1000;
+			while(read < count) {
+				if(sio_read(file_handler[fd].sio_port - 1, 5) & 0x01) {
+					buf[read++] = sio_read(file_handler[fd].sio_port - 1, 0);
+					timeout = timeGetTime() + 1000;
+				} else {
+					if(timeGetTime() > timeout) {
+						break;
+					}
+					Sleep(10);
 				}
-				buf[i] = sio_read(file_handler[fd].sio_port - 1, 0);
-				read++;
 			}
 			sio_write(file_handler[fd].sio_port - 1, 3, selector);
 		}
@@ -4839,16 +4843,26 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 {
 	if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].sio_port >= 1 && file_handler[fd].sio_port <= 4) {
 		// write to serial port
+		int written = 0;
 		if(sio_port_number[file_handler[fd].sio_port - 1] != 0) {
 			UINT8 *buf = (UINT8 *)buffer;
 			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
 			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
-			for(unsigned int i = 0; i < count; i++) {
-				sio_write(file_handler[fd].sio_port - 1, 0, buf[i]);
+			DWORD timeout = timeGetTime() + 1000;
+			while(written < count) {
+				if(sio_read(file_handler[fd].sio_port - 1, 5) & 0x20) {
+					sio_write(file_handler[fd].sio_port - 1, 0, buf[written++]);
+					timeout = timeGetTime() + 1000;
+				} else {
+					if(timeGetTime() > timeout) {
+						break;
+					}
+					Sleep(10);
+				}
 			}
 			sio_write(file_handler[fd].sio_port - 1, 3, selector);
 		}
-		return(count);
+		return(written);
 	} else if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].lpt_port >= 1 && file_handler[fd].lpt_port <= 3) {
 		// write to printer port
 		UINT8 *buf = (UINT8 *)buffer;
@@ -5757,6 +5771,8 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	int fd = -1;
 	int dos_command = 0;
 	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name = NULL, name_tmp[MAX_PATH];
+	char pipe_stdin_path[MAX_PATH] = {0};
+	char pipe_stdout_path[MAX_PATH] = {0};
 	
 	int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
 	int opt_len = mem[opt_ofs];
@@ -5791,7 +5807,8 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 		strcpy(name_tmp, name);
 		
 		// check command.com
-		if(_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "COMMAND") == 0) {
+		if((_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "COMMAND") == 0) && _access(comspec_path, 0) != 0) {
+			// we can not load command.com, so run program directly if "command /c (program)" is specified
 			if(opt_len == 0) {
 //				process_t *current_process = msdos_process_info_get(current_psp);
 				process_t *current_process = NULL;
@@ -5820,19 +5837,49 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 						}
 						char *token = my_strtok(opt + j, " ");
 						
-						if(strlen(token) >= 5 && _stricmp(&token[strlen(token) - 4], ".BAT") == 0) {
-							// this is a batch file, okay to run command.com
-						} else {
-							// run program directly without command.com
-							strcpy(command, token);
-							char tmp[MAX_PATH];
-							strcpy(tmp, token + strlen(token) + 1);
-							strcpy(opt, tmp);
-							opt_len = strlen(opt);
-							mem[opt_ofs] = opt_len;
-							sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-							dos_command = 1;
+						strcpy(command, token);
+						char tmp[MAX_PATH];
+						strcpy(tmp, token + strlen(token) + 1);
+						strcpy(opt, tmp);
+						
+						if(al == 0x00) {
+							if((token = strstr(opt, "<")) != NULL) {
+								token++;
+								while(*token == ' ') {
+									token++;
+								}
+								char *ptr = token;
+								while(*ptr != ' ' && *ptr != '\0') {
+									ptr++;
+								}
+								*ptr = '\0';
+								strcpy(pipe_stdin_path, token);
+								strcpy(opt, tmp);
+							}
+							if((token = strstr(opt, ">")) != NULL) {
+								token++;
+								while(*token == ' ') {
+									token++;
+								}
+								char *ptr = token;
+								while(*ptr != ' ' && *ptr != '\0') {
+									ptr++;
+								}
+								*ptr = '\0';
+								strcpy(pipe_stdout_path, token);
+								strcpy(opt, tmp);
+							}
+							if((token = strstr(opt, "<")) != NULL) {
+								*token = '\0';
+							}
+							if((token = strstr(opt, ">")) != NULL) {
+								*token = '\0';
+							}
 						}
+						opt_len = strlen(opt);
+						mem[opt_ofs] = opt_len;
+						sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
+						dos_command = 1;
 						break;
 					}
 				}
@@ -5911,6 +5958,14 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 					}
 				}
 			}
+		}
+	}
+	if(fd == -1) {
+		// we can not find command.com in the path, so open comspec_path
+		if(_stricmp(command, "COMMAND.COM") == 0 || _stricmp(command, "COMMAND") == 0) {
+			strcpy(command, comspec_path);
+			strcpy(path, command);
+			fd = _open(path, _O_RDONLY | _O_BINARY);
 		}
 	}
 	if(fd == -1) {
@@ -6062,6 +6117,35 @@ int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
 	
 	if(al == 0x00) {
 		int_10h_feh_called = int_10h_ffh_called = false;
+		
+		// pipe
+		if(pipe_stdin_path[0] != '\0') {
+			if(pipe_stdin_path[strlen(pipe_stdin_path) - 1] == 0x0d) {
+				pipe_stdin_path[strlen(pipe_stdin_path) - 1] = '\0';
+			}
+			if((fd = _open(pipe_stdin_path, _O_RDONLY | _O_BINARY)) != -1) {
+				UINT16 info = msdos_drive_number(pipe_stdin_path);
+				msdos_file_handler_open(fd, pipe_stdin_path, _isatty(fd), 0, info, current_psp);
+				psp->file_table[0] = fd;
+				msdos_psp_set_file_table(fd, fd, current_psp);
+			}
+		}
+		if(pipe_stdout_path[0] != '\0') {
+			// LIST.COM specifies the file path with '\r'
+			if(pipe_stdout_path[strlen(pipe_stdout_path) - 1] == 0x0d) {
+				pipe_stdout_path[strlen(pipe_stdout_path) - 1] = '\0';
+			}
+			if(_access(pipe_stdout_path, 0) == 0) {
+				SetFileAttributes(pipe_stdout_path, FILE_ATTRIBUTE_NORMAL);
+				DeleteFile(pipe_stdout_path);
+			}
+			if((fd = _open(pipe_stdout_path, _O_WRONLY | _O_BINARY | _O_CREAT)) != -1) {
+				UINT16 info = msdos_drive_number(pipe_stdout_path);
+				msdos_file_handler_open(fd, pipe_stdout_path, _isatty(fd), 1, info, current_psp);
+				psp->file_table[1] = fd;
+				msdos_psp_set_file_table(fd, fd, current_psp);
+			}
+		}
 		
 		// registers and segments
 		REG16(AX) = REG16(BX) = 0x00;
@@ -7730,8 +7814,9 @@ UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
 	return((hi << 8) + lo);
 }
 
-// ESC/P Users Guide:
-// http://cweb.canon.jp/manual/satera-bj/pdf/bij1350-2350-escp.pdf
+// AXテクニカルリファレンスガイド 1989
+// 付録10 日本語拡張PRINTER DRIVER NIOS概仕様
+// 6. コントロールコードの解析
 
 void pcbios_printer_out(int c, UINT8 data)
 {
@@ -7754,24 +7839,25 @@ void pcbios_printer_out(int c, UINT8 data)
 			pio[c].esc_len++;
 			
 			switch(pio[c].esc_buf[1]) {
-			case 0x20: case 0x21: case 0x2b: case 0x2d:
-			case 0x33:
-			case 0x4a: case 0x4e:
-			case 0x51: case 0x52: case 0x53: case 0x55: case 0x57:
-			case 0x6b: case 0x6c:
-			case 0x70: case 0x71: case 0x72: case 0x74: case 0x77: case 0x78:
+			case 0x33: // 1Bh 33h XX
+			case 0x4a: // 1Bh 4Ah XX
+			case 0x4e: // 1Bh 4Eh XX
+			case 0x51: // 1Bh 51h XX
+			case 0x55: // 1Bh 55h XX
+			case 0x6c: // 1Bh 6Ch XX
+			case 0x71: // 1Bh 71h XX
+			case 0x72: // 1Bh 72h XX
 				if(pio[c].esc_len == 3) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x24: case 0x25:
-			case 0x3a:
-			case 0x5c:
+			case 0x24: // 1Bh 24h XX XX
+			case 0x5c: // 1Bh 5Ch XX XX
 				if(pio[c].esc_len == 4) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x2a:
+			case 0x2a: // 1Bh 2Ah XX XX XX data
 				if(pio[c].esc_len >= 3) {
 					switch(pio[c].esc_buf[2]) {
 					case 0: case 1: case 2: case 3: case 4: case 6:
@@ -7784,13 +7870,18 @@ void pcbios_printer_out(int c, UINT8 data)
 							pio[c].esc_buf[0] = 0x00;
 						}
 						break;
+					case 71: case 72: case 73:
+						if(pio[c].esc_len >= 5 && pio[c].esc_len == 5 + (pio[c].esc_buf[3] + pio[c].esc_buf[4] * 256) * 6) {
+							pio[c].esc_buf[0] = 0x00;
+						}
+						break;
 					default:
 						pio[c].esc_buf[0] = 0x00;
 						break;
 					}
 				}
 				break;
-			case 0x40:
+			case 0x40: // 1Bh 40h
 				if(pio[c].jis_mode) {
 					printer_out(c, 0x1c);
 					printer_out(c, 0x2e);
@@ -7798,17 +7889,18 @@ void pcbios_printer_out(int c, UINT8 data)
 				}
 				pio[c].esc_buf[0] = 0x00;
 				break;
-			case 0x42: case 0x44:
+			case 0x42: // 1Bh 42h data 00h
+			case 0x44: // 1Bh 44h data 00h
 				if(pio[c].esc_len >= 3 && data == 0) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x43:
+			case 0x43: // 1Bh 43h (00h) XX
 				if(pio[c].esc_len >= 3 && data != 0) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			default:
+			default: // 1Bh XX
 				pio[c].esc_buf[0] = 0x00;
 				break;
 			}
@@ -7820,38 +7912,41 @@ void pcbios_printer_out(int c, UINT8 data)
 			pio[c].esc_len++;
 			
 			switch(pio[c].esc_buf[1]) {
-			case 0x21: case 0x2d:
-			case 0x57:
-			case 0x6b:
-			case 0x72: case 0x78:
+			case 0x21: // 1Ch 21h XX
+			case 0x2d: // 1Ch 2Dh XX
+			case 0x57: // 1Ch 57h XX
+			case 0x6b: // 1Ch 6Bh XX
+			case 0x72: // 1Ch 72h XX
+			case 0x78: // 1Ch 78h XX
 				if(pio[c].esc_len == 3) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x26:
+			case 0x26: // 1Ch 26h
 				pio[c].jis_mode = true;
 				pio[c].esc_buf[0] = 0x00;
 				break;
-			case 0x2e:
+			case 0x2e: // 1Ch 2Eh
 				pio[c].jis_mode = false;
 				pio[c].esc_buf[0] = 0x00;
 				break;
-			case 0x32:
+			case 0x32: // 1Ch 32h XX XX data
 				if(pio[c].esc_len == 76) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x44:
+			case 0x44: // 1Bh 44h data 00h
 				if(pio[c].esc_len == 6) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			case 0x53: case 0x54:
+			case 0x53: // 1Ch 53h XX XX
+			case 0x54: // 1Ch 54h XX XX
 				if(pio[c].esc_len == 4) {
 					pio[c].esc_buf[0] = 0x00;
 				}
 				break;
-			default:
+			default: // 1Ch XX
 				pio[c].esc_buf[0] = 0x00;
 				break;
 			}
@@ -9250,7 +9345,7 @@ inline void msdos_int_21h_3ch()
 		fd = _open("CON", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
 	} else if((sio_port = msdos_is_comm_path(path)) != 0) {
-		fd = _open("NUL", _O_WRONLY | _O_BINARY);
+		fd = _open("NUL", _O_RDWR | _O_BINARY);
 		info = 0x80d3;
 		msdos_set_comm_params(sio_port, path);
 	} else if((lpt_port = msdos_is_prn_path(path)) != 0) {
@@ -16373,11 +16468,14 @@ void pic_update()
 
 void pio_init()
 {
+//	bool conv_mode = (GetConsoleCP() == 932);
+	
 	memset(pio, 0, sizeof(pio));
 	
 	for(int c = 0; c < 2; c++) {
 		pio[c].stat = 0xdf;
 		pio[c].ctrl = 0x0c;
+//		pio[c].conv_mode = conv_mode;
 	}
 }
 
@@ -16390,6 +16488,10 @@ void pio_release()
 {
 	for(int c = 0; c < 2; c++) {
 		if(pio[c].fp != NULL) {
+			if(pio[c].jis_mode) {
+				fputc(0x1c, pio[c].fp);
+				fputc(0x2e, pio[c].fp);
+			}
 			fclose(pio[c].fp);
 			pio[c].fp = NULL;
 		}
@@ -16443,6 +16545,7 @@ UINT8 pio_read(int c, UINT32 addr)
 void printer_out(int c, UINT8 data)
 {
 	SYSTEMTIME time;
+	bool jis_mode = false;
 	
 	GetLocalTime(&time);
 	
@@ -16457,6 +16560,11 @@ void printer_out(int c, UINT8 data)
 		INT64 msec = (*time2 - *time1) / 10000;
 		
 		if(msec >= 1000) {
+			if(pio[c].jis_mode) {
+				fputc(0x1c, pio[c].fp);
+				fputc(0x2e, pio[c].fp);
+				jis_mode = true;
+			}
 			fclose(pio[c].fp);
 			pio[c].fp = NULL;
 		}
@@ -16471,10 +16579,25 @@ void printer_out(int c, UINT8 data)
 		} else {
 			strcpy(pio[c].path, file_name);
 		}
-		pio[c].fp = fopen(pio[c].path, "wb");
+		pio[c].fp = fopen(pio[c].path, "w+b");
 	}
 	if(pio[c].fp != NULL) {
+		if(jis_mode) {
+			fputc(0x1c, pio[c].fp);
+			fputc(0x26, pio[c].fp);
+		}
 		fputc(data, pio[c].fp);
+		
+		// reopen file if 1ch 26h 1ch 2eh (kanji-on  kanji-off) are written at the top
+		if(data == 0x2e && ftell(pio[c].fp) == 4) {
+			UINT8 buffer[4];
+			fseek(pio[c].fp, 0, SEEK_SET);
+			fread(buffer, 4, 1, pio[c].fp);
+			if(buffer[0] == 0x1c && buffer[1] == 0x26 && buffer[2] == 0x1c/* && buffer[3] == 0x2e*/) {
+				fclose(pio[c].fp);
+				pio[c].fp = fopen(pio[c].path, "w+b");
+			}
+		}
 		pio[c].time = time;
 	}
 }
