@@ -806,8 +806,9 @@ typedef struct {
 	UINT8 exit[2];
 	UINT16 first_mcb;
 	UINT8 reserved_1;
-	UINT8 far_call;
-	PAIR32 cpm_entry;
+//	UINT8 far_call;
+//	PAIR32 cpm_entry;
+	UINT8 call5[5];
 	PAIR32 int_22h;
 	PAIR32 int_23h;
 	PAIR32 int_24h;

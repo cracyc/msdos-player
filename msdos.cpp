@@ -5901,9 +5901,17 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 	psp->exit[0] = 0xcd;
 	psp->exit[1] = 0x20;
 	psp->first_mcb = mcb_seg;
-	psp->far_call = 0xea;
-	psp->cpm_entry.w.l = 0xfff1;	// int 21h, retf
-	psp->cpm_entry.w.h = 0xf000;
+#if 1
+	psp->call5[0] = 0xcd;	// int 6fh
+	psp->call5[1] = 0x6f;
+	psp->call5[2] = 0xc3;	// ret
+#else
+	psp->call5[0] = 0x8a;	// mov ah, cl
+	psp->call5[1] = 0xe1;
+	psp->call5[2] = 0xcd;	// int 21h
+	psp->call5[3] = 0x21;
+	psp->call5[4] = 0xc3;	// ret
+#endif
 	psp->int_22h.dw = *(UINT32 *)(mem + 4 * 0x22);
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
@@ -15539,8 +15547,11 @@ void msdos_syscall(unsigned num)
 	} else if(num == 0x69) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num >= 0x6a && num < 0x70) {
+	} else if(num >= 0x6a && num < 0x6f) {
 		// dummy interrupt
+	} else if(num == 0x6f) {
+		// dummy interrupt for call 0005h (call near)
+		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 	}
@@ -15848,11 +15859,17 @@ void msdos_syscall(unsigned num)
 			fatalerror("failed to terminate the process (PSP=%04X) by int 20h\n", SREG(CS));
 		}
 		break;
+	case 0x6f:
+		// dummy interrupt for case map routine pointed in the country info
+//		if(!(REG8(CL) >= 0x00 && REG8(CL) <= 0x24)) {
+//			REG8(AL) = 0x00;
+//			break;
+//		}
 	case 0x21:
 		// MS-DOS System Call
 		m_CF = 0;
 		try {
-			switch(REG8(AH)) {
+			switch(num == 0x21 ? REG8(AH) : REG8(CL)) {
 			case 0x00: msdos_int_21h_00h(); break;
 			case 0x01: msdos_int_21h_01h(); break;
 			case 0x02: msdos_int_21h_02h(); break;
@@ -17044,9 +17061,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// boot routine
 	mem[0xffff0] = 0xf4;	// halt
-	mem[0xffff1] = 0xcd;	// int 21h
-	mem[0xffff2] = 0x21;
-	mem[0xffff3] = 0xcb;	// retf
 	
 	mem[0xffff5] = '0';	// rom date
 	mem[0xffff6] = '2';
