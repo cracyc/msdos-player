@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/31/2016
+								2/2/2017
 
 ----- What's this
 
@@ -60,7 +60,7 @@ Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
 version number 4.10.
 If you want to change the version number, please specify the option '-wX.XX'.
 
-	> msdos -v3.10 command.com
+	> msdos -w3.10 command.com
 
 Or if you want to pretend that Windows is not running, specify the option '-d'.
 
@@ -93,7 +93,8 @@ NOTE: The maximum baud rate is limited to 9600bps.
 
 Basically, the environment variable table on the host Windows is copied to
 the table on the virtual machine (hereinafter, referred to as "virtual table"),
-and in this time, MSDOS_PATH/PATH/TEMP/TMP values are converted to short path.
+and in this time, APPEND/MSDOS_PATH/PATH/TEMP/TMP values are converted to
+short path.
 
 Some softwares (for example DoDiary Version 1.55) invite that the environment
 variable table should be less than 1024 bytes.
@@ -101,8 +102,8 @@ On the Windows OS, there are too many variables and the environment variable
 table size will be more than 1024 bytes and it causes an error.
 
 In this case, please specify the option '-e' and only the minimum environment
-variables (COMSPEC/INCLUDE/LIB/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are copied
-to the virtual table.
+variables (APPEND/COMSPEC/INCLUDE/LIB/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are
+copied to the virtual table.
 
 	> msdos -e dd.com
 
@@ -129,6 +130,9 @@ In other words, the value of PATH on the virtual table is MSDOS_PATH;PATH
 on the host Windows, so a program searches files in directories in MSDOS_PATH
 before files in directories in PATH.
 
+You can also define MSDOS_APPEND on the host Windows, and its value is copied
+to the top of APPEND on the virtual table.
+
 The environment variables TEMP and TMP on the host Windows may be very long,
 in usually, it is "C:\User\(Your User Name)\AppData\Local\Temp".
 DOSSHELL.EXE tries to create a batch file in the TEMP directry to start
@@ -137,8 +141,8 @@ batch file path.
 In this case, please define MSDOS_TEMP on the host Windows, for example
 "C:\TEMP", and its value is copied to TEMP and TMP on the virtual table.
 
-NOTE: MSDOS_COMSPEC and MSDOS_TEMP are not copied to the virtual table,
-but MSDOS_PATH is copied to, because some softwares refer MSDOS_PATH.
+NOTE: MSDOS_(APPEND/COMSPEC/TEMP) are not copied to  the virtual table,
+but MSDOS_PATH is copied to, because some softwares may refer MSDOS_PATH.
 
 
 ----- Convert command file to 32bit or 64bit execution file
@@ -525,6 +529,8 @@ INT 2EH		Pass Command to Command Interpreter for Execution
 
 INT 2FH		Multiplex Interrupt
 
+	0500H	DOS 3.0+ Critical Error Handler - Installation Check
+	0502H	DOS 3.0+ Critical Error Handler - Expand Error into String
 	1200H	DOS 3.0+ internal - Installation Check
 	1202H	DOS 3.0+ internal - Get Interrupt Address
 	1203H	DOS 3.0+ Internal - Get DOS Data Segment
@@ -549,16 +555,16 @@ INT 2FH		Multiplex Interrupt
 	122BH	DOS 3.3+ internal - IOCTL
 	122CH	DOS 3.3+ internal - Get Device Chain
 	122DH	DOS 3.3+ internal - Get Extended Error Code
-	122EH	DOS 4.0+ internal - Get Error Table Addresses (*5)
+	122EH	DOS 4.0+ internal - Get Error Table Addresses
 	122FH	DOS 4.0+ internal - Set DOS Version Number to Return
 	1400H	NLSFUNC.COM - Installation Check
 	1401H	NLSFUNC.COM - Change Code Page
 	1402H	NLSFUNC.COM - Get Extended Country Info
 	1403H	NLSFUNC.COM - Set Code Page
 	1404H	NLSFUNC.COM - Get Country Info
-	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
+	1600H	Windows - Windows Enhanced Mode Installation Check (*5)
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
-	160AH	Windows - Identify Windows Version and Type (*6)
+	160AH	Windows - Identify Windows Version and Type (*5)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1A00H	ANSI.SYS - Installation Check
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
@@ -603,7 +609,7 @@ INT 33H		Mouse
 	0021H	Software Reset
 	0022H	Set Language for Messages
 	0023H	Get Language for Messages
-	0024H	Get Software Version, Moouse Type, and IRQ Number (*7)
+	0024H	Get Software Version, Moouse Type, and IRQ Number (*6)
 	0026H	Get Maximum Virtual Coordinates
 	002AH	Get Cursor Host Spot
 	0031H	Get Current Minimum/Maximum Virtual Coordinates
@@ -617,7 +623,7 @@ INT 67H		LIM EMS
 	43H	LIM EMS - Get Handle and Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
 	45H	LIM EMS - Release Handle and Memory
-	46H	LIM EMS - Get EMM Version (*8)
+	46H	LIM EMS - Get EMM Version (*7)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
 	4BH	LIM EMS - Get Number of EMM Handles
@@ -647,7 +653,7 @@ INT 67H		LIM EMS
 
 CALL FAR XMS
 
-	00H	XMS - Get XMS Version Number (*9)
+	00H	XMS - Get XMS Version Number (*8)
 	01H	XMS - Request High Memory Area
 	02H	XMS - Release High Memory Area
 	03H	XMS - Global Enable A20
@@ -675,11 +681,10 @@ CALL FAR XMS
 (*2) MS-DOS Version: 7.10 (default) or specified version with -v option
 (*3) MS-DOS Version: 7.10, -v option is not affected
 (*4) Support only floppy disk drive
-(*5) Returns a dummy error table
-(*6) Windows Version: 4.10 (default) or specified version with -w option
-(*7) Mouse Version: 8.05
-(*8) EMS Version: 4.0
-(*9) XMS Version: 3.95
+(*5) Windows Version: 4.10 (default) or specified version with -w option
+(*6) Mouse Version: 8.05
+(*7) EMS Version: 4.0
+(*8) XMS Version: 3.95
 
 
 --- License
@@ -704,4 +709,4 @@ Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk) and Mr.Jason Hood.
 ----------------------------------------
 TAKEDA, toshiya
 t-takeda@m1.interq.or.jp
-http://homepage3.nifty.com/takeda-toshiya/
+http://takeda-toshiya.my.coocan.jp/

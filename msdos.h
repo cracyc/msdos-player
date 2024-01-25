@@ -494,9 +494,13 @@ void kbd_write_command(UINT8 val);
 #define DEVICE_SIZE	0x100	/* 22 + 18 * 12 + 7 */
 #define DOS_INFO_TOP	(DEVICE_TOP + DEVICE_SIZE)
 #define DOS_INFO_SIZE	0x100
-#define EXT_BIOS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
-#define EXT_BIOS_SIZE	0x400
+//#define EXT_BIOS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
+//#define EXT_BIOS_SIZE	0x400
+#ifdef EXT_BIOS_TOP
 #define DPB_TOP		(EXT_BIOS_TOP + EXT_BIOS_SIZE)
+#else
+#define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
+#endif
 #define DPB_SIZE	0x400
 #define SFT_TOP		(DPB_TOP + DPB_SIZE)
 #define SFT_SIZE	0x4b0	/* 6 + 0x3b * 20 */
@@ -506,9 +510,7 @@ void kbd_write_command(UINT8 val);
 #define CDS_SIZE	0x80
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
-#define ERR_TABLE_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
-#define ERR_TABLE_SIZE	0x10
-#define SDA_TOP		(ERR_TABLE_TOP + ERR_TABLE_SIZE)
+#define SDA_TOP		(FCB_TABLE_TOP + FCB_TABLE_SIZE)
 #define SDA_SIZE	0xb0
 // nls tables
 #define UPPERTABLE_TOP	(SDA_TOP + SDA_SIZE)
@@ -997,6 +999,7 @@ bool ctrl_c_detected = false;
 
 int active_code_page;
 int system_code_page;
+int console_code_page;
 
 UINT32 text_vram_top_address;
 UINT32 text_vram_end_address;
@@ -1076,6 +1079,17 @@ typedef struct emb_handle_s {
 emb_handle_t *emb_handle_top = NULL;
 int xms_a20_local_enb_count;
 UINT16 xms_dx_after_call_08h = 0;
+
+void msdos_xms_init();
+void msdos_xms_finish();
+void msdos_xms_release();
+emb_handle_t *msdos_xms_get_emb_handle(int handle);
+int msdos_xms_get_unused_emb_handle_id();
+int msdos_xms_get_unused_emb_handle_count();
+void msdos_xms_split_emb_handle(emb_handle_t *emb_handle, int size_kb);
+void msdos_xms_combine_emb_handles(emb_handle_t *emb_handle);
+emb_handle_t *msdos_xms_alloc_emb_handle(int size_kb);
+void msdos_xms_free_emb_handle(emb_handle_t *emb_handle);
 #endif
 
 #endif

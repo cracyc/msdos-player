@@ -74,6 +74,7 @@ void exit_handler();
 	#define unimplemented_xms nolog
 #endif
 
+#define array_length(array) (sizeof(array) / sizeof(array[0]))
 #define my_strchr(str, chr) (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr))
 #define my_strtok(tok, del) (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del))
 #define my_strupr(str) (char *)_mbsupr((unsigned char *)(str))
@@ -303,10 +304,13 @@ UINT16 read_word(offs_t byteaddress)
 	if(byteaddress == 0x41c) {
 		// pointer to first free slot in keyboard buffer
 		// XXX: the buffer itself doesn't actually exist in DOS memory
-		if(key_buf_char->count() == 0) {
-			maybe_idle();
+		if(key_buf_char != NULL) {
+			if(key_buf_char->count() == 0) {
+				maybe_idle();
+			}
+			return (UINT16)key_buf_char->count();
 		}
-		return (UINT16)key_buf_char->count();
+		return 0;
 	}
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 1) {
@@ -719,6 +723,9 @@ void exit_handler()
 		delete key_buf_scan;
 		key_buf_scan = NULL;
 	}
+#ifdef SUPPORT_XMS
+	msdos_xms_release();
+#endif
 	hardware_release();
 }
 
@@ -1653,12 +1660,14 @@ bool update_console_input()
 							}
 							// ignore shift, ctrl, alt, win and menu keys
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && (scn < 0x5b || scn > 0x5e)) {
-								if(chr == 0) {
-									key_buf_char->write(0x00);
-									key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+								if(key_buf_char != NULL && key_buf_scan != NULL) {
+									if(chr == 0) {
+										key_buf_char->write(0x00);
+										key_buf_scan->write(ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00);
+									}
+									key_buf_char->write(chr);
+									key_buf_scan->write(scn);
 								}
-								key_buf_char->write(chr);
-								key_buf_scan->write(scn);
 							}
 						} else {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
@@ -1667,8 +1676,10 @@ bool update_console_input()
 									scn += 0x78 - 0x02;	// 1 to 0 - =
 								}
 							}
-							key_buf_char->write(chr);
-							key_buf_scan->write(scn);
+							if(key_buf_char != NULL && key_buf_scan != NULL) {
+								key_buf_char->write(chr);
+								key_buf_scan->write(scn);
+							}
 						}
 					}
 					result = key_changed = true;
@@ -1681,12 +1692,154 @@ bool update_console_input()
 
 bool update_key_buffer()
 {
-	return(update_console_input() || key_buf_char->count() != 0);
+	return(update_console_input() || (key_buf_char != NULL && key_buf_char->count() != 0));
 }
 
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
+
+static const struct {
+	UINT16 code;
+	char *message_english;
+	char *message_japanese;
+} standard_error_table[] = {
+	{0x01,	"Invalid function", "無効なファンクションです."},
+	{0x02,	"File not found", "ファイルが見つかりません."},
+	{0x03,	"Path not found", "パスが見つかりません."},
+	{0x04,	"Too many open files", "開かれているファイルが多すぎます."},
+	{0x05,	"Access denied", "アクセスは拒否されました."},
+	{0x06,	"Invalid handle", "無効なハンドルです."},
+	{0x07,	"Memory control blocks destroyed", "メモリ制御ブロックが破棄されました."},
+	{0x08,	"Insufficient memory", "メモリが足りません."},
+	{0x09,	"Invalid memory block address", "無効なメモリブロックのアドレスです."},
+	{0x0A,	"Invalid Environment", "無効な環境です."},
+	{0x0B,	"Invalid format", "無効なフォーマットです."},
+	{0x0C,	"Invalid function parameter", "無効なファンクションパラメータです."},
+	{0x0D,	"Invalid data", "無効なデータです."},
+	{0x0F,	"Invalid drive specification", "無効なドライブの指定です."},
+	{0x10,	"Attempt to remove current directory", "現在のディレクトリを削除しようとしました."},
+	{0x11,	"Not same device", "同じデバイスではありません."},
+	{0x12,	"No more files", "ファイルはこれ以上ありません."},
+	{0x13,	"Write protect error", "書き込み保護エラーです."},
+	{0x14,	"Invalid unit", "無効なユニットです."},
+	{0x15,	"Not ready", "準備ができていません."},
+	{0x16,	"Invalid device request", "無効なデバイス要求です."},
+	{0x17,	"Data error", "データエラーです."},
+	{0x18,	"Invalid device request parameters", "無効なデバイス要求のパラメータです."},
+	{0x19,	"Seek error", "シークエラーです."},
+	{0x1A,	"Invalid media type", "無効なメディアの種類です."},
+	{0x1B,	"Sector not found", "セクタが見つかりません."},
+	{0x1C,	"Printer out of paper error", "プリンタの用紙がありません."},
+	{0x1D,	"Write fault error", "書き込みエラーです."},
+	{0x1E,	"Read fault error", "読み取りエラーです."},
+	{0x1F,	"General failure", "エラーです."},
+	{0x20,	"Sharing violation", "共有違反です."},
+	{0x21,	"Lock violation", "ロック違反です."},
+	{0x22,	"Invalid disk change", "無効なディスクの交換です."},
+	{0x23,	"FCB unavailable", "FCB は使えません."},
+	{0x24,	"System resource exhausted", "システムリソースはもう使えません."},
+	{0x25,	"Code page mismatch", "コード ページが一致しません."},
+	{0x26,	"Out of input", "入力が終わりました."},
+	{0x27,	"Insufficient disk space", "ディスクの空き領域が足りません."},
+/*
+	{0x32,	"Network request not supported", NULL},
+	{0x33,	"Remote computer not listening", NULL},
+	{0x34,	"Duplicate name on network", NULL},
+	{0x35,	"Network name not found", NULL},
+	{0x36,	"Network busy", NULL},
+	{0x37,	"Network device no longer exists", NULL},
+	{0x38,	"Network BIOS command limit exceeded", NULL},
+	{0x39,	"Network adapter hardware error", NULL},
+	{0x3A,	"Incorrect response from network", NULL},
+	{0x3B,	"Unexpected network error", NULL},
+	{0x3C,	"Incompatible remote adapter", NULL},
+	{0x3D,	"Print queue full", NULL},
+	{0x3E,	"Queue not full", NULL},
+	{0x3F,	"Not enough space to print file", NULL},
+	{0x40,	"Network name was deleted", NULL},
+	{0x41,	"Network: Access denied", NULL},
+	{0x42,	"Network device type incorrect", NULL},
+	{0x43,	"Network name not found", NULL},
+	{0x44,	"Network name limit exceeded", NULL},
+	{0x45,	"Network BIOS session limit exceeded", NULL},
+	{0x46,	"Temporarily paused", NULL},
+	{0x47,	"Network request not accepted", NULL},
+	{0x48,	"Network print/disk redirection paused", NULL},
+	{0x49,	"Network software not installed", NULL},
+	{0x4A,	"Unexpected adapter close", NULL},
+*/
+	{0x50,	"File exists", "ファイルは存在します."},
+	{0x52,	"Cannot make directory entry", "ディレクトリエントリを作れません."},
+	{0x53,	"Fail on INT 24", "INT 24 で失敗しました."},
+	{0x54,	"Too many redirections", "リダイレクトが多すぎます."},
+	{0x55,	"Duplicate redirection", "リダイレクトが重複しています."},
+	{0x56,	"Invalid password", "パスワードが違います."},
+	{0x57,	"Invalid parameter", "パラメータの指定が違います."},
+	{0x58,	"Network data fault", "ネットワークデータのエラーです."},
+	{0x59,	"Function not supported by network", "ファンクションはネットワークでサポートされていません."},
+	{0x5A,	"Required system component not installe", "必要なシステム コンポーネントが組み込まれていません."},
+/*
+	{0x64,	"Unknown error", "不明なエラーです."},
+	{0x65,	"Not ready", "準備ができていません."},
+	{0x66,	"EMS memory no longer valid", "EMS メモリはもう有効ではありません."},
+	{0x67,	"CDROM not High Sierra or ISO-9660 format", "CDROM は High Sierra または ISO-9660 フォーマットではありません."},
+	{0x68,	"Door open", "レバーが閉まっていません."
+*/
+	{0xB0,	"Volume is not locked", "ボリュームがロックされていません."},
+	{0xB1,	"Volume is locked in drive", "ボリュームがロックされています."},
+	{0xB2,	"Volume is not removable", "ボリュームは取り外しできません."},
+	{0xB4,	"Lock count has been exceeded", "ボリュームをこれ以上ロックできません."},
+	{0xB5,	"A valid eject request failed", "取り出しに失敗しました."},
+	{-1  ,	"Unknown error", "不明なエラーです."},
+};
+
+static const struct {
+	UINT16 code;
+	char *message_english;
+	char *message_japanese;
+} param_error_table[] = {
+	{0x01,	"Too many parameters", "パラメータが多すぎます."},
+	{0x02,	"Required parameter missing", "パラメータが足りません."},
+	{0x03,	"Invalid switch", "無効なスイッチです."},
+	{0x04,	"Invalid keyword", "無効なキーワードです."},
+	{0x06,	"Parameter value not in allowed range", "パラメータの値が範囲を超えています."},
+	{0x07,	"Parameter value not allowed", "そのパラメータの値は使えません."},
+	{0x08,	"Parameter value not allowed", "そのパラメータの値は使えません."},
+	{0x09,	"Parameter format not correct", "パラメータの書式が違います."},
+	{0x0A,	"Invalid parameter", "無効なパラメータです."},
+	{0x0B,	"Invalid parameter combination", "無効なパラメータの組み合わせです."},
+	{-1  ,	"Unknown error", "不明なエラーです."},
+};
+
+static const struct {
+	UINT16 code;
+	char *message_english;
+	char *message_japanese;
+} critical_error_table[] = {
+	{0x00,	"Write protect error", "書き込み保護エラーです."},
+	{0x01,	"Invalid unit", "無効なユニットです."},
+	{0x02,	"Not ready", "準備ができていません."},
+	{0x03,	"Invalid device request", "無効なデバイス要求です."},
+	{0x04,	"Data error", "データエラーです."},
+	{0x05,	"Invalid device request parameters", "無効なデバイス要求のパラメータです."},
+	{0x06,	"Seek error", "シークエラーです."},
+	{0x07,	"Invalid media type", "無効なメディアの種類です."},
+	{0x08,	"Sector not found", "セクタが見つかりません."},
+	{0x09,	"Printer out of paper error", "プリンタの用紙がありません."},
+	{0x0A,	"Write fault error", "書き込みエラーです."},
+	{0x0B,	"Read fault error", "読み取りエラーです."},
+	{0x0C,	"General failure", "エラーです."},
+	{0x0D,	"Sharing violation", "共有違反です."},
+	{0x0E,	"Lock violation", "ロック違反です."},
+	{0x0F,	"Invalid disk change", "無効なディスクの交換です."},
+	{0x10,	"FCB unavailable", "FCB は使えません."},
+	{0x11,	"System resource exhausted", "システムリソースはもう使えません."},
+	{0x12,	"Code page mismatch", "コード ページが一致しません."},
+	{0x13,	"Out of input", "入力が終わりました."},
+	{0x14,	"Insufficient disk space", "ディスクの空き領域が足りません."},
+	{-1  ,	"Critical error", "致命的なエラーです."},
+};
 
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
@@ -1886,14 +2039,26 @@ void msdos_dbcs_table_update()
 
 void msdos_dbcs_table_finish()
 {
-	if(active_code_page != system_code_page) {
+	if(system_code_page != _getmbcp()) {
 		_setmbcp(system_code_page);
+	}
+	if(console_code_page != GetConsoleCP()) {
+		SetConsoleCP(console_code_page);
+		SetConsoleOutputCP(console_code_page);
 	}
 }
 
 void msdos_nls_tables_init()
 {
-	system_code_page = active_code_page = _getmbcp();
+	active_code_page = console_code_page = GetConsoleCP();
+	system_code_page = _getmbcp();
+	
+	if(active_code_page != system_code_page) {
+		if(_setmbcp(active_code_page) != 0) {
+			active_code_page = system_code_page;
+		}
+	}
+	
 	msdos_upper_table_update();
 	msdos_lower_table_update();
 	msdos_filename_terminator_table_init();
@@ -1943,6 +2108,18 @@ char *msdos_remove_double_quote(char *path)
 		memcpy(tmp, path + 1, strlen(path) - 2);
 	} else {
 		strcpy(tmp, path);
+	}
+	return(tmp);
+}
+
+char *msdos_remove_end_separator(char *path)
+{
+	static char tmp[MAX_PATH];
+	
+	strcpy(tmp, path);
+	int len = strlen(tmp);
+	if(len > 3 && tmp[len - 1] == '\\') {
+		tmp[len - 1] = '\0';
 	}
 	return(tmp);
 }
@@ -2034,7 +2211,7 @@ char *msdos_trimmed_path(char *path, int lfn)
 
 char *msdos_get_multiple_short_path(char *src)
 {
-	// LONGPATH;LONGPATH;LONGPATH to SHORTPATH;SHORTPATH;SHORTPATH
+	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
 	static char env_path[ENV_SIZE];
 	char tmp[ENV_SIZE], *token;
 	
@@ -2045,21 +2222,19 @@ char *msdos_get_multiple_short_path(char *src)
 	while(token != NULL) {
 		if(token[0] != '\0') {
 			char *path = msdos_remove_double_quote(token), short_path[MAX_PATH];
-			if(strlen(path) != 0) {
+			if(path != NULL && strlen(path) != 0) {
+				if(env_path[0] != '\0') {
+					strcat(env_path, ";");
+				}
 				if(GetShortPathName(path, short_path, MAX_PATH) == 0) {
-					strcat(env_path, path);
+					strcat(env_path, msdos_remove_end_separator(path));
 				} else {
 					my_strupr(short_path);
-					strcat(env_path, short_path);
+					strcat(env_path, msdos_remove_end_separator(short_path));
 				}
-				strcat(env_path, ";");
 			}
 		}
 		token = my_strtok(NULL, ";");
-	}
-	int len = strlen(env_path);
-	if(len != 0 && env_path[len - 1] == ';') {
-		env_path[len - 1] = '\0';
 	}
 	return(env_path);
 }
@@ -2747,7 +2922,7 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if(key_buf_char->count() != 0 || key_code != 0) {
+	if((key_buf_char != NULL && key_buf_char->count() != 0) || key_code != 0) {
 		return(1);
 	} else {
 		return(_kbhit());
@@ -2789,12 +2964,14 @@ retry:
 		key_scan = (key_code >> 8) & 0xff;
 		key_code >>= 16;
 	} else {
-		while(key_buf_char->count() == 0 && !m_halted && !ctrl_c_pressed) {
+		while(key_buf_char != NULL && key_buf_char->count() == 0 && !m_halted && !ctrl_c_pressed) {
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
-					key_buf_char->write(_getch());
-					key_buf_scan->write(0);
+					if(key_buf_char != NULL && key_buf_scan != NULL) {
+						key_buf_char->write(_getch());
+						key_buf_scan->write(0);
+					}
 				} else {
 					Sleep(10);
 				}
@@ -2812,7 +2989,7 @@ retry:
 			// ctrl-c pressed
 			key_char = 0x03;
 			key_scan = 0;
-		} else {
+		} else if(key_buf_char != NULL && key_buf_scan != NULL) {
 			key_char = key_buf_char->read();
 			key_scan = key_buf_scan->read();
 		}
@@ -3084,9 +3261,11 @@ void msdos_putch(UINT8 data)
 						char tmp[16];
 						sprintf(tmp, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
 						int len = strlen(tmp);
-						for(int i = 0; i < len; i++) {
-							key_buf_char->write(tmp[i]);
-							key_buf_scan->write(0x00);
+						if(key_buf_char != NULL && key_buf_scan != NULL) {
+							for(int i = 0; i < len; i++) {
+								key_buf_char->write(tmp[i]);
+								key_buf_scan->write(0x00);
+							}
 						}
 					}
 				} else if(data == 's') {
@@ -5162,7 +5341,7 @@ inline void pcbios_int_15h_50h()
 			// dummy font read routine is at fffd:000d
 			SREG(ES) = 0xfffd;
 			i386_load_segment_descriptor(ES);
-			REG16(BX) = 0x0d;
+			REG16(BX) = 0x000d;
 			REG8(AH) = 0x00; // success
 		}
 		break;
@@ -5342,28 +5521,30 @@ UINT32 pcbios_get_key_code(bool clear_buffer)
 {
 	UINT32 code = 0;
 	
-	if(key_buf_char->count() == 0) {
-		if(!update_key_buffer()) {
-			if(clear_buffer) {
-				Sleep(10);
-			} else {
-				maybe_idle();
+	if(key_buf_char != NULL && key_buf_scan != NULL) {
+		if(key_buf_char->count() == 0) {
+			if(!update_key_buffer()) {
+				if(clear_buffer) {
+					Sleep(10);
+				} else {
+					maybe_idle();
+				}
 			}
 		}
-	}
-	if(!clear_buffer) {
-		key_buf_char->store_buffer();
-		key_buf_scan->store_buffer();
-	}
-	if(key_buf_char->count() != 0) {
-		code = key_buf_char->read() | (key_buf_scan->read() << 8);
-	}
-	if(key_buf_char->count() != 0) {
-		code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
-	}
-	if(!clear_buffer) {
-		key_buf_char->restore_buffer();
-		key_buf_scan->restore_buffer();
+		if(!clear_buffer) {
+			key_buf_char->store_buffer();
+			key_buf_scan->store_buffer();
+		}
+		if(key_buf_char->count() != 0) {
+			code = key_buf_char->read() | (key_buf_scan->read() << 8);
+		}
+		if(key_buf_char->count() != 0) {
+			code |= (key_buf_char->read() << 16) | (key_buf_scan->read() << 24);
+		}
+		if(!clear_buffer) {
+			key_buf_char->restore_buffer();
+			key_buf_scan->restore_buffer();
+		}
 	}
 	return code;
 }
@@ -5439,8 +5620,10 @@ inline void pcbios_int_16h_03h()
 
 inline void pcbios_int_16h_05h()
 {
-	key_buf_char->write(REG8(CL));
-	key_buf_scan->write(REG8(CH));
+	if(key_buf_char != NULL && key_buf_scan != NULL) {
+		key_buf_char->write(REG8(CL));
+		key_buf_scan->write(REG8(CH));
+	}
 	REG8(AL) = 0x00;
 }
 
@@ -8234,6 +8417,8 @@ inline void msdos_int_21h_66h()
 			active_code_page = REG16(BX);
 			msdos_nls_tables_update();
 			REG16(AX) = 0xeb41;
+			SetConsoleCP(active_code_page);
+			SetConsoleOutputCP(active_code_page);
 		} else {
 			REG16(AX) = 0x25;
 			m_CF = 1;
@@ -8831,6 +9016,81 @@ inline void msdos_int_21h_dch()
 	REG8(AL) = 0x00;
 }
 
+inline void msdos_int_24h()
+{
+	const char *message = NULL;
+	int key = 0;
+	
+	for(int i = 0; i < array_length(critical_error_table); i++) {
+		if(critical_error_table[i].code == (REG16(DI) & 0xff) || critical_error_table[i].code == (UINT16)-1) {
+			if(active_code_page == 932) {
+				message = critical_error_table[i].message_japanese;
+			}
+			if(message == NULL) {
+				message = critical_error_table[i].message_english;
+			}
+			*(UINT8 *)(mem + WORK_TOP) = strlen(message);
+			strcpy((char *)(mem + WORK_TOP + 1), message);
+			
+			SREG(ES) = WORK_TOP >> 4;
+			i386_load_segment_descriptor(ES);
+			REG16(DI) = 0x0000;
+			break;
+		}
+	}
+	fprintf(stderr, "\n%s", message);
+	if(!(REG8(AH) & 0x80)) {
+		if(REG8(AH) & 0x01) {
+			fprintf(stderr, " %s %c", (active_code_page == 932) ? "書き込み中 ドライブ" : "writing drive", 'A' + REG8(AL));
+		} else {
+			fprintf(stderr, " %s %c", (active_code_page == 932) ? "読み取り中 ドライブ" : "reading drive", 'A' + REG8(AL));
+		}
+	}
+	fprintf(stderr, "\n");
+	
+//	if(1) {
+		fprintf(stderr, "%s",   (active_code_page == 932) ? "中止 (A)" : "Abort");
+//	}
+	if(REG8(AH) & 0x10) {
+		fprintf(stderr, ", %s", (active_code_page == 932) ? "再試行 (R)" : "Retry");
+	}
+	if(REG8(AH) & 0x20) {
+		fprintf(stderr, ", %s", (active_code_page == 932) ? "無視 (I)" : "Ignore");
+	}
+	if(REG8(AH) & 0x08) {
+		fprintf(stderr, ", %s", (active_code_page == 932) ? "失敗 (F)" : "Fail");
+	}
+	fprintf(stderr, "? ");
+	
+	while(1) {
+		while(!_kbhit()) {
+			Sleep(10);
+		}
+		key = _getch();
+		
+		if(key == 'I' || key == 'i') {
+			if(REG8(AH) & 0x20) {
+				REG8(AL) = 0;
+				break;
+			}
+		} else if(key == 'R' || key == 'r') {
+			if(REG8(AH) & 0x10) {
+				REG8(AL) = 1;
+				break;
+			}
+		} else if(key == 'A' || key == 'a') {
+			REG8(AL) = 2;
+			break;
+		} else if(key == 'F' || key == 'f') {
+			if(REG8(AH) & 0x08) {
+				REG8(AL) = 3;
+				break;
+			}
+		}
+	}
+	fprintf(stderr, "%c\n", key);
+}
+
 inline void msdos_int_25h()
 {
 	UINT16 seg, ofs;
@@ -9029,15 +9289,32 @@ inline void msdos_int_2fh_05h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		// Critical Error Handler is not installed
-//		REG8(AL) = 0x00;
+		REG8(AL) = 0xff;
+		break;
+	case 0x01:
+	case 0x02:
+		for(int i = 0; i < array_length(standard_error_table); i++) {
+			if(standard_error_table[i].code == REG16(BX) || standard_error_table[i].code == (UINT16)-1) {
+				const char *message = NULL;
+				if(active_code_page == 932) {
+					message = standard_error_table[i].message_japanese;
+				}
+				if(message == NULL) {
+					message = standard_error_table[i].message_english;
+				}
+				strcpy((char *)(mem + WORK_TOP), message);
+				
+				SREG(ES) = WORK_TOP >> 4;
+				i386_load_segment_descriptor(ES);
+				REG16(DI) = 0x0000;
+				REG8(AL) = 0x01;
+				break;
+			}
+		}
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		// error code can't be converted to string
-//		REG16(AX) = 0x01;
 		m_CF = 1;
-		break;
 	}
 }
 
@@ -9287,9 +9564,14 @@ inline void msdos_int_2fh_12h()
 		break;
 	case 0x2e:
 		if(REG8(DL) == 0x00 || REG8(DL) == 0x02 || REG8(DL) == 0x04 || REG8(DL) == 0x06) {
-			SREG(ES) = ERR_TABLE_TOP >> 4;
+			SREG(ES) = 0x0001;
 			i386_load_segment_descriptor(ES);
-			REG16(DI) = 0;
+			REG16(DI) = 0x00;
+		} else if(REG8(DL) == 0x08) {
+			// dummy parameter error message read routine is at fffd:0010
+			SREG(ES) = 0xfffd;
+			i386_load_segment_descriptor(ES);
+			REG16(DI) = 0x0010;
 		}
 		break;
 	case 0x2f:
@@ -10569,7 +10851,7 @@ inline void msdos_int_67h_57h_tmp()
 	UINT16 dest_ofs    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0e);
 	UINT16 dest_seg    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x10);
 	
-	UINT8 *src_buffer, *dest_buffer;
+	UINT8 *src_buffer = NULL, *dest_buffer = NULL;
 	UINT32 src_addr, dest_addr;
 	UINT32 src_addr_max, dest_addr_max;
 	
@@ -10585,9 +10867,11 @@ inline void msdos_int_67h_57h_tmp()
 			REG8(AH) = 0x8a;
 			return;
 		}
-		src_buffer = ems_handles[src_handle].buffer + 0x4000 * src_seg;
+		if(ems_handles[src_handle].buffer != NULL) {
+			src_buffer = ems_handles[src_handle].buffer + 0x4000 * src_seg;
+		}
 		src_addr = src_ofs;
-		src_addr_max = 0x4000;
+		src_addr_max = 0x4000 * (ems_handles[src_handle].pages - src_seg);
 	}
 	if(dest_type == 0) {
 		dest_buffer = mem;
@@ -10601,25 +10885,31 @@ inline void msdos_int_67h_57h_tmp()
 			REG8(AH) = 0x8a;
 			return;
 		}
-		dest_buffer = ems_handles[dest_handle].buffer + 0x4000 * dest_seg;
-		dest_addr = dest_ofs;
-		dest_addr_max = 0x4000;
-	}
-	for(int i = 0; i < copy_length; i++) {
-		if(src_addr < src_addr_max && dest_addr < dest_addr_max) {
-			if(REG8(AL) == 0x00) {
-				dest_buffer[dest_addr++] = src_buffer[src_addr++];
-			} else if(REG8(AL) == 0x01) {
-				UINT8 tmp = dest_buffer[dest_addr];
-				dest_buffer[dest_addr++] = src_buffer[src_addr];
-				src_buffer[src_addr++] = tmp;
-			}
-		} else {
-			REG8(AH) = 0x93;
-			return;
+		if(ems_handles[dest_handle].buffer != NULL) {
+			dest_buffer = ems_handles[dest_handle].buffer + 0x4000 * dest_seg;
 		}
+		dest_addr = dest_ofs;
+		dest_addr_max = 0x4000 * (ems_handles[dest_handle].pages - dest_seg);
 	}
-	REG8(AH) = 0x80;
+	if(src_buffer != NULL && dest_buffer != NULL) {
+		for(int i = 0; i < copy_length; i++) {
+			if(src_addr < src_addr_max && dest_addr < dest_addr_max) {
+				if(REG8(AL) == 0x00) {
+					dest_buffer[dest_addr++] = src_buffer[src_addr++];
+				} else if(REG8(AL) == 0x01) {
+					UINT8 tmp = dest_buffer[dest_addr];
+					dest_buffer[dest_addr++] = src_buffer[src_addr];
+					src_buffer[src_addr++] = tmp;
+				}
+			} else {
+				REG8(AH) = 0x93;
+				return;
+			}
+		}
+		REG8(AH) = 0x00;
+	} else {
+		REG8(AH) = 0x80;
+	}
 }
 
 inline void msdos_int_67h_57h()
@@ -10709,7 +10999,7 @@ inline void msdos_int_67h_deh()
 
 #ifdef SUPPORT_XMS
 
-inline void msdos_xms_init()
+void msdos_xms_init()
 {
 	emb_handle_top = (emb_handle_t *)calloc(1, sizeof(emb_handle_t));
 	emb_handle_top->address = EMB_TOP;
@@ -10717,7 +11007,12 @@ inline void msdos_xms_init()
 	xms_a20_local_enb_count = 0;
 }
 
-inline void msdos_xms_finish()
+void msdos_xms_finish()
+{
+	msdos_xms_release();
+}
+
+void msdos_xms_release()
 {
 	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL;) {
 		emb_handle_t *next_handle = emb_handle->next;
@@ -11771,11 +12066,14 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x24:
+/*
 		try {
 			msdos_process_terminate(current_psp, (retval & 0xff) | 0x200, 1);
 		} catch(...) {
 			fatalerror("failed to terminate the current process by int 24h\n");
 		}
+*/
+		msdos_int_24h();
 		break;
 	case 0x25:
 		msdos_int_25h();
@@ -12067,6 +12365,33 @@ void msdos_syscall(unsigned num)
 		REG8(AL) = 0x86; // not supported
 		m_CF = 1;
 		break;
+	case 0x6e:
+		// dummy interrupt for parameter error message read routine pointed by int 2fh, ax=122eh, dl=08h
+		{
+			UINT16 code = REG16(AX);
+			if(code & 0xf0) {
+				code = (code & 7) | ((code & 0x10) >> 1);
+			}
+			for(int i = 0; i < array_length(param_error_table); i++) {
+				if(param_error_table[i].code == code || param_error_table[i].code == (UINT16)-1) {
+					const char *message = NULL;
+					if(active_code_page == 932) {
+						message = param_error_table[i].message_japanese;
+					}
+					if(message == NULL) {
+						message = param_error_table[i].message_english;
+					}
+					*(UINT8 *)(mem + WORK_TOP) = strlen(message);
+					strcpy((char *)(mem + WORK_TOP + 1), message);
+					
+					SREG(ES) = WORK_TOP >> 4;
+					i386_load_segment_descriptor(ES);
+					REG16(DI) = 0x0000;
+					break;
+				}
+			}
+		}
+		break;
 	case 0x70:
 	case 0x71:
 	case 0x72:
@@ -12183,7 +12508,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x408) = 0x378; // lpt1 port address
 //	*(UINT16 *)(mem + 0x40a) = 0x278; // lpt2 port address
 //	*(UINT16 *)(mem + 0x40c) = 0x3bc; // lpt3 port address
+#ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + 0x40e) = EXT_BIOS_TOP >> 4;
+#endif
 	*(UINT16 *)(mem + 0x410) = msdos_get_equipment();
 	*(UINT16 *)(mem + 0x413) = MEMORY_END / 1024;
 	*(UINT8  *)(mem + 0x449) = 0x03;//0x73;
@@ -12202,7 +12529,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x485) = cfi.dwFontSize.Y;
 	*(UINT8  *)(mem + 0x487) = 0x60;
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
+#ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + EXT_BIOS_TOP) = 1;
+#endif
 	
 	// initial screen
 	SMALL_RECT rect;
@@ -12237,26 +12566,66 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
-	char env_msdos_path[ENV_SIZE] = "", env_path[ENV_SIZE] = "", env_temp[ENV_SIZE] = "", *path;
+	char env_append[ENV_SIZE] = {0}, append_added = 0;
+	char comspec_added = 0;
+	char env_msdos_path[ENV_SIZE] = {0};
+	char env_path[ENV_SIZE] = {0}, path_added = 0;
+	char env_temp[ENV_SIZE] = {0}, temp_added = 0, tmp_added = 0;
+	char *path, *short_path;
+	
+	if((path = getenv("MSDOS_APPEND")) != NULL) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(env_append, short_path);
+		}
+	}
+	if((path = getenv("APPEND")) != NULL) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			if(env_append[0] != '\0') {
+				strcat(env_append, ";");
+			}
+			strcat(env_append, short_path);
+		}
+	}
+	
+	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(comspec_path, short_path);
+		}
+	}
+	if((path = getenv("MSDOS_COMSPEC")) != NULL && _access(path, 0) == 0) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(comspec_path, short_path);
+		}
+	}
 	
 	if((path = getenv("MSDOS_PATH")) != NULL) {
-		strcpy(env_msdos_path, msdos_get_multiple_short_path(path));
-		if(env_msdos_path[0] != '\0') {
-			strcat(env_path, env_msdos_path);
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(env_msdos_path, short_path);
+			strcpy(env_path, short_path);
 		}
 	}
 	if((path = getenv("PATH")) != NULL) {
-		if(env_path[0] != '\0') {
-			strcat(env_path, ";");
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			if(env_path[0] != '\0') {
+				strcat(env_path, ";");
+			}
+			strcat(env_path, short_path);
 		}
-		strcat(env_path, msdos_get_multiple_short_path(path));
 	}
-	if((path = getenv("MSDOS_TEMP")) != NULL || (path = getenv("TEMP")) != NULL || (path = getenv("TMP")) != NULL) {
-		strcpy(env_temp, msdos_get_multiple_short_path(path));
+	
+	if(GetTempPath(ENV_SIZE, env_temp) != 0) {
+		strcpy(env_temp, msdos_get_multiple_short_path(env_temp));
 	}
-	if((path = getenv("MSDOS_COMSPEC")) != NULL || (path = msdos_search_command_com(argv[0], env_path)) != NULL) {
-		strcpy(comspec_path, msdos_get_multiple_short_path(path));
+	for(int i = 0; i < 4; i++) {
+		static const char *name[4] = {"MSDOS_TEMP", "MSDOS_TMP", "TEMP", "TMP"};
+		if((path = getenv(name[i])) != NULL && _access(path, 0) == 0) {
+			if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+				strcpy(env_temp, short_path);
+				break;
+			}
+		}
 	}
+	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
 		char tmp[ENV_SIZE], name[ENV_SIZE];
@@ -12272,15 +12641,21 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				tmp[i] = (tmp[i] - 'a') + 'A';
 			}
 		}
-		if(strncmp(tmp, "MSDOS_COMSPEC=", 14) == 0) {
-			// ignore MSDOS_COMSPEC
-		} else if(strncmp(tmp, "MSDOS_TEMP=", 11) == 0) {
-			// ignore MSDOS_TEMP
-		} else if(standard_env && strstr(";COMSPEC;INCLUDE;LIB;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
+		if(strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_TEMP;MSDOS_TMP;", name) != NULL) {
+			// ignore MSDOS_(APPEND/COMSPEC/TEMP/TMP)
+		} else if(standard_env && strstr(";APPEND;COMSPEC;INCLUDE;LIB;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
 			// ignore non standard environments
 		} else {
-			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
+			if(strncmp(tmp, "APPEND=",  7) == 0) {
+				if(env_append[0] != '\0') {
+					sprintf(tmp, "APPEND=%s", env_append);
+				} else {
+					sprintf(tmp, "APPEND=%s", msdos_get_multiple_short_path(tmp + 7));
+				}
+				append_added = 1;
+			} else if(strncmp(tmp, "COMSPEC=", 8) == 0) {
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
+				comspec_added = 1;
 			} else if(strncmp(tmp, "MSDOS_PATH=",  11) == 0) {
 				if(env_msdos_path[0] != '\0') {
 					sprintf(tmp, "MSDOS_PATH=%s", env_msdos_path);
@@ -12293,18 +12668,21 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				} else {
 					sprintf(tmp, "PATH=%s", msdos_get_multiple_short_path(tmp + 5));
 				}
+				path_added = 1;
 			} else if(strncmp(tmp, "TEMP=", 5) == 0) {
 				if(env_temp[0] != '\0') {
 					sprintf(tmp, "TEMP=%s", env_temp);
 				} else {
 					sprintf(tmp, "TEMP=%s", msdos_get_multiple_short_path(tmp + 5));
 				}
+				temp_added = 1;
 			} else if(strncmp(tmp, "TMP=",  4) == 0) {
 				if(env_temp[0] != '\0') {
 					sprintf(tmp, "TMP=%s", env_temp);
 				} else {
 					sprintf(tmp, "TMP=%s", msdos_get_multiple_short_path(tmp + 4));
 				}
+				tmp_added = 1;
 			}
 			int len = strlen(tmp);
 			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
@@ -12313,6 +12691,31 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			memcpy(mem + (seg << 4) + ofs, tmp, len);
 			ofs += len + 1;
 		}
+	}
+	if(!append_added && env_append[0] != '\0') {
+		#define SET_ENV(name, value) { \
+			char tmp[ENV_SIZE]; \
+			sprintf(tmp, "%s=%s", name, value); \
+			int len = strlen(tmp); \
+			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) { \
+				fatalerror("too many environments\n"); \
+			} \
+			memcpy(mem + (seg << 4) + ofs, tmp, len); \
+			ofs += len + 1; \
+		}
+		SET_ENV("APPEND", env_append);
+	}
+	if(!comspec_added) {
+		SET_ENV("COMSPEC", "C:\\COMMAND.COM");
+	}
+	if(!path_added) {
+		SET_ENV("PATH", env_path);
+	}
+	if(!temp_added) {
+		SET_ENV("TEMP", env_temp);
+	}
+	if(!tmp_added) {
+		SET_ENV("TMP", env_temp);
 	}
 	seg += (ENV_SIZE >> 4);
 	
@@ -12342,7 +12745,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 4 * i + 0) = i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0010;	// fffd:0010 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0019;	// fffd:0019 irq0 (system timer)
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = 0xfffd;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
@@ -12378,7 +12781,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		0xcb,
 	};
 	device_t *last = NULL;
-	for(int i = 0; i < 12; i++) {
+	for(int i = 0; i < array_length(dummy_devices); i++) {
 		device_t *device = (device_t *)(mem + DEVICE_TOP + 22 + 18 * i);
 		device->next_driver.w.l = 22 + 18 * (i + 1);
 		device->next_driver.w.h = DEVICE_TOP >> 4;
@@ -12495,14 +12898,19 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xfffd0 + 0x0e] = 0x6d;
 	mem[0xfffd0 + 0x0f] = 0xcb;	// retf
 	
+	// error message read routine
+	mem[0xfffd0 + 0x10] = 0xcd;	// int 6eh (dummy)
+	mem[0xfffd0 + 0x11] = 0x6e;
+	mem[0xfffd0 + 0x12] = 0xcb;	// retf
+	
 	// irq0 routine (system time)
-	mem[0xfffd0 + 0x10] = 0xcd;	// int 1ch
-	mem[0xfffd0 + 0x11] = 0x1c;
-	mem[0xfffd0 + 0x12] = 0xea;	// jmp far (IRET_TOP >> 4):0008
-	mem[0xfffd0 + 0x13] = 0x08;
-	mem[0xfffd0 + 0x14] = 0x00;
-	mem[0xfffd0 + 0x15] = ((IRET_TOP >> 4)     ) & 0xff;
-	mem[0xfffd0 + 0x16] = ((IRET_TOP >> 4) >> 8) & 0xff;
+	mem[0xfffd0 + 0x19] = 0xcd;	// int 1ch
+	mem[0xfffd0 + 0x1a] = 0x1c;
+	mem[0xfffd0 + 0x1b] = 0xea;	// jmp far (IRET_TOP >> 4):0008
+	mem[0xfffd0 + 0x1c] = 0x08;
+	mem[0xfffd0 + 0x1d] = 0x00;
+	mem[0xfffd0 + 0x1e] = ((IRET_TOP >> 4)     ) & 0xff;
+	mem[0xfffd0 + 0x1f] = ((IRET_TOP >> 4) >> 8) & 0xff;
 	
 	// boot routine
 	mem[0xffff0] = 0xf4;	// halt
@@ -12567,12 +12975,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// fcb table
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
-	
-	// error table
-	*(UINT8 *)(mem + ERR_TABLE_TOP + 0) = 0xff;
-	*(UINT8 *)(mem + ERR_TABLE_TOP + 1) = 0x04;
-	*(UINT8 *)(mem + ERR_TABLE_TOP + 2) = 0x00;
-	*(UINT8 *)(mem + ERR_TABLE_TOP + 3) = 0x00;
 	
 	// nls stuff
 	msdos_nls_tables_init();
@@ -12879,8 +13281,8 @@ void ems_reallocate_pages(int handle, int pages)
 			if(pages > 0) {
 				new_buffer = (UINT8 *)calloc(1, 0x4000 * pages);
 			}
-			if(ems_handles[handle].buffer) {
-				if(new_buffer) {
+			if(ems_handles[handle].buffer != NULL) {
+				if(new_buffer != NULL) {
 					if(pages > ems_handles[handle].pages) {
 						memcpy(new_buffer, ems_handles[handle].buffer, 0x4000 * ems_handles[handle].pages);
 					} else {
@@ -12904,7 +13306,7 @@ void ems_reallocate_pages(int handle, int pages)
 void ems_release_pages(int handle)
 {
 	if(ems_handles[handle].allocated) {
-		if(ems_handles[handle].buffer) {
+		if(ems_handles[handle].buffer != NULL) {
 			free(ems_handles[handle].buffer);
 			ems_handles[handle].buffer = NULL;
 		}
@@ -12921,7 +13323,7 @@ void ems_map_page(int physical, int handle, int logical)
 		}
 		ems_unmap_page(physical);
 	}
-	if(ems_handles[handle].allocated && ems_handles[handle].buffer && logical < ems_handles[handle].pages) {
+	if(ems_handles[handle].allocated && ems_handles[handle].buffer != NULL && logical < ems_handles[handle].pages) {
 		memcpy(mem + EMS_TOP + 0x4000 * physical, ems_handles[handle].buffer + 0x4000 * logical, 0x4000);
 	}
 	ems_pages[physical].handle = handle;
@@ -12935,7 +13337,7 @@ void ems_unmap_page(int physical)
 		int handle = ems_pages[physical].handle;
 		int logical = ems_pages[physical].page;
 		
-		if(ems_handles[handle].allocated && ems_handles[handle].buffer && logical < ems_handles[handle].pages) {
+		if(ems_handles[handle].allocated && ems_handles[handle].buffer != NULL && logical < ems_handles[handle].pages) {
 			memcpy(ems_handles[handle].buffer + 0x4000 * logical, mem + EMS_TOP + 0x4000 * physical, 0x4000);
 		}
 		ems_pages[physical].mapped = false;
@@ -13671,17 +14073,27 @@ void sio_release()
 {
 	for(int c = 0; c < 4; c++) {
 		// sio_thread() may access the resources :-(
-		if(sio_mt[c].hThread == NULL) {
-			if(sio[c].send_buffer != NULL) {
-				sio[c].send_buffer->release();
-				delete sio[c].send_buffer;
-				sio[c].send_buffer = NULL;
-			}
-			if(sio[c].recv_buffer != NULL) {
-				sio[c].recv_buffer->release();
-				delete sio[c].recv_buffer;
-				sio[c].recv_buffer = NULL;
-			}
+		bool running = (sio_mt[c].hThread != NULL);
+		
+		if(running) {
+			EnterCriticalSection(&sio_mt[c].csSendData);
+		}
+		if(sio[c].send_buffer != NULL) {
+			sio[c].send_buffer->release();
+			delete sio[c].send_buffer;
+			sio[c].send_buffer = NULL;
+		}
+		if(running) {
+			LeaveCriticalSection(&sio_mt[c].csSendData);
+			EnterCriticalSection(&sio_mt[c].csRecvData);
+		}
+		if(sio[c].recv_buffer != NULL) {
+			sio[c].recv_buffer->release();
+			delete sio[c].recv_buffer;
+			sio[c].recv_buffer = NULL;
+		}
+		if(running) {
+			LeaveCriticalSection(&sio_mt[c].csRecvData);
 		}
 	}
 }
@@ -13698,7 +14110,9 @@ void sio_write(int c, UINT32 addr, UINT8 data)
 			}
 		} else {
 			EnterCriticalSection(&sio_mt[c].csSendData);
-			sio[c].send_buffer->write(data);
+			if(sio[c].send_buffer != NULL) {
+				sio[c].send_buffer->write(data);
+			}
 			// transmitter holding/shift registers are not empty
 			sio[c].line_stat_buf &= ~0x60;
 			LeaveCriticalSection(&sio_mt[c].csSendData);
@@ -13803,7 +14217,10 @@ UINT8 sio_read(int c, UINT32 addr)
 			return(sio[c].divisor.b.l);
 		} else {
 			EnterCriticalSection(&sio_mt[c].csRecvData);
-			UINT8 data = sio[c].recv_buffer->read();
+			UINT8 data = 0;
+			if(sio[c].recv_buffer != NULL) {
+				data = sio[c].recv_buffer->read();
+			}
 			// data is not ready
 			sio[c].line_stat_buf &= ~0x01;
 			LeaveCriticalSection(&sio_mt[c].csRecvData);
@@ -13836,7 +14253,7 @@ UINT8 sio_read(int c, UINT32 addr)
 			
 			if((sio[c].line_stat_buf & 0x60) == 0x00) {
 				EnterCriticalSection(&sio_mt[c].csSendData);
-				if(!sio[c].send_buffer->full()) {
+				if(sio[c].send_buffer != NULL && !sio[c].send_buffer->full()) {
 					// transmitter holding register will be empty first
 					if(sio[c].irq_enable & 0x02) {
 						state_changed = true;
@@ -13850,7 +14267,7 @@ UINT8 sio_read(int c, UINT32 addr)
 			}
 			if(!(sio[c].line_stat_buf & 0x01)) {
 				EnterCriticalSection(&sio_mt[c].csRecvData);
-				if(!sio[c].recv_buffer->empty()) {
+				if(sio[c].recv_buffer != NULL && !sio[c].recv_buffer->empty()) {
 					// data is ready
 					if(sio[c].irq_enable & 0x01) {
 						state_changed = true;
@@ -13891,7 +14308,7 @@ void sio_update(int c)
 {
 	if((sio[c].line_stat_buf & 0x60) == 0x00) {
 		EnterCriticalSection(&sio_mt[c].csSendData);
-		if(!sio[c].send_buffer->full()) {
+		if(sio[c].send_buffer != NULL && !sio[c].send_buffer->full()) {
 			// transmitter holding/shift registers will be empty
 			sio[c].line_stat_buf |= 0x60;
 		}
@@ -13902,7 +14319,7 @@ void sio_update(int c)
 	}
 	if(!(sio[c].line_stat_buf & 0x01)) {
 		EnterCriticalSection(&sio_mt[c].csRecvData);
-		if(!sio[c].recv_buffer->empty()) {
+		if(sio[c].recv_buffer != NULL && !sio[c].recv_buffer->empty()) {
 			// data is ready
 			sio[c].line_stat_buf |= 0x01;
 		}
@@ -14136,7 +14553,7 @@ DWORD WINAPI sio_thread(void *lpx)
 			DWORD dwSend = 0;
 			
 			EnterCriticalSection(&q->csSendData);
-			while(!p->send_buffer->empty()) {
+			while(p->send_buffer != NULL && !p->send_buffer->empty()) {
 				bytBuffer[dwSend++] = p->send_buffer->read();
 			}
 			LeaveCriticalSection(&q->csSendData);
@@ -14168,15 +14585,20 @@ DWORD WINAPI sio_thread(void *lpx)
 				
 				if(comStat.cbInQue != 0) {
 					EnterCriticalSection(&q->csRecvData);
-					DWORD dwRecv = min(comStat.cbInQue, p->recv_buffer->remain());
+					DWORD dwRecv = 0;
+					if(p->recv_buffer != NULL) {
+						dwRecv = min(comStat.cbInQue, p->recv_buffer->remain());
+					}
 					LeaveCriticalSection(&q->csRecvData);
 					
 					if(dwRecv != 0) {
 						DWORD dwRead = 0;
 						if(ReadFile(hComm, bytBuffer, dwRecv, &dwRead, NULL) && dwRead != 0) {
 							EnterCriticalSection(&q->csRecvData);
-							for(int i = 0; i < dwRead; i++) {
-								p->recv_buffer->write(bytBuffer[i]);
+							if(p->recv_buffer != NULL) {
+								for(int i = 0; i < dwRead; i++) {
+									p->recv_buffer->write(bytBuffer[i]);
+								}
 							}
 							LeaveCriticalSection(&q->csRecvData);
 						}
