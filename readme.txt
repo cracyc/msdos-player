@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/18/2017
+								2/21/2017
 
 ----- What's this
 
@@ -141,9 +141,6 @@ batch file path.
 In this case, please define MSDOS_TEMP on the host Windows, for example
 "C:\TEMP", and its value is copied to TEMP and TMP on the virtual table.
 
-NOTE: MSDOS_(APPEND/COMSPEC/TEMP) are not copied to  the virtual table,
-but MSDOS_PATH is copied to, because some softwares may refer MSDOS_PATH.
-
 If the environment variable MSDOS_LASTDRIVE is defined on the host Windows,
 its value is copied to LASTDRIVE on the virtual table.
 If both MSDOS_LASTDRIVE and LASTDRIVE are not defined on the host Windows,
@@ -157,6 +154,9 @@ its value is copied to TZ on the virtual table.
 If both MSDOS_TZ and TZ are not defined on the host Windows,
 and if your timezone is in the following table, TZ is automatically defined
 on the virtual table, for example TZ=JST-9 in Japan.
+
+NOTE: This table is from:
+https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
 
 ------- Greenwich Mean Time ---------------------------------------------------
 +00:00  GMT Standard Time                   GMT     BST     GB London
@@ -262,7 +262,8 @@ on the virtual table, for example TZ=JST-9 in Japan.
 +01:00  Namibia Standard Time               WAT     WAS     NA Windhoek
 +01:00  W. Central Africa Standard Time     WAT     WAS     NG Lagos
 
-NOTE: https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
+NOTE: MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TZ) are not copied to the virtual
+table, but MSDOS_PATH is copied to, because some softwares may refer it.
 
 
 ----- Convert command file to 32bit or 64bit execution file
@@ -745,6 +746,7 @@ INT 33H		Mouse
 	0001H	Show Mouse Cursor
 	0002H	Hide Mouse Cursor
 	0003H	Return Position and Button Status
+	0004H	Position Mouse Cursor
 	0005H	Return Button Press Data
 	0006H	Return Button Release Data
 	0007H	Define Horizontal Cursor Range
@@ -761,6 +763,8 @@ INT 33H		Mouse
 	001BH	Return Mouse Sensitivity
 	001DH	Define Display Page Number
 	001EH	Return Display Page Number
+	001FH	Disable Mouse Driver
+	0020H	Enable Mouse Driver
 	0021H	Software Reset
 	0022H	Set Language for Messages
 	0023H	Get Language for Messages

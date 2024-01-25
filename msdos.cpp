@@ -2942,8 +2942,8 @@ void change_console_size(int width, int height)
 	
 	mouse.min_position.x = 0;
 	mouse.min_position.y = 0;
-	mouse.max_position.x = 8 * scr_width  - 1;
-	mouse.max_position.y = 8 * scr_height - 1;
+	mouse.max_position.x = 8 * (scr_width  - 1);
+	mouse.max_position.y = 8 * (scr_height - 1);
 	
 	restore_console_on_exit = true;
 }
@@ -2971,41 +2971,41 @@ bool update_console_input()
 		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
-					if(mouse.active) {
-						if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
-							for(int i = 0; i < MAX_MOUSE_BUTTONS; i++) {
-								static const DWORD bits[] = {
-									FROM_LEFT_1ST_BUTTON_PRESSED,	// left
-									RIGHTMOST_BUTTON_PRESSED,	// right
-									FROM_LEFT_2ND_BUTTON_PRESSED,	// middle
-								};
-								bool prev_status = mouse.buttons[i].status;
-								mouse.buttons[i].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[i]) != 0);
-								
-								if(!prev_status && mouse.buttons[i].status) {
-									mouse.buttons[i].pressed_times++;
-									mouse.buttons[i].pressed_position.x = mouse.position.x;
-									mouse.buttons[i].pressed_position.y = mouse.position.y;
-									mouse.status |= 2 << (i * 2);
-								} else if(prev_status && !mouse.buttons[i].status) {
-									mouse.buttons[i].released_times++;
-									mouse.buttons[i].released_position.x = mouse.position.x;
-									mouse.buttons[i].released_position.y = mouse.position.y;
-									mouse.status |= 4 << (i * 2);
-								}
-							}
-						} else if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
-							// NOTE: if restore_console_on_exit, console is not scrolled
-							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
-								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-							}
-							// FIXME: character size is always 8x8 ???
-							int x = 3 + 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
-							int y = 4 + 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
-							if(mouse.position.x != x || mouse.position.y != y) {
-								mouse.position.x = x;
-								mouse.position.y = y;
-								mouse.status |= 1;
+					if(mouse.hidden == 0) {
+						// NOTE: if restore_console_on_exit, console is not scrolled
+						if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
+							GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+						}
+						// FIXME: character size is always 8x8 ???
+						int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
+						int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+						
+						if(mouse.position.x != x || mouse.position.y != y) {
+							mouse.position.x = x;
+							mouse.position.y = y;
+							mouse.status |= 1;
+						}
+					}
+					if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
+						for(int i = 0; i < MAX_MOUSE_BUTTONS; i++) {
+							static const DWORD bits[] = {
+								FROM_LEFT_1ST_BUTTON_PRESSED,	// left
+								RIGHTMOST_BUTTON_PRESSED,	// right
+								FROM_LEFT_2ND_BUTTON_PRESSED,	// middle
+							};
+							bool prev_status = mouse.buttons[i].status;
+							mouse.buttons[i].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[i]) != 0);
+							
+							if(!prev_status && mouse.buttons[i].status) {
+								mouse.buttons[i].pressed_times++;
+								mouse.buttons[i].pressed_position.x = mouse.position.x;
+								mouse.buttons[i].pressed_position.y = mouse.position.x;
+								mouse.status |= 2 << (i * 2);
+							} else if(prev_status && !mouse.buttons[i].status) {
+								mouse.buttons[i].released_times++;
+								mouse.buttons[i].released_position.x = mouse.position.x;
+								mouse.buttons[i].released_position.y = mouse.position.x;
+								mouse.status |= 4 << (i * 2);
 							}
 						}
 					}
@@ -4643,6 +4643,9 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 
 void msdos_putch(UINT8 data)
 {
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	SMALL_RECT rect;
+	COORD co;
 	static int p = 0;
 	static int is_kanji = 0;
 	static int is_esc = 0;
@@ -4676,7 +4679,6 @@ void msdos_putch(UINT8 data)
 		if((tmp[1] == ')' || tmp[1] == '(') && p == 3) {
 			p = is_esc = 0;
 		} else if(tmp[1] == '=' && p == 4) {
-			COORD co;
 			co.X = tmp[3] - 0x20;
 			co.Y = tmp[2] - 0x20 + scr_top;
 			SetConsoleCursorPosition(hStdout, co);
@@ -4685,8 +4687,6 @@ void msdos_putch(UINT8 data)
 			cursor_moved = false;
 			p = is_esc = 0;
 		} else if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z') || data == '*') {
-			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			COORD co;
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			co.X = csbi.dwCursorPosition.X;
 			co.Y = csbi.dwCursorPosition.Y;
@@ -4700,7 +4700,6 @@ void msdos_putch(UINT8 data)
 			} else if(tmp[1] == 'M') {
 				co.Y--;
 			} else if(tmp[1] == '*') {
-				SMALL_RECT rect;
 				SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
 				WriteConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 				co.X = 0;
@@ -4728,7 +4727,6 @@ void msdos_putch(UINT8 data)
 					co.X = (param[1] == 0 ? 1 : param[1]) - 1;
 					co.Y = (param[0] == 0 ? 1 : param[0]) - 1 + csbi.srWindow.Top;
 				} else if(data == 'J') {
-					SMALL_RECT rect;
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
@@ -4750,7 +4748,6 @@ void msdos_putch(UINT8 data)
 						co.X = co.Y = 0;
 					}
 				} else if(data == 'K') {
-					SMALL_RECT rect;
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
@@ -4763,7 +4760,6 @@ void msdos_putch(UINT8 data)
 						WriteConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					}
 				} else if(data == 'L') {
-					SMALL_RECT rect;
 					if(params == 0) {
 						param[0] = 1;
 					}
@@ -4776,7 +4772,6 @@ void msdos_putch(UINT8 data)
 					WriteConsoleOutput(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					co.X = 0;
 				} else if(data == 'M') {
-					SMALL_RECT rect;
 					if(params == 0) {
 						param[0] = 1;
 					}
@@ -4927,11 +4922,26 @@ void msdos_putch(UINT8 data)
 		}
 		out[q++] = c;
 	}
-	WriteConsole(hStdout, out, q, &num, NULL);
+	if(q == 1 && out[0] == 0x08) {
+		// back space
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		if(csbi.dwCursorPosition.X > 0) {
+			co.X = csbi.dwCursorPosition.X - 1;
+			co.Y = csbi.dwCursorPosition.Y;
+			SetConsoleCursorPosition(hStdout, co);
+		} else if(csbi.dwCursorPosition.Y > 0) {
+			co.X = csbi.dwSize.X - 1;
+			co.Y = csbi.dwCursorPosition.Y - 1;
+			SetConsoleCursorPosition(hStdout, co);
+		} else {
+			WriteConsole(hStdout, out, q, &num, NULL); // to make sure
+		}
+	} else {
+		WriteConsole(hStdout, out, q, &num, NULL);
+	}
 	p = 0;
 	
 	if(!restore_console_on_exit) {
-		CONSOLE_SCREEN_BUFFER_INFO csbi;
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
 		scr_top = csbi.srWindow.Top;
 	}
@@ -7113,6 +7123,8 @@ void pcbios_update_key_code(bool wait)
 				}
 			}
 		}
+	}
+	if(key_buf_char != NULL && key_buf_scan != NULL) {
 		if(key_buf_char->count() != 0) {
 			key_code = key_buf_char->read() | (key_buf_scan->read() << 8);
 			key_recv = 0x0000ffff;
@@ -7475,16 +7487,33 @@ inline void msdos_int_21h_0ah()
 			if(p > 0) {
 				p--;
 				if(msdos_ctrl_code_check(buf[p])) {
-					msdos_putch(chr);
-					msdos_putch(chr);
-					msdos_putch(' ');
-					msdos_putch(' ');
-					msdos_putch(chr);
-					msdos_putch(chr);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
 				} else {
-					msdos_putch(chr);
-					msdos_putch(' ');
-					msdos_putch(chr);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+				}
+			}
+		} else if(chr == 0x1b) {
+			// escape
+			while(p > 0) {
+				p--;
+				if(msdos_ctrl_code_check(buf[p])) {
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
+					msdos_putch(0x08);
+				} else {
+					msdos_putch(0x08);
+					msdos_putch(0x20);
+					msdos_putch(0x08);
 				}
 			}
 		} else if(p < max) {
@@ -8593,16 +8622,33 @@ inline void msdos_int_21h_3fh()
 						if(p > 0) {
 							p--;
 							if(msdos_ctrl_code_check(buf[p])) {
-								msdos_putch(chr);
-								msdos_putch(chr);
-								msdos_putch(' ');
-								msdos_putch(' ');
-								msdos_putch(chr);
-								msdos_putch(chr);
+								msdos_putch(0x08);
+								msdos_putch(0x08);
+								msdos_putch(0x20);
+								msdos_putch(0x20);
+								msdos_putch(0x08);
+								msdos_putch(0x08);
 							} else {
-								msdos_putch(chr);
-								msdos_putch(' ');
-								msdos_putch(chr);
+								msdos_putch(0x08);
+								msdos_putch(0x20);
+								msdos_putch(0x08);
+							}
+						}
+					} else if(chr == 0x1b) {
+						// escape
+						while(p > 0) {
+							p--;
+							if(msdos_ctrl_code_check(buf[p])) {
+								msdos_putch(0x08);
+								msdos_putch(0x08);
+								msdos_putch(0x20);
+								msdos_putch(0x20);
+								msdos_putch(0x08);
+								msdos_putch(0x08);
+							} else {
+								msdos_putch(0x08);
+								msdos_putch(0x20);
+								msdos_putch(0x08);
 							}
 						}
 					} else {
@@ -11767,6 +11813,24 @@ inline void msdos_int_2fh_aeh()
 	}
 }
 
+inline void msdos_int_2fh_b7h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// APPEND is not installed
+//		REG8(AL) = 0x00;
+		break;
+	case 0x07:
+		// COMMAND.COM calls this service without checking APPEND is installed
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_33h_0000h()
 {
 	REG16(AX) = 0xffff; // hardware/driver installed
@@ -11775,40 +11839,50 @@ inline void msdos_int_33h_0000h()
 
 inline void msdos_int_33h_0001h()
 {
-	if(!mouse.active) {
+	if(mouse.hidden > 0) {
+		mouse.hidden--;
+	}
+	if(mouse.hidden == 0) {
 		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
 		}
-		mouse.active = true;
 		pic[1].imr &= ~0x10;	// enable irq12
 	}
 }
 
 inline void msdos_int_33h_0002h()
 {
-	if(mouse.active) {
-		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
-		}
-		mouse.active = false;
-		pic[1].imr |= 0x10;	// disable irq12
-	}
+	mouse.hidden++;
+//	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+	pic[1].imr |= 0x10;	// enable irq12
 }
 
 inline void msdos_int_33h_0003h()
 {
+//	if(mouse.hidden > 0) {
+		update_console_input();
+//	}
 	REG16(BX) = mouse.get_buttons();
-	REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.position.x));
-	REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.position.y));
+	REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.position.x));
+	REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.position.y));
+}
+
+inline void msdos_int_33h_0004h()
+{
+	mouse.position.x = REG16(CX);
+	mouse.position.x = REG16(DX);
 }
 
 inline void msdos_int_33h_0005h()
 {
+//	if(mouse.hidden > 0) {
+		update_console_input();
+//	}
 	if(REG16(BX) < MAX_MOUSE_BUTTONS) {
 		int idx = REG16(BX);
-		REG16(BX) = mouse.buttons[idx].pressed_times;
-		REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.buttons[idx].pressed_position.x));
-		REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.buttons[idx].pressed_position.y));
+		REG16(BX) = min(mouse.buttons[idx].pressed_times, 0x7fff);
+		REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.buttons[idx].pressed_position.x));
+		REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.buttons[idx].pressed_position.y));
 		mouse.buttons[idx].pressed_times = 0;
 	} else {
 		REG16(BX) = REG16(CX) = REG16(DX) = 0x0000;
@@ -11818,11 +11892,14 @@ inline void msdos_int_33h_0005h()
 
 inline void msdos_int_33h_0006h()
 {
+//	if(mouse.hidden > 0) {
+		update_console_input();
+//	}
 	if(REG16(BX) < MAX_MOUSE_BUTTONS) {
 		int idx = REG16(BX);
-		REG16(BX) = mouse.buttons[idx].released_times;
-		REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.buttons[idx].released_position.x));
-		REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.buttons[idx].released_position.y));
+		REG16(BX) = min(mouse.buttons[idx].released_times, 0x7fff);
+		REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.buttons[idx].released_position.x));
+		REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.buttons[idx].released_position.y));
 		mouse.buttons[idx].released_times = 0;
 	} else {
 		REG16(BX) = REG16(CX) = REG16(DX) = 0x0000;
@@ -11850,6 +11927,9 @@ inline void msdos_int_33h_0009h()
 
 inline void msdos_int_33h_000bh()
 {
+//	if(mouse.hidden > 0) {
+		update_console_input();
+//	}
 	int dx = (mouse.position.x - mouse.prev_position.x) * mouse.mickey.x / 8;
 	int dy = (mouse.position.y - mouse.prev_position.y) * mouse.mickey.y / 8;
 	mouse.prev_position.x = mouse.position.x;
@@ -11932,6 +12012,24 @@ inline void msdos_int_33h_001eh()
 	REG16(BX) = mouse.display_page;
 }
 
+inline void msdos_int_33h_001fh()
+{
+	// from DOSBox
+	REG16(BX) = 0x0000;
+	SREG(ES) = 0x0000;
+	i386_load_segment_descriptor(ES);
+	mouse.enabled = false;
+	mouse.old_hidden = mouse.hidden;
+	mouse.hidden = 1;
+}
+
+inline void msdos_int_33h_0020h()
+{
+	// from DOSBox
+	mouse.enabled = true;
+	mouse.hidden = mouse.old_hidden;
+}
+
 inline void msdos_int_33h_0021h()
 {
 	REG16(AX) = 0xffff;
@@ -11963,7 +12061,7 @@ inline void msdos_int_33h_0026h()
 
 inline void msdos_int_33h_002ah()
 {
-	REG16(AX) = mouse.active ? 0 : 0xffff;
+	REG16(AX) = -mouse.hidden;
 	REG16(BX) = mouse.hot_spot[0];
 	REG16(CX) = mouse.hot_spot[1];
 	REG16(DX) = 4; // PS/2
@@ -13697,6 +13795,7 @@ void msdos_syscall(unsigned num)
 		case 0x55: msdos_int_2fh_55h(); break;
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
+		case 0xb7: msdos_int_2fh_b7h(); break;
 		// Installation Check
 		case 0x01: // PRINT.COM
 		case 0x02: // PC LAN Program Redirector
@@ -13737,7 +13836,6 @@ void msdos_syscall(unsigned num)
 		case 0xaf: // WinDOS v2.11
 		case 0xb0: // GRAFTABLE.COM
 		case 0xb4: // IBM PC3270 EMULATION PROG v3
-		case 0xb7: // APPEND
 		case 0xb8: // NETWORK
 		case 0xb9: // RECEIVER.COM
 		case 0xbc: // EGA.SYS
@@ -13811,22 +13909,22 @@ void msdos_syscall(unsigned num)
 			case 0x01: msdos_int_33h_0001h(); break;
 			case 0x02: msdos_int_33h_0002h(); break;
 			case 0x03: msdos_int_33h_0003h(); break;
-			case 0x04: break; // position mouse cursor
+			case 0x04: msdos_int_33h_0004h(); break;
 			case 0x05: msdos_int_33h_0005h(); break;
 			case 0x06: msdos_int_33h_0006h(); break;
 			case 0x07: msdos_int_33h_0007h(); break;
 			case 0x08: msdos_int_33h_0008h(); break;
 			case 0x09: msdos_int_33h_0009h(); break;
-			case 0x0a: break; // define text cursor
+			case 0x0a: break; // Define Text Cursor
 			case 0x0b: msdos_int_33h_000bh(); break;
 			case 0x0c: msdos_int_33h_000ch(); break;
-			case 0x0d: break; // light pen emulation on
-			case 0x0e: break; // light pen emulation off
+			case 0x0d: break; // Light Pen Emulation On
+			case 0x0e: break; // Light Pen Emulation Off
 			case 0x0f: msdos_int_33h_000fh(); break;
-			case 0x10: break; // define screen region for updating
+			case 0x10: break; // Define Screen Region for Updating
 			case 0x11: msdos_int_33h_0011h(); break;
-			case 0x12: REG16(AX) = 0xffff; break; // set large graphics cursor block
-			case 0x13: break; // define double-speed threshold
+			case 0x12: REG16(AX) = 0xffff; break; // Set Large Graphics Cursor Block
+			case 0x13: break; // Define Double-Speed Threshold
 			case 0x14: msdos_int_33h_0014h(); break;
 			case 0x15: msdos_int_33h_0015h(); break;
 			case 0x16: msdos_int_33h_0016h(); break;
@@ -13835,13 +13933,15 @@ void msdos_syscall(unsigned num)
 			case 0x1b: msdos_int_33h_001bh(); break;
 			case 0x1d: msdos_int_33h_001dh(); break;
 			case 0x1e: msdos_int_33h_001eh(); break;
+			case 0x1f: msdos_int_33h_001fh(); break;
+			case 0x20: msdos_int_33h_0020h(); break;
 			case 0x21: msdos_int_33h_0021h(); break;
 			case 0x22: msdos_int_33h_0022h(); break;
 			case 0x23: msdos_int_33h_0023h(); break;
 			case 0x24: msdos_int_33h_0024h(); break;
 			case 0x26: msdos_int_33h_0026h(); break;
 			case 0x2a: msdos_int_33h_002ah(); break;
-			case 0x2f: break; // mouse hardware reset
+			case 0x2f: break; // Mouse Hardware Reset
 			case 0x31: msdos_int_33h_0031h(); break;
 			case 0x32: msdos_int_33h_0032h(); break;
 			default:
@@ -13951,11 +14051,11 @@ void msdos_syscall(unsigned num)
 		mouse_push_si = REG16(SI);
 		mouse_push_di = REG16(DI);
 		
-		if(mouse.active && mouse.call_addr.dw != 0) {
+		if(/*mouse.hidden == 0 && */mouse.call_addr.dw != 0) {
 			REG16(AX) = mouse.status_irq;
 			REG16(BX) = mouse.get_buttons();
-			REG16(CX) = max(mouse.min_position.x, min(mouse.max_position.x, mouse.position.x));
-			REG16(DX) = max(mouse.min_position.y, min(mouse.max_position.y, mouse.position.y));
+			REG16(CX) = max(mouse.min_position.x & ~7, min(mouse.max_position.x & ~7, mouse.position.x));
+			REG16(DX) = max(mouse.min_position.y & ~7, min(mouse.max_position.y & ~7, mouse.position.y));
 			REG16(SI) = REG16(CX) * mouse.mickey.x / 8;
 			REG16(DI) = REG16(DX) * mouse.mickey.y / 8;
 			
@@ -14091,8 +14191,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// init mouse
 	memset(&mouse, 0, sizeof(mouse));
-	mouse.max_position.x = 8 * scr_width  - 1;
-	mouse.max_position.y = 8 * scr_height - 1;
+	mouse.enabled = true;	// from DOSBox
+	mouse.hidden = 1;	// hidden in default ???
+	mouse.old_hidden = 1;	// from DOSBox
+	mouse.max_position.x = 8 * (scr_width  - 1);
+	mouse.max_position.y = 8 * (scr_height - 1);
 	mouse.mickey.x = 8;
 	mouse.mickey.y = 16;
 	
@@ -14884,7 +14987,7 @@ void hardware_update()
 			mem[0x418] = state;
 			
 			// update console input if needed
-			if(!key_changed || mouse.active) {
+			if(!key_changed || mouse.hidden == 0) {
 				update_console_input();
 			}
 			
@@ -14896,10 +14999,10 @@ void hardware_update()
 			
 			// raise irq12 if mouse status is changed
 			if(mouse.status & mouse.call_mask) {
-				if(mouse.active) {
+//				if(mouse.hidden == 0) {
 					pic_req(1, 4, 1);
 					mouse.status_irq = mouse.status & mouse.call_mask;
-				}
+//				}
 				mouse.status &= ~mouse.call_mask;
 			}
 			

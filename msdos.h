@@ -1092,10 +1092,12 @@ int vram_pages;
 bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
 
-#define MAX_MOUSE_BUTTONS	3
+#define MAX_MOUSE_BUTTONS	2
 
 typedef struct {
-	bool active;
+	bool enabled;	// from DOSBox
+	int hidden;
+	int old_hidden;	// from DOSBox
 	struct {
 		int x, y;
 	} position, prev_position, max_position, min_position, mickey;
