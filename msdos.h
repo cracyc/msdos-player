@@ -1016,18 +1016,18 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	UINT16 word_reserved_1;		// -38 for INT 21h, AX=5D0Ah
-	UINT16 word_reserved_2;		// -36 for INT 21h, AX=5D0Ah
+//	UINT16 int21h_5d0ah_si;		// -38
+//	UINT16 int21h_5d0ah_ds;		// -36
 	// swappable data area
 	UINT8 printer_cho_flag;		// -34
-	UINT16 word_reserved_3;		// -33 for INT 21h, AX=5D0Ah
+	UINT16 int21h_5d0ah_dx;		// -33
 	UINT8 switchar;			// -31 current switch character
 	UINT8 malloc_strategy;		// -30 current memory allocation strategy
-	UINT8 byte_reserved_1;		// -29 for INT 21h, AX=5D0Ah
-	UINT8 int21_5e01_counter;	// -28
-	UINT8 int21_5e01_name[16];	// -27
+	UINT8 int21h_5d0ah_cl;		// -29
+	UINT8 int21h_5e01h_counter;	// -28
+	UINT8 int21h_5e01h_name[16];	// -27
 	UINT16 offset_lists[5];		// -11
-	UINT8 byte_reserved_2;		// -1
+	UINT8 int21h_5d0ah_called;	// -1
 	// ----- from DOSBox -----
 	UINT8 crit_error_flag;		// 0x00 Critical Error Flag
 	UINT8 indos_flag;		// 0x01 InDOS flag (count of active INT 21 calls)

@@ -11654,20 +11654,32 @@ inline void msdos_int_21h_58h()
 
 inline void msdos_int_21h_59h()
 {
-	sda_t *sda = (sda_t *)(mem + SDA_TOP);
-	
-	REG16(AX) = sda->extended_error_code;
-	REG8(BL)  = sda->suggested_action;
-	REG8(BH)  = sda->error_class;
-	REG8(CL)  = sda->byte_reserved_1;
-	REG8(CH)  = sda->locus_of_last_error;
-	REG16(DX) = sda->word_reserved_1;
-	REG16(SI) = sda->word_reserved_2;
-	REG16(DI) = sda->last_error_pointer.w.l;
-	SREG(DS)  = sda->word_reserved_3;
-	i386_load_segment_descriptor(DS);
-	SREG(ES)  = sda->last_error_pointer.w.h;
-	i386_load_segment_descriptor(ES);
+	if(REG16(BX) == 0x0000) {
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		
+		REG16(AX) = sda->extended_error_code;
+		REG8(BH)  = sda->error_class;
+		REG8(BL)  = sda->suggested_action;
+		REG8(CH)  = sda->locus_of_last_error;
+		// XXX: GW-BASIC 3.23 invites the registers contents of CL, DX, SI, DI, DS, and ES are not destroyed
+		if(sda->int21h_5d0ah_called != 0) {
+			REG8(CL)  = sda->int21h_5d0ah_cl;
+			REG16(DX) = sda->int21h_5d0ah_dx;
+//			REG16(SI) = sda->int21h_5d0ah_si;
+			REG16(DI) = sda->last_error_pointer.w.l;
+//			SREG(DS)  = sda->int21h_5d0ah_ds;
+//			i386_load_segment_descriptor(DS);
+			SREG(ES)  = sda->last_error_pointer.w.h;
+			i386_load_segment_descriptor(ES);
+		}
+		sda->int21h_5d0ah_called = 0;
+//	} else if(REG16(BX) == 0x0001) {
+//		// European MS-DOS 4.0 - Get Hard Error Information
+	} else {
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+	}
 }
 
 inline void msdos_int_21h_5ah()
@@ -11799,15 +11811,26 @@ inline void msdos_int_21h_5dh()
 	case 0x0a: // set extended error information
 		{
 			sda_t *sda = (sda_t *)(mem + SDA_TOP);
+			sda->int21h_5d0ah_called    = 1;
 			sda->extended_error_code    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x00); // AX
+			// XXX: which one is correct ???
+#if 1
+			// Ralf Brown's Interrupt List and DR-DOS System and Programmer's Guide
 			sda->suggested_action       = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02); // BL
 			sda->error_class            = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x03); // BH
-			sda->byte_reserved_1        = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04); // CL
+			sda->int21h_5d0ah_cl        = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04); // CL
 			sda->locus_of_last_error    = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x05); // CH
-			sda->word_reserved_1        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06); // DX
-			sda->word_reserved_2        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08); // SI
+#else
+			// PC DOS 7 Technical Update
+			sda->error_class            = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x02); // BH
+			sda->suggested_action       = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x03); // BL
+			sda->locus_of_last_error    = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x04); // CH
+			sda->int21h_5d0ah_cl        = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(DX) + 0x05); // CL
+#endif
+			sda->int21h_5d0ah_dx        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x06); // DX
+//			sda->int21h_5d0ah_si        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x08); // SI
 			sda->last_error_pointer.w.l = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0a); // DI
-			sda->word_reserved_3        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c); // DS
+//			sda->int21h_5d0ah_ds        = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0c); // DS
 			sda->last_error_pointer.w.h = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(DX) + 0x0e); // ES
 		}
 		break;
@@ -16046,6 +16069,7 @@ void msdos_syscall(unsigned num)
 		}
 		if(m_CF) {
 			sda_t *sda = (sda_t *)(mem + SDA_TOP);
+			sda->int21h_5d0ah_called = 0;
 			sda->extended_error_code = REG16(AX);
 			switch(sda->extended_error_code) {
 			case  4: // Too many open files
