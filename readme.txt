@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/24/2017
+								7/27/2017
 
 ----- What's this
 
@@ -266,17 +266,30 @@ NOTE: MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TZ) are not copied to the virtual
 table, but MSDOS_PATH is copied to, because some softwares may refer it.
 
 
------ Recommended Configurations
+----- Recommended configurations
 
 Create C:\DOS and C:\TEMP folders.
 Copy COMMAND.COM (I recommend the Windows 98's COMMAND.COM Version 7.10) and
 other DOS command files (ex. MORE.COM) into C:\DOS folder.
 
-Set the environment variables:
+Set the environment variables listed below on the host Windows:
 
 MSDOS_COMSPEC = C:\DOS\COMMAND.COM
 MSDOS_PATH = C:\DOS
 MSDOS_TEMP = C:\TEMP
+
+
+----- Win32/64 child process
+
+When we run a Win32/64 program on usual MS-DOS environment, we will see
+an error message "This program cannot be run in DOS mode."
+
+When a Win32/64 program file is called by INT 21H, AX=4B00H, INT 2EH, or
+INT 2FH, AX=AE01H services, for example the case we run it on COMMAND.COM,
+it is executed as a Win32/64 child process by system() Win32 API and
+waits until the child process is terminated.
+In this time, any characters output to the console by this child process
+is not hooked by INT 29H service (DOS Fast Character I/O).
 
 
 ----- Convert command file to 32bit or 64bit execution file

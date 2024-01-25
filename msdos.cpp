@@ -845,7 +845,7 @@ UINT16 i386_read_stack()
 int svr_socket = 0;
 int cli_socket = 0;
 
-process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error);
+process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error = true);
 
 void debugger_init()
 {
@@ -3598,7 +3598,7 @@ process_t *msdos_process_info_create(UINT16 psp_seg)
 	return(NULL);
 }
 
-process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error)
+process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error = true)
 {
 	for(int i = 0; i < MAX_PROCESS; i++) {
 		if(process[i].psp == psp_seg) {
@@ -3609,11 +3609,6 @@ process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error)
 		fatalerror("invalid psp address\n");
 	}
 	return(NULL);
-}
-
-process_t *msdos_process_info_get(UINT16 psp_seg)
-{
-	return(msdos_process_info_get(psp_seg, true));
 }
 
 void msdos_sda_update(int psp_seg)
@@ -4670,7 +4665,7 @@ UINT16 msdos_device_info(const char *path)
 	}
 }
 
-void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg, int sio_port, int lpt_port)
+void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg, int sio_port = 0, int lpt_port = 0)
 {
 	static int id = 0;
 	char full[MAX_PATH], *name;
@@ -4741,11 +4736,6 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 		
 		*(UINT16 *)(sft + 0x31) = psp_seg;
 	}
-}
-
-void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT16 info, UINT16 psp_seg)
-{
-	 msdos_file_handler_open(fd, path, atty, mode, info, psp_seg, 0, 0);
 }
 
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
@@ -5480,7 +5470,7 @@ void msdos_prn_out(char data)
 
 // memory control
 
-mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, const char *prog_name)
+mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, const char *prog_name = NULL)
 {
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	
@@ -5493,11 +5483,6 @@ mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs, const
 		memcpy(mcb->prog_name, prog_name, min(8, strlen(prog_name)));
 	}
 	return(mcb);
-}
-
-mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
-{
-	return(msdos_mcb_create(mcb_seg, mz, psp, paragraphs, NULL));
 }
 
 void msdos_mcb_check(mcb_t *mcb)
@@ -6006,7 +5991,7 @@ int msdos_psp_get_file_table(int fd, int psp_seg)
 	return fd;
 }
 
-int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al)
+int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool first_process = false)
 {
 	// load command file
 	int fd = -1;
@@ -6237,18 +6222,43 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al)
 		}
 	}
 	if(fd == -1) {
-		if(dos_command) {
+		if(!first_process && al == 0 && dos_command) {
 			// may be dos command
 			char tmp[MAX_PATH];
-			sprintf(tmp, "%s %s", command, opt);
-			system(tmp);
+			if(opt_len != 0) {
+				sprintf(tmp, "%s %s", command, opt);
+			} else {
+				sprintf(tmp, "%s", command);
+			}
+			retval = system(tmp);
 			return(0);
 		} else {
 			return(-1);
 		}
 	}
+	memset(file_buffer, 0, sizeof(file_buffer));
 	_read(fd, file_buffer, sizeof(file_buffer));
 	_close(fd);
+	
+	// check if this is win32 program
+	if(!first_process && al == 0) {
+		UINT16 sign_dos = *(UINT16 *)(file_buffer + 0x00);
+		UINT32 e_lfanew = *(UINT32 *)(file_buffer + 0x3c);
+		if(sign_dos == IMAGE_DOS_SIGNATURE && e_lfanew >= 0x40 && e_lfanew < 0x400) {
+			UINT32 sign_nt = *(UINT32 *)(file_buffer + e_lfanew + 0x00);
+			UINT16 machine = *(UINT16 *)(file_buffer + e_lfanew + 0x04);
+			if(sign_nt == IMAGE_NT_SIGNATURE && (machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_AMD64)) {
+				char tmp[MAX_PATH];
+				if(opt_len != 0) {
+					sprintf(tmp, "\"%s\" %s", path, opt);
+				} else {
+					sprintf(tmp, "\"%s\"", path);
+				}
+				retval = system(tmp);
+				return(0);
+			}
+		}
+	}
 	
 	// copy environment
 	int umb_linked, env_seg, psp_seg;
@@ -10034,7 +10044,7 @@ inline void msdos_int_21h_37h()
 	}
 }
 
-int get_country_info(country_info_t *ci, LCID locale)
+int get_country_info(country_info_t *ci, LCID locale = LOCALE_USER_DEFAULT)
 {
 	char LCdata[80];
 	
@@ -10070,11 +10080,6 @@ int get_country_info(country_info_t *ci, LCID locale)
 int get_country_info(country_info_t *ci, USHORT usPrimaryLanguage, USHORT usSubLanguage)
 {
 	return get_country_info(ci, MAKELCID(MAKELANGID(usPrimaryLanguage, usSubLanguage), SORT_DEFAULT));
-}
-
-int get_country_info(country_info_t *ci)
-{
-	return get_country_info(ci, LOCALE_USER_DEFAULT);
 }
 
 void set_country_info(country_info_t *ci, int size)
@@ -17834,7 +17839,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// execute command
 	try {
-		if(msdos_process_exec(argv[0], param, 0)) {
+		if(msdos_process_exec(argv[0], param, 0, true)) {
 			fatalerror("'%s' not found\n", argv[0]);
 		}
 	} catch(...) {
