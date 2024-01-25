@@ -761,6 +761,9 @@ int main(int argc, char *argv[], char *envp[])
 				Sleep(10);
 			}
 		}
+#ifdef _DEBUG
+		_CrtDumpMemoryLeaks();
+#endif
 		return(EXIT_FAILURE);
 	}
 	
@@ -866,8 +869,15 @@ int main(int argc, char *argv[], char *envp[])
 	
 //	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 	
+#ifdef _DEBUG
+	_CrtDumpMemoryLeaks();
+#endif
 	return(retval);
 }
+
+/* ----------------------------------------------------------------------------
+	console
+---------------------------------------------------------------------------- */
 
 void change_console_size(int width, int height)
 {
@@ -947,10 +957,6 @@ void clear_scr_buffer(WORD attr)
 		}
 	}
 }
-
-/* ----------------------------------------------------------------------------
-	MS-DOS virtual machine
----------------------------------------------------------------------------- */
 
 bool update_key_buffer_tmp()
 {
@@ -1083,6 +1089,14 @@ int check_key_input()
 	key_input = 0;
 	return(val);
 }
+
+/* ----------------------------------------------------------------------------
+	MS-DOS virtual machine
+---------------------------------------------------------------------------- */
+
+void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
+int msdos_psp_get_file_table(int fd, int psp_seg);
+void msdos_putch(UINT8 data);
 
 // process info
 
@@ -1283,6 +1297,11 @@ int msdos_lead_byte_check(UINT8 code)
 		}
 	}
 	return(0);
+}
+
+int msdos_ctrl_code_check(UINT8 code)
+{
+	return (code >= 0x01 && code <= 0x1a && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
 }
 
 // file control
@@ -1775,10 +1794,6 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	static int id = 0;
 	char full[MAX_PATH], *name;
 	
-	if(psp_seg && fd < 20) {
-		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		psp->file_table[fd] = fd;
-	}
 	if(GetFullPathName(path, MAX_PATH, full, &name) != 0) {
 		strcpy(file_handler[fd].path, full);
 	} else {
@@ -1802,10 +1817,6 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 {
-	if(psp_seg && dst < 20) {
-		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		psp->file_table[dst] = dst;
-	}
 	strcpy(file_handler[dst].path, file_handler[src].path);
 	file_handler[dst].valid = 1;
 	file_handler[dst].id = file_handler[src].id;
@@ -1815,12 +1826,8 @@ void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 	file_handler[dst].psp = psp_seg;
 }
 
-void msdos_file_handler_close(int fd, UINT16 psp_seg)
+void msdos_file_handler_close(int fd)
 {
-	if(psp_seg && fd < 20) {
-		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		psp->file_table[fd] = 0xff;
-	}
 	file_handler[fd].valid = 0;
 }
 
@@ -1885,8 +1892,6 @@ void msdos_find_file_conv_local_time(WIN32_FIND_DATA *fd)
 
 // i/o
 
-void msdos_putch(UINT8 data);
-
 void msdos_stdio_reopen()
 {
 	if(!file_handler[0].valid) {
@@ -1907,9 +1912,12 @@ int msdos_kbhit()
 {
 	msdos_stdio_reopen();
 	
-	if(!file_handler[0].atty) {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(0, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdin is redirected to file
-		return(eof(0) == 0);
+		return(eof(fd) == 0);
 	}
 	
 	// check keyboard status
@@ -1926,11 +1934,14 @@ int msdos_getch_ex(int echo)
 	
 	msdos_stdio_reopen();
 	
-	if(!file_handler[0].atty) {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(0, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdin is redirected to file
 retry:
 		char data;
-		if(_read(0, &data, 1) == 1) {
+		if(_read(fd, &data, 1) == 1) {
 			char tmp = data;
 			if(data == 0x0a) {
 				if(prev == 0x0d) {
@@ -2018,13 +2029,16 @@ void msdos_putch(UINT8 data)
 	static int stored_x;
 	static int stored_y;
 	static WORD stored_a;
-	static char tmp[64];
+	static char tmp[64], out[64];
 	
 	msdos_stdio_reopen();
 	
-	if(!file_handler[1].atty) {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(1, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdout is redirected to file
-		msdos_write(1, &data, 1);
+		msdos_write(fd, &data, 1);
 		return;
 	}
 	
@@ -2275,10 +2289,22 @@ void msdos_putch(UINT8 data)
 			return;
 		}
 	}
-//	tmp[p++] = '\0';
-//	printf("%s", tmp);
-	DWORD num;
-	WriteConsole(hStdout, tmp, p, &num, NULL);
+	
+	DWORD q = 0, num;
+	is_kanji = 0;
+	for(int i = 0; i < p; i++) {
+		UINT8 c = tmp[i];
+		if(is_kanji) {
+			is_kanji = 0;
+		} else if(msdos_lead_byte_check(data)) {
+			is_kanji = 1;
+		} else if(msdos_ctrl_code_check(data)) {
+			out[q++] = '^';
+			c += 'A' - 1;
+		}
+		out[q++] = c;
+	}
+	WriteConsole(hStdout, out, q, &num, NULL);
 	p = 0;
 	
 	if(!restore_console_on_exit) {
@@ -2292,9 +2318,12 @@ void msdos_putch(UINT8 data)
 int msdos_aux_in()
 {
 #ifdef SUPPORT_AUX_PRN
-	if(file_handler[3].valid && !eof(3)) {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(3, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !eof(fd)) {
 		char data = 0;
-		_read(3, &data, 1);
+		_read(fd, &data, 1);
 		return(data);
 	} else {
 		return(EOF);
@@ -2307,8 +2336,11 @@ int msdos_aux_in()
 void msdos_aux_out(char data)
 {
 #ifdef SUPPORT_AUX_PRN
-	if(file_handler[3].valid) {
-		msdos_write(3, &data, 1);
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(3, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid) {
+		msdos_write(fd, &data, 1);
 	}
 #endif
 }
@@ -2316,8 +2348,11 @@ void msdos_aux_out(char data)
 void msdos_prn_out(char data)
 {
 #ifdef SUPPORT_AUX_PRN
-	if(file_handler[4].valid) {
-		msdos_write(4, &data, 1);
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(4, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid) {
+		msdos_write(fd, &data, 1);
 	}
 #endif
 }
@@ -2506,6 +2541,7 @@ int msdos_mem_link_umb()
 		if(mcb->mz == 'Z') {
 			if(mcb_seg == (MEMORY_END >> 4) - 1) {
 				mcb->mz = 'M';
+				((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked |= 0x01;
 				return(-1);
 			}
 			break;
@@ -2528,6 +2564,7 @@ int msdos_mem_unlink_umb()
 		} else {
 			if(mcb_seg == (MEMORY_END >> 4) - 1) {
 				mcb->mz = 'Z';
+				((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked &= ~0x01;
 				return(-1);
 			}
 		}
@@ -2660,12 +2697,16 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
 	psp->parent_psp = parent_psp;
-	for(int i = 0; i < 20; i++) {
-		if(file_handler[i].valid) {
-			psp->file_table[i] = i;
-		} else {
-			psp->file_table[i] = 0xff;
+	if(parent_psp == (UINT16)-1) {
+		for(int i = 0; i < 20; i++) {
+			if(file_handler[i].valid) {
+				psp->file_table[i] = i;
+			} else {
+				psp->file_table[i] = 0xff;
+			}
 		}
+	} else {
+		memcpy(psp->file_table, ((psp_t *)(mem + (parent_psp << 4)))->file_table, 20);
 	}
 	psp->env_seg = env_seg;
 	psp->stack.w.l = REG16(SP);
@@ -2677,6 +2718,23 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 	psp->service[1] = 0x21;
 	psp->service[2] = 0xcb;
 	return(psp);
+}
+
+void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg)
+{
+	if(psp_seg && fd < 20) {
+		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
+		psp->file_table[fd] = value;
+	}
+}
+
+int msdos_psp_get_file_table(int fd, int psp_seg)
+{
+	if(psp_seg && fd < 20) {
+		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
+		fd = psp->file_table[fd];
+	}
+	return fd;
 }
 
 int msdos_process_exec(char *cmd, param_block_t *param, UINT8 al)
@@ -3023,7 +3081,8 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 		for(int i = 0; i < MAX_FILES; i++) {
 			if(file_handler[i].valid && file_handler[i].psp == psp_seg) {
 				_close(i);
-				msdos_file_handler_close(i, psp_seg);
+				msdos_file_handler_close(i);
+				msdos_psp_set_file_table(i, 0x0ff, psp_seg); // FIXME: consider duplicated file handles
 			}
 		}
 		msdos_dta_info_free(psp_seg);
@@ -4239,15 +4298,18 @@ inline void msdos_int_21h_08h()
 
 inline void msdos_int_21h_09h()
 {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(1, current_psp);
+	
 	char *str = (char *)(mem + SREG_BASE(DS) + REG16(DX));
 	int len = 0;
 	
 	while(str[len] != '$' && len < 0x10000) {
 		len++;
 	}
-	if(file_handler[1].valid && !file_handler[1].atty) {
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdout is redirected to file
-		msdos_write(1, str, len);
+		msdos_write(fd, str, len);
 	} else {
 		for(int i = 0; i < len; i++) {
 			msdos_putch(str[i]);
@@ -4270,9 +4332,18 @@ inline void msdos_int_21h_0ah()
 			// back space
 			if(p > 0) {
 				p--;
-				msdos_putch(chr);
-				msdos_putch(' ');
-				msdos_putch(chr);
+				if(msdos_ctrl_code_check(buf[p])) {
+					msdos_putch(chr);
+					msdos_putch(chr);
+					msdos_putch(' ');
+					msdos_putch(' ');
+					msdos_putch(chr);
+					msdos_putch(chr);
+				} else {
+					msdos_putch(chr);
+					msdos_putch(' ');
+					msdos_putch(chr);
+				}
 			}
 		} else if(p < max) {
 			buf[p++] = chr;
@@ -4298,7 +4369,10 @@ inline void msdos_int_21h_0bh()
 inline void msdos_int_21h_0ch()
 {
 	// clear key buffer
-	if(file_handler[0].valid && !file_handler[0].atty) {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(0, current_psp);
+	
+	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdin is redirected to file
 	} else {
 		while(msdos_kbhit()) {
@@ -4809,39 +4883,42 @@ inline void msdos_int_21h_28h()
 
 inline void msdos_int_21h_29h()
 {
-	int ofs = SREG_BASE(DS) + REG16(SI);
-	char name[MAX_PATH], ext[MAX_PATH];
+	int ofs = 0;//SREG_BASE(DS) + REG16(SI);
+	char buffer[1024], name[MAX_PATH], ext[MAX_PATH];
 	UINT8 drv = 0;
 	char sep_chars[] = ":.;,=+";
 	char end_chars[] = "\\<>|/\"[]";
 	char spc_chars[] = " \t";
 	
+	memcpy(buffer, mem + SREG_BASE(DS) + REG16(SI), 1023);
+	buffer[1023] = 0;
+	memset(name, 0x20, sizeof(name));
+	memset(ext, 0x20, sizeof(ext));
+	
 	if(REG8(AL) & 1) {
-		ofs += strspn((char *)&mem[ofs], spc_chars);
-		if(my_strchr(sep_chars, mem[ofs]) && mem[ofs] != '\0') {
+		ofs += strspn((char *)(buffer + ofs), spc_chars);
+		if(my_strchr(sep_chars, buffer[ofs]) && buffer[ofs] != '\0') {
 			ofs++;
 		}
 	}
-	ofs += strspn((char *)&mem[ofs], spc_chars);
+	ofs += strspn((char *)(buffer + ofs), spc_chars);
 	
 	if(mem[ofs + 1] == ':') {
-		UINT8 c = mem[ofs];
-		if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
-			; // invalid drive letter
-		} else {
-			if(c >= 'a' && c <= 'z') {
-				drv = c - 'a' + 1;
-			} else {
-				drv = c - 'A' + 1;
-			}
+		if(mem[ofs] >= 'a' && mem[ofs] <= 'z') {
+			drv = mem[ofs] - 'a' + 1;
+			ofs += 2;
+		} else if(mem[ofs] >= 'A' && mem[ofs] <= 'Z') {
+			drv = mem[ofs] - 'A' + 1;
 			ofs += 2;
 		}
 	}
-	memset(name, 0x20, sizeof(name));
-	memset(ext, 0x20, sizeof(ext));
-	for(int i = 0; i < MAX_PATH; i++) {
-		UINT8 c = mem[ofs];
-		if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
+	for(int i = 0, is_kanji = 0; i < MAX_PATH; i++) {
+		UINT8 c = buffer[ofs];
+		if(is_kanji) {
+			is_kanji = 0;
+		} else if(msdos_lead_byte_check(c)) {
+			is_kanji = 1;
+		} else if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 			break;
 		} else if(c >= 'a' && c <= 'z') {
 			c -= 0x20;
@@ -4849,11 +4926,15 @@ inline void msdos_int_21h_29h()
 		ofs++;
 		name[i] = c;
 	}
-	if(mem[ofs] == '.') {
+	if(buffer[ofs] == '.') {
 		ofs++;
-		for(int i = 0; i < MAX_PATH; i++) {
-			UINT8 c = mem[ofs];
-			if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
+		for(int i = 0, is_kanji = 0; i < MAX_PATH; i++) {
+			UINT8 c = buffer[ofs];
+			if(is_kanji) {
+				is_kanji = 0;
+			} else if(msdos_lead_byte_check(c)) {
+				is_kanji = 1;
+			} else if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 				break;
 			} else if(c >= 'a' && c <= 'z') {
 				c -= 0x20;
@@ -4862,7 +4943,7 @@ inline void msdos_int_21h_29h()
 			ext[i] = c;
 		}
 	}
-	int si = ofs - SREG_BASE(DS);
+	int si = REG16(SI) + ofs;
 	int ds = SREG(DS);
 	while(si > 0xffff) {
 		si -= 0x10;
@@ -4873,10 +4954,16 @@ inline void msdos_int_21h_29h()
 	i386_load_segment_descriptor(DS);
 	
 	UINT8 *fcb = mem + SREG_BASE(ES) + REG16(DI);
-	fcb[0] = drv;
-	memcpy(fcb + 1, name, 8);
-	int found_star = 0;
-	for(int i = 1; i < 1 + 8; i++) {
+	if(!(REG8(AL) & 2) || drv != 0) {
+		fcb[0] = drv;
+	}
+	if(!(REG8(AL) & 4) || name[0] != 0x20) {
+		memcpy(fcb + 1, name, 8);
+	}
+	if(!(REG8(AL) & 8) || ext[0] != 0x20) {
+		memcpy(fcb + 9, ext, 3);
+	}
+	for(int i = 1, found_star = 0; i < 1 + 8; i++) {
 		if(fcb[i] == '*') {
 			found_star = 1;
 		}
@@ -4884,9 +4971,7 @@ inline void msdos_int_21h_29h()
 			fcb[i] = '?';
 		}
 	}
-	memcpy(fcb + 9, ext, 3);
-	found_star = 0;
-	for(int i = 9; i < 9 + 3; i++) {
+	for(int i = 9, found_star = 0; i < 9 + 3; i++) {
 		if(fcb[i] == '*') {
 			found_star = 1;
 		}
@@ -4895,10 +4980,11 @@ inline void msdos_int_21h_29h()
 		}
 	}
 	
-	REG8(AL) = 0x00;
 	if(drv == 0 || (drv > 0 && drv <= 26 && (GetLogicalDrives() & ( 1 << (drv - 1) )))) {
 		if(memchr(fcb + 1, '?', 8 + 3)) {
 			REG8(AL) = 0x01;
+		} else {
+			REG8(AL) = 0x00;
 		}
 	} else {
 		REG8(AL) = 0xff;
@@ -5151,6 +5237,9 @@ inline void msdos_int_21h_3ch()
 	} else if(msdos_is_nul_path(path)) {
 		fd = _open("NUL", _O_WRONLY | _O_BINARY);
 		info = 0x80d3;
+	} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+		fd = _open("NUL", _O_WRONLY | _O_BINARY);
+		info = 0x80d3;
 	} else {
 		fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 		info = msdos_drive_number(path);
@@ -5162,6 +5251,7 @@ inline void msdos_int_21h_3ch()
 		SetFileAttributes(path, attr);
 		REG16(AX) = fd;
 		msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
+		msdos_psp_set_file_table(fd, fd, current_psp);
 	} else {
 		REG16(AX) = errno;
 		m_CF = 1;
@@ -5182,6 +5272,9 @@ inline void msdos_int_21h_3dh()
 		} else if(msdos_is_nul_path(path)) {
 			fd = msdos_open("NUL", file_mode[mode].mode);
 			info = 0x80d3;
+		} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+			fd = msdos_open("NUL", file_mode[mode].mode);
+			info = 0x80d3;
 		} else {
 			fd = msdos_open(path, file_mode[mode].mode);
 			info = msdos_drive_number(path);
@@ -5189,6 +5282,7 @@ inline void msdos_int_21h_3dh()
 		if(fd != -1) {
 			REG16(AX) = fd;
 			msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
+			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -5202,10 +5296,12 @@ inline void msdos_int_21h_3dh()
 inline void msdos_int_21h_3eh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		_close(REG16(BX));
-		msdos_file_handler_close(REG16(BX), current_psp);
+	if(fd < process->max_files && file_handler[fd].valid) {
+		_close(fd);
+		msdos_file_handler_close(fd);
+		msdos_psp_set_file_table(REG16(BX), 0x0ff, current_psp);
 	} else {
 		REG16(AX) = 0x06;
 		m_CF = 1;
@@ -5215,10 +5311,11 @@ inline void msdos_int_21h_3eh()
 inline void msdos_int_21h_3fh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		if(file_mode[file_handler[REG16(BX)].mode].in) {
-			if(file_handler[REG16(BX)].atty) {
+	if(fd < process->max_files && file_handler[fd].valid) {
+		if(file_mode[file_handler[fd].mode].in) {
+			if(file_handler[fd].atty) {
 				// BX is stdin or is redirected to stdin
 				UINT8 *buf = mem + SREG_BASE(DS) + REG16(DX);
 				int max = REG16(CX);
@@ -5242,9 +5339,18 @@ inline void msdos_int_21h_3fh()
 						// back space
 						if(p > 0) {
 							p--;
-							msdos_putch(chr);
-							msdos_putch(' ');
-							msdos_putch(chr);
+							if(msdos_ctrl_code_check(buf[p])) {
+								msdos_putch(chr);
+								msdos_putch(chr);
+								msdos_putch(' ');
+								msdos_putch(' ');
+								msdos_putch(chr);
+								msdos_putch(chr);
+							} else {
+								msdos_putch(chr);
+								msdos_putch(' ');
+								msdos_putch(chr);
+							}
 						}
 					} else {
 						buf[p++] = chr;
@@ -5255,7 +5361,7 @@ inline void msdos_int_21h_3fh()
 				// some seconds may be passed in console
 				hardware_update();
 			} else {
-				REG16(AX) = _read(REG16(BX), mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
+				REG16(AX) = _read(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 			}
 		} else {
 			REG16(AX) = 0x05;
@@ -5270,33 +5376,34 @@ inline void msdos_int_21h_3fh()
 inline void msdos_int_21h_40h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		if(file_mode[file_handler[REG16(BX)].mode].out) {
+	if(fd < process->max_files && file_handler[fd].valid) {
+		if(file_mode[file_handler[fd].mode].out) {
 			if(REG16(CX)) {
-				if(file_handler[REG16(BX)].atty) {
+				if(file_handler[fd].atty) {
 					// BX is stdout/stderr or is redirected to stdout
 					for(int i = 0; i < REG16(CX); i++) {
 						msdos_putch(mem[SREG_BASE(DS) + REG16(DX) + i]);
 					}
 					REG16(AX) = REG16(CX);
 				} else {
-					REG16(AX) = msdos_write(REG16(BX), mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
+					REG16(AX) = msdos_write(fd, mem + SREG_BASE(DS) + REG16(DX), REG16(CX));
 				}
 			} else {
-				UINT32 pos = _tell(REG16(BX));
-				_lseek(REG16(BX), 0, SEEK_END);
-				UINT32 size = _tell(REG16(BX));
+				UINT32 pos = _tell(fd);
+				_lseek(fd, 0, SEEK_END);
+				UINT32 size = _tell(fd);
 				REG16(AX) = 0;
 				if(pos < size) {
-					_lseek(REG16(BX), pos, SEEK_SET);
-					SetEndOfFile((HANDLE)_get_osfhandle(REG16(BX)));
+					_lseek(fd, pos, SEEK_SET);
+					SetEndOfFile((HANDLE)_get_osfhandle(fd));
 				} else {
 					for(UINT32 i = size; i < pos; i++) {
 						UINT8 tmp = 0;
-						REG16(AX) += msdos_write(REG16(BX), &tmp, 1);
+						REG16(AX) += msdos_write(fd, &tmp, 1);
 					}
-					_lseek(REG16(BX), pos, SEEK_SET);
+					_lseek(fd, pos, SEEK_SET);
 				}
 			}
 		} else {
@@ -5320,12 +5427,13 @@ inline void msdos_int_21h_41h(int lfn)
 inline void msdos_int_21h_42h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
+	if(fd < process->max_files && file_handler[fd].valid) {
 		if(REG8(AL) < 0x03) {
 			static int ptrname[] = { SEEK_SET, SEEK_CUR, SEEK_END };
-			_lseek(REG16(BX), (REG16(CX) << 16) | REG16(DX), ptrname[REG8(AL)]);
-			UINT32 pos = _tell(REG16(BX));
+			_lseek(fd, (REG16(CX) << 16) | REG16(DX), ptrname[REG8(AL)]);
+			UINT32 pos = _tell(fd);
 			REG16(AX) = pos & 0xffff;
 			REG16(DX) = (pos >> 16);
 		} else {
@@ -5446,6 +5554,9 @@ inline void msdos_int_21h_43h(int lfn)
 
 inline void msdos_int_21h_44h()
 {
+	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
+	
 	UINT32 val = DRIVE_NO_ROOT_DIR;
 	
 	switch(REG8(AL)) {
@@ -5457,14 +5568,10 @@ inline void msdos_int_21h_44h()
 	case 0x05:
 	case 0x06:
 	case 0x07:
-		{
-			process_t *process = msdos_process_info_get(current_psp);
-			
-			if(REG16(BX) >= process->max_files || !file_handler[REG16(BX)].valid) {
-				REG16(AX) = 0x06;
-				m_CF = 1;
-				return;
-			}
+		if(fd >= process->max_files || !file_handler[fd].valid) {
+			REG16(AX) = 0x06;
+			m_CF = 1;
+			return;
 		}
 		break;
 	case 0x08:
@@ -5493,10 +5600,10 @@ inline void msdos_int_21h_44h()
 	}
 	switch(REG8(AL)) {
 	case 0x00: // get ioctrl data
-		REG16(DX) = file_handler[REG16(BX)].info;
+		REG16(DX) = file_handler[fd].info;
 		break;
 	case 0x01: // set ioctrl data
-		file_handler[REG16(BX)].info |= REG8(DL);
+		file_handler[fd].info |= REG8(DL);
 		break;
 	case 0x02: // recv from character device
 	case 0x03: // send to character device
@@ -5506,18 +5613,18 @@ inline void msdos_int_21h_44h()
 		m_CF = 1;
 		break;
 	case 0x06: // get read status
-		if(file_mode[file_handler[REG16(BX)].mode].in) {
-			if(file_handler[REG16(BX)].atty) {
+		if(file_mode[file_handler[fd].mode].in) {
+			if(file_handler[fd].atty) {
 				REG8(AL) = msdos_kbhit() ? 0xff : 0x00;
 			} else {
-				REG8(AL) = eof(REG16(BX)) ? 0x00 : 0xff;
+				REG8(AL) = eof(fd) ? 0x00 : 0xff;
 			}
 		} else {
 			REG8(AL) = 0x00;
 		}
 		break;
 	case 0x07: // get write status
-		if(file_mode[file_handler[REG16(BX)].mode].out) {
+		if(file_mode[file_handler[fd].mode].out) {
 			REG8(AL) = 0xff;
 		} else {
 			REG8(AL) = 0x00;
@@ -5553,12 +5660,15 @@ inline void msdos_int_21h_44h()
 inline void msdos_int_21h_45h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		int fd = _dup(REG16(BX));
-		if(fd != -1) {
-			REG16(AX) = fd;
-			msdos_file_handler_dup(REG16(AX), REG16(BX), current_psp);
+	if(fd < process->max_files && file_handler[fd].valid) {
+		int dup_fd = _dup(fd);
+		if(dup_fd != -1) {
+			REG16(AX) = dup_fd;
+			msdos_file_handler_dup(dup_fd, fd, current_psp);
+//			msdos_psp_set_file_table(dup_fd, fd, current_psp);
+			msdos_psp_set_file_table(dup_fd, dup_fd, current_psp);
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -5572,10 +5682,23 @@ inline void msdos_int_21h_45h()
 inline void msdos_int_21h_46h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
+	int dup_fd = REG16(CX);
+	int tmp_fd = msdos_psp_get_file_table(REG16(CX), current_psp);
 	
-	if(REG16(BX) < process->max_files && REG16(CX) < process->max_files && file_handler[REG16(BX)].valid) {
-		if(_dup2(REG16(BX), REG16(CX)) != -1) {
-			msdos_file_handler_dup(REG16(CX), REG16(BX), current_psp);
+	if(REG16(BX) == REG16(CX)) {
+		REG16(AX) = 0x06;
+		m_CF = 1;
+	} else if(fd < process->max_files && file_handler[fd].valid && dup_fd < process->max_files) {
+		if(tmp_fd < process->max_files && file_handler[tmp_fd].valid) {
+			_close(tmp_fd);
+			msdos_file_handler_close(tmp_fd);
+			msdos_psp_set_file_table(dup_fd, 0x0ff, current_psp);
+		}
+		if(_dup2(fd, dup_fd) != -1) {
+			msdos_file_handler_dup(dup_fd, fd, current_psp);
+//			msdos_psp_set_file_table(dup_fd, fd, current_psp);
+			msdos_psp_set_file_table(dup_fd, dup_fd, current_psp);
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -6032,6 +6155,7 @@ inline void msdos_int_21h_5ah()
 		SetFileAttributes(tmp, msdos_file_attribute_create(REG16(CX)) & ~FILE_ATTRIBUTE_READONLY);
 		REG16(AX) = fd;
 		msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
+		msdos_psp_set_file_table(fd, fd, current_psp);
 		
 		strcpy(path, tmp);
 		int dx = REG16(DX) + len;
@@ -6064,6 +6188,7 @@ inline void msdos_int_21h_5bh()
 			SetFileAttributes(path, msdos_file_attribute_create(REG16(CX)) & ~FILE_ATTRIBUTE_READONLY);
 			REG16(AX) = fd;
 			msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
+			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -6074,17 +6199,18 @@ inline void msdos_int_21h_5bh()
 inline void msdos_int_21h_5ch()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
+	if(fd < process->max_files && file_handler[fd].valid) {
 		if(REG8(AL) == 0 || REG8(AL) == 1) {
 			static int modes[2] = {_LK_LOCK, _LK_UNLCK};
-			UINT32 pos = _tell(REG16(BX));
-			_lseek(REG16(BX), (REG16(CX) << 16) | REG16(DX), SEEK_SET);
-			if(_locking(REG16(BX), modes[REG8(AL)], (REG16(SI) << 16) | REG16(DI))) {
+			UINT32 pos = _tell(fd);
+			_lseek(fd, (REG16(CX) << 16) | REG16(DX), SEEK_SET);
+			if(_locking(fd, modes[REG8(AL)], (REG16(SI) << 16) | REG16(DI))) {
 				REG16(AX) = errno;
 				m_CF = 1;
 			}
-			_lseek(REG16(BX), pos, SEEK_SET);
+			_lseek(fd, pos, SEEK_SET);
 			// some seconds may be passed in _locking()
 			hardware_update();
 		} else {
@@ -6272,9 +6398,10 @@ inline void msdos_int_21h_67h()
 inline void msdos_int_21h_68h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		// fflush(_fdopen(REG16(BX), ""));
+	if(fd < process->max_files && file_handler[fd].valid) {
+		// fflush(_fdopen(fd, ""));
 	} else {
 		REG16(AX) = 0x06;
 		m_CF = 1;
@@ -6332,7 +6459,7 @@ inline void msdos_int_21h_6ch(int lfn)
 	int mode = REG8(BL) & 0x03;
 	
 	if(mode < 0x03) {
-		if(_access(path, 0) == 0) {
+		if(_access(path, 0) == 0 || strncmp(path, "EMMXXXX0", 8) == 0) {
 			// file exists
 			if(REG8(DL) & 1) {
 				int fd = -1;
@@ -6344,6 +6471,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else if(msdos_is_nul_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
+				} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
+					info = 0x80d3;
 				} else {
 					fd = msdos_open(path, file_mode[mode].mode);
 					info = msdos_drive_number(path);
@@ -6352,6 +6482,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					REG16(AX) = fd;
 					REG16(CX) = 1;
 					msdos_file_handler_open(fd, path, _isatty(fd), mode, info, current_psp);
+					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
 					m_CF = 1;
@@ -6367,6 +6498,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				} else if(msdos_is_nul_path(path)) {
 					fd = msdos_open("NUL", file_mode[mode].mode);
 					info = 0x80d3;
+				} else if(strncmp(path, "EMMXXXX0", 8) == 0) {
+					fd = msdos_open("NUL", file_mode[mode].mode);
+					info = 0x80d3;
 				} else {
 					fd = _open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 					info = msdos_drive_number(path);
@@ -6379,6 +6513,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					REG16(AX) = fd;
 					REG16(CX) = 3;
 					msdos_file_handler_open(fd, path, _isatty(fd), 2, info, current_psp);
+					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
 					m_CF = 1;
@@ -6397,6 +6532,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					REG16(AX) = fd;
 					REG16(CX) = 2;
 					msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
+					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
 					REG16(AX) = errno;
 					m_CF = 1;
@@ -6632,19 +6768,21 @@ inline void msdos_int_21h_71a1h()
 inline void msdos_int_21h_71a6h()
 {
 	process_t *process = msdos_process_info_get(current_psp);
+	int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
+	
 	UINT8 *buffer = (UINT8 *)(mem + SREG_BASE(DS) + REG16(DX));
 	struct _stat64 status;
 	DWORD serial_number = 0;
 	
-	if(REG16(BX) < process->max_files && file_handler[REG16(BX)].valid) {
-		if(_fstat64(REG16(BX), &status) == 0) {
-			if(file_handler[REG16(BX)].path[1] == ':') {
+	if(fd < process->max_files && file_handler[fd].valid) {
+		if(_fstat64(fd, &status) == 0) {
+			if(file_handler[fd].path[1] == ':') {
 				// NOTE: we need to consider the network file path "\\host\share\"
 				char volume[] = "A:\\";
-				volume[0] = file_handler[REG16(BX)].path[1];
+				volume[0] = file_handler[fd].path[1];
 				GetVolumeInformation(volume, NULL, 0, &serial_number, NULL, NULL, NULL, 0);
 			}
-			*(UINT32 *)(buffer + 0x00) = GetFileAttributes(file_handler[REG16(BX)].path);
+			*(UINT32 *)(buffer + 0x00) = GetFileAttributes(file_handler[fd].path);
 			*(UINT32 *)(buffer + 0x04) = (UINT32)(status.st_ctime & 0xffffffff);
 			*(UINT32 *)(buffer + 0x08) = (UINT32)((status.st_ctime >> 32) & 0xffffffff);
 			*(UINT32 *)(buffer + 0x0c) = (UINT32)(status.st_atime & 0xffffffff);
@@ -6657,7 +6795,7 @@ inline void msdos_int_21h_71a6h()
 			*(UINT32 *)(buffer + 0x28) = status.st_nlink;
 			// this is dummy id and it will be changed when it is reopened...
 			*(UINT32 *)(buffer + 0x2c) = 0;
-			*(UINT32 *)(buffer + 0x30) = file_handler[REG16(BX)].id;
+			*(UINT32 *)(buffer + 0x30) = file_handler[fd].id;
 		} else {
 			REG16(AX) = errno;
 			m_CF = 1;
@@ -6954,6 +7092,18 @@ inline void msdos_int_2fh_16h()
 		hardware_update();
 		REG8(AL) = 0;
 		break;
+	case 0x8f:
+		switch(REG8(DH)) {
+		case 0x00:
+		case 0x02:
+		case 0x03:
+			REG16(AX) = 0x00;
+			break;
+		case 0x01:
+			REG16(AX) = 0x168f;
+			break;
+		}
+		break;
 	default:
 		REG16(AX) = 0x01;
 		m_CF = 1;
@@ -7096,21 +7246,6 @@ inline void msdos_int_2fh_b7h()
 		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
-	}
-}
-
-inline void msdos_int_67h_00h()
-{
-	if(!support_ems) {
-		REG8(AH) = 0x84;
-	} else {
-		REG8(AH) = 0x00;
-		REG16(BX) = 0;
-		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
-			if(ems_handles[i].allocated) {
-				REG16(BX)++;
-			}
-		}
 	}
 }
 
@@ -7298,6 +7433,75 @@ inline void msdos_int_67h_4dh()
 	}
 }
 
+inline void msdos_int_67h_4eh()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01 || REG8(AL) == 0x02) {
+		if(REG8(AL) == 0x00 || REG8(AL) == 0x02) {
+			// save page map
+			for(int i = 0; i < 4; i++) {
+				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
+				*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
+			}
+		}
+		if(REG8(AL) == 0x01 || REG8(AL) == 0x02) {
+			// restore page map
+			for(int i = 0; i < 4; i++) {
+				UINT16 handle = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 0);
+				UINT16 page   = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 2);
+				
+				if(handle < MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+					ems_map_page(i, handle, page);
+				} else {
+					ems_unmap_page(i);
+				}
+			}
+		}
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x03) {
+		REG8(AH) = 0x00;
+		REG8(AL) = (2 + 2) * 4;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_50h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
+		for(int i = 0; i < REG16(CX); i++) {
+			int logical  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 0);
+			int physical = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 4 * i + 2);
+			
+			if(REG8(AL) == 0x01) {
+				physical = ((physical << 4) - EMS_TOP) / 0x4000;
+			}
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			} else
+			if(logical == 0xffff) {
+				ems_unmap_page(physical & 3);
+			} else if(logical < ems_handles[REG16(DX)].pages) {
+				ems_map_page(physical & 3, REG16(DX), logical);
+			} else {
+				REG8(AH) = 0x8a;
+				return;
+			}
+		}
+		REG8(AH) = 0x00;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
 inline void msdos_int_67h_51h()
 {
 	if(!support_ems) {
@@ -7311,6 +7515,30 @@ inline void msdos_int_67h_51h()
 	} else {
 		ems_reallocate_pages(REG16(DX), REG16(BX));
 		REG8(AH) = 0x00;
+	}
+}
+
+inline void msdos_int_67h_52h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(!(REG16(DX) < MAX_EMS_HANDLES && ems_handles[REG16(DX)].allocated)) {
+		REG8(AH) = 0x83;
+	} else if(REG8(AL) == 0x00) {
+		REG8(AL) = 0x00; // handle is volatile
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x01) {
+		if(REG8(BL) == 0x00) {
+			REG8(AH) = 0x00;
+		} else {
+			REG8(AH) = 0x90; // undefined attribute type
+		}
+	} else if(REG8(AL) == 0x02) {
+		REG8(AL) = 0x00; // only volatile handles supported
+		REG8(AH) = 0x00;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
 	}
 }
 
@@ -7334,7 +7562,7 @@ inline void msdos_int_67h_53h()
 		memcpy(ems_handles[REG16(DX)].name, mem + SREG_BASE(DS) + REG16(SI), 8);
 	} else {
 //		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
-		REG8(AH) = 0x84;
+		REG8(AH) = 0x8f;
 	}
 }
 
@@ -7367,7 +7595,152 @@ inline void msdos_int_67h_54h()
 		REG16(BX) = MAX_EMS_HANDLES;
 	} else {
 //		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_57h_tmp()
+{
+	UINT32 copy_length = *(UINT32 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x00);
+	UINT8  src_type    = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x04);
+	UINT16 src_handle  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x05);
+	UINT16 src_ofs     = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x07);
+	UINT16 src_seg     = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x09);
+	UINT8  dest_type   = *(UINT8  *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0b);
+	UINT16 dest_handle = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0c);
+	UINT16 dest_ofs    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x0e);
+	UINT16 dest_seg    = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 0x10);
+	
+	UINT8 *src_buffer, *dest_buffer;
+	UINT32 src_addr, dest_addr;
+	UINT32 src_addr_max, dest_addr_max;
+	
+	if(src_type == 0) {
+		src_buffer = mem;
+		src_addr = (src_seg << 4) + src_ofs;
+		src_addr_max = MAX_MEM;
+	} else {
+		if(!(src_handle < MAX_EMS_HANDLES && ems_handles[src_handle].allocated)) {
+			REG8(AH) = 0x83;
+			return;
+		} else if(!(src_seg < ems_handles[src_handle].pages)) {
+			REG8(AH) = 0x8a;
+			return;
+		}
+		src_buffer = ems_handles[src_handle].buffer + 0x4000 * src_seg;
+		src_addr = src_ofs;
+		src_addr_max = 0x4000;
+	}
+	if(dest_type == 0) {
+		dest_buffer = mem;
+		dest_addr = (dest_seg << 4) + dest_ofs;
+		dest_addr_max = MAX_MEM;
+	} else {
+		if(!(dest_handle < MAX_EMS_HANDLES && ems_handles[dest_handle].allocated)) {
+			REG8(AH) = 0x83;
+			return;
+		} else if(!(dest_seg < ems_handles[dest_handle].pages)) {
+			REG8(AH) = 0x8a;
+			return;
+		}
+		dest_buffer = ems_handles[dest_handle].buffer + 0x4000 * dest_seg;
+		dest_addr = dest_ofs;
+		dest_addr_max = 0x4000;
+	}
+	for(int i = 0; i < copy_length; i++) {
+		if(src_addr < src_addr_max && dest_addr < dest_addr_max) {
+			if(REG8(AL) == 0x00) {
+				dest_buffer[dest_addr++] = src_buffer[src_addr++];
+			} else if(REG8(AL) == 0x01) {
+				UINT8 tmp = dest_buffer[dest_addr];
+				dest_buffer[dest_addr++] = src_buffer[src_addr];
+				src_buffer[src_addr++] = tmp;
+			}
+		} else {
+			REG8(AH) = 0x93;
+			return;
+		}
+	}
+	REG8(AH) = 0x80;
+}
+
+inline void msdos_int_67h_57h()
+{
+	if(!support_ems) {
 		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
+		struct {
+			UINT16 handle;
+			UINT16 page;
+			bool mapped;
+		} tmp_pages[4];
+		
+		// unmap pages to copy memory data to ems buffer
+		for(int i = 0; i < 4; i++) {
+			tmp_pages[i].handle = ems_pages[i].handle;
+			tmp_pages[i].page   = ems_pages[i].page;
+			tmp_pages[i].mapped = ems_pages[i].mapped;
+			ems_unmap_page(i);
+		}
+		
+		// run move/exchange operation
+		msdos_int_67h_57h_tmp();
+		
+		// restore unmapped pages
+		for(int i = 0; i < 4; i++) {
+			if(tmp_pages[i].mapped) {
+				ems_map_page(i, tmp_pages[i].handle, tmp_pages[i].page);
+			}
+		}
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_58h()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		for(int i = 0; i < 4; i++) {
+			*(UINT16 *)(mem +SREG_BASE(ES) + REG16(DI) + 4 * i + 0) = (EMS_TOP + 0x4000 * i) >> 4;
+			*(UINT16 *)(mem +SREG_BASE(ES) + REG16(DI) + 4 * i + 2) = i;
+		}
+		REG8(AH) = 0x00;
+		REG16(CX) = 4;
+	} else if(REG8(AL) == 0x01) {
+		REG8(AH) = 0x00;
+		REG16(CX) = 4;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_5ah()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG16(BX) > MAX_EMS_PAGES) {
+		REG8(AH) = 0x87;
+	} else if(REG16(BX) > free_ems_pages) {
+		REG8(AH) = 0x88;
+//	} else if(REG16(BX) == 0) {
+//		REG8(AH) = 0x89;
+	} else if(REG8(AL) == 0x00 || REG8(AL) == 0x01) {
+		for(int i = 0; i < MAX_EMS_HANDLES; i++) {
+			if(!ems_handles[i].allocated) {
+				ems_allocate_pages(i, REG16(BX));
+				REG8(AH) = 0x00;
+				REG16(DX) = i;
+				return;
+			}
+		}
+		REG8(AH) = 0x85;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
 	}
 }
 
@@ -8064,7 +8437,6 @@ void msdos_syscall(unsigned num)
 	case 0x68:
 		// dummy interrupt for EMS (int 67h)
 		switch(REG8(AH)) {
-		case 0x00: msdos_int_67h_00h(); break;
 		case 0x40: msdos_int_67h_40h(); break;
 		case 0x41: msdos_int_67h_41h(); break;
 		case 0x42: msdos_int_67h_42h(); break;
@@ -8074,27 +8446,27 @@ void msdos_syscall(unsigned num)
 		case 0x46: msdos_int_67h_46h(); break;
 		case 0x47: msdos_int_67h_47h(); break;
 		case 0x48: msdos_int_67h_48h(); break;
-		// 0x49: LIM EMS - reserved - GET I/O PORT ADDRESSES
-		// 0x4a: LIM EMS - reserved - GET TRANSLATION ARRAY
+		// 0x49: LIM EMS - Reserved - Get I/O Port Address (Undocumented in EMS 3.2)
+		// 0x4a: LIM EMS - Reserved - Get Translation Array (Undocumented in EMS 3.2)
 		case 0x4b: msdos_int_67h_4bh(); break;
 		case 0x4c: msdos_int_67h_4ch(); break;
 		case 0x4d: msdos_int_67h_4dh(); break;
-		// 0x4e: LIM EMS - GET OR SET PAGE MAP
-		// 0x4f: LIM EMS 4.0 - GET/SET PARTIAL PAGE MAP
-		// 0x50: LIM EMS 4.0 - MAP/UNMAP MULTIPLE HANDLE PAGES
+		case 0x4e: msdos_int_67h_4eh(); break;
+		// 0x4f: LIM EMS 4.0 - Get/Set Partial Page Map
+		case 0x50: msdos_int_67h_50h(); break;
 		case 0x51: msdos_int_67h_51h(); break;
-		// 0x52: LIM EMS 4.0 - GET/SET HANDLE ATTRIBUTES
+		case 0x52: msdos_int_67h_52h(); break;
 		case 0x53: msdos_int_67h_53h(); break;
 		case 0x54: msdos_int_67h_54h(); break;
-		// 0x55: LIM EMS 4.0 - ALTER PAGE MAP AND JUMP
-		// 0x56: LIM EMS 4.0 - ALTER PAGE MAP AND CALL
-		// 0x57: LIM EMS 4.0 - MOVE/EXCHANGE MEMORY REGION
-		// 0x58: LIM EMS 4.0 - GET MAPPABLE PHYSICAL ADDRESS ARRAY
-		// 0x59: LIM EMS 4.0 - GET EXPANDED MEMORY HARDWARE INFORMATION
-		// 0x5a: LIM EMS 4.0 - ALLOCATE STANDARD/RAW PAGES
-		// 0x5b: LIM EMS 4.0 - ALTERNATE MAP REGISTER SET
-		// 0x5c: LIM EMS 4.0 - PREPARE EXPANDED MEMORY HARDWARE FOR WARM BOOT
-		// 0x5d: LIM EMS 4.0 - ENABLE/DISABLE OS FUNCTION SET FUNCTIONS
+		// 0x55: LIM EMS 4.0 - Alter Page Map And JUMP
+		// 0x56: LIM EMS 4.0 - Alter Page Map And CALL
+		case 0x57: msdos_int_67h_57h(); break;
+		case 0x58: msdos_int_67h_58h(); break;
+		// 0x59: LIM EMS 4.0 - Get Expanded Memory Hardware Information (for DOS Kernel)
+		case 0x5a: msdos_int_67h_5ah(); break;
+		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
+		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
+		// 0x5d: LIM EMS 4.0 - Enable/Disable OS Function Set Functions (for DOS Kernel)
 		default:
 //			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			REG8(AH) = 0x84;
@@ -8293,6 +8665,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memcpy(dos_info->nul_device.dev_name, "NUL     ", 8);
 	dos_info->disk_buf_heads.w.l = 0;
 	dos_info->disk_buf_heads.w.h = DISK_BUF_TOP >> 4;
+	dos_info->first_umb_fcb = UMB_TOP >> 4;
+	dos_info->first_mcb_2 = MEMORY_TOP >> 4;
 	
 	char *env;
 	if((env = getenv("LASTDRIVE")) != NULL) {

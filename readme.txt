@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/29/2016
+								6/2/2016
 
 ----- What's this
 
@@ -380,6 +380,7 @@ INT 2FH		Multiplex Interrupt
 
 	1600H	Windows Enhanced Mode Installation Check
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
+	168FH	Windows95 - Close Awareness
 	1A00H	ANSI.SYS Installation Check (*4)
 	4300H	XMS - Installation Check
 	4310H	XMS - Get Driver Address
@@ -395,12 +396,11 @@ INT 2FH		Multiplex Interrupt
 
 INT 67H		LIM EMS
 
-	00H	
 	40H	LIM EMS - Get Manager Status
 	41H	LIM EMS - Get Page Frame Segment
 	42H	LIM EMS - Get Number Of Pages
 	43H	LIM EMS - Get Handle And Allocate Memory
-	44H	LIM EMS - Map Memory
+	44H	LIM EMS - Map/Unmap Memory
 	45H	LIM EMS - Release Handle And Memory
 	46H	LIM EMS - Get EMM Version (*6)
 	47H	LIM EMS - Save Mapping Context
@@ -408,12 +408,24 @@ INT 67H		LIM EMS
 	4BH	LIM EMS - Get Number Of EMM Handles
 	4CH	LIM EMS - Get Pages Owned By Handle
 	4DH	LIM EMS - Get Pages For All Handles
+	4E00H	LIM EMS - Get Page Map
+	4E01H	LIM EMS - Set Page Map
+	4E02H	LIM EMS - Get And Set Page Map
+	4E03H	LIM EMS - Get Page Map Array Size
+	50H	LIM EMS 4.0 - Map/Unmap Multiple Handle Pages
 	51H	LIM EMS 4.0 - Reallocate Pages
+	52H	LIM EMS 4.0 - Get/Set Handle Attributes
 	5300H	LIM EMS 4.0 - Get Handle Name
 	5301H	LIM EMS 4.0 - Set Handle Name
 	5400H	LIM EMS 4.0 - Get Handle Directory
 	5401H	LIM EMS 4.0 - Search For Named Handle
 	5402H	LIM EMS 4.0 - Get Total Handles
+	5700H	LIM EMS 4.0 - Move Memory Region
+	5701H	LIM EMS 4.0 - Exchange Memory Region
+	5800H	LIM EMS 4.0 - Get Mappable Physical Address Array
+	5801H	LIM EMS 4.0 - Get Mappable Physical Address Array Entries
+	5A00H	LIM EMS 4.0 - Allocate Standard Pages
+	5A01H	LIM EMS 4.0 - Allocate Raw Pages
 
 CALL FAR XMS
 
@@ -438,7 +450,7 @@ CALL FAR XMS
 	12H	XMS 3.0 - Reallocate Upper Memory Block
 
 (*1) Not a Hercules-compatible video adapter
-(*2) MS-DOS Version: 7.10
+(*2) MS-DOS Version: 7.10 (default) or specified version with -v option
 (*3) Support only floppy disk drive
 (*4) ANSI.SYS is installed
 (*5) HMA/APPEND are not installed
@@ -451,8 +463,8 @@ CALL FAR XMS
 80286 code is based on MAME 0.149.
 80386 code is based on MAME 0.152 and fixes in MAME 0.154 to 0.174 are applied.
 
-INT 15H AH=87H (copy extended memory) and AH=89H (switch to protected mode)
-are based on DOSBox.
+INT 15H AH=87H (copy extended memory), AH=89H (switch to protected mode),
+and some DOS info block improvements are based on DOSBox.
 
 Patched by Mr.Sagawa, Mr.sava, Mr.Kimura (emk) and Mr.Jason Hood.
 

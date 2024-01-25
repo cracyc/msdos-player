@@ -32,6 +32,14 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 
+#ifdef _DEBUG
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#define calloc(c, s) _calloc_dbg(c, s, _NORMAL_BLOCK, __FILE__, __LINE__)
+#define malloc(s) _malloc_dbg(s, _NORMAL_BLOCK, __FILE__, __LINE__)
+#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
+#endif
+
 // variable scope of 'for' loop for Microsoft Visual C++ 6.0
 #if defined(_MSC_VER) && (_MSC_VER == 1200)
 #define for if(0);else for
@@ -673,6 +681,11 @@ typedef struct {
 	PAIR32 disk_buf_heads;	// +71 from DOSBox
 	UINT8 reserved_5[21];	// +75
 	UINT8 dos_flag;		// +96
+	UINT8 reserved_6[2];	// +97
+	UINT8 umb_linked;	// +99 from DOSBox
+	UINT8 reserved_7[2];	// +100
+	UINT16 first_umb_fcb;	// +102 from DOSBox
+	UINT16 first_mcb_2;	// +104 from DOSBox
 } dos_info_t;
 #pragma pack()
 
