@@ -2362,6 +2362,48 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 	return VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, dwlConditionMask);
 }
 
+bool set_console_font_size(HANDLE hStdout, int width, int height)
+{
+	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
+	bool result = false;
+	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	
+	if(hLibrary) {
+		typedef BOOL (WINAPI* GetConsoleFontInfoFunction)(HANDLE, BOOL, DWORD, PCONSOLE_FONT_INFO);
+		typedef DWORD (WINAPI* GetNumberOfConsoleFontsFunction)(VOID);
+		typedef BOOL (WINAPI* SetConsoleFontFunction)(HANDLE, DWORD);
+		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+		
+		GetConsoleFontInfoFunction lpfnGetConsoleFontInfo = reinterpret_cast<GetConsoleFontInfoFunction>(::GetProcAddress(hLibrary, "GetConsoleFontInfo"));
+		GetNumberOfConsoleFontsFunction lpfnGetNumberOfConsoleFonts = reinterpret_cast<GetNumberOfConsoleFontsFunction>(::GetProcAddress(hLibrary, "GetNumberOfConsoleFonts"));
+		SetConsoleFontFunction lpfnSetConsoleFont = reinterpret_cast<SetConsoleFontFunction>(::GetProcAddress(hLibrary, "SetConsoleFont"));
+		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+		
+		if(lpfnGetConsoleFontInfo && lpfnGetNumberOfConsoleFonts && lpfnSetConsoleFont) {
+			DWORD dwFontNum = lpfnGetNumberOfConsoleFonts();
+			CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
+			lpfnGetConsoleFontInfo(hStdout, FALSE, dwFontNum, fonts);
+			for(int i = 0; i < dwFontNum; i++) {
+				fonts[i].dwFontSize = GetConsoleFontSize(hStdout, fonts[i].nFont);
+				if(fonts[i].dwFontSize.X == width && fonts[i].dwFontSize.Y == height) {
+					lpfnSetConsoleFont(hStdout, fonts[i].nFont);
+					result = true;
+					break;
+				}
+			}
+			free(fonts);
+		}
+		if(lpfnGetCurrentConsoleFont && result) {
+			CONSOLE_FONT_INFO fi;
+			if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi)) {
+				result = (fi.dwFontSize.X == width && fi.dwFontSize.Y == height);
+			}
+		}
+		FreeLibrary(hLibrary);
+	}
+	return(result);
+}
+
 void get_sio_port_numbers()
 {
 	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
@@ -2410,6 +2452,7 @@ int main(int argc, char *argv[], char *envp[])
 	int standard_env = 0;
 	int buf_width = 0, buf_height = 0;
 	bool get_console_info_success = false;
+	bool get_console_font_success = false;
 	bool screen_size_changed = false;
 	
 	_TCHAR path[MAX_PATH], full[MAX_PATH], *name = NULL;
@@ -2831,10 +2874,22 @@ int main(int argc, char *argv[], char *envp[])
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
+	CONSOLE_FONT_INFO fi;
 	
 	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	GetConsoleCursorInfo(hStdout, &ci);
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
+//	get_console_font_success = (GetCurrentConsoleFont(hStdout, FALSE, &fi) != 0);
+	
+	HMODULE hLibrary = LoadLibrary(_T("Kernel32.dll"));
+	if(hLibrary) {
+		typedef BOOL (WINAPI* GetCurrentConsoleFontFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFO);
+		GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
+		if(lpfnGetCurrentConsoleFont) {
+			get_console_font_success = (lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi) != 0);
+		}
+		FreeLibrary(hLibrary);
+	}
 	
 	for(int y = 0; y < SCR_BUF_WIDTH; y++) {
 		for(int x = 0; x < SCR_BUF_HEIGHT; x++) {
@@ -2925,6 +2980,10 @@ int main(int argc, char *argv[], char *envp[])
 		timeEndPeriod(caps.wPeriodMin);
 		
 		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
+		if(get_console_font_success) {
+			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+			set_console_font_size(hStdout, fi.dwFontSize.X, fi.dwFontSize.Y);
+		}
 		if(get_console_info_success) {
 			hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(restore_console_on_exit) {
@@ -6761,6 +6820,12 @@ int pcbios_get_shadow_buffer_address(int page, int x, int y)
 	return pcbios_get_shadow_buffer_address(page) + (x + y * scr_width) * 2;
 }
 
+bool pcbios_set_font_size(int width, int height)
+{
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	return(set_console_font_size(hStdout, width, height));
+}
+
 void pcbios_set_console_size(int width, int height, bool clr_screen)
 {
 	// clear the existing screen, not just the new one
@@ -7220,19 +7285,42 @@ inline void pcbios_int_10h_11h()
 	switch(REG8(AL)) {
 	case 0x01:
 	case 0x11:
-//		pcbios_set_console_size(80, 28, true);
+		if(!pcbios_set_font_size(8, 14)) {
+			if(active_code_page == 932) {
+				pcbios_set_font_size(6, 13);
+			} else {
+				pcbios_set_font_size(8, 12);
+			}
+		}
+		pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
 		break;
 	case 0x02:
 	case 0x12:
-//		pcbios_set_console_size(80, 50, true);
+		if(!pcbios_set_font_size(8, 8)) {
+			if(active_code_page == 932) {
+				pcbios_set_font_size(5, 8);
+			} else {
+				pcbios_set_font_size(6, 8);
+			}
+		}
+		pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
 		break;
 	case 0x04:
 	case 0x14:
-//		pcbios_set_console_size(80, 25, true);
+	case 0x18:
+		if(!pcbios_set_font_size(8, 16)) {
+			if(active_code_page == 932) {
+				pcbios_set_font_size(8, 18);
+			} else {
+				pcbios_set_font_size(10, 18);
+			}
+		}
+		if(REG8(AL) == 0x18) {
+			pcbios_set_console_size(80, 50, true);
+		} else {
+			pcbios_set_console_size(80, 25, true);
+		}
 		break;
-//	case 0x18:
-//		pcbios_set_console_size(80, 50, true);
-//		break;
 	case 0x30:
 		SREG(ES) = 0;
 		i386_load_segment_descriptor(ES);
@@ -18274,18 +18362,20 @@ void hardware_update()
 			if(!key_changed || mouse.hidden == 0) {
 				update_console_input();
 			}
-			key_changed = false;
 			
 			// raise irq1 if key buffer is not empty
+			if(!key_changed) {
 #ifdef USE_SERVICE_THREAD
-			EnterCriticalSection(&key_buf_crit_sect);
+				EnterCriticalSection(&key_buf_crit_sect);
 #endif
-			bool empty = pcbios_is_key_buffer_empty();
+				key_changed = !pcbios_is_key_buffer_empty();
 #ifdef USE_SERVICE_THREAD
-			LeaveCriticalSection(&key_buf_crit_sect);
+				LeaveCriticalSection(&key_buf_crit_sect);
 #endif
-			if(!empty) {
+			}
+			if(key_changed) {
 				pic_req(0, 1, 1);
+				key_changed = false;
 			}
 			
 			// raise irq12 if mouse status is changed

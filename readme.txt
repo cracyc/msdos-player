@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/11/2017
+								8/20/2017
 
 ----- What's this
 
@@ -442,6 +442,13 @@ INT 10H		PC BIOS - Video
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
+	1101H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
+	1102H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
+	1104H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
+	1111H	Set Video Mode to 80x28 (Load 8x14 Character Generator ROM)
+	1112H	Set Video Mode to 80x50 (Load 8x8 Character Generator ROM)
+	1114H	Set Video Mode to 80x25 (Load 8x16 Character Generator ROM)
+	1118H	Set Video Mode to 80x50 (Set V-TEXT Vertically Long Mode)
 	1130H	Get Font Information
 	12H	Alternate Function Select (BL=10H)
 	130*H	Write String
