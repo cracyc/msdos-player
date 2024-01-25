@@ -1114,6 +1114,7 @@ DWORD dwConsoleMode = 0;
 
 CONSOLE_CURSOR_INFO ci_old;
 CONSOLE_CURSOR_INFO ci_new;
+CONSOLE_FONT_INFOEX fi_new;
 int font_width = 10;
 int font_height = 18;
 
