@@ -1217,6 +1217,9 @@ void msdos_finish();
 
 DWORD dwConsoleMode = 0;
 
+CONSOLE_CURSOR_INFO ci_old;
+CONSOLE_CURSOR_INFO ci_new;
+
 CHAR_INFO scr_buf[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 char scr_char[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
 WORD scr_attr[SCR_BUF_WIDTH * SCR_BUF_HEIGHT];
@@ -1226,6 +1229,7 @@ int scr_width, scr_height;
 int scr_top;
 bool restore_console_on_exit = false;
 bool cursor_moved;
+bool cursor_moved_by_crtc;
 
 FIFO *key_buf_char = NULL;
 FIFO *key_buf_scan = NULL;
@@ -1262,6 +1266,7 @@ bool int_10h_ffh_called = false;
 
 typedef struct {
 	bool enabled;	// from DOSBox
+	bool enabled_ps2;
 	int hidden;
 	int old_hidden;	// from DOSBox
 	struct {

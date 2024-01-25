@@ -642,6 +642,8 @@ void debugger_write_word(offs_t byteaddress, UINT16 data)
 				co.X = data & 0xff;
 				co.Y = (data >> 8) + scr_top;
 				SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+				cursor_moved = false;
+				cursor_moved_by_crtc = false;
 			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
@@ -2451,6 +2453,27 @@ exit_loop:
 	return(result);
 }
 
+bool is_cursor_blink_off()
+{
+	static int result = -1;
+	HKEY hKey;
+	char chData[64];
+	DWORD dwSize = sizeof(chData);
+	
+	if(result == -1) {
+		result = 0;
+		if(RegOpenKeyEx(HKEY_CURRENT_USER, "Control Panel\\Desktop", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+			if(RegQueryValueEx(hKey, "CursorBlinkRate", NULL, NULL, (LPBYTE)chData, &dwSize) == ERROR_SUCCESS) {
+				if(strncmp(chData, "-1", 2) == 0) {
+					result = 1;
+				}
+			}
+			RegCloseKey(hKey);
+		}
+	}
+	return(result != 0);
+}
+
 void get_sio_port_numbers()
 {
 	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
@@ -2925,6 +2948,7 @@ int main(int argc, char *argv[], char *envp[])
 	
 	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	GetConsoleCursorInfo(hStdout, &ci);
+	ci_old = ci_new = ci;
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
 	get_console_font_success = get_console_font_size(hStdout, &font_width, &font_height);
 	
@@ -2959,6 +2983,7 @@ int main(int argc, char *argv[], char *envp[])
 	scr_buf_pos.X = scr_buf_pos.Y = 0;
 	scr_top = csbi.srWindow.Top;
 	cursor_moved = false;
+	cursor_moved_by_crtc = false;
 	
 	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 	
@@ -3107,6 +3132,7 @@ void change_console_size(int width, int height)
 		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
 		SetConsoleCursorPosition(hStdout, co);
 		cursor_moved = true;
+		cursor_moved_by_crtc = false;
 	}
 	
 	// window can't be bigger than buffer,
@@ -3183,48 +3209,49 @@ bool update_console_input()
 		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
-					if(mouse.hidden == 0) {
-						// NOTE: if restore_console_on_exit, console is not scrolled
-						if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
-							GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+					if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
+						if(mouse.hidden == 0 || (mouse.call_addr_ps2.dw && mouse.enabled_ps2)) {
+							// NOTE: if restore_console_on_exit, console is not scrolled
+							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
+								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+							}
+							// FIXME: character size is always 8x8 ???
+							int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
+							int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
+							
+							if(mouse.position.x != x || mouse.position.y != y) {
+								mouse.position.x = x;
+								mouse.position.y = y;
+								mouse.status |= 1;
+								mouse.status_alt |= 1;
+							}
 						}
-						// FIXME: character size is always 8x8 ???
-						int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
-						int y = 8 * (ir[i].Event.MouseEvent.dwMousePosition.Y - csbi.srWindow.Top);
-						
-						if(mouse.position.x != x || mouse.position.y != y) {
-							mouse.position.x = x;
-							mouse.position.y = y;
-							mouse.status |= 1;
-							mouse.status_alt |= 1;
-						}
-					}
-					if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
-						for(int i = 0; i < MAX_MOUSE_BUTTONS; i++) {
+					} else if(ir[i].Event.MouseEvent.dwEventFlags == 0) {
+						for(int j = 0; j < MAX_MOUSE_BUTTONS; j++) {
 							static const DWORD bits[] = {
 								FROM_LEFT_1ST_BUTTON_PRESSED,	// left
 								RIGHTMOST_BUTTON_PRESSED,	// right
 								FROM_LEFT_2ND_BUTTON_PRESSED,	// middle
 							};
-							bool prev_status = mouse.buttons[i].status;
-							mouse.buttons[i].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[i]) != 0);
+							bool prev_status = mouse.buttons[j].status;
+							mouse.buttons[j].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[j]) != 0);
 							
-							if(!prev_status && mouse.buttons[i].status) {
-								mouse.buttons[i].pressed_times++;
-								mouse.buttons[i].pressed_position.x = mouse.position.x;
-								mouse.buttons[i].pressed_position.y = mouse.position.x;
-								if(i < 2) {
-									mouse.status_alt |= 2 << (i * 2);
+							if(!prev_status && mouse.buttons[j].status) {
+								mouse.buttons[j].pressed_times++;
+								mouse.buttons[j].pressed_position.x = mouse.position.x;
+								mouse.buttons[j].pressed_position.y = mouse.position.x;
+								if(j < 2) {
+									mouse.status_alt |= 2 << (j * 2);
 								}
-								mouse.status |= 2 << (i * 2);
-							} else if(prev_status && !mouse.buttons[i].status) {
-								mouse.buttons[i].released_times++;
-								mouse.buttons[i].released_position.x = mouse.position.x;
-								mouse.buttons[i].released_position.y = mouse.position.x;
-								if(i < 2) {
-									mouse.status_alt |= 4 << (i * 2);
+								mouse.status |= 2 << (j * 2);
+							} else if(prev_status && !mouse.buttons[j].status) {
+								mouse.buttons[j].released_times++;
+								mouse.buttons[j].released_position.x = mouse.position.x;
+								mouse.buttons[j].released_position.y = mouse.position.x;
+								if(j < 2) {
+									mouse.status_alt |= 4 << (j * 2);
 								}
-								mouse.status |= 4 << (i * 2);
+								mouse.status |= 4 << (j * 2);
 							}
 						}
 					}
@@ -5331,8 +5358,19 @@ void msdos_putch_tmp(UINT8 data)
 			mem[0x450 + mem[0x462] * 2] = co.X;
 			mem[0x451 + mem[0x462] * 2] = co.Y - scr_top;
 			cursor_moved = false;
+			cursor_moved_by_crtc = false;
 			p = is_esc = 0;
 		} else if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z') || data == '*') {
+			if(cursor_moved_by_crtc) {
+				if(!restore_console_on_exit) {
+					GetConsoleScreenBufferInfo(hStdout, &csbi);
+					scr_top = csbi.srWindow.Top;
+				}
+				co.X = mem[0x450 + REG8(BH) * 2];
+				co.Y = mem[0x451 + REG8(BH) * 2] + scr_top;
+				SetConsoleCursorPosition(hStdout, co);
+				cursor_moved_by_crtc = false;
+			}
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			co.X = csbi.dwCursorPosition.X;
 			co.Y = csbi.dwCursorPosition.Y;
@@ -5435,20 +5473,20 @@ void msdos_putch_tmp(UINT8 data)
 					co.X = 0;
 				} else if(data == 'h') {
 					if(tmp[2] == '>' && tmp[3] == '5') {
-						CONSOLE_CURSOR_INFO cur;
-						GetConsoleCursorInfo(hStdout, &cur);
-						if(cur.bVisible) {
-							cur.bVisible = FALSE;
-//							SetConsoleCursorInfo(hStdout, &cur);
+//						CONSOLE_CURSOR_INFO ci_new;
+//						GetConsoleCursorInfo(hStdout, &ci_new);
+						if(ci_new.bVisible) {
+							ci_new.bVisible = FALSE;
+//							SetConsoleCursorInfo(hStdout, &ci_new);
 						}
 					}
 				} else if(data == 'l') {
 					if(tmp[2] == '>' && tmp[3] == '5') {
-						CONSOLE_CURSOR_INFO cur;
-						GetConsoleCursorInfo(hStdout, &cur);
-						if(!cur.bVisible) {
-							cur.bVisible = TRUE;
-//							SetConsoleCursorInfo(hStdout, &cur);
+//						CONSOLE_CURSOR_INFO ci_new;
+//						GetConsoleCursorInfo(hStdout, &ci_new);
+						if(!ci_new.bVisible) {
+							ci_new.bVisible = TRUE;
+//							SetConsoleCursorInfo(hStdout, &ci_new);
 						}
 					}
 				} else if(data == 'm') {
@@ -5572,6 +5610,16 @@ void msdos_putch_tmp(UINT8 data)
 			c += 'A' - 1;
 		}
 		out[q++] = c;
+	}
+	if(cursor_moved_by_crtc) {
+		if(!restore_console_on_exit) {
+			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			scr_top = csbi.srWindow.Top;
+		}
+		co.X = mem[0x450 + REG8(BH) * 2];
+		co.Y = mem[0x451 + REG8(BH) * 2] + scr_top;
+		SetConsoleCursorPosition(hStdout, co);
+		cursor_moved_by_crtc = false;
 	}
 	if(q == 1 && out[0] == 0x08) {
 		// back space
@@ -6794,6 +6842,7 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 		mem[DUMMY_TOP + 0x15] = 0x78;	// js -4
 	}
 #endif
+	// dummy loop to wait BIOS/DOS service is done is at fffc:0013
 	i386_call_far(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
@@ -6932,6 +6981,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	co.Y = scr_top;
 	SetConsoleCursorPosition(hStdout, co);
 	cursor_moved = true;
+	cursor_moved_by_crtc = false;
 	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
 
@@ -6970,25 +7020,24 @@ inline void pcbios_int_10h_01h()
 	mem[0x460] = REG8(CL);
 	mem[0x461] = REG8(CH);
 	
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	CONSOLE_CURSOR_INFO ci;
-	GetConsoleCursorInfo(hStdout, &ci);
+//	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+//	CONSOLE_CURSOR_INFO ci_new;
+//	GetConsoleCursorInfo(hStdout, &ci_new);
 	
-//	BOOL bVisible = ((REG8(CH) & 0x20) == 0 || (REG8(CH) & 7) > (REG8(CL) & 7));
-	BOOL bVisible = TRUE;
+	BOOL bVisible = ((REG8(CH) & 0x20) == 0 || (REG8(CH) & 7) > (REG8(CL) & 7));
 	DWORD dwSize = ((REG8(CL) & 7) + 1) * 100 / 8;
 	
-	if(ci.bVisible != bVisible || ci.dwSize != dwSize) {
-		ci.bVisible = bVisible;
-		ci.dwSize = dwSize;
-		SetConsoleCursorInfo(hStdout, &ci);
-	}
+//	if(ci_new.bVisible != bVisible || ci_new.dwSize != dwSize) {
+		ci_new.bVisible = bVisible;
+		ci_new.dwSize = dwSize;
+//		SetConsoleCursorInfo(hStdout, &ci);
+//	}
 }
 
 inline void pcbios_int_10h_02h()
 {
 	// continuously setting the cursor effectively stops it blinking
-	if(mem[0x462] == REG8(BH) && (REG8(DL) != mem[0x450 + REG8(BH) * 2] || REG8(DH) != mem[0x451 + REG8(BH) * 2])) {
+	if(mem[0x462] == REG8(BH) && (REG8(DL) != mem[0x450 + REG8(BH) * 2] || REG8(DH) != mem[0x451 + REG8(BH) * 2] || cursor_moved_by_crtc)) {
 		COORD co;
 		co.X = REG8(DL);
 		co.Y = REG8(DH) + scr_top;
@@ -6996,22 +7045,23 @@ inline void pcbios_int_10h_02h()
 		// some programs hide the cursor by moving it off screen
 		static bool hidden = false;
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-		CONSOLE_CURSOR_INFO ci;
-		GetConsoleCursorInfo(hStdout, &ci);
+//		CONSOLE_CURSOR_INFO ci_new;
+//		GetConsoleCursorInfo(hStdout, &ci_new);
 		
 		if(REG8(DH) >= scr_height || !SetConsoleCursorPosition(hStdout, co)) {
-			if(ci.bVisible) {
-				ci.bVisible = FALSE;
+			if(ci_new.bVisible) {
+				ci_new.bVisible = FALSE;
 //				SetConsoleCursorInfo(hStdout, &ci);
 				hidden = true;
 			}
 		} else if(hidden) {
-			if(!ci.bVisible) {
-				ci.bVisible = TRUE;
+			if(!ci_new.bVisible) {
+				ci_new.bVisible = TRUE;
 //				SetConsoleCursorInfo(hStdout, &ci);
 			}
 			hidden = false;
 		}
+		cursor_moved_by_crtc = false;
 	}
 	mem[0x450 + (REG8(BH) % vram_pages) * 2] = REG8(DL);
 	mem[0x451 + (REG8(BH) % vram_pages) * 2] = REG8(DH);
@@ -7058,6 +7108,7 @@ inline void pcbios_int_10h_05h()
 		if(co.Y < scr_top + scr_height) {
 			SetConsoleCursorPosition(hStdout, co);
 		}
+		cursor_moved_by_crtc = false;
 	}
 	mem[0x462] = REG8(AL);
 	*(UINT16 *)(mem + 0x44e) = REG8(AL) * VIDEO_REGEN;
@@ -7293,9 +7344,21 @@ inline void pcbios_int_10h_0dh()
 
 inline void pcbios_int_10h_0eh()
 {
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	DWORD num;
 	COORD co;
 	
+	if(cursor_moved_by_crtc) {
+		if(!restore_console_on_exit) {
+			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			scr_top = csbi.srWindow.Top;
+		}
+		co.X = mem[0x450 + REG8(BH) * 2];
+		co.Y = mem[0x451 + REG8(BH) * 2] + scr_top;
+		SetConsoleCursorPosition(hStdout, co);
+		cursor_moved_by_crtc = false;
+	}
 	co.X = mem[0x450 + mem[0x462] * 2];
 	co.Y = mem[0x451 + mem[0x462] * 2];
 	
@@ -7318,7 +7381,6 @@ inline void pcbios_int_10h_0eh()
 		LeaveCriticalSection(&vram_crit_sect);
 #endif
 		
-		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		if(++co.X == scr_width) {
 			co.X = 0;
 			if(++co.Y == scr_height) {
@@ -7451,6 +7513,7 @@ inline void pcbios_int_10h_13h()
 			} else {
 				cursor_moved = true;
 			}
+			cursor_moved_by_crtc = false;
 		} else {
 			m_CF = 1;
 		}
@@ -7481,6 +7544,7 @@ inline void pcbios_int_10h_13h()
 			} else {
 				cursor_moved = true;
 			}
+			cursor_moved_by_crtc = false;
 		} else {
 			m_CF = 1;
 		}
@@ -8395,6 +8459,13 @@ void pcbios_read_from_ps2_mouse(UINT16 *data_1st, UINT16 *data_2nd, UINT16 *data
 	INT16 xdiff = mouse.position.x - mouse.prev_position.x;
 	INT16 ydiff = mouse.prev_position.y - mouse.position.y;
 	
+#if 1
+	if(xdiff > +16) xdiff = +16;
+	if(xdiff < -16) xdiff = -16;
+	if(ydiff > +16) ydiff = +16;
+	if(ydiff < -16) ydiff = -16;
+#endif
+	
 	if(mouse.buttons[0].status) {
 		mdat |= 0x01;
 	}
@@ -8403,6 +8474,7 @@ void pcbios_read_from_ps2_mouse(UINT16 *data_1st, UINT16 *data_2nd, UINT16 *data
 	}
 	mouse.prev_position.x = mouse.position.x;
 	mouse.prev_position.y = mouse.position.y;
+	
 	if((xdiff > 0xff) || (xdiff < -0xff)) {
 		mdat |= 0x40;	// x overflow
 	}
@@ -8426,15 +8498,23 @@ void pcbios_read_from_ps2_mouse(UINT16 *data_1st, UINT16 *data_2nd, UINT16 *data
 
 inline void pcbios_int_15h_c2h()
 {
-	static UINT8 enabled = 0;
 	static UINT8 sampling_rate = 5;
 	static UINT8 resolution = 2;
 	static UINT8 scaling = 1;
 	
 	switch(REG8(AL)) {
 	case 0x00:
-		if(REG8(BH) == 0x00 || REG8(BH) == 0x01) {
-			enabled = REG8(BH);
+		if(REG8(BH) == 0x00) {
+//			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+			pic[1].imr |= 0x10; // disable irq12
+			mouse.enabled_ps2 = false;
+			REG8(AH) = 0x00; // successful
+		} else if(REG8(BH) == 0x01) {
+			if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
+				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
+			}
+			pic[1].imr &= ~0x10; // enable irq12
+			mouse.enabled_ps2 = true;
 			REG8(AH) = 0x00; // successful
 		} else {
 			REG8(AH) = 0x01; // invalid function
@@ -8445,7 +8525,9 @@ inline void pcbios_int_15h_c2h()
 		REG8(BH) = 0x00; // device id
 		REG8(BL) = 0xaa; // mouse
 	case 0x05:
-		enabled = 0;
+//		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
+		pic[1].imr |= 0x10; // disable irq12
+		mouse.enabled_ps2 = false;
 		sampling_rate = 5;
 		resolution = 2;
 		scaling = 1;
@@ -14771,7 +14853,7 @@ inline void msdos_int_33h_0001h()
 		if(!(dwConsoleMode & ENABLE_MOUSE_INPUT)) {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_MOUSE_INPUT);
 		}
-		pic[1].imr &= ~0x10;	// enable irq12
+		pic[1].imr &= ~0x10; // enable irq12
 	}
 }
 
@@ -14779,7 +14861,7 @@ inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
 //	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode & ~ENABLE_MOUSE_INPUT);
-	pic[1].imr |= 0x10;	// enable irq12
+	pic[1].imr |= 0x10; // disable irq12
 }
 
 inline void msdos_int_33h_0003h()
@@ -16551,13 +16633,13 @@ void msdos_syscall(unsigned num)
 	} else if(num == 0x30) {
 		// dummy interrupt for call 0005h (call near)
 		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num == 0x68) {
+	} else if(num == 0x65) {
 		// dummy interrupt for EMS (int 67h)
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num == 0x69) {
+	} else if(num == 0x66) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-	} else if(num >= 0x6a && num <= 0x6f) {
+	} else if(num >= 0x68 && num <= 0x6f) {
 		// dummy interrupt
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -17289,13 +17371,7 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
-/*
-	case 0x67:
-		// int 67h handler is in EMS device driver (EMMXXXX0) and it calls int 68h
-		// NOTE: some softwares get address of int 67h handler and recognize the address is in EMS device driver
-		break;
-*/
-	case 0x68:
+	case 0x65:
 		// dummy interrupt for EMS (int 67h)
 		switch(REG8(AH)) {
 		case 0x40: msdos_int_67h_40h(); break;
@@ -17338,7 +17414,7 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 #ifdef SUPPORT_XMS
-	case 0x69:
+	case 0x66:
 		// dummy interrupt for XMS (call far)
 		try {
 			switch(REG8(AH)) {
@@ -17379,7 +17455,13 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 #endif
-	case 0x6a:
+/*
+	case 0x67:
+		// int 67h handler is in EMS device driver (EMMXXXX0) and it calls int 65h
+		// NOTE: some softwares get address of int 67h handler and recognize the address is in EMS device driver
+		break;
+*/
+	case 0x69:
 		// irq12 (mouse)
 		mouse_push_ax = REG16(AX);
 		mouse_push_bx = REG16(BX);
@@ -17401,6 +17483,8 @@ void msdos_syscall(unsigned num)
 			mem[DUMMY_TOP + 0x04] = mouse.call_addr.w.l >> 8;
 			mem[DUMMY_TOP + 0x05] = mouse.call_addr.w.h & 0xff;
 			mem[DUMMY_TOP + 0x06] = mouse.call_addr.w.h >> 8;
+			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
+			mem[DUMMY_TOP + 0x08] = 0x6b;
 			break;
 		}
 		for(int i = 0; i < 8; i++) {
@@ -17417,11 +17501,12 @@ void msdos_syscall(unsigned num)
 				mem[DUMMY_TOP + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
 				mem[DUMMY_TOP + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
 				mem[DUMMY_TOP + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
+				mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
+				mem[DUMMY_TOP + 0x08] = 0x6b;
 				break;
 			}
 		}
-/*
-		if(mouse.status_irq_ps2 && mouse.call_addr_ps2.dw) {
+		if(mouse.status_irq_ps2 && mouse.call_addr_ps2.dw && mouse.enabled_ps2) {
 			UINT16 data_1st, data_2nd, data_3rd;
 			pcbios_read_from_ps2_mouse(&data_1st, &data_2nd, &data_3rd);
 			i386_push16(data_1st);
@@ -17434,16 +17519,25 @@ void msdos_syscall(unsigned num)
 			mem[DUMMY_TOP + 0x04] = mouse.call_addr_ps2.w.l >> 8;
 			mem[DUMMY_TOP + 0x05] = mouse.call_addr_ps2.w.h & 0xff;
 			mem[DUMMY_TOP + 0x06] = mouse.call_addr_ps2.w.h >> 8;
+			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
+			mem[DUMMY_TOP + 0x08] = 0x6a;
 			break;
 		}
-*/
 		// invalid call addr :-(
 		mem[DUMMY_TOP + 0x02] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x03] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x04] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x05] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x06] = 0x90;	// nop
+		mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
+		mem[DUMMY_TOP + 0x08] = 0x6b;
 		break;
+	case 0x6a:
+		// end of ps/2 mouse bios
+		i386_pop16();
+		i386_pop16();
+		i386_pop16();
+		i386_pop16();
 	case 0x6b:
 		// end of irq12 (mouse)
 		REG16(AX) = mouse_push_ax;
@@ -18100,13 +18194,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
 	memcpy(xms_device->dev_name, "EMMXXXX0", 8);
 	
-	mem[XMS_TOP + 0x12] = 0xcd;	// int 68h (dummy)
-	mem[XMS_TOP + 0x13] = 0x68;
+	mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
+	mem[XMS_TOP + 0x13] = 0x65;
 	mem[XMS_TOP + 0x14] = 0xcf;	// iret
 #ifdef SUPPORT_XMS
 	if(support_xms) {
-		mem[XMS_TOP + 0x15] = 0xcd;	// int 69h (dummy)
-		mem[XMS_TOP + 0x16] = 0x69;
+		mem[XMS_TOP + 0x15] = 0xcd;	// int 66h (dummy)
+		mem[XMS_TOP + 0x16] = 0x66;
 		mem[XMS_TOP + 0x17] = 0xcb;	// retf
 	} else
 #endif
@@ -18114,13 +18208,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memcpy(mem + XMS_TOP + XMS_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
 	// irq12 routine (mouse)
-	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 6ah (dummy)
-	mem[DUMMY_TOP + 0x01] = 0x6a;
+	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 69h (dummy)
+	mem[DUMMY_TOP + 0x01] = 0x69;
 	mem[DUMMY_TOP + 0x02] = 0x9a;	// call far mouse
 	mem[DUMMY_TOP + 0x03] = 0xff;
 	mem[DUMMY_TOP + 0x04] = 0xff;
 	mem[DUMMY_TOP + 0x05] = 0xff;
 	mem[DUMMY_TOP + 0x06] = 0xff;
+//	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
+//	mem[DUMMY_TOP + 0x08] = 0x6a;
 	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
 	mem[DUMMY_TOP + 0x08] = 0x6b;
 	mem[DUMMY_TOP + 0x09] = 0xcf;	// iret
@@ -18172,8 +18268,20 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
 	
 	// boot routine
-	mem[0xffff0 + 0x00] = 0xf4;	// halt
-	mem[0xffff0 + 0x05] = '0';	// rom date
+	mem[0xffff0 + 0x00] = 0xf4;	// halt to exit MS-DOS Player
+#if 1
+	mem[0xffff0 + 0x05] = '0';	// rom date (same as DOSBox)
+	mem[0xffff0 + 0x06] = '1';
+	mem[0xffff0 + 0x07] = '/';
+	mem[0xffff0 + 0x08] = '0';
+	mem[0xffff0 + 0x09] = '1';
+	mem[0xffff0 + 0x0a] = '/';
+	mem[0xffff0 + 0x0b] = '9';
+	mem[0xffff0 + 0x0c] = '2';
+	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (pc/at)
+	mem[0xffff0 + 0x0f] = 0x55;	// signature
+#else
+	mem[0xffff0 + 0x05] = '0';	// rom date (same as Windows 98 SE)
 	mem[0xffff0 + 0x06] = '2';
 	mem[0xffff0 + 0x07] = '/';
 	mem[0xffff0 + 0x08] = '2';
@@ -18181,8 +18289,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xffff0 + 0x0a] = '/';
 	mem[0xffff0 + 0x0b] = '0';
 	mem[0xffff0 + 0x0c] = '6';
-	mem[0xffff0 + 0x0e] = 0xfc;	// machine id
+	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (pc/at)
 	mem[0xffff0 + 0x0f] = 0x00;
+#endif
 	
 	// param block
 	// + 0: param block (22bytes)
@@ -18497,16 +18606,13 @@ void hardware_update()
 			}
 			
 			// raise irq12 if mouse status is changed
-/*
-			if((mouse.status & 0x1f) && mouse.call_addr_ps2.dw) {
+			if((mouse.status & 0x1f) && mouse.call_addr_ps2.dw && mouse.enabled_ps2) {
 				mouse.status_irq = 0; // ???
 				mouse.status_irq_alt = 0; // ???
 				mouse.status_irq_ps2 = mouse.status & 0x1f;
 				mouse.status = 0;
 				pic_req(1, 4, 1);
-			} else
-*/
-			if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
+			} else if((mouse.status & mouse.call_mask) && mouse.call_addr.dw) {
 				mouse.status_irq = mouse.status & mouse.call_mask;
 				mouse.status_irq_alt = 0; // ???
 				mouse.status_irq_ps2 = 0; // ???
@@ -18532,6 +18638,10 @@ void hardware_update()
 			
 			// update cursor position by crtc
 			if(crtc_changed[14] != 0 || crtc_changed[15] != 0) {
+				if(cursor_moved) {
+					pcbios_update_cursor_position();
+					cursor_moved = false;
+				}
 				HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 				int position = crtc_regs[14] * 256 + crtc_regs[15];
 				int width = *(UINT16 *)(mem + 0x44a);
@@ -18541,7 +18651,24 @@ void hardware_update()
 				SetConsoleCursorPosition(hStdout, co);
 				
 				crtc_changed[14] = crtc_changed[15] = 0;
+				cursor_moved_by_crtc = true;
 			}
+			
+			// update cursor info
+			if(is_cursor_blink_off()) {
+				if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
+					HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+					SetConsoleCursorInfo(hStdout, &ci_new);
+				}
+			} else {
+				if(!(ci_old.dwSize == ci_new.dwSize)) {
+					HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+					ci_new.bVisible = TRUE;
+					SetConsoleCursorInfo(hStdout, &ci_new);
+				}
+			}
+			ci_old = ci_new;
+			
 			prev_tick = cur_tick;
 		}
 		
