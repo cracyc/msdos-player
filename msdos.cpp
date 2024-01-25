@@ -90,45 +90,6 @@ inline void maybe_idle()
 
 //#define SUPPORT_DISASSEMBLER
 
-#if defined(HAS_I86)
-	#define CPU_MODEL i8086
-#elif defined(HAS_I186)
-	#define CPU_MODEL i80186
-#elif defined(HAS_V30)
-	#define CPU_MODEL v30
-#elif defined(HAS_I286)
-	#define CPU_MODEL i80286
-#elif defined(HAS_I386)
-	#define CPU_MODEL i386
-#else
-//	#if defined(HAS_I386SX)
-//		#define CPU_MODEL i386SX
-//	#else
-		#if defined(HAS_I486)
-			#define CPU_MODEL i486
-		#else
-			#if defined(HAS_PENTIUM)
-				#define CPU_MODEL pentium
-			#elif defined(HAS_MEDIAGX)
-				#define CPU_MODEL mediagx
-			#elif defined(HAS_PENTIUM_PRO)
-				#define CPU_MODEL pentium_pro
-			#elif defined(HAS_PENTIUM_MMX)
-				#define CPU_MODEL pentium_mmx
-			#elif defined(HAS_PENTIUM2)
-				#define CPU_MODEL pentium2
-			#elif defined(HAS_PENTIUM3)
-				#define CPU_MODEL pentium3
-			#elif defined(HAS_PENTIUM4)
-				#define CPU_MODEL pentium4
-			#endif
-			#define SUPPORT_RDTSC
-		#endif
-		#define SUPPORT_FPU
-//	#endif
-	#define HAS_I386
-#endif
-
 #ifndef __BIG_ENDIAN__
 #define LSB_FIRST
 #endif
@@ -711,14 +672,20 @@ int main(int argc, char *argv[], char *envp[])
 			stay_busy = true;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-n", 2) == 0) {
-			buf_width = 80;
-			buf_height = 25;
-			sscanf(argv[1] + 2, "%hd,%hd", &buf_height, &buf_width);
+			if(sscanf(argv[1] + 2, "%d,%d", &buf_height, &buf_width) != 2) {
+				buf_width = buf_height = 0;
+			}
+			if(buf_width <= 0 || buf_width > 0x7fff) {
+				buf_width = 80;
+			}
+			if(buf_height <= 0 || buf_height > 0x7fff) {
+				buf_height = 25;
+			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
-			if(strlen(argv[i]) >= 6 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && IS_NUMERIC(argv[i][5])) {
+			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
 				major_version = argv[i][2] - '0';
-				minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] - '0');
+				minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
 			}
 			arg_offset++;
 		} else {
@@ -1147,6 +1114,63 @@ void msdos_cds_update(int drv)
 	cds->physical_drive_number = drv;
 }
 
+// nls information tables
+
+// uppercase table (func 6502h)
+void msdos_upper_table_update()
+{
+	*(UINT16 *)(mem + UPPERTABLE_TOP) = 0x80;
+	for(unsigned i=0; i<0x80; ++i) {
+		UINT8 c[4];
+		*(UINT32 *)c = 0;				// reset internal conversion state
+		CharUpperBuffA((LPSTR)c, 4);	// (workaround for MBCS codepage) 
+		c[0] = 0x80 + i;
+		DWORD rc = CharUpperBuffA((LPSTR)c, 1);
+		mem[UPPERTABLE_TOP + 2 + i] = (rc == 1 && c[0]) ? c[0] : 0x80 + i;
+	}
+}
+
+// filename uppercase table (func 6504h)
+void msdos_filename_upper_table_init()
+{
+	// depended on (file)system, not on active codepage
+	// temporary solution: just filling data
+	*(UINT16 *)(mem + FILENAME_UPPERTABLE_TOP) = 0x80;
+	for(unsigned i=0; i<0x80; ++i) {
+		mem[FILENAME_UPPERTABLE_TOP + 2 + i] = 0x80 + i;
+	}
+}
+
+// filaname terminator table (func 6505h)
+void msdos_filename_terminator_table_init()
+{
+	const char illegal_chars[] = ".\"/\\[]:|<>+=;,";	// for standard MS-DOS fs.
+	UINT8 *data = mem + FILENAME_TERMINATOR_TOP;
+	
+	data[2] = 1;		// marker? (permissible character value)
+	data[3] = 0x00;		// 00h...FFh
+	data[4] = 0xff;
+	data[5] = 0;		// marker? (excluded character)
+	data[6] = 0x00;		// 00h...20h
+	data[7] = 0x20;
+	data[8] = 2;		// marker? (illegal characters for filename)
+	data[9] = (UINT8)strlen(illegal_chars);
+	memcpy(data + 10, illegal_chars, data[9]);
+	
+	// total length
+	*(UINT16 *)data = (10 - 2) + data[9];
+}
+
+// collating table (func 6506h)
+void msdos_collating_table_update()
+{
+	// temporary solution: just filling data
+	*(UINT16 *)(mem + COLLATING_TABLE_TOP) = 0x100;
+	for(unsigned i=0; i<256; ++i) {
+		mem[COLLATING_TABLE_TOP + 2 + i] = i;
+	}
+}
+
 // dbcs
 
 void msdos_dbcs_table_update()
@@ -1174,17 +1198,28 @@ void msdos_dbcs_table_update()
 	memcpy(mem + DBCS_TOP, dbcs_data, sizeof(dbcs_data));
 }
 
-void msdos_dbcs_table_init()
-{
-	system_code_page = active_code_page = _getmbcp();
-	msdos_dbcs_table_update();
-}
-
 void msdos_dbcs_table_finish()
 {
 	if(active_code_page != system_code_page) {
 		_setmbcp(system_code_page);
 	}
+}
+
+void msdos_nls_tables_init()
+{
+	system_code_page = active_code_page = _getmbcp();
+	msdos_upper_table_update();
+	msdos_filename_terminator_table_init();
+	msdos_filename_upper_table_init();
+	msdos_collating_table_update();
+	msdos_dbcs_table_update();
+}
+
+void msdos_nls_tables_update()
+{
+	msdos_dbcs_table_update();
+	msdos_upper_table_update();
+	// msdos_collating_table_update();
 }
 
 int msdos_lead_byte_check(UINT8 code)
@@ -2912,7 +2947,7 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 	char dev[64];
 	sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
 	
-	HANDLE hFile = CreateFile(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE hFile = CreateFile(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if(hFile != INVALID_HANDLE_VALUE) {
 		DISK_GEOMETRY geo;
 		DWORD dwSize;
@@ -3698,7 +3733,7 @@ inline void pcbios_int_15h_87h()
 
 inline void pcbios_int_15h_88h()
 {
-	REG16(AX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
+	REG16(AX) = ((min(MAX_MEM, 0x4000000) - 0x100000) >> 10);
 }
 
 inline void pcbios_int_15h_89h()
@@ -3783,6 +3818,14 @@ inline void pcbios_int_15h_cah()
 		break;
 	}
 }
+
+#if defined(HAS_I386)
+inline void pcbios_int_15h_e801h()
+{
+	REG16(AX) = REG16(CX) = ((min(MAX_MEM, 0x1000000) - 0x100000) >> 10);
+	REG16(BX) = REG16(DX) = ((max(MAX_MEM, 0x1000000) - 0x1000000) >> 16);
+}
+#endif
 
 UINT32 pcbios_get_key_code(bool clear_buffer)
 {
@@ -4895,50 +4938,59 @@ inline void msdos_int_21h_37h()
 	}
 }
 
+#pragma pack(1)
+struct CI {
+	UINT16 date_format;
+	char currency_symbol[5];
+	char thou_sep[2];
+	char dec_sep[2];
+	char date_sep[2];
+	char time_sep[2];
+	char currency_format;
+	char currency_dec_digits;
+	char time_format;
+	UINT32 case_map;
+	char list_sep[2];
+	char reserved[10];
+};
+#pragma pack()
+
+int get_country_info(struct CI *ci)
+{
+	char LCdata[80];
+	
+	ZeroMemory(ci, offsetof(struct CI, reserved));
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRDIGITS, LCdata, sizeof(LCdata));
+	ci->currency_dec_digits = atoi(LCdata);
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRENCY, LCdata, sizeof(LCdata));
+	ci->currency_format = *LCdata - '0';
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE, LCdata, sizeof(LCdata));
+	ci->date_format = *LCdata - '0';
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SCURRENCY, LCdata, sizeof(LCdata));
+	memcpy(&ci->currency_symbol, LCdata, 4);
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, LCdata, sizeof(LCdata));
+	*ci->date_sep = *LCdata;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, LCdata, sizeof(LCdata));
+	*ci->dec_sep = *LCdata;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata, sizeof(LCdata));
+	*ci->list_sep = *LCdata;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, LCdata, sizeof(LCdata));
+	*ci->thou_sep = *LCdata;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, LCdata, sizeof(LCdata));
+	*ci->time_sep = *LCdata;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT, LCdata, sizeof(LCdata));
+	if(strchr(LCdata, 'H') != NULL) {
+		ci->time_format = 1;
+	}
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICOUNTRY, LCdata, sizeof(LCdata));
+	return atoi(LCdata);
+}
+
 inline void msdos_int_21h_38h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		{
-			char LCdata[80];
-			struct CI {
-				UINT16 date_format;
-				char currency_symbol[5];
-				char thou_sep[2];
-				char dec_sep[2];
-				char date_sep[2];
-				char time_sep[2];
-				char currency_format;
-				char currency_dec_digits;
-				char time_format;
-				UINT32 case_map;
-				char list_sep[2];
-//				char reserved[10];
-			} *ci = (CI *)(mem + SREG_BASE(DS) + REG16(DX));
-			memset(ci, 0, sizeof(*ci));
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRDIGITS, LCdata, sizeof(LCdata));
-			ci->currency_dec_digits = atoi(LCdata);
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ICURRENCY, LCdata, sizeof(LCdata));
-			ci->currency_format = *LCdata - '0';
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE, LCdata, sizeof(LCdata));
-			ci->date_format = *LCdata - '0';
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SCURRENCY, LCdata, sizeof(LCdata));
-			memcpy(&ci->currency_symbol, LCdata, 4);
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, LCdata, sizeof(LCdata));
-			*ci->date_sep = *LCdata;
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, LCdata, sizeof(LCdata));
-			*ci->dec_sep = *LCdata;
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata, sizeof(LCdata));
-			*ci->list_sep = *LCdata;
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, LCdata, sizeof(LCdata));
-			*ci->thou_sep = *LCdata;
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, LCdata, sizeof(LCdata));
-			*ci->time_sep = *LCdata;
-			GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT, LCdata, sizeof(LCdata));
-			if(strchr(LCdata, 'H') != NULL) {
-				ci->time_format = 1;
-			}
-		}
+		REG16(BX) = get_country_info((struct CI *)(mem + SREG_BASE(DS) + REG16(DX)));
 		break;
 	default:
 		REG16(AX) = 2;
@@ -4966,7 +5018,7 @@ inline void msdos_int_21h_3ah(int lfn)
 inline void msdos_int_21h_3bh(int lfn)
 {
 	if(_chdir(msdos_trimmed_path((char *)(mem + SREG_BASE(DS) + REG16(DX)), lfn))) {
-		REG16(AX) = errno;
+		REG16(AX) = 3;	// must be 3 (path not found)
 		m_CF = 1;
 	}
 }
@@ -5981,10 +6033,56 @@ inline void msdos_int_21h_65h()
 	char tmp[0x10000];
 	
 	switch(REG8(AL)) {
+	case 0x01:
+		if(REG16(CX) >= 5) {
+			UINT8 data[1 + 2 + 2 + 2 + sizeof(struct CI)];
+			if(REG16(CX) > sizeof(data))		// cx = actual transfer size
+				REG16(CX) = sizeof(data);
+			ZeroMemory(data, sizeof(data));
+			data[0] = 0x01;
+			*(UINT16 *)(data + 1) = REG16(CX) - 3;
+			*(UINT16 *)(data + 3) = get_country_info((struct CI*)(data + 7));
+			*(UINT16 *)(data + 5) = active_code_page;
+			memcpy(mem + SREG_BASE(ES) + REG16(DI), data, REG16(CX));
+			REG16(AX) = active_code_page;
+		} else {
+			REG16(AX) = 1;
+			m_CF = 1;
+		}
+		break;
+	case 0x02:
+		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x02;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (UPPERTABLE_TOP & 0x0f);
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (UPPERTABLE_TOP >> 4);
+		REG16(AX) = active_code_page;
+		REG16(CX) = 0x05;
+		break;
+	case 0x04:
+		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x04;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (FILENAME_UPPERTABLE_TOP & 0x0f);
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (FILENAME_UPPERTABLE_TOP >> 4);
+		REG16(AX) = active_code_page;
+		REG16(CX) = 0x05;
+		break;
+	case 0x05:
+		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x05;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (FILENAME_TERMINATOR_TOP & 0x0f);
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (FILENAME_TERMINATOR_TOP >> 4);
+		REG16(AX) = active_code_page;
+		REG16(CX) = 0x05;
+		break;
+	case 0x06:
+		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x06;
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (COLLATING_TABLE_TOP & 0x0f);
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (COLLATING_TABLE_TOP >> 4);
+		REG16(AX) = active_code_page;
+		REG16(CX) = 0x05;
+		break;
 	case 0x07:
 		*(UINT8  *)(mem + SREG_BASE(ES) + REG16(DI) + 0) = 0x07;
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 1) = (DBCS_TOP & 0x0f);
 		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 3) = (DBCS_TOP >> 4);
+		REG16(AX) = active_code_page;
 		REG16(CX) = 0x05;
 		break;
 	case 0x20:
@@ -6020,7 +6118,7 @@ inline void msdos_int_21h_66h()
 			REG16(AX) = 0xeb41;
 		} else if(_setmbcp(REG16(BX)) == 0) {
 			active_code_page = REG16(BX);
-			msdos_dbcs_table_update();
+			msdos_nls_tables_update();
 			REG16(AX) = 0xeb41;
 		} else {
 			REG16(AX) = 0x25;
@@ -6192,6 +6290,68 @@ inline void msdos_int_21h_6ch(int lfn)
 inline void msdos_int_21h_710dh()
 {
 	// reset drive
+}
+
+inline void msdos_int_21h_7141h(int lfn)
+{
+	if(REG16(SI) == 0) {
+		msdos_int_21h_41h(lfn);
+		return;
+	}
+	if(REG16(SI) != 1) {
+		REG16(AX) = 5;
+		m_CF = 1;
+	}
+	/* wild card and matching attributes... */
+	char tmp[MAX_PATH * 2];
+	// copy search pathname (and quick check overrun)
+	ZeroMemory(tmp, sizeof(tmp));
+	tmp[MAX_PATH - 1] = '\0';
+	tmp[MAX_PATH] = 1;
+	strncpy(tmp, (char *)(mem + SREG_BASE(DS) + REG16(DX)), MAX_PATH);
+	
+	if(tmp[MAX_PATH - 1] != '\0' || tmp[MAX_PATH] != 1) {
+		REG16(AX) = 1;
+		m_CF = 1;
+		return;
+	}
+	for(char *s = tmp; *s; ++s) {
+		if(*s == '/') {
+			*s = '\\';
+		}
+	}
+	char *tmp_name = (char *)_mbsrchr((unsigned char *)tmp, '\\');
+	if(tmp_name) {
+		++tmp_name;
+	} else {
+		tmp_name = strchr(tmp, ':');
+		tmp_name = tmp_name ? tmp_name + 1 : tmp;
+	}
+	
+	WIN32_FIND_DATAA fd;
+	HANDLE fh = FindFirstFileA(tmp, &fd);
+	if(fh == INVALID_HANDLE_VALUE) {
+		REG16(AX) = 2;
+		m_CF = 1;
+		return;
+	}
+	do {
+		if(msdos_find_file_check_attribute(fd.dwFileAttributes, REG8(CL), REG8(CH)) && msdos_find_file_has_8dot3name(&fd)) {
+			strcpy(tmp_name, fd.cFileName);
+			if(remove(msdos_trimmed_path(tmp, lfn))) {
+				REG16(AX) = 5;
+				m_CF = 1;
+				break;
+			}
+		}
+	} while(FindNextFileA(fh, &fd));
+	if(!m_CF) {
+		if(GetLastError() != ERROR_NO_MORE_FILES) {
+			m_CF = 1;
+			REG16(AX) = 2;
+		}
+	}
+	FindClose(fh);
 }
 
 inline void msdos_int_21h_714eh()
@@ -6890,6 +7050,16 @@ void msdos_syscall(unsigned num)
 		case 0xc9: pcbios_int_15h_c9h(); break;
 #endif
 		case 0xca: pcbios_int_15h_cah(); break;
+		case 0xe8:
+			switch(REG8(AL)) {
+#if defined(HAS_I386)
+			case 0x01: pcbios_int_15h_e801h(); break;
+#endif
+			default:
+				REG8(AH)=0x86;
+				m_CF = 1;
+			}
+			break;
 		default:
 //			fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 			REG8(AH)=0x86;
@@ -7066,7 +7236,7 @@ void msdos_syscall(unsigned num)
 			case 0x39: msdos_int_21h_39h(1); break;
 			case 0x3a: msdos_int_21h_3ah(1); break;
 			case 0x3b: msdos_int_21h_3bh(1); break;
-			case 0x41: msdos_int_21h_41h(1); break;
+			case 0x41: msdos_int_21h_7141h(1); break;
 			case 0x43: msdos_int_21h_43h(1); break;
 			case 0x47: msdos_int_21h_47h(1); break;
 			case 0x4e: msdos_int_21h_714eh(); break;
@@ -7298,6 +7468,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->buffers_x = 20;
 	dos_info->buffers_y = 0;
 	dos_info->boot_drive = 'C' - 'A' + 1;
+	// dummy NUL driver
+	*(UINT32 *)((char *)dos_info + 24 + 34 + 0) = 0xffffffffU;	// next 
+	*(UINT16 *)((char *)dos_info + 24 + 34 + 4) = 0x8004U;		// attribute
+	*(UINT16 *)((char *)dos_info + 24 + 34 + 6) = 0xffffU;		// strategy
+	*(UINT16 *)((char *)dos_info + 24 + 34 + 8) = 0xffffU;		// commands
+	memcpy((char *)dos_info + 24 + 34 + 10, "NUL     ", 8);		// dev name
+	
 	char *env;
 	if((env = getenv("LASTDRIVE")) != NULL) {
 		if(env[0] >= 'A' && env[0] <= 'Z') {
@@ -7318,7 +7495,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #else
 	dos_info->i386_or_later = 0;
 #endif
-	dos_info->ext_mem_size = (MAX_MEM - 0x100000) >> 10;
+	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
 	// environment
 	int seg = MEMORY_TOP >> 4;
@@ -7457,8 +7634,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
 	
-	// dbcs table
-	msdos_dbcs_table_init();
+	// nls stuff
+	msdos_nls_tables_init();
 	
 	// execute command
 	if(msdos_process_exec(argv[0], param, 0)) {

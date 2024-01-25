@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								10/20/2015
+								11/7/2015
 
 ----- What's this
 
@@ -86,7 +86,7 @@ You can build all binaries for several cpu models by running build8_all.bat.
 
 ----- Supported hardwares
 
-CPU 8086/80286/80386/80486, RAM 16MB, PIC, PIT, RTC CMOS,
+CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, PIC, PIT, RTC CMOS,
 Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 
 
@@ -97,7 +97,7 @@ Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 0C0000H -	Upper Memory Block (224KB)
 0F8000H -	V-TEXT Shadow Buffer (32KB-16B)
 0FFFF0H -	CPU Boot Address
-100000H -	Upper Memory (15MB)
+100000H -	Upper Memory (15MB/31MB)
 
 
 ----- Supported system calls
@@ -159,6 +159,7 @@ INT 15H		PC BIOS
 	C9H	Get CPU Type and Mask Revision
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
+	E801H	Get Memory Size for >64M Configurations
 
 INT 16H		PC BIOS - Keyboard
 
@@ -296,6 +297,12 @@ INT 21H		MS-DOS System Call
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
 	6300H	Get DBCS Vector
+	6501H	Get General Internationalization Info
+	6502H	Get Upper Case Table
+	6503H	Get Lower Case Table
+	6504H	Get File Name Upper Case Table
+	6505H	Get File Name Lower Case Table
+	6506H	Get Collating Sequence Table
 	6507H	Get DBCS Vector
 	6520H	Character Capitalization
 	6521H	String Capitalization

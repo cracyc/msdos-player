@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <winioctl.h>
 #include <tchar.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
@@ -179,10 +180,20 @@ public:
 #define CDS_SIZE	0x80
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
-#define DBCS_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
+// nls tables
+#define UPPERTABLE_TOP	(FCB_TABLE_TOP + FCB_TABLE_SIZE)
+#define UPPERTABLE_SIZE	0x82
+#define FILENAME_UPPERTABLE_TOP (UPPERTABLE_TOP + UPPERTABLE_SIZE)
+#define FILENAME_UPPERTABLE_SIZE 0x82
+#define FILENAME_TERMINATOR_TOP (FILENAME_UPPERTABLE_TOP + FILENAME_UPPERTABLE_SIZE)
+#define FILENAME_TERMINATOR_SIZE 0x20	/* requirement: 10 + 14(terminate chars) */
+#define COLLATING_TABLE_TOP (FILENAME_TERMINATOR_TOP + FILENAME_TERMINATOR_SIZE)
+#define COLLATING_TABLE_SIZE 0x102
+#define DBCS_TOP	(COLLATING_TABLE_TOP + COLLATING_TABLE_SIZE)
 #define DBCS_TABLE	(DBCS_TOP + 2)
 #define DBCS_SIZE	0x10
-#define MEMORY_TOP	(DBCS_TOP + DBCS_SIZE)
+#define MSDOS_SYSTEM_DATA_END (DBCS_TOP + DBCS_SIZE)
+#define MEMORY_TOP	((MSDOS_SYSTEM_DATA_END + 15) & ~15U)
 #define MEMORY_END	0xb8000
 #define TEXT_VRAM_TOP	0xb8000
 #define UMB_TOP		0xc0000
@@ -552,6 +563,49 @@ bool int_10h_feh_called = false;
 bool int_10h_ffh_called = false;
 
 /* ----------------------------------------------------------------------------
+	MAME i86/i386
+---------------------------------------------------------------------------- */
+
+#if defined(HAS_I86)
+	#define CPU_MODEL i8086
+#elif defined(HAS_I186)
+	#define CPU_MODEL i80186
+#elif defined(HAS_V30)
+	#define CPU_MODEL v30
+#elif defined(HAS_I286)
+	#define CPU_MODEL i80286
+#elif defined(HAS_I386)
+	#define CPU_MODEL i386
+#else
+//	#if defined(HAS_I386SX)
+//		#define CPU_MODEL i386SX
+//	#else
+		#if defined(HAS_I486)
+			#define CPU_MODEL i486
+		#else
+			#if defined(HAS_PENTIUM)
+				#define CPU_MODEL pentium
+			#elif defined(HAS_MEDIAGX)
+				#define CPU_MODEL mediagx
+			#elif defined(HAS_PENTIUM_PRO)
+				#define CPU_MODEL pentium_pro
+			#elif defined(HAS_PENTIUM_MMX)
+				#define CPU_MODEL pentium_mmx
+			#elif defined(HAS_PENTIUM2)
+				#define CPU_MODEL pentium2
+			#elif defined(HAS_PENTIUM3)
+				#define CPU_MODEL pentium3
+			#elif defined(HAS_PENTIUM4)
+				#define CPU_MODEL pentium4
+			#endif
+			#define SUPPORT_RDTSC
+		#endif
+		#define SUPPORT_FPU
+//	#endif
+	#define HAS_I386
+#endif
+
+/* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
 
@@ -562,7 +616,13 @@ void hardware_update();
 
 // memory
 
-#define MAX_MEM 0x1000000
+#if defined(HAS_I386)
+#define MAX_MEM 0x2000000	/* 32MB */
+#elif defined(HAS_I286)
+#define MAX_MEM 0x1000000	/* 16MB */
+#else
+#define MAX_MEM 0x100000	/* 1MB */
+#endif
 UINT8 mem[MAX_MEM + 3];
 
 // pic
