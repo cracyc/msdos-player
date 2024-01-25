@@ -116,6 +116,12 @@ typedef union {
 } PAIR32;
 #pragma pack()
 
+// MAME i86/i386
+
+// src/emu/devcpu.h
+// offsets and addresses are 32-bit (for now...)
+typedef UINT32	offs_t;
+
 /* ----------------------------------------------------------------------------
 	FIFO buffer
 ---------------------------------------------------------------------------- */
@@ -469,6 +475,9 @@ void kbd_write_command(UINT8 val);
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
+#if defined(HAS_I386)
+//#define SUPPORT_VCPI
+#endif
 #if defined(HAS_I286) || defined(HAS_I386)
 #define SUPPORT_XMS
 //#define SUPPORT_HMA
@@ -560,22 +569,9 @@ UINT32 XMS_TOP = 0;
 typedef struct {
 	UINT8 mz;
 	UINT16 psp;
-	union {
-		UINT8 reserved[5];
-		UINT16 paragraphs16;
-		UINT32 paragraphs32;
-	};
+	UINT16 paragraphs;
+	UINT8 reserved[3];
 	char prog_name[8];
-	// use 32bit paragraphs for emb
-	UINT32 paragraphs()
-	{
-		UINT32 offset = &(this->mz) - mem;
-		return (offset >= EMB_TOP) ? paragraphs32 : paragraphs16;
-	}
-	UINT32 size_kb()
-	{
-		return paragraphs() >> 6;
-	}
 } mcb_t;
 #pragma pack()
 
@@ -940,8 +936,10 @@ typedef struct {
 	HANDLE find_handle;
 } dtainfo_t;
 
-UINT8 major_version = 7;
-UINT8 minor_version = 10;
+UINT8 dos_major_version = 7;	// Windows 98 Second Edition
+UINT8 dos_minor_version = 10;
+UINT8 win_major_version = 4;
+UINT8 win_minor_version = 10;
 
 UINT16 first_mcb;
 UINT16 current_psp;
@@ -1065,17 +1063,16 @@ bool is_hma_used_by_int_2fh = false;
 // xms
 
 #ifdef SUPPORT_XMS
-#define MAX_XMS_HANDLES 16
-#define MAX_XMS_SIZE_KB 0x8000	// 32MB
-
-typedef struct {
-	int seg;
+typedef struct emb_handle_s {
+	UINT32 handle; // 0=allocated
+	offs_t address;
 	int size_kb;
 	int lock;
-	bool allocated;
-} xms_handle_t;
+	struct emb_handle_s *prev;
+	struct emb_handle_s *next;
+} emb_handle_t;
 
-xms_handle_t xms_handles[MAX_XMS_HANDLES + 1];
+emb_handle_t *emb_handle_top = NULL;
 int xms_a20_local_enb_count;
 UINT16 xms_dx_after_call_08h = 0;
 #endif

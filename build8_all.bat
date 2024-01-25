@@ -10,6 +10,7 @@ set path="%ProgramFiles(x86)%\Microsoft Visual Studio 9.0\Common7\IDE";%PATH%
 set path="%ProgramFiles(x86)%\Windows Kits\8.1\bin\x86";%PATH%
 
 :start
+rem rmdir /s /q binary
 mkdir binary
 
 devenv.com msdos.vcproj /Rebuild "Release_i86|Win32"

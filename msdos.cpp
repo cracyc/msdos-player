@@ -281,7 +281,7 @@ enum address_spacenum
 };
 
 // offsets and addresses are 32-bit (for now...)
-typedef UINT32	offs_t;
+//typedef UINT32	offs_t;
 
 // read accessors
 UINT8 read_byte(offs_t byteaddress)
@@ -914,7 +914,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[14];
+			UINT8 buffer[16];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -930,24 +930,30 @@ int main(int argc, char *argv[], char *envp[])
 			if((buffer[0] & 0x40) != 0) {
 				UMB_TOP = EMS_TOP + EMS_SIZE;
 				support_ems = true;
-#ifdef SUPPORT_XMS
-				support_xms = true;
-#endif
 			}
+#ifdef SUPPORT_XMS
+			if((buffer[0] & 0x80) != 0) {
+				support_xms = true;
+			}
+#endif
 			if((buffer[1] != 0 || buffer[2] != 0) && (buffer[3] != 0 || buffer[4] != 0)) {
 				buf_width  = buffer[1] | (buffer[2] << 8);
 				buf_height = buffer[3] | (buffer[4] << 8);
 			}
 			if(buffer[5] != 0) {
-				major_version = buffer[5];
-				minor_version = buffer[6];
+				dos_major_version = buffer[5];
+				dos_minor_version = buffer[6];
 			}
-			if((code_page = buffer[7] | (buffer[8] << 8)) != 0) {
+			if(buffer[7] != 0) {
+				win_major_version = buffer[7];
+				win_minor_version = buffer[8];
+			}
+			if((code_page = buffer[9] | (buffer[10] << 8)) != 0) {
 				SetConsoleCP(code_page);
 				SetConsoleOutputCP(code_page);
 			}
-			int name_len = buffer[9];
-			int file_len = buffer[10] | (buffer[11] << 8) | (buffer[12] << 16) | (buffer[13] << 24);
+			int name_len = buffer[11];
+			int file_len = buffer[12] | (buffer[13] << 8) | (buffer[14] << 16) | (buffer[15] << 24);
 			
 			// restore command file name
 			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
@@ -1059,8 +1065,14 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
-				major_version = argv[i][2] - '0';
-				minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
+				dos_major_version = argv[i][2] - '0';
+				dos_minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
+			}
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-w", 2) == 0) {
+			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
+				win_major_version = argv[i][2] - '0';
+				win_minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
 			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-x", 2) == 0) {
@@ -1082,7 +1094,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		fprintf(stderr,
 			"Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
-			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-x] (command file) [options]\n"
+			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -1098,6 +1110,7 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
 			"\t-v\tset the DOS version\n"
+			"\t-w\tset the Windows version\n"
 #ifdef SUPPORT_XMS
 			"\t-x\tenable XMS and LIM EMS\n"
 #else
@@ -1197,14 +1210,21 @@ int main(int argc, char *argv[], char *envp[])
 					if(support_ems) {
 						flags |= 0x40;
 					}
+#ifdef SUPPORT_XMS
+					if(support_xms) {
+						flags |= 0x80;
+					}
+#endif
 					
 					fputc(flags, fo);
 					fputc((buf_width  >> 0) & 0xff, fo);
 					fputc((buf_width  >> 8) & 0xff, fo);
 					fputc((buf_height >> 0) & 0xff, fo);
 					fputc((buf_height >> 8) & 0xff, fo);
-					fputc(major_version, fo);
-					fputc(minor_version, fo);
+					fputc(dos_major_version, fo);
+					fputc(dos_minor_version, fo);
+					fputc(win_major_version, fo);
+					fputc(win_minor_version, fo);
 					fputc((code_page >> 0) & 0xff, fo);
 					fputc((code_page >> 8) & 0xff, fo);
 					
@@ -2226,7 +2246,8 @@ bool msdos_is_device_path(char *path)
 		} else if(name != NULL) {
 			if(_stricmp(name, "CLOCK$"  ) == 0 ||
 			   _stricmp(name, "CONFIG$" ) == 0 ||
-			   _stricmp(name, "EMMXXXX0") == 0) {
+			   _stricmp(name, "EMMXXXX0") == 0 ||
+			   _stricmp(name, "$IBMAIAS") == 0) {
 				return(true);
 			}
 		}
@@ -2257,6 +2278,24 @@ int msdos_is_comm_path(char *path)
 			return(3);
 		} else if(_stricmp(full, "\\\\.\\COM4") == 0) {
 			return(4);
+		}
+	}
+	return(0);
+}
+
+int msdos_is_prn_path(char *path)
+{
+	char full[MAX_PATH], *name;
+	
+	if(GetFullPathName(path, MAX_PATH, full, &name) != 0) {
+		if(_stricmp(full, "\\\\.\\PRN") == 0) {
+			return(1);
+		} else if(_stricmp(full, "\\\\.\\LPT1") == 0) {
+			return(1);
+		} else if(_stricmp(full, "\\\\.\\LPT2") == 0) {
+			return(2);
+		} else if(_stricmp(full, "\\\\.\\LPT3") == 0) {
+			return(3);
 		}
 	}
 	return(0);
@@ -3165,7 +3204,7 @@ mcb_t *msdos_mcb_create(int mcb_seg, UINT8 mz, UINT16 psp, int paragraphs)
 	
 	mcb->mz = mz;
 	mcb->psp = psp;
-	mcb->paragraphs32 = paragraphs;
+	mcb->paragraphs = paragraphs;
 	return(mcb);
 }
 
@@ -3188,13 +3227,13 @@ int msdos_mem_split(int seg, int paragraphs)
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	msdos_mcb_check(mcb);
 	
-	if(mcb->paragraphs() > paragraphs) {
+	if(mcb->paragraphs > paragraphs) {
 		int new_seg = mcb_seg + 1 + paragraphs;
-		int new_paragraphs = mcb->paragraphs() - paragraphs - 1;
+		int new_paragraphs = mcb->paragraphs - paragraphs - 1;
 		
 		msdos_mcb_create(new_seg, mcb->mz, 0, new_paragraphs);
 		mcb->mz = 'M';
-		mcb->paragraphs32 = paragraphs;
+		mcb->paragraphs = paragraphs;
 		return(0);
 	}
 	return(-1);
@@ -3210,7 +3249,7 @@ void msdos_mem_merge(int seg)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		int next_seg = mcb_seg + 1 + mcb->paragraphs();
+		int next_seg = mcb_seg + 1 + mcb->paragraphs;
 		mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
 		msdos_mcb_check(next_mcb);
 		
@@ -3218,7 +3257,7 @@ void msdos_mem_merge(int seg)
 			break;
 		}
 		mcb->mz = next_mcb->mz;
-		mcb->paragraphs32 = mcb->paragraphs() + 1 + next_mcb->paragraphs();
+		mcb->paragraphs = mcb->paragraphs + 1 + next_mcb->paragraphs;
 	}
 }
 
@@ -3233,7 +3272,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 			msdos_mcb_check(mcb);
 		}
 		if(!(new_process && mcb->mz != 'Z')) {
-			if(mcb->psp == 0 && mcb->paragraphs() >= paragraphs) {
+			if(mcb->psp == 0 && mcb->paragraphs >= paragraphs) {
 				msdos_mem_split(mcb_seg + 1, paragraphs);
 				mcb->psp = current_psp;
 				return(mcb_seg + 1);
@@ -3242,7 +3281,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 	}
 	return(-1);
 }
@@ -3252,12 +3291,12 @@ int msdos_mem_realloc(int seg, int paragraphs, int *max_paragraphs)
 	int mcb_seg = seg - 1;
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	msdos_mcb_check(mcb);
-	int current_paragraphs = mcb->paragraphs();
+	int current_paragraphs = mcb->paragraphs;
 	
 	msdos_mem_merge(seg);
-	if(paragraphs > mcb->paragraphs()) {
+	if(paragraphs > mcb->paragraphs) {
 		if(max_paragraphs) {
-			*max_paragraphs = mcb->paragraphs();
+			*max_paragraphs = mcb->paragraphs;
 		}
 		msdos_mem_split(seg, current_paragraphs);
 		return(-1);
@@ -3285,14 +3324,14 @@ int msdos_mem_get_free(int mcb_seg, int new_process)
 		msdos_mcb_check(mcb);
 		
 		if(!(new_process && mcb->mz != 'Z')) {
-			if(mcb->psp == 0 && mcb->paragraphs() > max_paragraphs) {
-				max_paragraphs = mcb->paragraphs();
+			if(mcb->psp == 0 && mcb->paragraphs > max_paragraphs) {
+				max_paragraphs = mcb->paragraphs;
 			}
 		}
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 	}
 	return(max_paragraphs > 0x7fff && limit_max_memory ? 0x7fff : max_paragraphs);
 }
@@ -3311,7 +3350,7 @@ int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 	}
 	return(last_seg);
 }
@@ -3330,7 +3369,7 @@ int msdos_mem_get_umb_linked()
 			}
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 	}
 	return(0);
 }
@@ -3342,7 +3381,7 @@ int msdos_mem_link_umb()
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		msdos_mcb_check(mcb);
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 		
 		if(mcb->mz == 'Z') {
 			if(mcb_seg == (MEMORY_END >> 4) - 1) {
@@ -3363,7 +3402,7 @@ int msdos_mem_unlink_umb()
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		msdos_mcb_check(mcb);
-		mcb_seg += 1 + mcb->paragraphs();
+		mcb_seg += 1 + mcb->paragraphs;
 		
 		if(mcb->mz == 'Z') {
 			break;
@@ -4754,6 +4793,21 @@ inline void pcbios_int_10h_13h()
 	}
 }
 
+inline void pcbios_int_10h_18h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+	case 0x01:
+//		REG8(AL) = 0x86;
+		REG8(AL) = 0x00;
+		break;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void pcbios_int_10h_1ah()
 {
 	switch(REG8(AL)) {
@@ -5114,6 +5168,22 @@ inline void pcbios_int_15h_50h()
 	}
 }
 
+inline void pcbios_int_15h_53h()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// APM is not installed
+		REG8(AH) = 0x86;
+		m_CF = 1;
+		break;
+	default:
+		unimplemented_15h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x15, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG8(AH) = 0x86;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void pcbios_int_15h_86h()
 {
 	UINT32 usec = (REG16(CX) << 16) | REG16(DX);
@@ -5429,6 +5499,19 @@ inline void pcbios_int_16h_55h()
 		// handlers for INT 08, INT 09, INT 16, INT 1B, and INT 1C are installed
 		break;
 	case 0xff:
+		break;
+	default:
+		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		m_CF = 1;
+		break;
+	}
+}
+
+inline void pcbios_int_16h_6fh()
+{
+	switch(REG8(AL)) {
+	case 0x00:
+		// HP Vectra EX-BIOS - "F16_INQUIRE" - Extended BIOS is not installed
 		break;
 	default:
 		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -6344,8 +6427,8 @@ inline void msdos_int_21h_30h()
 		REG16(BX) = 0xff00;	// OEM = Microsoft
 	}
 	REG16(CX) = 0x0000;
-	REG8(AL) = major_version;	// 7
-	REG8(AH) = minor_version;	// 10
+	REG8(AL) = dos_major_version;	// 7
+	REG8(AH) = dos_minor_version;	// 10
 }
 
 inline void msdos_int_21h_31h()
@@ -6362,11 +6445,11 @@ inline void msdos_int_21h_31h()
 			} else {
 				mcb->mz = 'Z';
 			}
-			mcb->paragraphs32 = (MEMORY_END >> 4) - mcb_seg - 2;
+			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
 			msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
 		} else {
 			mcb->mz = 'Z';
-			mcb->paragraphs32 = (UMB_END >> 4) - mcb_seg - 1;
+			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
 		}
 		msdos_mem_realloc(current_psp, REG16(DX), NULL);
 	}
@@ -7907,6 +7990,43 @@ inline void msdos_int_21h_5dh()
 	}
 }
 
+inline void msdos_int_21h_5fh()
+{
+	switch(REG8(AL)) {
+	case 0x02:
+		{
+			DWORD drives = GetLogicalDrives();
+			for(int i = 0, index = 0; i < 26; i++) {
+				if(drives & (1 << i)) {
+					char volume[] = "A:\\";
+					volume[0] = 'A' + i;
+					if(GetDriveType(volume) == DRIVE_REMOTE) {
+						if(index == REG16(BX)) {
+							DWORD dwSize = 128;
+							volume[2] = '\0';
+							strcpy((char *)(mem + SREG_BASE(DS) + REG16(SI)), volume);
+							WNetGetConnection(volume, (char *)(mem + SREG_BASE(ES) + REG16(DI)), &dwSize);
+							REG8(BH) = 0x00; // valid
+							REG8(BL) = 0x04; // disk drive
+							REG16(CX) = 0x00;
+							return;
+						}
+						index++;
+					}
+				}
+			}
+		}
+		REG16(AX) = 0x12; // no more files
+		m_CF = 1;
+		break;
+	default:
+		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
+}
+
 inline void msdos_int_21h_60h(int lfn)
 {
 	char full[MAX_PATH], *path;
@@ -8692,6 +8812,19 @@ inline void msdos_int_21h_7303h()
 	}
 }
 
+inline void msdos_int_21h_dbh()
+{
+	// Novell NetWare - Workstation - Get Number of Local Drives
+	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
+	REG8(AL) = dos_info->last_drive;
+}
+
+inline void msdos_int_21h_dch()
+{
+	// Novell NetWare - Connection Services - Get Connection Number
+	REG8(AL) = 0x00;
+}
+
 inline void msdos_int_25h()
 {
 	UINT16 seg, ofs;
@@ -8824,11 +8957,11 @@ inline void msdos_int_27h()
 			} else {
 				mcb->mz = 'Z';
 			}
-			mcb->paragraphs32 = (MEMORY_END >> 4) - mcb_seg - 2;
+			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
 			msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', -1, (UMB_TOP >> 4) - (MEMORY_END >> 4));
 		} else {
 			mcb->mz = 'Z';
-			mcb->paragraphs32 = (UMB_END >> 4) - mcb_seg - 1;
+			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
 		}
 		msdos_mem_realloc(SREG(CS), paragraphs, NULL);
 	}
@@ -8886,36 +9019,6 @@ inline void msdos_int_2eh()
 	}
 }
 
-inline void msdos_int_2fh_01h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// PRINT.COM is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_02h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// PC LAN Program Redirector is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
 inline void msdos_int_2fh_05h()
 {
 	switch(REG8(AL)) {
@@ -8927,51 +9030,6 @@ inline void msdos_int_2fh_05h()
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		// error code can't be converted to string
 //		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_06h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// ASSIGN is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_08h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// DRIVER.SYS is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_10h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// SHARE is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
 		m_CF = 1;
 		break;
 	}
@@ -9013,7 +9071,10 @@ inline void msdos_int_2fh_12h()
 			i386_load_segment_descriptor(ES);
 		}
 		break;
-//	case 0x03: // DOS 3.0+ internal - Get DOS Data Segment
+	case 0x03:
+		SREG(DS) = (DEVICE_TOP >> 4);
+		i386_load_segment_descriptor(DS);
+		break;
 	case 0x04:
 		{
 			UINT16 stack = i386_read_stack();
@@ -9227,8 +9288,8 @@ inline void msdos_int_2fh_12h()
 		break;
 	case 0x2f:
 		if(REG16(DX) != 0) {
-			major_version = REG8(DL);
-			minor_version = REG8(DH);
+			dos_major_version = REG8(DL);
+			dos_minor_version = REG8(DH);
 		} else {
 			REG8(DL) = 7;
 			REG8(DH) = 10;
@@ -9242,6 +9303,21 @@ inline void msdos_int_2fh_12h()
 		m_CF = 1;
 		break;
 	}
+}
+
+inline void msdos_int_2fh_13h()
+{
+	static UINT16 prevDS = 0, prevDX = 0;
+	static UINT16 prevES = 0, prevBX = 0;
+	UINT16 tmp;
+	
+	tmp = SREG(DS); SREG(DS) = prevDS; prevDS = tmp;
+	i386_load_segment_descriptor(DS);
+	tmp = REG16(DX); REG16(DX) = prevDX; prevDX = tmp;
+	
+	tmp = SREG(ES); SREG(ES) = prevES; prevES = tmp;
+	i386_load_segment_descriptor(ES);
+	tmp = REG16(BX); REG16(BX) = prevBX; prevBX = tmp;
 }
 
 inline void msdos_int_2fh_14h()
@@ -9309,33 +9385,34 @@ inline void msdos_int_2fh_16h()
 			// neither Windows 3.x enhanced mode nor Windows/386 2.x running
 //			REG8(AL) = 0x00;
 		} else {
-			OSVERSIONINFO osvi;
-			ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-			osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-			GetVersionEx(&osvi);
-			REG8(AL) = osvi.dwMajorVersion;
-			REG8(AH) = osvi.dwMinorVersion;
+			REG8(AL) = win_major_version;
+			REG8(AH) = win_minor_version;
 		}
+		break;
+	case 0x05:
+		// from DOSBox
+		i386_set_a20_line(1);
 		break;
 	case 0x0a:
 		if(!no_windows) {
-			OSVERSIONINFO osvi;
-			ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-			osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-			GetVersionEx(&osvi);
 			REG16(AX) = 0x0000;
-			REG8(BH) = osvi.dwMajorVersion;
-			REG8(BL) = osvi.dwMinorVersion;
+			REG8(BH) = win_major_version;
+			REG8(BL) = win_minor_version;
 			REG16(CX) = 0x0003; // enhanced
 		}
 		break;
+	case 0x0b:
+		// no TRS, keep ES:DI = 0000h:0000h
 	case 0x0e:
 	case 0x0f:
+	case 0x10:
 	case 0x11:
 	case 0x12:
 	case 0x13:
 	case 0x14:
+	case 0x15:
 	case 0x87:
+	case 0x89:
 		// function not supported, do not clear AX
 		break;
 	case 0x80:
@@ -9357,21 +9434,6 @@ inline void msdos_int_2fh_16h()
 			REG16(AX) = 0x168f;
 			break;
 		}
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_17h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// Clibboard functions are not supported
-//		REG8(AL) = 0x00;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9422,42 +9484,12 @@ inline void msdos_int_2fh_1ah()
 	}
 }
 
-inline void msdos_int_2fh_1bh()
+inline void msdos_int_2fh_40h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		// XMA2EMS.SYS is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_27h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// DR-DOR 6.0 TaskMAX is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_2eh()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// Novell DOS 7 GRAFTABL is not installed
-//		REG8(AL) = 0x00;
+		// Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
+		REG8(AL) = 0x01; // does not virtualize video access
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9483,21 +9515,6 @@ inline void msdos_int_2fh_43h()
 		SREG(ES) = XMS_TOP >> 4;
 		i386_load_segment_descriptor(ES);
 		REG16(BX) = 0x15;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_45h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// PROF.COM is not installed
-//		REG8(AL) = 0x00;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9718,6 +9735,9 @@ inline void msdos_int_2fh_4bh()
 		// this call is available from within DOSSHELL even if the task switcher is not installed
 		REG16(AX) = REG16(BX) = 0x0000; // no more avaiable switcher id
 		break;
+	case 0x04:
+		REG16(BX) = 0x0000; // free switcher id successfully
+		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 		REG16(AX) = 0x01;
@@ -9747,21 +9767,6 @@ inline void msdos_int_2fh_4fh()
 	}
 }
 
-inline void msdos_int_2fh_54h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// POWER.EXE is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
 inline void msdos_int_2fh_55h()
 {
 	switch(REG8(AL)) {
@@ -9777,27 +9782,18 @@ inline void msdos_int_2fh_55h()
 	}
 }
 
-inline void msdos_int_2fh_56h()
+inline void msdos_int_2fh_80h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		// INTERLNK is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_ach()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// GRAPHICS.COM is not installed
-//		REG8(AL) = 0x00;
+		if(REG16(DX) == 0x0000) {
+			// FAX BIOS is not installed
+//			REG8(AL) = 0x00;
+		} else {
+			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+			REG16(AX) = 0x01;
+			m_CF = 1;
+		}
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -9886,26 +9882,11 @@ inline void msdos_int_2fh_aeh()
 	}
 }
 
-inline void msdos_int_2fh_b0h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// GRAFTABLE.COM is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
 inline void msdos_int_2fh_b7h()
 {
 	switch(REG8(AL)) {
 	case 0x00:
-		// append is not installed
+		// APPEND is not installed
 //		REG8(AL) = 0x00;
 		break;
 	case 0x07:
@@ -9919,42 +9900,11 @@ inline void msdos_int_2fh_b7h()
 	}
 }
 
-inline void msdos_int_2fh_b8h()
+inline void msdos_int_2fh_d7h()
 {
 	switch(REG8(AL)) {
-	case 0x00:
-		// network is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_b9h()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// RECEIVER.COM is not installed
-//		REG8(AL) = 0x00;
-		break;
-	default:
-		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
-		REG16(AX) = 0x01;
-		m_CF = 1;
-		break;
-	}
-}
-
-inline void msdos_int_2fh_bch()
-{
-	switch(REG8(AL)) {
-	case 0x00:
-		// EGA.SYS is not installed
-//		REG8(AL) = 0x00;
+	case 0x01:
+		// Banyan VINES v4+ is not installed
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
@@ -10706,8 +10656,8 @@ inline void msdos_int_67h_58h()
 		REG8(AH) = 0x84;
 	} else if(REG8(AL) == 0x00) {
 		for(int i = 0; i < 4; i++) {
-			*(UINT16 *)(mem +SREG_BASE(ES) + REG16(DI) + 4 * i + 0) = (EMS_TOP + 0x4000 * i) >> 4;
-			*(UINT16 *)(mem +SREG_BASE(ES) + REG16(DI) + 4 * i + 2) = i;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 0) = (EMS_TOP + 0x4000 * i) >> 4;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 4 * i + 2) = i;
 		}
 		REG8(AH) = 0x00;
 		REG16(CX) = 4;
@@ -10746,12 +10696,133 @@ inline void msdos_int_67h_5ah()
 	}
 }
 
+inline void msdos_int_67h_deh()
+{
+	REG8(AH) = 0x84;
+}
+
 #ifdef SUPPORT_XMS
 
 inline void msdos_xms_init()
 {
-	memset(xms_handles, 0, sizeof(xms_handles));
+	emb_handle_top = (emb_handle_t *)calloc(1, sizeof(emb_handle_t));
+	emb_handle_top->address = EMB_TOP;
+	emb_handle_top->size_kb = (EMB_END - EMB_TOP) >> 10;
 	xms_a20_local_enb_count = 0;
+}
+
+inline void msdos_xms_finish()
+{
+	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL;) {
+		emb_handle_t *next_handle = emb_handle->next;
+		free(emb_handle);
+		emb_handle = next_handle;
+	}
+}
+
+emb_handle_t *msdos_xms_get_emb_handle(int handle)
+{
+	if(handle != 0) {
+		for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+			if(emb_handle->handle == handle) {
+				return(emb_handle);
+			}
+		}
+	}
+	return(NULL);
+}
+
+int msdos_xms_get_unused_emb_handle_id()
+{
+	for(int handle = 1;; handle++) {
+		if(msdos_xms_get_emb_handle(handle) == NULL) {
+			return(handle);
+		}
+	}
+	return(0);
+}
+
+int msdos_xms_get_unused_emb_handle_count()
+{
+	int count = 64; //255;
+	
+	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+		if(emb_handle->handle != 0) {
+			if(--count == 1) {
+				break;
+			}
+		}
+	}
+	return(count);
+}
+
+void msdos_xms_split_emb_handle(emb_handle_t *emb_handle, int size_kb)
+{
+	if(emb_handle->size_kb > size_kb) {
+		emb_handle_t *new_handle = (emb_handle_t *)calloc(1, sizeof(emb_handle_t));
+		
+		new_handle->address = emb_handle->address + size_kb * 1024;
+		new_handle->size_kb = emb_handle->size_kb - size_kb;
+		emb_handle->size_kb = size_kb;
+		
+		new_handle->prev = emb_handle;
+		new_handle->next = emb_handle->next;
+		if(emb_handle->next != NULL) {
+			emb_handle->next->prev = new_handle;
+		}
+		emb_handle->next = new_handle;
+	}
+}
+
+void msdos_xms_combine_emb_handles(emb_handle_t *emb_handle)
+{
+	emb_handle_t *next_handle = emb_handle->next;
+	
+	if(next_handle != NULL) {
+		emb_handle->size_kb += next_handle->size_kb;
+		
+		if(next_handle->next != NULL) {
+			next_handle->next->prev = emb_handle;
+		}
+		emb_handle->next = next_handle->next;
+		free(next_handle);
+	}
+}
+
+emb_handle_t *msdos_xms_alloc_emb_handle(int size_kb)
+{
+	emb_handle_t *target_handle = NULL;
+	
+	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+		if(emb_handle->handle == 0 && emb_handle->size_kb >= size_kb) {
+			if(target_handle == NULL || target_handle->size_kb > emb_handle->size_kb) {
+				target_handle = emb_handle;
+			}
+		}
+	}
+	if(target_handle != NULL) {
+		if(target_handle->size_kb > size_kb) {
+			msdos_xms_split_emb_handle(target_handle, size_kb);
+		}
+//		target_handle->handle = msdos_xms_get_unused_emb_handle_id();
+		return(target_handle);
+	}
+	return(NULL);
+}
+
+void msdos_xms_free_emb_handle(emb_handle_t *emb_handle)
+{
+	emb_handle_t *prev_handle = emb_handle->prev;
+	emb_handle_t *next_handle = emb_handle->next;
+	
+	if(prev_handle != NULL && prev_handle->handle == 0) {
+		msdos_xms_combine_emb_handles(prev_handle);
+		emb_handle = prev_handle;
+	}
+	if(next_handle != NULL && next_handle->handle == 0) {
+		msdos_xms_combine_emb_handles(emb_handle);
+	}
+	emb_handle->handle = 0;
 }
 
 inline void msdos_call_xms_00h()
@@ -10870,21 +10941,13 @@ inline void msdos_call_xms_08h()
 {
 	REG16(AX) = REG16(DX) = 0x0000;
 	
-	int mcb_seg = EMB_TOP >> 4;
-	
-	while(1) {
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		
-		if(mcb->psp == 0) {
-			if(REG16(AX) < mcb->size_kb()) {
-				REG16(AX) = mcb->size_kb();
+	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+		if(emb_handle->handle == 0) {
+			if(REG16(AX) < emb_handle->size_kb) {
+				REG16(AX) = emb_handle->size_kb;
 			}
-			REG16(DX) += mcb->size_kb();
+			REG16(DX) += emb_handle->size_kb;
 		}
-		if(mcb->mz == 'Z') {
-			break;
-		}
-		mcb_seg += 1 + mcb->paragraphs();
 	}
 	
 	if(REG16(AX) == 0 && REG16(DX) == 0) {
@@ -10895,40 +10958,39 @@ inline void msdos_call_xms_08h()
 	xms_dx_after_call_08h = REG16(DX);
 }
 
+void msdos_call_xms_09h(int size_kb)
+{
+	emb_handle_t *emb_handle = msdos_xms_alloc_emb_handle(size_kb);
+	
+	if(emb_handle != NULL) {
+		emb_handle->handle = msdos_xms_get_unused_emb_handle_id();
+		
+		REG16(AX) = 0x0001;
+		REG16(DX) = emb_handle->handle;
+		REG8(BL) = 0x00;
+	} else {
+		REG16(AX) = REG16(DX) = 0x0000;
+		REG8(BL) = 0xa0;
+	}
+}
+
 inline void msdos_call_xms_09h()
 {
-	for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
-		if(!xms_handles[i].allocated) {
-			if((xms_handles[i].seg = msdos_mem_alloc(EMB_TOP >> 4, REG16(DX) * 64, 0)) != -1) {
-				xms_handles[i].size_kb = REG16(DX);
-				xms_handles[i].lock = 0;
-				xms_handles[i].allocated = true;
-				
-				REG16(AX) = 0x0001;
-				REG16(DX) = i;
-				REG8(BL) = 0x00;
-			} else {
-				REG16(AX) = REG16(DX) = 0x0000;
-				REG8(BL) = 0xa0;
-			}
-			return;
-		}
-	}
-	REG16(AX) = REG16(DX) = 0x0000;
-	REG8(BL) = 0xa1;
+	msdos_call_xms_09h(REG16(DX));
 }
 
 inline void msdos_call_xms_0ah()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
-	} else if(xms_handles[REG16(DX)].lock > 0) {
+	} else if(emb_handle->lock > 0) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xab;
 	} else {
-		msdos_mem_free(xms_handles[REG16(DX)].seg);
-		xms_handles[REG16(DX)].allocated = false;
+		msdos_xms_free_emb_handle(emb_handle);
 		
 		REG16(AX) = 0x0001;
 		REG8(BL) = 0x00;
@@ -10945,32 +11007,34 @@ inline void msdos_call_xms_0bh()
 	
 	UINT8 *src_buffer, *dest_buffer;
 	UINT32 src_addr_max, dest_addr_max;
+	emb_handle_t *emb_handle;
 	
 	if(src_handle == 0) {
 		src_buffer = mem;
 		src_addr = (((src_addr >> 16) & 0xffff) << 4) + (src_addr & 0xffff);
 		src_addr_max = MAX_MEM;
+
 	} else {
-		if(!(src_handle >= 1 && src_handle <= MAX_XMS_HANDLES && xms_handles[src_handle].allocated)) {
+		if((emb_handle = msdos_xms_get_emb_handle(src_handle)) == NULL) {
 			REG16(AX) = 0x0000;
 			REG8(BL) = 0xa3;
 			return;
 		}
-		src_buffer = mem + (xms_handles[src_handle].seg << 4);
-		src_addr_max = xms_handles[src_handle].size_kb * 1024;
+		src_buffer = mem + emb_handle->address;
+		src_addr_max = emb_handle->size_kb * 1024;
 	}
 	if(dest_handle == 0) {
 		dest_buffer = mem;
 		dest_addr = (((dest_addr >> 16) & 0xffff) << 4) + (dest_addr & 0xffff);
 		dest_addr_max = MAX_MEM;
 	} else {
-		if(!(dest_handle >= 1 && dest_handle <= MAX_XMS_HANDLES && xms_handles[dest_handle].allocated)) {
+		if((emb_handle = msdos_xms_get_emb_handle(dest_handle)) == NULL) {
 			REG16(AX) = 0x0000;
 			REG8(BL) = 0xa5;
 			return;
 		}
-		dest_buffer = mem + (xms_handles[dest_handle].seg << 4);
-		dest_addr_max = xms_handles[dest_handle].size_kb * 1024;
+		dest_buffer = mem + emb_handle->address;
+		dest_addr_max = emb_handle->size_kb * 1024;
 	}
 	for(int i = 0; i < copy_length; i++) {
 		if(src_addr < src_addr_max && dest_addr < dest_addr_max) {
@@ -10985,29 +11049,32 @@ inline void msdos_call_xms_0bh()
 
 inline void msdos_call_xms_0ch()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
 	} else {
-		xms_handles[REG16(DX)].lock++;
+		emb_handle->lock++;
 		REG16(AX) = 0x0001;
 		REG8(BL) = 0x00;
-		UINT32 addr = xms_handles[REG16(DX)].seg << 4;
-		REG16(DX) = (addr >> 16) & 0xffff;
-		REG16(BX) = (addr      ) & 0xffff;
+		REG16(DX) = (emb_handle->address >> 16) & 0xffff;
+		REG16(BX) = (emb_handle->address      ) & 0xffff;
 	}
 }
 
 inline void msdos_call_xms_0dh()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
-	} else if(!(xms_handles[REG16(DX)].lock > 0)) {
+	} else if(!(emb_handle->lock > 0)) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xaa;
 	} else {
-		xms_handles[REG16(DX)].lock--;
+		emb_handle->lock--;
 		REG16(AX) = 0x0001;
 		REG8(BL) = 0x00;
 	}
@@ -11015,37 +11082,67 @@ inline void msdos_call_xms_0dh()
 
 inline void msdos_call_xms_0eh()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
 	} else {
 		REG16(AX) = 0x0001;
-		REG8(BH) = xms_handles[REG16(DX)].lock;
-		REG8(BL) = 0x00;
-		for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
-			if(!xms_handles[i].allocated) {
-				REG8(BL)++;
+		REG8(BH) = emb_handle->lock;
+		REG8(BL) = msdos_xms_get_unused_emb_handle_count();
+		REG16(DX) = emb_handle->size_kb;
+	}
+}
+
+void msdos_call_xms_0fh(int size_kb)
+{
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xa2;
+	} else if(emb_handle->lock > 0) {
+		REG16(AX) = 0x0000;
+		REG8(BL) = 0xab;
+	} else {
+		if(emb_handle->size_kb < size_kb) {
+			if(emb_handle->next != NULL && emb_handle->next->handle == 0 && (emb_handle->size_kb + emb_handle->next->size_kb) >= size_kb) {
+				msdos_xms_combine_emb_handles(emb_handle);
+				if(emb_handle->size_kb > size_kb) {
+					msdos_xms_split_emb_handle(emb_handle, size_kb);
+				}
+			} else {
+				int old_handle = emb_handle->handle;
+				int old_size_kb = emb_handle->size_kb;
+				UINT8 *buffer = (UINT8 *)malloc(old_size_kb * 1024);
+				
+				memcpy(buffer, mem + emb_handle->address, old_size_kb * 1024);
+				msdos_xms_free_emb_handle(emb_handle);
+				
+				if((emb_handle = msdos_xms_alloc_emb_handle(size_kb)) == NULL) {
+					emb_handle = msdos_xms_alloc_emb_handle(old_size_kb); // should be always successed
+				}
+				emb_handle->handle = old_handle;
+				memcpy(mem + emb_handle->address, buffer, old_size_kb * 1024);
+				free(buffer);
 			}
+		} else if(emb_handle->size_kb > size_kb) {
+			msdos_xms_split_emb_handle(emb_handle, size_kb);
 		}
-		REG16(DX) = xms_handles[REG16(DX)].size_kb;
+		if(emb_handle->size_kb != size_kb) {
+			REG16(AX) = 0x0000;
+			REG8(BL) = 0xa0;
+		} else {
+			REG16(AX) = 0x0001;
+			REG8(BL) = 0x00;
+		}
 	}
 }
 
 inline void msdos_call_xms_0fh()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xa2;
-	} else if(xms_handles[REG16(DX)].lock > 0) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xab;
-	} else if(msdos_mem_realloc(xms_handles[REG16(DX)].seg, REG16(BX) * 64, NULL)) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xa0;
-	} else {
-		REG16(AX) = 0x0001;
-		REG8(BL) = 0x00;
-	}
+	msdos_call_xms_0fh(REG16(BX));
 }
 
 inline void msdos_call_xms_10h()
@@ -11104,21 +11201,13 @@ inline void msdos_call_xms_88h()
 {
 	REG32(EAX) = REG32(EDX) = 0x0000;
 	
-	int mcb_seg = EMB_TOP >> 4;
-	
-	while(1) {
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		
-		if(mcb->psp == 0) {
-			if(REG32(EAX) < mcb->size_kb()) {
-				REG32(EAX) = mcb->size_kb();
+	for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
+		if(emb_handle->handle == 0) {
+			if(REG32(EAX) < emb_handle->size_kb) {
+				REG32(EAX) = emb_handle->size_kb;
 			}
-			REG32(EDX) += mcb->size_kb();
+			REG32(EDX) += emb_handle->size_kb;
 		}
-		if(mcb->mz == 'Z') {
-			break;
-		}
-		mcb_seg += 1 + mcb->paragraphs();
 	}
 	
 	if(REG32(EAX) == 0 && REG32(EDX) == 0) {
@@ -11131,60 +11220,27 @@ inline void msdos_call_xms_88h()
 
 inline void msdos_call_xms_89h()
 {
-	for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
-		if(!xms_handles[i].allocated) {
-			if((xms_handles[i].seg = msdos_mem_alloc(EMB_TOP >> 4, REG32(EDX) * 64, 0)) != -1) {
-				xms_handles[i].size_kb = REG32(EDX);
-				xms_handles[i].lock = 0;
-				xms_handles[i].allocated = true;
-				
-				REG16(AX) = 0x0001;
-				REG16(DX) = i;
-				REG8(BL) = 0x00;
-			} else {
-				REG16(AX) = REG16(DX) = 0x0000;
-				REG8(BL) = 0xa0;
-			}
-			return;
-		}
-	}
-	REG16(AX) = REG16(DX) = 0x0000;
-	REG8(BL) = 0xa1;
+	msdos_call_xms_09h(REG32(EDX));
 }
 
 inline void msdos_call_xms_8eh()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
+	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(REG16(DX));
+	
+	if(emb_handle == NULL) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0xa2;
 	} else {
 		REG16(AX) = 0x0001;
-		REG8(BH) = xms_handles[REG16(DX)].lock;
-		REG16(CX) = 0x00;
-		for(int i = 1; i <= MAX_XMS_HANDLES; i++) {
-			if(!xms_handles[i].allocated) {
-				REG16(CX)++;
-			}
-		}
-		REG32(EDX) = xms_handles[REG16(DX)].size_kb;
+		REG8(BH) = emb_handle->lock;
+		REG16(CX) = msdos_xms_get_unused_emb_handle_count();
+		REG32(EDX) = emb_handle->size_kb;
 	}
 }
 
 inline void msdos_call_xms_8fh()
 {
-	if(!(REG16(DX) >= 1 && REG16(DX) <= MAX_XMS_HANDLES && xms_handles[REG16(DX)].allocated)) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xa2;
-	} else if(xms_handles[REG16(DX)].lock > 0) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xab;
-	} else if(msdos_mem_realloc(xms_handles[REG16(DX)].seg, REG32(EBX) * 64, NULL)) {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0xa0;
-	} else {
-		REG16(AX) = 0x0001;
-		REG8(BL) = 0x00;
-	}
+	msdos_call_xms_0fh(REG32(EBX));
 }
 
 #endif
@@ -11318,7 +11374,7 @@ void msdos_syscall(unsigned num)
 		case 0x11: pcbios_int_10h_11h(); break;
 		case 0x12: pcbios_int_10h_12h(); break;
 		case 0x13: pcbios_int_10h_13h(); break;
-		case 0x18: REG8(AL) = 0x86; break;
+		case 0x18: pcbios_int_10h_18h(); break;
 		case 0x1a: pcbios_int_10h_1ah(); break;
 		case 0x1b: REG8(AL) = 0x00; break; // functionality/state information is not supported
 		case 0x1c: REG8(AL) = 0x00; break; // save/restore video state is not supported
@@ -11326,6 +11382,7 @@ void msdos_syscall(unsigned num)
 		case 0x1e: REG8(AL) = 0x00; break; // flat-panel functions are not supported
 		case 0x1f: REG8(AL) = 0x00; break; // xga functions are not supported
 		case 0x4f: pcbios_int_10h_4fh(); break;
+		case 0x6f: break;
 		case 0x80: m_CF = 1; break; // unknown
 		case 0x81: m_CF = 1; break; // unknown
 		case 0x82: pcbios_int_10h_82h(); break;
@@ -11386,6 +11443,7 @@ void msdos_syscall(unsigned num)
 		case 0x41: break;
 		case 0x49: pcbios_int_15h_49h(); break;
 		case 0x50: pcbios_int_15h_50h(); break;
+		case 0x53: pcbios_int_15h_53h(); break;
 		case 0x86: pcbios_int_15h_86h(); break;
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
@@ -11394,6 +11452,8 @@ void msdos_syscall(unsigned num)
 		case 0xc0: // PS/2 ???
 		case 0xc1:
 		case 0xc2:
+		case 0xc3: // PS50+ ???
+		case 0xc4:
 			REG8(AH) = 0x86;
 			m_CF = 1;
 			break;
@@ -11424,6 +11484,7 @@ void msdos_syscall(unsigned num)
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
 		case 0x55: pcbios_int_16h_55h(); break;
+		case 0x6f: pcbios_int_16h_6fh(); break;
 		case 0xda: break; // unknown
 		case 0xff: break; // unknown
 		default:
@@ -11562,7 +11623,7 @@ void msdos_syscall(unsigned num)
 			case 0x5c: msdos_int_21h_5ch(); break;
 			case 0x5d: msdos_int_21h_5dh(); break;
 			// 0x5e: ms-network
-			// 0x5f: ms-network
+			case 0x5f: msdos_int_21h_5fh(); break;
 			case 0x60: msdos_int_21h_60h(0); break;
 			case 0x61: msdos_int_21h_61h(); break;
 			case 0x62: msdos_int_21h_62h(); break;
@@ -11626,6 +11687,8 @@ void msdos_syscall(unsigned num)
 					break;
 				}
 				break;
+			case 0xdb: msdos_int_21h_dbh(); break;
+			case 0xdc: msdos_int_21h_dch(); break;
 			default:
 				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 				REG16(AX) = 0x01;
@@ -11733,49 +11796,67 @@ void msdos_syscall(unsigned num)
 	case 0x2f:
 		// multiplex interrupt
 		switch(REG8(AH)) {
-		case 0x00: break;
-		case 0x01: msdos_int_2fh_01h(); break;
-		case 0x02: msdos_int_2fh_02h(); break;
 		case 0x05: msdos_int_2fh_05h(); break;
-		case 0x06: msdos_int_2fh_06h(); break;
-		case 0x08: msdos_int_2fh_08h(); break;
-		case 0x10: msdos_int_2fh_10h(); break;
 		case 0x11: msdos_int_2fh_11h(); break;
 		case 0x12: msdos_int_2fh_12h(); break;
+		case 0x13: msdos_int_2fh_13h(); break;
 		case 0x14: msdos_int_2fh_14h(); break;
 		case 0x15: msdos_int_2fh_15h(); break;
 		case 0x16: msdos_int_2fh_16h(); break;
-		case 0x17: msdos_int_2fh_17h(); break;
 		case 0x19: msdos_int_2fh_19h(); break;
 		case 0x1a: msdos_int_2fh_1ah(); break;
-		case 0x1b: msdos_int_2fh_1bh(); break;
-		case 0x27: msdos_int_2fh_27h(); break;
-		case 0x2e: msdos_int_2fh_2eh(); break;
+		case 0x40: msdos_int_2fh_40h(); break;
 		case 0x43: msdos_int_2fh_43h(); break;
-		case 0x45: msdos_int_2fh_45h(); break;
 		case 0x46: msdos_int_2fh_46h(); break;
 		case 0x48: msdos_int_2fh_48h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
 		case 0x4b: msdos_int_2fh_4bh(); break;
-		case 0x4c: break; // unknown
-		case 0x4d: break; // unknown
-		case 0x4e: break; // unknown
 		case 0x4f: msdos_int_2fh_4fh(); break;
-		case 0x54: msdos_int_2fh_54h(); break;
 		case 0x55: msdos_int_2fh_55h(); break;
-		case 0x56: msdos_int_2fh_56h(); break;
-		case 0x58: break; // unknown
-		case 0x74: break; // unknown
-		case 0xac: msdos_int_2fh_ach(); break;
+		case 0x80: msdos_int_2fh_80h(); break;
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
-		case 0xb0: msdos_int_2fh_b0h(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
-		case 0xb8: msdos_int_2fh_b8h(); break;
-		case 0xb9: msdos_int_2fh_b9h(); break;
-		case 0xbc: msdos_int_2fh_bch(); break;
-		case 0xe9: break; // unknown
-		case 0xfe: break; // norton utilities ???
+		case 0xd7: msdos_int_2fh_d7h(); break;
+		// Installation Check
+		case 0x01: // PRINT.COM
+		case 0x02: // PC LAN Program Redirector
+		case 0x06: // ASSIGN
+		case 0x08: // DRIVER.SYS
+		case 0x10: // SHARE
+		case 0x17: // Clibboard functions
+		case 0x1b: // XMA2EMS.SYS
+		case 0x23: // DR DOS 5.0 GRAFTABL
+		case 0x27: // DR-DOR 6.0 TaskMAX
+		case 0x2e: // Novell DOS 7 GRAFTABL
+		case 0x45: // PROF.COM
+		case 0x51: // ODIHELP.EXE
+		case 0x54: // POWER.EXE
+		case 0x56: // INTERLNK
+		case 0x70: // License Service API
+		case 0x7a: // Novell NetWare
+		case 0x94: // MICRO.EXE
+		case 0xac: // GRAPHICS.COM
+		case 0xb0: // GRAFTABLE.COM
+		case 0xb8: // NETWORK
+		case 0xb9: // RECEIVER.COM
+		case 0xbc: // EGA.SYS
+		case 0xbf: // PC LAN Program - REDIRIFS.EXE
+		case 0xc0: // Novell LSL.COM
+		case 0xd2: // PCL-838.EXE
+		case 0xd8: // Novell NetWare Lite - CLIENT.EXE
+			switch(REG8(AL)) {
+			case 0x00:
+				// This is not installed
+//				REG8(AL) = 0x00;
+				break;
+			default:
+				unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
+				REG16(AX) = 0x01;
+				m_CF = 1;
+				break;
+			}
+			break;
 		default:
 			unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			break;
@@ -11866,6 +11947,7 @@ void msdos_syscall(unsigned num)
 		// 0x5b: LIM EMS 4.0 - Alternate Map Register Set (for DOS Kernel)
 		// 0x5c: LIM EMS 4.0 - Prepate Expanded Memory Hardware For Warm Boot
 		// 0x5d: LIM EMS 4.0 - Enable/Disable OS Function Set Functions (for DOS Kernel)
+		case 0xde: msdos_int_67h_deh(); break;
 		default:
 			unimplemented_67h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX), REG16(SI), REG16(DI), SREG(DS), SREG(ES));
 			REG8(AH) = 0x84;
@@ -12243,11 +12325,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 #endif
 	
-#ifdef SUPPORT_XMS
-	// first free mcb in extended memory block
-	msdos_mcb_create(EMB_TOP >> 4, 'Z', 0, (EMB_END >> 4) - (EMB_TOP >> 4) - 1);
-#endif
-	
 	// interrupt vector
 	for(int i = 0; i < 0x80; i++) {
 		*(UINT16 *)(mem + 4 * i + 0) = i;
@@ -12278,7 +12355,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		{0x8000, "COM2    "},
 		{0x8000, "COM3    "},
 		{0x8000, "COM4    "},
-		{0xc000, "CONFIG$ "},
+//		{0xc000, "CONFIG$ "},
+		{0xc000, "$IBMADSP"}, // for windows3.1 setup.exe
 	};
 	static const UINT8 dummy_device_routine[] = {
 		// from NUL device of Windows 98 SE
@@ -12524,6 +12602,9 @@ void msdos_finish()
 #endif
 #ifdef MAP_PRN_DEVICE_TO_FILE
 	remove_std_file("stdprn.txt");
+#endif
+#ifdef SUPPORT_XMS
+	msdos_xms_finish();
 #endif
 	msdos_dbcs_table_finish();
 }

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/30/2016
+								12/31/2016
 
 ----- What's this
 
@@ -35,7 +35,7 @@ For example, compile a sample.c with LSI C-86 and execute the compiled binary:
 ----- Options
 
 Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
-             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-x] (command file) [options]
+             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -47,6 +47,7 @@ Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-n	create a new buffer (25 lines, 80 columns by default)
 	-s	enable serial I/O and set host's COM port numbers
 	-v	set the DOS version
+	-w	set the Windows version
 	-x	enable XMS and LIM EMS
 
 EDIT.COM does not work correctly when a free memory space is large.
@@ -55,9 +56,13 @@ Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
 	> msdos -m edit.com
 
 "Windows Enhanced Mode Installation Check" API (INT 2FH, AX=1600H) and
-"Identify Windows Version and Type" API (INT 2FH, AX=160AH) return the version
-of the host Windows.
-If you want to pretend that Windows is not running, specify the option '-d'.
+"Identify Windows Version and Type" API (INT 2FH, AX=160AH) return the Windows
+version number 4.10.
+If you want to change the version number, please specify the option '-wX.XX'.
+
+	> msdos -v3.10 command.com
+
+Or if you want to pretend that Windows is not running, specify the option '-d'.
 
 	> msdos -d command.com
 
@@ -68,6 +73,8 @@ If you want to change the version number, please specify the option '-vX.XX'.
 
 NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
 the version number 7.10 and '-v' option is not affected.
+
+NOTE: the Windows version 4.10 and the DOS version 7.10 are same as Windows 98,
 
 To enable XMS (i286 or later) and LIM EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
@@ -151,7 +158,7 @@ is not specified (only "-c" is specified), it is "new_exec_file.exe".
 
 Other options' value are also stored to a new execution file, for example:
 
-	> msdos -COMMAND32.EXE -v6.22 -x COMMAND.COM
+	> msdos -cCOMMAND32.EXE -v6.22 -x COMMAND.COM
 
 When you run COMMAND32.EXE, it starts COMMAND.COM with the version 6.22 and
 XMS/EMS option enabled.
@@ -190,17 +197,19 @@ This archive contains 8 executable binaries:
 If you don't need the protected mode or new mnemonics of 80286/80386/80486,
 I recommend i86_x86 or i86_x64 binary.
 
-The VC++ project file "msdos.vcproj" also has the configurations for 80186,
-NEC V30, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
-You can build all binaries for several cpu models by running build8_all.bat.
+The VC++ project file "msdos.vcproj/vcxproj" also contains the configurations
+for 80186, NEC V30, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
+You can build all binaries for several cpu models by running build8_all.bat
+or build12_all.bat.
+(You need VC++ 2008 with Service Pack 1 or VC++ 2013 with Update 5.)
 
 
 ----- Supported hardwares
 
 This emulator provides a very simple IBM PC compatible hardware emulation:
 
-CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB, PC BIOS,
-DMA Controller (dummy), Interrupt Controller, System Timer,
+CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
+PC BIOS, DMA Controller (dummy), Interrupt Controller, System Timer,
 Parallel I/O (dummy), Serial I/O (COM1-COM4), Real Time Clock + CMOS Memory,
 VGA Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
 and 3-Button Mouse
@@ -447,6 +456,7 @@ INT 21H		MS-DOS System Call
 	5BH	Create New File
 	5CH	Lock/Unlock File Access
 	5D06H	Get Address of DOS Swappable Data Area
+	5F02H	Get Redirection List Entry
 	60H	Canonicalize Filename Or Path
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
@@ -494,6 +504,8 @@ INT 21H		MS-DOS System Call
 	7300H	Windows95 - FAT32 - Get Drive Locking
 	7302H	Windows95 - FAT32 - Get Extended DPB
 	7303H	Windows95 - FAT32 - Get Extended Free Space on Drive
+	DBH	Novell NetWare - Workstation - Get Number of Local Drives
+	DCH	Novell NetWare - Connection Services - Get Connection Number
 
 INT 23H		Ctrl-Break Address
 
@@ -515,6 +527,7 @@ INT 2FH		Multiplex Interrupt
 
 	1200H	DOS 3.0+ internal - Installation Check
 	1202H	DOS 3.0+ internal - Get Interrupt Address
+	1203H	DOS 3.0+ Internal - Get DOS Data Segment
 	1204H	DOS 3.0+ internal - Normalize Path Separator
 	1205H	DOS 3.0+ internal - Output Character to Standard Output
 	120DH	DOS 3.0+ internal - Get Date and Time
@@ -543,10 +556,12 @@ INT 2FH		Multiplex Interrupt
 	1402H	NLSFUNC.COM - Get Extended Country Info
 	1403H	NLSFUNC.COM - Set Code Page
 	1404H	NLSFUNC.COM - Get Country Info
-	1600H	Windows - Windows Enhanced Mode Installation Check
-	160AH	Windows - Identify Windows Version and Type
+	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
+	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
+	160AH	Windows - Identify Windows Version and Type (*6)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1A00H	ANSI.SYS - Installation Check
+	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 	4300H	XMS - Installation Check
 	4310H	XMS - Get Driver Address
 	4810H	Read Input Line From Console
@@ -588,7 +603,7 @@ INT 33H		Mouse
 	0021H	Software Reset
 	0022H	Set Language for Messages
 	0023H	Get Language for Messages
-	0024H	Get Software Version, Moouse Type, and IRQ Number (*6)
+	0024H	Get Software Version, Moouse Type, and IRQ Number (*7)
 	0026H	Get Maximum Virtual Coordinates
 	002AH	Get Cursor Host Spot
 	0031H	Get Current Minimum/Maximum Virtual Coordinates
@@ -602,7 +617,7 @@ INT 67H		LIM EMS
 	43H	LIM EMS - Get Handle and Allocate Memory
 	44H	LIM EMS - Map/Unmap Memory
 	45H	LIM EMS - Release Handle and Memory
-	46H	LIM EMS - Get EMM Version (*7)
+	46H	LIM EMS - Get EMM Version (*8)
 	47H	LIM EMS - Save Mapping Context
 	48H	LIM EMS - Restore Mapping Context
 	4BH	LIM EMS - Get Number of EMM Handles
@@ -632,7 +647,7 @@ INT 67H		LIM EMS
 
 CALL FAR XMS
 
-	00H	XMS - Get XMS Version Number (*8)
+	00H	XMS - Get XMS Version Number (*9)
 	01H	XMS - Request High Memory Area
 	02H	XMS - Release High Memory Area
 	03H	XMS - Global Enable A20
@@ -661,9 +676,10 @@ CALL FAR XMS
 (*3) MS-DOS Version: 7.10, -v option is not affected
 (*4) Support only floppy disk drive
 (*5) Returns a dummy error table
-(*6) Mouse Version: 8.05
-(*7) EMS Version: 4.0
-(*8) XMS Version: 3.95
+(*6) Windows Version: 4.10 (default) or specified version with -w option
+(*7) Mouse Version: 8.05
+(*8) EMS Version: 4.0
+(*9) XMS Version: 3.95
 
 
 --- License
