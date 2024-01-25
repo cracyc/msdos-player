@@ -303,7 +303,9 @@ UINT16 read_word(offs_t byteaddress)
 UINT32 read_dword(offs_t byteaddress)
 {
 	if(byteaddress == 0x46c) {
-		return get_ticks_since_midnight();
+		UINT32 ticks = get_ticks_since_midnight();
+		*(UINT32 *)(mem + 0x46c) = ticks;
+		return ticks;
 	}
 #if defined(HAS_I386)
 	if(byteaddress < MAX_MEM - 3) {
@@ -460,7 +462,6 @@ void write_byte(offs_t byteaddress, UINT8 data)
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
-			restore_console_on_exit = true;
 		}
 		write_text_vram_byte(byteaddress - text_vram_top_address, data);
 		mem[byteaddress] = data;
@@ -491,7 +492,6 @@ void write_word(offs_t byteaddress, UINT16 data)
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
-			restore_console_on_exit = true;
 		}
 		write_text_vram_word(byteaddress - text_vram_top_address, data);
 		*(UINT16 *)(mem + byteaddress) = data;
@@ -516,7 +516,6 @@ void write_dword(offs_t byteaddress, UINT32 data)
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(!restore_console_on_exit) {
 			change_console_size(scr_width, scr_height);
-			restore_console_on_exit = true;
 		}
 		write_text_vram_dword(byteaddress - text_vram_top_address, data);
 		*(UINT32 *)(mem + byteaddress) = data;
@@ -691,7 +690,7 @@ int main(int argc, char *argv[], char *envp[])
 	int arg_offset = 0;
 	int standard_env = 0;
 	int buf_width = 0, buf_height = 0;
-	BOOL bSuccess;
+	BOOL bSuccess, bChangeScreenSize = FALSE;
 	
 	for(int i = 1; i < argc; i++) {
 		if(_strnicmp(argv[i], "-e", 2) == 0) {
@@ -778,8 +777,7 @@ int main(int argc, char *argv[], char *envp[])
 				scr_width = 80;
 				scr_height = 25;
 			}
-			change_console_size(scr_width, scr_height);
-			restore_console_on_exit = true;
+			bChangeScreenSize = TRUE;
 		}
 	} else {
 		// for a proof (not a console)
@@ -800,6 +798,9 @@ int main(int argc, char *argv[], char *envp[])
 	if(msdos_init(argc - (arg_offset + 1), argv + (arg_offset + 1), envp, standard_env)) {
 		retval = EXIT_FAILURE;
 	} else {
+		if(bChangeScreenSize) {
+			change_console_size(scr_width, scr_height);
+		}
 #if defined(_MSC_VER) && _MSC_VER >= 1400
 		_set_invalid_parameter_handler((_invalid_parameter_handler)ignore_invalid_parameters);
 #endif
@@ -899,6 +900,9 @@ void change_console_size(int width, int height)
 	clear_scr_buffer(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
+	text_vram_end_address = text_vram_top_address + regen;
+	shadow_buffer_end_address = shadow_buffer_top_address + regen;
+	
 	if(regen > 0x4000) {
 		regen = 0x8000;
 		vram_pages = 1;
@@ -912,7 +916,11 @@ void change_console_size(int width, int height)
 		regen = 0x1000;
 		vram_pages = 8;
 	}
-	VIDEO_REGEN = regen;
+	*(UINT16 *)(mem + 0x44a) = scr_width;
+	*(UINT16 *)(mem + 0x44c) = regen;
+	*(UINT8  *)(mem + 0x484) = scr_height - 1;
+	
+	restore_console_on_exit = true;
 }
 
 void clear_scr_buffer(WORD attr)
@@ -2190,9 +2198,11 @@ void msdos_putch(UINT8 data)
 	WriteConsole(hStdout, tmp, p, &num, NULL);
 	p = 0;
 	
-	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	GetConsoleScreenBufferInfo(hStdout, &csbi);
-	scr_top = csbi.srWindow.Top;
+	if(!restore_console_on_exit) {
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		scr_top = csbi.srWindow.Top;
+	}
 	cursor_moved = true;
 }
 
@@ -2989,7 +2999,6 @@ inline void pcbios_int_10h_00h(int height)
 	
 	if(scr_width != 80 || scr_height != height) {
 		change_console_size(80, height);
-		restore_console_on_exit = true;
 		mem[0x44a] = 80;
 		mem[0x484] = height - 1;
 	}
@@ -3389,8 +3398,10 @@ inline void pcbios_int_10h_13h()
 				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(REG8(AL) == 0x00) {
-				GetConsoleScreenBufferInfo(hStdout, &csbi);
-				scr_top = csbi.srWindow.Top;
+				if(!restore_console_on_exit) {
+					GetConsoleScreenBufferInfo(hStdout, &csbi);
+					scr_top = csbi.srWindow.Top;
+				}
 				co.X = mem[0x450 + REG8(BH) * 2];
 				co.Y = mem[0x451 + REG8(BH) * 2] + scr_top;
 				SetConsoleCursorPosition(hStdout, co);
@@ -6658,8 +6669,7 @@ void msdos_syscall(unsigned num)
 	case 0x10:
 		// PC BIOS - Video
 		if(!restore_console_on_exit) {
-			change_console_size(80, scr_height);
-			restore_console_on_exit = true;
+			change_console_size(scr_width, scr_height);
 		}
 		m_CF = 0;
 		switch(REG8(AH)) {
@@ -7021,7 +7031,9 @@ void msdos_syscall(unsigned num)
 	if(cursor_moved) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi;
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
-		scr_top = csbi.srWindow.Top;
+		if(!restore_console_on_exit) {
+			scr_top = csbi.srWindow.Top;
+		}
 		mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
 		mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
 		cursor_moved = false;
@@ -7169,7 +7181,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_mcb_create(seg++, 'M', -1, ENV_SIZE >> 4);
 	int env_seg = seg;
 	int ofs = 0;
-	char env_path[8192] = "";
+	char env_path[8192] = "", *path;
 	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		if(_strnicmp(*p, "MSDOS_PATH=", 11) == 0) {
@@ -7183,6 +7195,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			break;
 		}
 	}
+	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
+		strcpy(comspec_path, path);
+	}
+	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
 		char tmp[ENV_SIZE], name[ENV_SIZE], value[ENV_SIZE];
@@ -7201,10 +7217,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		if(!(standard_env && strstr(";COMSPEC;INCLUDE;LIB;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL)) {
 			if(strncmp(tmp, "COMSPEC=", 8) == 0) {
-				char *path = msdos_search_command_com(argv[0], env_path);
-				if(path != NULL) {
-					strcpy(comspec_path, path);
-				}
 				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
 			} else if(strncmp(tmp, "PATH=", 5) == 0 || strncmp(tmp, "TEMP=", 5) == 0 || strncmp(tmp, "TMP=", 4) == 0) {
 				tmp[value_pos] = '\0';
