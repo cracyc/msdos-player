@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/2/2021
+								7/1/2022
 
 ----- What's This
 
@@ -35,9 +35,11 @@ For example, compile a sample.c with LSI C-86 and execute the compiled binary:
 
 ----- Options
 
-Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
-             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] [-a] [-l]
-             (command) [options]
+Usage:
+
+MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l]
+      (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -48,6 +50,8 @@ Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-m	restrict free memory to 0x7FFF paragraphs
 	-n	create a new buffer (25 lines, 80 columns by default)
 	-s	enable serial I/O and set host's COM port numbers
+	-sd	enable DTR/DSR flow control
+	-sc	enable RTS/CTS flow control
 	-v	set the DOS version
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
@@ -94,6 +98,16 @@ If you specify '-s', the virtual COM1-COM4 are connected to the host's COM
 ports found by SetupDiGetClassDevs() API.
 You can specify the host's COM port numbers connected to the virtual COM ports
 by adding numbers to '-s' option, for example '-s3,4,1,2'.
+
+If you specify '-sd', DTR/DSR flow control is enabled.
+In this time, MS-DOS Player sets/gets DTR and DSR pins of the host's COM port.
+Otherwise, virtual DTR pin is internally connected to virtual DSR pin, and
+DTR pin of the host's COM port is always active.
+
+If you specify '-sc', RTS/CTS flow control is enabled.
+In this time, MS-DOS Player sets/gets RTS and CTS pins of the host's COM port.
+Otherwise, virtual RTS pin is internally connected to virtual CTS pin, and
+RTS pin of the host's COM port is always active.
 
 NOTE: The maximum baud rate is limited to 9600bps.
 

@@ -184,6 +184,8 @@ bool support_ems = false;
 bool support_xms = false;
 #endif
 int sio_port_number[4] = {0, 0, 0, 0};
+bool sio_dsr_flow_ctrl = false;
+bool sio_cts_flow_ctrl = false;
 bool ansi_sys = true;
 bool box_line = false;
 
@@ -2929,17 +2931,17 @@ int main(int argc, char *argv[], char *envp[])
 			if((buffer[0] & 0x20) != 0) {
 				get_sio_port_numbers();
 			}
-			if((buffer[0] & 0x40) != 0) {
+			sio_dsr_flow_ctrl = ((buffer[0] & 0x40) != 0);
+			sio_cts_flow_ctrl = ((buffer[0] & 0x80) != 0);
+			if((buffer[1] & 0x01) != 0) {
 				UMB_TOP = EMS_TOP + EMS_SIZE;
 				support_ems = true;
 			}
 #ifdef SUPPORT_XMS
-			if((buffer[0] & 0x80) != 0) {
-				support_xms = true;
-			}
+			support_xms = ((buffer[1] & 0x02) != 0);
 #endif
-			ansi_sys = ((buffer[1] & 0x01) != 0);
-			box_line = ((buffer[1] & 0x02) != 0);
+			ansi_sys = ((buffer[1] & 0x04) != 0);
+			box_line = ((buffer[1] & 0x08) != 0);
 			if((buffer[2] != 0 || buffer[3] != 0) && (buffer[4] != 0 || buffer[5] != 0)) {
 				buf_width  = buffer[2] | (buffer[3] << 8);
 				buf_height = buffer[4] | (buffer[5] << 8);
@@ -3052,6 +3054,12 @@ int main(int argc, char *argv[], char *envp[])
 				buf_height = 25;
 			}
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-sd", 3) == 0) {
+			sio_dsr_flow_ctrl = true;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-sc", 3) == 0) {
+			sio_cts_flow_ctrl = true;
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-s", 2) == 0) {
 			if(IS_NUMERIC(argv[i][2])) {
 				char *p0 = &argv[i][2], *p1, *p2, *p3;
@@ -3114,9 +3122,10 @@ int main(int argc, char *argv[], char *envp[])
 	#endif
 #endif
 		fprintf(stderr,
-			"Usage: MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
-			"             [-s[P1[,P2[,P3[,P4]]]]] [-vX.XX] [-wX.XX] [-x] [-a] [-l]\n"
-			"             (command) [options]\n"
+			"Usage:\n\n"
+			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
+			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l]\n"
+			"      (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -3131,6 +3140,8 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-m\trestrict free memory to 0x7FFF paragraphs\n"
 			"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
+			"\t-sd\tenable DTR/DSR flow control\n"
+			"\t-sc\tenable RTS/CTS flow control\n"
 			"\t-v\tset the DOS version\n"
 			"\t-w\tset the Windows version\n"
 #if defined(SUPPORT_VCPI)
@@ -3234,19 +3245,25 @@ int main(int argc, char *argv[], char *envp[])
 					if(sio_port_number[0] != 0 || sio_port_number[1] != 0 || sio_port_number[2] != 0 || sio_port_number[3] != 0) {
 						flags |= 0x20;
 					}
-					if(support_ems) {
+					if(sio_dsr_flow_ctrl) {
 						flags |= 0x40;
+					}
+					if(sio_cts_flow_ctrl) {
+						flags |= 0x80;
+					}
+					if(support_ems) {
+						flags2 |= 0x01;
 					}
 #ifdef SUPPORT_XMS
 					if(support_xms) {
-						flags |= 0x80;
+						flags2 |= 0x02;
 					}
 #endif
 					if(ansi_sys) {
-						flags2 |= 0x01;
+						flags2 |= 0x04;
 					}
 					if(box_line) {
-						flags2 |= 0x02;
+						flags2 |= 0x08;
 					}
 					fputc(flags, fo);
 					fputc(flags2, fo);
@@ -5594,7 +5611,11 @@ int msdos_read(int fd, void *buffer, unsigned int count)
 		int read = 0;
 		if(sio_port_number[file_handler[fd].sio_port - 1] != 0) {
 			UINT8 *buf = (UINT8 *)buffer;
+			UINT8 modem_ctrl = sio_read(file_handler[fd].sio_port - 1, 4);
 			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
+			if((modem_ctrl & 0x03) != 0x01) {
+				sio_write(file_handler[fd].sio_port - 1, 4, (modem_ctrl & ~0x03) | 0x01);
+			}
 			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
 			DWORD timeout = timeGetTime() + 1000;
 			while(read < count) {
@@ -5749,7 +5770,11 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 		int written = 0;
 		if(sio_port_number[file_handler[fd].sio_port - 1] != 0) {
 			UINT8 *buf = (UINT8 *)buffer;
+			UINT8 modem_ctrl = sio_read(file_handler[fd].sio_port - 1, 4);
 			UINT8 selector = sio_read(file_handler[fd].sio_port - 1, 3);
+			if((modem_ctrl & 0x03) != 0x03) {
+				sio_write(file_handler[fd].sio_port - 1, 4, modem_ctrl | 0x03);
+			}
 			sio_write(file_handler[fd].sio_port - 1, 3, selector & ~0x80);
 			DWORD timeout = timeGetTime() + 1000;
 			while(written < count) {
@@ -7410,7 +7435,7 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 	in_service = true;
 	service_exit = false;
 	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
-
+	
 	// run cpu until dummy loop routine is done
 	while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
 		try {
@@ -8679,6 +8704,8 @@ inline void pcbios_int_14h_00h()
 		sio_write(CPU_DX, 3, selector | 0x80);
 		sio_write(CPU_DX, 0, divisor & 0xff);
 		sio_write(CPU_DX, 1, divisor >> 8);
+		sio_write(CPU_DX, 3, selector & ~0x80);
+		sio_write(CPU_DX, 1, 0); // disable interrupts
 		sio_write(CPU_DX, 3, selector);
 		CPU_AH = sio_read(CPU_DX, 5);
 		CPU_AL = sio_read(CPU_DX, 6);
@@ -8690,11 +8717,35 @@ inline void pcbios_int_14h_00h()
 inline void pcbios_int_14h_01h()
 {
 	if(CPU_DX < 4) {
-		UINT8 selector = sio_read(CPU_DX, 3);
-		sio_write(CPU_DX, 3, selector & ~0x80);
-		sio_write(CPU_DX, 0, CPU_AL);
-		sio_write(CPU_DX, 3, selector);
-		CPU_AH = sio_read(CPU_DX, 5);
+		// set dtr and rts
+		UINT8 modem_ctrl = sio_read(CPU_DX, 4);
+		if((modem_ctrl & 0x03) != 0x03) {
+			sio_write(CPU_DX, 4, modem_ctrl | 0x03);
+		}
+		// wait until dsr and cts are set
+		DWORD timeout = timeGetTime() + max(1, *(UINT8 *)(mem + 0x47c + CPU_DX)) * 1000;
+		while(((CPU_AH = sio_read(CPU_DX, 6)) & 0x30) != 0x30 && timeGetTime() < timeout) {
+			Sleep(0);
+		}
+		if((CPU_AH & 0x30) == 0x30) {
+			// wait until send buffer is not full
+			while(((CPU_AH = sio_read(CPU_DX, 5)) & 0x20) != 0x20 && timeGetTime() < timeout) {
+				Sleep(0);
+			}
+			if((CPU_AH & 0x20) == 0x20) {
+				UINT8 selector = sio_read(CPU_DX, 3);
+				sio_write(CPU_DX, 3, selector & ~0x80);
+				sio_write(CPU_DX, 0, CPU_AL);
+				sio_write(CPU_DX, 3, selector);
+			} else {
+				EnterCriticalSection(&sio_mt[CPU_DX].csLineStat);
+				sio[CPU_DX].line_stat_err |= 0x80;
+				LeaveCriticalSection(&sio_mt[CPU_DX].csLineStat);
+				CPU_AH |= 0x80;
+			}
+		} else {
+			CPU_AH |= 0x80;
+		}
 	} else {
 		CPU_AH = 0x80;
 	}
@@ -8703,11 +8754,36 @@ inline void pcbios_int_14h_01h()
 inline void pcbios_int_14h_02h()
 {
 	if(CPU_DX < 4) {
-		UINT8 selector = sio_read(CPU_DX, 3);
-		sio_write(CPU_DX, 3, selector & ~0x80);
-		CPU_AL = sio_read(CPU_DX, 0);
-		sio_write(CPU_DX, 3, selector);
-		CPU_AH = sio_read(CPU_DX, 5);
+		// set dtr and clear rts
+		UINT8 modem_ctrl = sio_read(CPU_DX, 4);
+		if((modem_ctrl & 0x03) != 0x01) {
+			sio_write(CPU_DX, 4, (modem_ctrl & ~0x03) | 0x01);
+		}
+		// wait until dsr is set
+		DWORD timeout = timeGetTime() + max(1, *(UINT8 *)(mem + 0x47c + CPU_DX)) * 1000;
+		while(((CPU_AH = sio_read(CPU_DX, 6)) & 0x20) != 0x20 && timeGetTime() < timeout) {
+			Sleep(0);
+		}
+		if((CPU_AH & 0x20) == 0x20) {
+			// wait until recv buffer is not empty
+			while(((CPU_AH = sio_read(CPU_DX, 5)) & 0x01) != 0x01 && timeGetTime() < timeout) {
+				Sleep(0);
+			}
+			if((CPU_AH & 0x01) == 0x01) {
+				UINT8 selector = sio_read(CPU_DX, 3);
+				sio_write(CPU_DX, 3, selector & ~0x80);
+				CPU_AL = sio_read(CPU_DX, 0);
+				sio_write(CPU_DX, 3, selector);
+				CPU_AH &= 0x1e;
+			} else {
+				EnterCriticalSection(&sio_mt[CPU_DX].csLineStat);
+				sio[CPU_DX].line_stat_err |= 0x80;
+				LeaveCriticalSection(&sio_mt[CPU_DX].csLineStat);
+				CPU_AH |= 0x80;
+			}
+		} else {
+			CPU_AH |= 0x80;
+		}
 	} else {
 		CPU_AH = 0x80;
 	}
@@ -9451,18 +9527,39 @@ DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 
 inline void pcbios_int_16h_00h()
 {
-#ifdef USE_SERVICE_THREAD
-	if(!in_service && !in_service_29h) {
-		start_service_loop(pcbios_int_16h_00h_thread);
-	} else {
-#endif
-		prepare_service_loop();
-		pcbios_int_16h_00h_thread(NULL);
-		cleanup_service_loop();
-		REQUEST_HARDWRE_UPDATE();
-#ifdef USE_SERVICE_THREAD
+	if(key_recv == 0) {
+		pcbios_update_key_code(false);
 	}
+	if(key_recv != 0) {
+		// we don't need to use the service thread when key code is already received
+		if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
+			if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
+				if(CPU_AH == 0x10) {
+					key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
+				} else {
+					key_code = ((key_code >> 16) & 0xff00);
+				}
+				key_recv >>= 16;
+			}
+		}
+		CPU_AX = key_code & 0xffff;
+		
+		key_code >>= 16;
+		key_recv >>= 16;
+	} else {
+#ifdef USE_SERVICE_THREAD
+		if(!in_service && !in_service_29h) {
+			start_service_loop(pcbios_int_16h_00h_thread);
+		} else {
 #endif
+			prepare_service_loop();
+			pcbios_int_16h_00h_thread(NULL);
+			cleanup_service_loop();
+			REQUEST_HARDWRE_UPDATE();
+#ifdef USE_SERVICE_THREAD
+		}
+#endif
+	}
 }
 
 inline void pcbios_int_16h_01h()
@@ -18724,6 +18821,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x465) = 0x09;
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
 	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
+	*(UINT8  *)(mem + 0x478) = 1; // lpt1 timeout
+	*(UINT8  *)(mem + 0x479) = 1; // lpt2 timeout
+	*(UINT8  *)(mem + 0x47a) = 1; // lpt3 timeout
+	*(UINT8  *)(mem + 0x47c) = 1; // com1 timeout
+	*(UINT8  *)(mem + 0x47d) = 1; // com2 timeout
+	*(UINT8  *)(mem + 0x47e) = 1; // com3 timeout
+	*(UINT8  *)(mem + 0x47f) = 1; // com4 timeout
 	*(UINT16 *)(mem + 0x480) = 0x1e;
 	*(UINT16 *)(mem + 0x482) = 0x3e;
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
@@ -20564,13 +20668,17 @@ void sio_init()
 	memset(sio_mt, 0, sizeof(sio_mt));
 	
 	for(int c = 0; c < 4; c++) {
-		sio[c].send_buffer = new FIFO(SIO_BUFFER_SIZE);
+//		sio[c].send_buffer = new FIFO(SIO_BUFFER_SIZE);
+		sio[c].send_buffer = new FIFO(16);
 		sio[c].recv_buffer = new FIFO(SIO_BUFFER_SIZE);
 		
 		sio[c].divisor.w = 12;		// 115200Hz / 9600Baud
 		sio[c].line_ctrl = 0x03;	// 8bit, stop 1bit, non parity
 		sio[c].modem_ctrl = 0x03;	// rts=on, dtr=on
-		sio[c].set_rts = sio[c].set_dtr = true;
+		sio[c].set_rts = sio[c].prev_set_rts = true;
+		sio[c].set_dtr = sio[c].prev_set_dtr = true;
+		sio[c].modem_stat = 0x30;	// cts=on, dsr=on
+		sio[c].prev_modem_stat = 0x30;
 		sio[c].line_stat_buf = 0x60;	// send/recv buffers are empty
 		sio[c].irq_identify = 0x01;	// no pending irq
 		
@@ -20578,6 +20686,7 @@ void sio_init()
 		InitializeCriticalSection(&sio_mt[c].csRecvData);
 		InitializeCriticalSection(&sio_mt[c].csLineCtrl);
 		InitializeCriticalSection(&sio_mt[c].csLineStat);
+		InitializeCriticalSection(&sio_mt[c].csSetBreak);
 		InitializeCriticalSection(&sio_mt[c].csModemCtrl);
 		InitializeCriticalSection(&sio_mt[c].csModemStat);
 		
@@ -20600,6 +20709,7 @@ void sio_finish()
 		DeleteCriticalSection(&sio_mt[c].csRecvData);
 		DeleteCriticalSection(&sio_mt[c].csLineCtrl);
 		DeleteCriticalSection(&sio_mt[c].csLineStat);
+		DeleteCriticalSection(&sio_mt[c].csSetBreak);
 		DeleteCriticalSection(&sio_mt[c].csModemCtrl);
 		DeleteCriticalSection(&sio_mt[c].csModemStat);
 	}
@@ -20684,61 +20794,41 @@ void sio_write(int c, UINT32 addr, UINT8 data)
 				LeaveCriticalSection(&sio_mt[c].csLineCtrl);
 			}
 			if(sio[c].set_brk != set_brk) {
-				EnterCriticalSection(&sio_mt[c].csModemCtrl);
+				EnterCriticalSection(&sio_mt[c].csSetBreak);
 				sio[c].set_brk = set_brk;
-				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+				LeaveCriticalSection(&sio_mt[c].csSetBreak);
+				
+				// wait until break signal is set
+				DWORD timeout = timeGetTime() + 1000;
+				while(sio[c].prev_set_brk != sio[c].set_brk && timeGetTime() < timeout) {
+					Sleep(10);
+				}
 			}
 		}
 		sio[c].selector = data;
 		break;
 	case 4:
-		{
-			bool set_dtr = ((data & 0x01) != 0);
-			bool set_rts = ((data & 0x02) != 0);
+		if(sio[c].modem_ctrl != data) {
+			UINT8 data_changed = sio[c].modem_ctrl ^ data;
 			
-			if(sio[c].set_dtr != set_dtr || sio[c].set_rts != set_rts) {
-//				EnterCriticalSection(&sio_mt[c].csModemCtrl);
-				sio[c].set_dtr = set_dtr;
-				sio[c].set_rts = set_rts;
-//				LeaveCriticalSection(&sio_mt[c].csModemCtrl);
-				
-				bool state_changed = false;
-				
-				EnterCriticalSection(&sio_mt[c].csModemStat);
-				if(set_dtr) {
-					sio[c].modem_stat |= 0x20;	// dsr on
-				} else {
-					sio[c].modem_stat &= ~0x20;	// dsr off
-				}
-				if(set_rts) {
-					sio[c].modem_stat |= 0x10;	// cts on
-				} else {
-					sio[c].modem_stat &= ~0x10;	// cts off
-				}
-				if((sio[c].prev_modem_stat & 0x20) != (sio[c].modem_stat & 0x20)) {
-					if(!(sio[c].modem_stat & 0x02)) {
-						if(sio[c].irq_enable & 0x08) {
-							state_changed = true;
-						}
-						sio[c].modem_stat |= 0x02;
-					}
-				}
-				if((sio[c].prev_modem_stat & 0x10) != (sio[c].modem_stat & 0x10)) {
-					if(!(sio[c].modem_stat & 0x01)) {
-						if(sio[c].irq_enable & 0x08) {
-							state_changed = true;
-						}
-						sio[c].modem_stat |= 0x01;
-					}
-				}
-				LeaveCriticalSection(&sio_mt[c].csModemStat);
-				
-				if(state_changed) {
-					sio_update_irq(c);
+			if((sio[c].modem_ctrl & 0x03) == 0x03 && (data & 0x03) == 0x01) {
+				// hack: wait until send buffer is empty
+				sio_wait_sending_complete(c);
+			}
+			EnterCriticalSection(&sio_mt[c].csModemCtrl);
+			sio[c].set_dtr = ((data & 0x01) != 0);
+			sio[c].set_rts = ((data & 0x02) != 0);
+			sio[c].modem_ctrl = data;
+			LeaveCriticalSection(&sio_mt[c].csModemCtrl);
+			
+			if(data_changed & 0x03) {
+				// wait until dtr/rts signals are set
+				DWORD timeout = timeGetTime() + 1000;
+				while((sio[c].prev_set_dtr != sio[c].set_dtr || sio[c].prev_set_rts != sio[c].set_rts) && timeGetTime() < timeout) {
+					Sleep(10);
 				}
 			}
 		}
-		sio[c].modem_ctrl = data;
 		break;
 	case 7:
 		sio[c].scratch = data;
@@ -20916,6 +21006,7 @@ DWORD WINAPI sio_thread(void *lpx)
 	DCB dcb;
 	DWORD dwSettableBaud = 0xffb; // 75, 110, 150, 300, 600, 1200, 1800, 2400, 4800, 7200, and 9600bps
 	BYTE bytBuffer[SIO_BUFFER_SIZE];
+	int loop = 0;
 	
 	if((hComm = CreateFileA(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL)) != INVALID_HANDLE_VALUE) {
 		if(GetCommProperties(hComm, &commProp)) {
@@ -20979,14 +21070,32 @@ DWORD WINAPI sio_thread(void *lpx)
 					}
 					dcb.fBinary = TRUE;
 					dcb.fParity = (dcb.Parity != NOPARITY);
+#if 1
+					// I don't use the hardware flow control, and check DSR and CTS by software to do flow control
+					if(sio_dsr_flow_ctrl) {
+						dcb.fOutxDsrFlow = FALSE;//TRUE;
+						dcb.fDtrControl = p->prev_set_dtr ? DTR_CONTROL_ENABLE : DTR_CONTROL_DISABLE;
+					} else {
+						dcb.fOutxDsrFlow = FALSE;
+						dcb.fDtrControl = DTR_CONTROL_ENABLE;
+					}
+					if(sio_cts_flow_ctrl) {
+						dcb.fOutxCtsFlow = FALSE;//TRUE;
+						dcb.fRtsControl = p->prev_set_rts ? RTS_CONTROL_ENABLE : RTS_CONTROL_DISABLE;
+					} else {
+						dcb.fOutxCtsFlow = FALSE;
+						dcb.fRtsControl = RTS_CONTROL_ENABLE;
+					}
+#else
 					dcb.fOutxCtsFlow = dcb.fOutxDsrFlow = TRUE;
 					dcb.fDtrControl = DTR_CONTROL_HANDSHAKE;
+					dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+#endif
 					dcb.fDsrSensitivity = FALSE;//TRUE;
 					dcb.fTXContinueOnXoff = TRUE;
 					dcb.fOutX = dcb.fInX = FALSE;
 					dcb.fErrorChar = FALSE;
 					dcb.fNull = FALSE;
-					dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
 					dcb.fAbortOnError = FALSE;
 					
 					SetCommState(hComm, &dcb);
@@ -20998,59 +21107,65 @@ DWORD WINAPI sio_thread(void *lpx)
 			}
 			
 			// set comm pins
-			bool change_brk = false;
-//			bool change_rts = false;
-//			bool change_dtr = false;
-			
-			EnterCriticalSection(&q->csModemCtrl);
+			EnterCriticalSection(&q->csSetBreak);
 			if(p->prev_set_brk != p->set_brk) {
-				p->prev_set_brk = p->set_brk;
-				change_brk = true;
-			}
-//			if(p->prev_set_rts != p->set_rts) {
-//				p->prev_set_rts = p->set_rts;
-//				change_rts = true;
-//			}
-//			if(p->prev_set_dtr != p->set_dtr) {
-//				p->prev_set_dtr = p->set_dtr;
-//				change_dtr = true;
-//			}
-			LeaveCriticalSection(&q->csModemCtrl);
-			
-			if(change_brk) {
-				static UINT32 clear_time = 0;
-				if(p->prev_set_brk) {
+				if(p->set_brk) {
 					EscapeCommFunction(hComm, SETBREAK);
-					clear_time = timeGetTime() + 200;
+					p->set_brk_time = timeGetTime();
 				} else {
 					// keep break for at least 200msec
 					UINT32 cur_time = timeGetTime();
-					if(clear_time > cur_time) {
-						Sleep(clear_time - cur_time);
+					if(p->set_brk_time + 200 > cur_time) {
+						Sleep(p->set_brk_time + 200 - cur_time);
 					}
 					EscapeCommFunction(hComm, CLRBREAK);
 				}
+				p->prev_set_brk = p->set_brk;
 			}
-//			if(change_rts) {
-//				if(p->prev_set_rts) {
-//					EscapeCommFunction(hComm, SETRTS);
-//				} else {
-//					EscapeCommFunction(hComm, CLRRTS);
-//				}
-//			}
-//			if(change_dtr) {
-//				if(p->prev_set_dtr) {
-//					EscapeCommFunction(hComm, SETDTR);
-//				} else {
-//					EscapeCommFunction(hComm, CLRDTR);
-//				}
-//			}
+			LeaveCriticalSection(&q->csSetBreak);
+			
+			EnterCriticalSection(&q->csModemCtrl);
+			if(p->prev_set_dtr != p->set_dtr) {
+				if(sio_dsr_flow_ctrl) {
+					if(p->set_dtr) {
+						EscapeCommFunction(hComm, SETDTR);
+					} else {
+						EscapeCommFunction(hComm, CLRDTR);
+					}
+				}
+				p->prev_set_dtr = p->set_dtr;
+			}
+			if(p->prev_set_rts != p->set_rts) {
+				if(sio_cts_flow_ctrl) {
+					if(p->set_rts) {
+						EscapeCommFunction(hComm, SETRTS);
+					} else {
+						EscapeCommFunction(hComm, CLRRTS);
+					}
+				}
+				p->prev_set_rts = p->set_rts;
+			}
+			LeaveCriticalSection(&q->csModemCtrl);
 			
 			// get comm pins
 			DWORD dwModemStat = 0;
 			
 			if(GetCommModemStatus(hComm, &dwModemStat)) {
 				EnterCriticalSection(&q->csModemStat);
+				if(!sio_dsr_flow_ctrl) {
+					if(p->prev_set_dtr) {
+						dwModemStat |= MS_DSR_ON;
+					} else {
+						dwModemStat &= ~MS_DSR_ON;
+					}
+				}
+				if(!sio_cts_flow_ctrl) {
+					if(p->prev_set_rts) {
+						dwModemStat |= MS_CTS_ON;
+					} else {
+						dwModemStat &= ~MS_CTS_ON;
+					}
+				}
 				if(dwModemStat & MS_RLSD_ON) {
 					p->modem_stat |= 0x80;
 				} else {
@@ -21061,43 +21176,76 @@ DWORD WINAPI sio_thread(void *lpx)
 				} else {
 					p->modem_stat &= ~0x40;
 				}
-//				if(dwModemStat & MS_DSR_ON) {
-//					p->modem_stat |= 0x20;
-//				} else {
-//					p->modem_stat &= ~0x20;
-//				}
-//				if(dwModemStat & MS_CTS_ON) {
-//					p->modem_stat |= 0x10;
-//				} else {
-//					p->modem_stat &= ~0x10;
-//				}
+				if(dwModemStat & MS_DSR_ON) {
+					p->modem_stat |= 0x20;
+				} else {
+					p->modem_stat &= ~0x20;
+				}
+				if(dwModemStat & MS_CTS_ON) {
+					p->modem_stat |= 0x10;
+				} else {
+					p->modem_stat &= ~0x10;
+				}
 				if((p->prev_modem_stat & 0x80) != (p->modem_stat & 0x80)) {
 					p->modem_stat |= 0x08;
 				}
 				if((p->prev_modem_stat & 0x40) && !(p->modem_stat & 0x40)) {
 					p->modem_stat |= 0x04;
 				}
-//				if((p->prev_modem_stat & 0x20) != (p->modem_stat & 0x20)) {
-//					p->modem_stat |= 0x02;
-//				}
-//				if((p->prev_modem_stat & 0x10) != (p->modem_stat & 0x10)) {
-//					p->modem_stat |= 0x01;
-//				}
+				if((p->prev_modem_stat & 0x20) != (p->modem_stat & 0x20)) {
+					p->modem_stat |= 0x02;
+				}
+				if((p->prev_modem_stat & 0x10) != (p->modem_stat & 0x10)) {
+					p->modem_stat |= 0x01;
+				}
 				LeaveCriticalSection(&q->csModemStat);
 			}
 			
 			// send data
-			DWORD dwSend = 0;
+			EnterCriticalSection(&q->csModemCtrl);
+			bool loop_back = ((p->modem_ctrl & 0x10) != 0);
+			LeaveCriticalSection(&q->csModemCtrl);
 			
-			EnterCriticalSection(&q->csSendData);
-			while(p->send_buffer != NULL && !p->send_buffer->empty()) {
-				bytBuffer[dwSend++] = p->send_buffer->read();
+			bool suspended = false;
+			
+			if(!loop_back) {
+				// check DSR and CTS by software to do flow control
+				if(p->prev_set_brk) suspended = true;
+				if(sio_dsr_flow_ctrl && !(p->modem_stat & 0x20)) suspended = true;
+				if(sio_cts_flow_ctrl && !(p->modem_stat & 0x10)) suspended = true;
 			}
-			LeaveCriticalSection(&q->csSendData);
-			
-			if(dwSend != 0) {
+			if(!suspended) {
+				DWORD dwSend = 0;
 				DWORD dwWritten = 0;
-				WriteFile(hComm, bytBuffer, dwSend, &dwWritten, NULL);
+				
+				EnterCriticalSection(&q->csSendData);
+				while(p->send_buffer != NULL && dwSend < (DWORD)p->send_buffer->count()) {
+					bytBuffer[dwSend] = p->send_buffer->read_not_remove((int)dwSend);
+					dwSend++;
+				}
+				LeaveCriticalSection(&q->csSendData);
+				
+				if(dwSend != 0) {
+					if(loop_back) {
+						EnterCriticalSection(&q->csRecvData);
+						if(p->recv_buffer != NULL) {
+							while(dwSend != 0 && !p->recv_buffer->full()) {
+								dwSend--;
+								p->recv_buffer->write(bytBuffer[dwWritten++]);
+							}
+						}
+						LeaveCriticalSection(&q->csRecvData);
+					} else {
+						WriteFile(hComm, bytBuffer, dwSend, &dwWritten, NULL);
+					}
+					if(dwWritten != 0) {
+						EnterCriticalSection(&q->csSendData);
+						for(int i = 0; i < dwWritten; i++) {
+							p->send_buffer->read();
+						}
+						LeaveCriticalSection(&q->csSendData);
+					}
+				}
 			}
 			
 			// get line status and recv data
@@ -21121,15 +21269,16 @@ DWORD WINAPI sio_thread(void *lpx)
 				LeaveCriticalSection(&q->csLineStat);
 				
 				if(comStat.cbInQue != 0) {
-					EnterCriticalSection(&q->csRecvData);
 					DWORD dwRecv = 0;
+					DWORD dwRead = 0;
+					
+					EnterCriticalSection(&q->csRecvData);
 					if(p->recv_buffer != NULL) {
 						dwRecv = min(comStat.cbInQue, p->recv_buffer->remain());
 					}
 					LeaveCriticalSection(&q->csRecvData);
 					
 					if(dwRecv != 0) {
-						DWORD dwRead = 0;
 						if(ReadFile(hComm, bytBuffer, dwRecv, &dwRead, NULL) && dwRead != 0) {
 							EnterCriticalSection(&q->csRecvData);
 							if(p->recv_buffer != NULL) {
@@ -21142,11 +21291,60 @@ DWORD WINAPI sio_thread(void *lpx)
 					}
 				}
 			}
-			Sleep(10);
+			if((loop = (loop + 1) & 15) == 15) {
+				Sleep(10);
+			} else {
+				Sleep(0);
+			}
 		}
 		CloseHandle(hComm);
 	}
-	return 0;
+	return(0);
+}
+
+bool sio_wait_sending_complete(int c)
+{
+	bool empty = true;
+	bool suspended = false;
+	
+	if(sio[c].send_buffer != NULL) {
+		EnterCriticalSection(&sio_mt[c].csSendData);
+		empty = sio[c].send_buffer->empty();
+		LeaveCriticalSection(&sio_mt[c].csSendData);
+		
+		if(!empty) {
+			if(sio_dsr_flow_ctrl || sio_cts_flow_ctrl) {
+				EnterCriticalSection(&sio_mt[c].csModemStat);
+				if(sio_dsr_flow_ctrl && !(sio[c].modem_stat & 0x20)) suspended = true;
+				if(sio_cts_flow_ctrl && !(sio[c].modem_stat & 0x10)) suspended = true;
+				LeaveCriticalSection(&sio_mt[c].csModemStat);
+			}
+			EnterCriticalSection(&sio_mt[c].csSetBreak);
+			if(sio[c].prev_set_brk) suspended = true;
+			LeaveCriticalSection(&sio_mt[c].csSetBreak);
+			
+			DWORD timeout = timeGetTime() + 1000;
+			
+			while(!empty && !suspended && timeGetTime() < timeout) {
+				Sleep(10);
+				
+				EnterCriticalSection(&sio_mt[c].csSendData);
+				empty = sio[c].send_buffer->empty();
+				LeaveCriticalSection(&sio_mt[c].csSendData);
+				
+				if(sio_dsr_flow_ctrl || sio_cts_flow_ctrl) {
+					EnterCriticalSection(&sio_mt[c].csModemStat);
+					if(sio_dsr_flow_ctrl && !(sio[c].modem_stat & 0x20)) suspended = true;
+					if(sio_cts_flow_ctrl && !(sio[c].modem_stat & 0x10)) suspended = true;
+					LeaveCriticalSection(&sio_mt[c].csModemStat);
+				}
+				EnterCriticalSection(&sio_mt[c].csSetBreak);
+				if(sio[c].prev_set_brk) suspended = true;
+				LeaveCriticalSection(&sio_mt[c].csSetBreak);
+			}
+		}
+	}
+	return(empty);
 }
 
 // cmos

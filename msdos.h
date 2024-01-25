@@ -68,6 +68,16 @@ public:
 		}
 		return(val);
 	}
+	int read_not_remove(int pt) {
+		if(pt >= 0 && pt < cnt) {
+			pt += rpt;
+			if(pt >= size) {
+				pt -= size;
+			}
+			return buf[pt];
+		}
+		return(0);
+	}
 	int count() {
 		return(cnt);
 	}
@@ -489,7 +499,8 @@ typedef struct {
 	UINT8 modem_ctrl;
 	bool set_brk, set_rts, set_dtr;
 	bool prev_set_brk;
-//	bool prev_set_rts, prev_set_dtr;
+	bool prev_set_rts, prev_set_dtr;
+	DWORD set_brk_time;
 	
 	UINT8 line_stat_buf, line_stat_err;
 	UINT8 modem_stat, prev_modem_stat;
@@ -506,6 +517,7 @@ typedef struct {
 	CRITICAL_SECTION csRecvData;
 	CRITICAL_SECTION csLineCtrl;
 	CRITICAL_SECTION csLineStat;
+	CRITICAL_SECTION csSetBreak;
 	CRITICAL_SECTION csModemCtrl;
 	CRITICAL_SECTION csModemStat;
 } sio_mt_t;
@@ -521,6 +533,7 @@ UINT8 sio_read(int c, UINT32 addr);
 void sio_update(int c);
 void sio_update_irq(int c);
 DWORD WINAPI sio_thread(void *lpx);
+bool sio_wait_sending_complete(int c);
 
 // cmos
 
