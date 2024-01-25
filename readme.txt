@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/15/2015
+								1/28/2015
 
 ----- What's this
 
@@ -41,8 +41,10 @@ If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
 
-This archive contains 6 executable binaries:
+This archive contains 8 executable binaries:
 
+	i86_x86 	Emulates 8086 and supports both 32bit/64bit Windows
+	i86_x64 	Emulates 8086 and supports only 64bit Windows
 	i286_x86	Emulates 80286 and supports both 32bit/64bit Windows
 	i286_x64	Emulates 80286 and supports only 64bit Windows
 	i386_x86	Emulates 80386 and supports both 32bit/64bit Windows
@@ -61,7 +63,7 @@ See also source/msdos.cpp, line 26-58.
 
 ----- Supported hardwares
 
-CPU 80286/80386/80486, RAM 16MB, PIC, PIT, RTC CMOS,
+CPU 8086/80286/80386/80486, RAM 16MB, PIC, PIT, RTC CMOS,
 Keyboard Controller (A20 Line Mask, CPU Reset), VGA Status Register
 
 
