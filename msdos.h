@@ -272,6 +272,8 @@ struct {
 	int lock;
 	bool allocated;
 } xms_handles[MAX_XMS_HANDLES + 1];
+
+int xms_a20_local_enb_count = 0;
 #endif
 
 // pic
@@ -364,9 +366,9 @@ void kbd_write_command(UINT8 val);
 #define DOS_INFO_SIZE	0x100
 #define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
 #define DPB_SIZE	0x400
-#define FILE_TABLE_TOP	(DPB_TOP + DPB_SIZE)
-#define FILE_TABLE_SIZE	0x10
-#define DISK_BUF_TOP	(FILE_TABLE_TOP + FILE_TABLE_SIZE)
+#define SFT_TOP		(DPB_TOP + DPB_SIZE)
+#define SFT_SIZE	0x4b0	/* 6 + 0x3b * 20 */
+#define DISK_BUF_TOP	(SFT_TOP + SFT_SIZE)
 #define DISK_BUF_SIZE	0x20
 #define CDS_TOP		(DISK_BUF_TOP + DISK_BUF_SIZE)
 #define CDS_SIZE	0x80
@@ -412,11 +414,14 @@ UINT32 XMS_TOP = 0;
 #define LFN_DTA_LADDR	0x10FFF0
 #define FIND_MAGIC	0x46696e64
 
-#define DUP_STDIN	29
-#define DUP_STDOUT	30
-#define DUP_STDERR	31
+#define DUP_STDIN	27
+#define DUP_STDOUT	28
+#define DUP_STDERR	29
+#define DUP_STDAUX	30
+#define DUP_STDPRN	31
 
-//#define SUPPORT_AUX_PRN
+//#define MAP_AUX_DEVICE_TO_FILE
+//#define MAP_PRN_DEVICE_TO_FILE
 
 #pragma pack(1)
 typedef struct {

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/2/2016
+								6/3/2016
 
 ----- What's this
 
@@ -180,6 +180,7 @@ INT 15H		PC BIOS
 	87H	Copy Extended Memory
 	88H	Get Extended Memory Size
 	89H	Switch to Protected Mode
+	8AH	Get Big Memory Size
 	C9H	Get CPU Type and Mask Revision
 	CA00H	Read CMOS Memory
 	CA01H	Write CMOS Memory
@@ -284,6 +285,7 @@ INT 21H		MS-DOS System Call
 	4407H	Get Output Status
 	4408H	Device Removable Query
 	4409H	Device Local or Remote Query
+	440AH	Handle Local or Remote Query
 	45H	Duplicate File Handle
 	46H	Force Duplicate of Handle
 	47H	Get Current Directory
@@ -378,6 +380,8 @@ INT 2EH		Pass Command to Command Interpreter for Execution
 
 INT 2FH		Multiplex Interrupt
 
+	1216H	Get System File Table Entry
+	1220H	Get Job File Table Entry
 	1600H	Windows Enhanced Mode Installation Check
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	168FH	Windows95 - Close Awareness
@@ -412,6 +416,9 @@ INT 67H		LIM EMS
 	4E01H	LIM EMS - Set Page Map
 	4E02H	LIM EMS - Get And Set Page Map
 	4E03H	LIM EMS - Get Page Map Array Size
+	4F00H	LIM EMS 4.0 - Get Partial Page Map
+	4F01H	LIM EMS 4.0 - Set Partial Page Map
+	4F02H	LIM EMS 4.0 - Get Partial Page Map Array Size
 	50H	LIM EMS 4.0 - Map/Unmap Multiple Handle Pages
 	51H	LIM EMS 4.0 - Reallocate Pages
 	52H	LIM EMS 4.0 - Get/Set Handle Attributes

@@ -1813,6 +1813,48 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	file_handler[fd].mode = mode;
 	file_handler[fd].info = info;
 	file_handler[fd].psp = psp_seg;
+	
+	// init system file table
+	if(fd < 20) {
+		UINT8 *sft = mem + SFT_TOP + 6 + 0x3b * fd;
+		
+		memset(sft, 0, 0x3b);
+		
+		*(UINT16 *)(sft + 0x00) = 1;
+		*(UINT16 *)(sft + 0x02) = file_handler[fd].mode;
+		*(UINT8  *)(sft + 0x04) = GetFileAttributes(file_handler[fd].path) & 0xff;
+		*(UINT16 *)(sft + 0x05) = file_handler[fd].info & 0xff;
+		
+		if(!(file_handler[fd].info & 0x80)) {
+			*(UINT16 *)(sft + 0x07) = sizeof(dpb_t) * (file_handler[fd].info & 0x1f);
+			*(UINT16 *)(sft + 0x09) = DPB_TOP >> 4;
+			
+			FILETIME time, local;
+			HANDLE hHandle;
+			WORD dos_date = 0, dos_time = 0;
+			DWORD file_size = 0;
+			if((hHandle = (HANDLE)_get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+				if(GetFileTime(hHandle, NULL, NULL, &time)) {
+					FileTimeToLocalFileTime(&time, &local);
+					FileTimeToDosDateTime(&local, &dos_date, &dos_time);
+				}
+				file_size = GetFileSize(hHandle, NULL);
+			}
+			*(UINT16 *)(sft + 0x0d) = dos_time;
+			*(UINT16 *)(sft + 0x0f) = dos_date;
+			*(UINT32 *)(sft + 0x11) = file_size;
+		}
+		
+		char fname[MAX_PATH] = {0}, ext[MAX_PATH] = {0};
+		_splitpath(file_handler[fd].path, NULL, NULL, fname, ext);
+		my_strupr(fname);
+		my_strupr(ext);
+		memset(sft + 0x20, 0x20, 11);
+		memcpy(sft + 0x20, fname, min(strlen(fname), 8));
+		memcpy(sft + 0x28, ext + 1, min(strlen(ext + 1), 3));
+		
+		*(UINT16 *)(sft + 0x31) = psp_seg;
+	}
 }
 
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
@@ -1829,6 +1871,10 @@ void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 void msdos_file_handler_close(int fd)
 {
 	file_handler[fd].valid = 0;
+	
+	if(fd < 20) {
+		memset(mem + SFT_TOP + 6 + 0x3b * fd, 0, 0x3b);
+	}
 }
 
 inline int msdos_file_attribute_create(UINT16 new_attr)
@@ -1905,6 +1951,19 @@ void msdos_stdio_reopen()
 	if(!file_handler[2].valid) {
 		_dup2(DUP_STDERR, 2);
 		msdos_file_handler_open(2, "STDERR", _isatty(2), 1, 0x80d3, 0);
+	}
+	if(!file_handler[3].valid) {
+		_dup2(DUP_STDAUX, 3);
+		msdos_file_handler_open(3, "STDAUX", 0, 2, 0x80c0, 0);
+	}
+	if(!file_handler[4].valid) {
+		_dup2(DUP_STDPRN, 4);
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0);
+	}
+	for(int i = 0; i < 5; i++) {
+		if(msdos_psp_get_file_table(i, current_psp) == 0xff) {
+			msdos_psp_set_file_table(i, i, current_psp);
+		}
 	}
 }
 
@@ -2317,7 +2376,8 @@ void msdos_putch(UINT8 data)
 
 int msdos_aux_in()
 {
-#ifdef SUPPORT_AUX_PRN
+	msdos_stdio_reopen();
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(3, current_psp);
 	
@@ -2328,33 +2388,30 @@ int msdos_aux_in()
 	} else {
 		return(EOF);
 	}
-#else
-	return(0);
-#endif
 }
 
 void msdos_aux_out(char data)
 {
-#ifdef SUPPORT_AUX_PRN
+	msdos_stdio_reopen();
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(3, current_psp);
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
 		msdos_write(fd, &data, 1);
 	}
-#endif
 }
 
 void msdos_prn_out(char data)
 {
-#ifdef SUPPORT_AUX_PRN
+	msdos_stdio_reopen();
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(4, current_psp);
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
 		msdos_write(fd, &data, 1);
 	}
-#endif
 }
 
 // memory control
@@ -3931,7 +3988,7 @@ inline void pcbios_int_15h_88h()
 
 inline void pcbios_int_15h_89h()
 {
-#if defined(HAS_I386) || defined(HAS_I286)
+#if defined(HAS_I286) || defined(HAS_I386)
 	// switch to protected mode (from DOSBox)
 	write_io_byte(0x20, 0x10);
 	write_io_byte(0x21, REG8(BH));
@@ -3956,19 +4013,31 @@ inline void pcbios_int_15h_89h()
 	i386_load_segment_descriptor(DS);
 	i386_load_segment_descriptor(ES);
 	i386_load_segment_descriptor(SS);
+	UINT16 offset = *(UINT16 *)(mem + SREG_BASE(SS) + REG16(SP));
 	REG16(SP) += 6;
 #if defined(HAS_I386)
-	set_flags(0);	// ???
+	UINT32 flags = get_flags();
+	flags &= (0x20000 | 0x40000 | 0x80000 | 0x100000 | 0x200000);
+	set_flags(flags);
 #else
-	m_flags = 2;
-	ExpandFlags(m_flags);
+	UINT32 flags = CompressFlags();
+	flags &= (0x20000 | 0x40000 | 0x80000 | 0x100000 | 0x200000);
+	ExpandFlags(flags);
 #endif
 	REG16(AX) = 0x00;
-	i386_jmp_far(0x30, REG16(CX));
+	i386_jmp_far(0x30, /*REG16(CX)*/offset);
 #else
+	// i86/i186/v30: protected mode is not supported
 	REG8(AH) = 0x86;
 	m_CF = 1;
 #endif
+}
+
+inline void pcbios_int_15h_8ah()
+{
+	UINT32 size = MAX_MEM - 0x100000;
+	REG16(AX) = size & 0xffff;
+	REG16(DX) = size >> 16;
 }
 
 #if defined(HAS_I386)
@@ -4298,6 +4367,8 @@ inline void msdos_int_21h_08h()
 
 inline void msdos_int_21h_09h()
 {
+	msdos_stdio_reopen();
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(1, current_psp);
 	
@@ -4369,6 +4440,8 @@ inline void msdos_int_21h_0bh()
 inline void msdos_int_21h_0ch()
 {
 	// clear key buffer
+	msdos_stdio_reopen();
+	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(0, current_psp);
 	
@@ -5648,6 +5721,9 @@ inline void msdos_int_21h_44h()
 			REG16(DX) = 0x00;
 		}
 		break;
+	case 0x0a: // check remote handle
+		REG16(DX) = 0x00; // FIXME
+		break;
 	case 0x0b: // set retry count
 		break;
 	default:
@@ -6007,9 +6083,9 @@ inline void msdos_int_21h_57h()
 {
 	FILETIME time, local;
 	FILETIME *ctime, *atime, *mtime;
-	HANDLE handle;
+	HANDLE hHandle;
 	
-	if((handle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
+	if((hHandle = (HANDLE)_get_osfhandle(REG16(BX))) == INVALID_HANDLE_VALUE) {
 		REG16(AX) = (UINT16)GetLastError();
 		m_CF = 1;
 		return;
@@ -6037,12 +6113,12 @@ inline void msdos_int_21h_57h()
 	if(REG8(AL) & 1) {
 		DosDateTimeToFileTime(REG16(DX), REG16(CX), &local);
 		LocalFileTimeToFileTime(&local, &time);
-		if(!SetFileTime(handle, ctime, atime, mtime)) {
+		if(!SetFileTime(hHandle, ctime, atime, mtime)) {
 			REG16(AX) = (UINT16)GetLastError();
 			m_CF = 1;
 		}
 	} else {
-		if(!GetFileTime(handle, ctime, atime, mtime)) {
+		if(!GetFileTime(hHandle, ctime, atime, mtime)) {
 			// assume a device and use the current time
 			GetSystemTimeAsFileTime(&time);
 		}
@@ -6836,8 +6912,7 @@ inline void msdos_int_21h_71a8h()
 		strcpy(tmp, msdos_short_path((char *)(mem + SREG_BASE(DS) + REG16(SI))));
 		memset(fcb, 0x20, sizeof(fcb));
 		int len = strlen(tmp);
-		int pos = 0;
-		for(int i = 0; i < len; i++) {
+		for(int i = 0, pos = 0; i < len; i++) {
 			if(tmp[i] == '.') {
 				pos = 8;
 			} else {
@@ -7070,6 +7145,61 @@ inline void msdos_int_2eh()
 	
 	msdos_process_exec(command, param, 0);
 	REG8(AL) = 0;
+}
+
+inline void msdos_int_2fh_12h()
+{
+	switch(REG8(AL)) {
+//	case 0x00:
+//		REG8(AL) = 0xff;
+//		break;
+	case 0x16:
+		if(REG16(BX) < 20) {
+			SREG(ES) = SFT_TOP >> 4;
+			i386_load_segment_descriptor(ES);
+			REG16(DI) = 6 + 0x3b * REG16(BX);
+			
+			// update system file table
+			UINT8* sft = mem + SFT_TOP + 6 + 0x3b * REG16(BX);
+			if(file_handler[REG16(BX)].valid) {
+				int count = 0;
+				for(int i = 0; i < 20; i++) {
+					if(msdos_psp_get_file_table(i, current_psp) == REG16(BX)) {
+						count++;
+					}
+				}
+				*(UINT16 *)(sft + 0x00) = count ? count : 0xffff;
+				*(UINT32 *)(sft + 0x15) = _tell(REG16(BX));
+				_lseek(REG16(BX), 0, SEEK_END);
+				*(UINT32 *)(sft + 0x11) = _tell(REG16(BX));
+				_lseek(REG16(BX), *(UINT32 *)(sft + 0x15), SEEK_SET);
+			} else {
+				memset(sft, 0, 0x3b);
+			}
+		} else {
+			REG16(AX) = 0x06;
+			m_CF = 1;
+		}
+		break;
+	case 0x20:
+		{
+			int fd = msdos_psp_get_file_table(REG16(BX), current_psp);
+			
+			if(fd < 20) {
+				SREG(ES) = current_psp;
+				i386_load_segment_descriptor(ES);
+				REG16(DI) = offsetof(psp_t, file_table) + fd;
+			} else {
+				REG16(AX) = 0x06;
+				m_CF = 1;
+			}
+		}
+		break;
+	default:
+		REG16(AX) = 0x01;
+		m_CF = 1;
+		break;
+	}
 }
 
 inline void msdos_int_2fh_16h()
@@ -7461,7 +7591,63 @@ inline void msdos_int_67h_4eh()
 		REG8(AH) = 0x00;
 	} else if(REG8(AL) == 0x03) {
 		REG8(AH) = 0x00;
-		REG8(AL) = (2 + 2) * 4;
+		REG8(AL) = 4 * 4;
+	} else {
+//		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
+		REG8(AH) = 0x8f;
+	}
+}
+
+inline void msdos_int_67h_4fh()
+{
+	if(!support_ems) {
+		REG8(AH) = 0x84;
+	} else if(REG8(AL) == 0x00) {
+		int count = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI));
+		
+		*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI)) = count;
+		for(int i = 0; i < count; i++) {
+			UINT16 segment  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2 + 2 * i);
+			UINT16 physical = ((segment << 4) - EMS_TOP) / 0x4000;
+			
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			}
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 0) = segment;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 2) = ems_pages[physical & 3].handle;
+			*(UINT16 *)(mem + SREG_BASE(ES) + REG16(DI) + 2 + 6 * i + 4) = ems_pages[physical & 3].mapped ? ems_pages[physical & 3].page : 0xffff;
+		}
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x01) {
+		int count = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI));
+		
+		for(int i = 0; i < count; i++) {
+			UINT16 segment  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2 + 6 * i + 0);
+			UINT16 physical = ((segment << 4) - EMS_TOP) / 0x4000;
+			UINT16 handle   = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2 + 6 * i + 2);
+			UINT16 logical  = *(UINT16 *)(mem + SREG_BASE(DS) + REG16(SI) + 2 + 6 * i + 4);
+			
+//			if(!(physical < 4)) {
+//				REG8(AH) = 0x8b;
+//				return;
+//			} else
+			if(!(handle < MAX_EMS_HANDLES && ems_handles[handle].allocated)) {
+				REG8(AH) = 0x83;
+				return;
+			} else if(logical == 0xffff) {
+				ems_unmap_page(physical & 3);
+			} else if(logical < ems_handles[handle].pages) {
+				ems_map_page(physical & 3, handle, logical);
+			} else {
+				REG8(AH) = 0x8a;
+				return;
+			}
+		}
+		REG8(AH) = 0x00;
+	} else if(REG8(AL) == 0x02) {
+		REG8(AH) = 0x00;
+		REG8(AL) = 2 + REG16(BX) * 6;
 	} else {
 //		fatalerror("int %02xh (ax=%04xh bx=%04xh cx=%04xh dx=%04x)\n", 0x67, REG16(AX), REG16(BX), REG16(CX), REG16(DX));
 		REG8(AH) = 0x8f;
@@ -7777,14 +7963,9 @@ inline void msdos_call_xms_03h()
 
 inline void msdos_call_xms_04h()
 {
-	if((m_a20_mask >> 20) & 1) {
-		i386_set_a20_line(0);
-		REG16(AX) = 0x0001;
-		REG8(BL) = 0x00;
-	} else {
-		REG16(AX) = 0x0000;
-		REG8(BL) = 0x94;
-	}
+	i386_set_a20_line(0);
+	REG16(AX) = 0x0001;
+	REG8(BL) = 0x00;
 }
 
 inline void msdos_call_xms_05h()
@@ -7792,17 +7973,23 @@ inline void msdos_call_xms_05h()
 	i386_set_a20_line(1);
 	REG16(AX) = 0x0001;
 	REG8(BL) = 0x00;
+	xms_a20_local_enb_count++;
 }
 
 void msdos_call_xms_06h()
 {
-	if((m_a20_mask >> 20) & 1) {
+	if(xms_a20_local_enb_count > 0) {
+		xms_a20_local_enb_count--;
+	}
+	if(xms_a20_local_enb_count == 0) {
 		i386_set_a20_line(0);
-		REG16(AX) = 0x0001;
-		REG8(BL) = 0x00;
-	} else {
+	}
+	if((m_a20_mask >> 20) & 1) {
 		REG16(AX) = 0x0000;
 		REG8(BL) = 0x94;
+	} else {
+		REG16(AX) = 0x0001;
+		REG8(BL) = 0x00;
 	}
 }
 
@@ -8158,6 +8345,7 @@ void msdos_syscall(unsigned num)
 		case 0x87: pcbios_int_15h_87h(); break;
 		case 0x88: pcbios_int_15h_88h(); break;
 		case 0x89: pcbios_int_15h_89h(); break;
+		case 0x8a: pcbios_int_15h_8ah(); break;
 #if defined(HAS_I386)
 		case 0xc9: pcbios_int_15h_c9h(); break;
 #endif
@@ -8425,6 +8613,7 @@ void msdos_syscall(unsigned num)
 	case 0x2f:
 		// multiplex interrupt
 		switch(REG8(AH)) {
+		case 0x12: msdos_int_2fh_12h(); break;
 		case 0x16: msdos_int_2fh_16h(); break;
 		case 0x1a: msdos_int_2fh_1ah(); break;
 		case 0x43: msdos_int_2fh_43h(); break;
@@ -8452,7 +8641,7 @@ void msdos_syscall(unsigned num)
 		case 0x4c: msdos_int_67h_4ch(); break;
 		case 0x4d: msdos_int_67h_4dh(); break;
 		case 0x4e: msdos_int_67h_4eh(); break;
-		// 0x4f: LIM EMS 4.0 - Get/Set Partial Page Map
+		case 0x4f: msdos_int_67h_4fh(); break;
 		case 0x50: msdos_int_67h_50h(); break;
 		case 0x51: msdos_int_67h_51h(); break;
 		case 0x52: msdos_int_67h_52h(); break;
@@ -8558,17 +8747,25 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_file_handler_open(0, "STDIN", _isatty(0), 0, 0x80d3, 0);
 	msdos_file_handler_open(1, "STDOUT", _isatty(1), 1, 0x80d3, 0);
 	msdos_file_handler_open(2, "STDERR", _isatty(2), 1, 0x80d3, 0);
-#ifdef SUPPORT_AUX_PRN
+#ifdef MAP_AUX_DEVICE_TO_FILE
 	if(_open("stdaux.txt", _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 3) {
-		msdos_file_handler_open(3, 0, 2, 0x80c0, 0);
-	}
-	if(_open("stdprn.txt", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
-		msdos_file_handler_open(4, 0, 1, 0xa8c0, 0);
-	}
+#else
+	if(_open("NUL", _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 3) {
 #endif
+		msdos_file_handler_open(3, "STDAUX", 0, 2, 0x80c0, 0);
+	}
+#ifdef MAP_PRN_DEVICE_TO_FILE
+	if(_open("stdprn.txt", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
+#else
+	if(_open("NUL", _O_WRONLY | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE) == 4) {
+#endif
+		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0);
+	}
 	_dup2(0, DUP_STDIN);
 	_dup2(1, DUP_STDOUT);
 	_dup2(2, DUP_STDERR);
+	_dup2(3, DUP_STDAUX);
+	_dup2(4, DUP_STDPRN);
 	
 	// init process
 	memset(process, 0, sizeof(process));
@@ -8646,7 +8843,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	dos_info->first_dpb.w.l = 0;
 	dos_info->first_dpb.w.h = DPB_TOP >> 4;
 	dos_info->first_sft.w.l = 0;
-	dos_info->first_sft.w.h = FILE_TABLE_TOP >> 4;
+	dos_info->first_sft.w.h = SFT_TOP >> 4;
 	dos_info->max_sector_len = 512;
 	dos_info->disk_buf_info.w.l = offsetof(dos_info_t, disk_buf_heads);
 	dos_info->disk_buf_info.w.h = DOS_INFO_TOP >> 4;
@@ -8878,8 +9075,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	cmd_line->cmd[cmd_line->len] = 0x0d;
 	
 	// system file table
-	*(UINT32 *)(mem + FILE_TABLE_TOP + 0) = 0xffffffff;
-	*(UINT16 *)(mem + FILE_TABLE_TOP + 4) = 0;
+	*(UINT32 *)(mem + SFT_TOP + 0) = 0xffffffff;
+	*(UINT16 *)(mem + SFT_TOP + 4) = 20;
 	
 	// disk buffer header (from DOSBox)
 	*(UINT16 *)(mem + DISK_BUF_TOP +  0) = 0xffff;		// forward ptr
@@ -8925,8 +9122,10 @@ void msdos_finish()
 			_close(i);
 		}
 	}
-#ifdef SUPPORT_AUX_PRN
+#ifdef MAP_AUX_DEVICE_TO_FILE
 	remove_std_file("stdaux.txt");
+#endif
+#ifdef MAP_PRN_DEVICE_TO_FILE
 	remove_std_file("stdprn.txt");
 #endif
 	msdos_dbcs_table_finish();
