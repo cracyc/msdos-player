@@ -1112,6 +1112,12 @@ void msdos_finish();
 
 DWORD dwConsoleMode = 0;
 
+UINT input_cp, output_cp;
+int multibyte_cp;
+bool restore_input_cp = false;
+bool restore_output_cp = false;
+bool restore_multibyte_cp = false;
+
 CONSOLE_CURSOR_INFO ci_old;
 CONSOLE_CURSOR_INFO ci_new;
 CONSOLE_FONT_INFOEX fi_new;
@@ -1125,7 +1131,9 @@ COORD scr_buf_size;
 COORD scr_buf_pos;
 int scr_width, scr_height;
 int scr_top;
-bool restore_console_on_exit = false;
+bool restore_console_size = false;
+bool restore_console_cursor = false;
+bool restore_console_font = false;
 bool cursor_moved;
 bool cursor_moved_by_crtc;
 

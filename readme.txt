@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								4/10/2020
+								12/24/2020
 
 ----- What's This
 
@@ -547,6 +547,7 @@ INT 16H		PC BIOS - Keyboard
 	10H	Get Enhanced Keystroke
 	11H	Check For Enhanced Keystroke
 	12H	Get Extended Shift States
+	51H	AX (Japanese AT) Keyboard - Read Shift Key Status
 
 INT 17H		PC BIOS - Printer
 

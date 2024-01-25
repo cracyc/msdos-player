@@ -671,7 +671,7 @@ void debugger_write_byte(UINT32 byteaddress, UINT8 data)
 		vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
-		if(!restore_console_on_exit) {
+		if(!restore_console_size) {
 			change_console_size(scr_width, scr_height);
 		}
 		write_text_vram_byte(byteaddress - text_vram_top_address, data);
@@ -735,7 +735,7 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(byteaddress < text_vram_end_address - 1) {
-			if(!restore_console_on_exit) {
+			if(!restore_console_size) {
 				change_console_size(scr_width, scr_height);
 			}
 			write_text_vram_word(byteaddress - text_vram_top_address, data);
@@ -811,7 +811,7 @@ void debugger_write_dword(UINT32 byteaddress, UINT32 data)
 #endif
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 		if(byteaddress < text_vram_end_address - 3) {
-			if(!restore_console_on_exit) {
+			if(!restore_console_size) {
 				change_console_size(scr_width, scr_height);
 			}
 			write_text_vram_dword(byteaddress - text_vram_top_address, data);
@@ -2485,21 +2485,21 @@ bool is_started_from(const char *name)
 				}
 			} while(Process32Next(hSnapshot, &pe32));
 		}
-		CloseHandle(hSnapshot);
 		if(dwParentProcessID != 0) {
 			HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, dwParentProcessID);
 			if(hProcess != NULL) {
-				HMODULE hMod;
-				DWORD cbNeeded;
-				if(EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
-					char module_name[MAX_PATH];
-					if(GetModuleBaseNameA(hProcess, hMod, module_name, sizeof(module_name))) {
-						result = (_strnicmp(module_name, name, strlen(name)) == 0);
+				char module_path[MAX_PATH];
+				if(GetProcessImageFileNameA(hProcess, module_path, MAX_PATH)) {
+					int path_len = strlen(module_path);
+					int name_len = strlen(name);
+					if(path_len >= name_len) {
+						result = (_strnicmp(module_path + path_len - name_len, name, name_len) == 0);
 					}
 				}
 				CloseHandle(hProcess);
 			}
 		}
+		CloseHandle(hSnapshot);
 	}
 	return(result);
 }
@@ -2516,8 +2516,8 @@ bool is_started_from_console()
 			GetConsoleProcessListFunction lpfnGetConsoleProcessList;
 			lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
 			if(lpfnGetConsoleProcessList) { // Windows XP or later
-				DWORD pl;
-				result = (lpfnGetConsoleProcessList(&pl, 1) > 1);
+				DWORD dwProcessList[32];
+				result = (lpfnGetConsoleProcessList(dwProcessList, 32) > 1);
 				FreeLibrary(hLibrary);
 				return(result);
 			}
@@ -2611,6 +2611,39 @@ HWND get_console_window_handle()
 HDC get_console_window_device_context()
 {
 	return GetDC(get_console_window_handle());
+}
+
+UINT get_input_code_page()
+{
+	return GetConsoleCP();
+}
+
+BOOL set_input_code_page(UINT cp)
+{
+	restore_input_cp = (input_cp != cp);
+	return SetConsoleCP(cp);
+}
+
+UINT get_output_code_page()
+{
+	return GetConsoleOutputCP();
+}
+
+BOOL set_output_code_page(UINT cp)
+{
+	restore_output_cp = (output_cp != cp);
+	return SetConsoleOutputCP(cp);
+}
+
+int get_multibyte_code_page()
+{
+	return _getmbcp();
+}
+
+int set_multibyte_code_page(int cp)
+{
+	restore_multibyte_cp = (multibyte_cp != cp);
+	return _setmbcp(cp);
 }
 
 void set_default_console_font_info(CONSOLE_FONT_INFOEX *fi)
@@ -2758,6 +2791,7 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 		}
 		FreeLibrary(hLibrary);
 	}
+	restore_console_font = true;
 	return(result);
 }
 
@@ -2844,16 +2878,22 @@ void get_sio_port_numbers()
 
 int main(int argc, char *argv[], char *envp[])
 {
+	is_winxp_or_later = is_greater_windows_version( 5, 1, 0, 0);
+	is_xp_64_or_later = is_greater_windows_version( 5, 2, 0, 0);
+	is_vista_or_later = is_greater_windows_version( 6, 0, 0, 0);
+	is_win10_or_later = is_greater_windows_version(10, 0, 0, 0);
+	
+	input_cp = get_input_code_page();
+	output_cp = get_output_code_page();
+	multibyte_cp = get_multibyte_code_page();
+	
 	int arg_offset = 0;
 	int standard_env = 0;
 	int buf_width = 0, buf_height = 0;
-	bool get_console_info_success = false;
+	bool get_console_buffer_success = false;
+	bool get_console_cursor_success = false;
 	bool get_console_font_success = false;
 	bool screen_size_changed = false;
-	
-	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
-	GetModuleFileNameA(NULL, path, MAX_PATH);
-	GetFullPathNameA(path, MAX_PATH, full, &name);
 	
 	char dummy_argv_0[] = "msdos.exe";
 	char dummy_argv_1[MAX_PATH];
@@ -2861,6 +2901,11 @@ int main(int argc, char *argv[], char *envp[])
 	char new_exec_file[MAX_PATH];
 	bool convert_cmd_file = false;
 	unsigned int code_page = 0;
+	
+	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
+	
+	GetModuleFileNameA(NULL, path, MAX_PATH);
+	GetFullPathNameA(path, MAX_PATH, full, &name);
 	
 	if(name != NULL && stricmp(name, "msdos.exe") != 0) {
 		// check if command file is embedded to this execution file
@@ -2903,8 +2948,8 @@ int main(int argc, char *argv[], char *envp[])
 				win_minor_version = buffer[8];
 			}
 			if((code_page = buffer[9] | (buffer[10] << 8)) != 0) {
-				SetConsoleCP(code_page);
-				SetConsoleOutputCP(code_page);
+				set_input_code_page(code_page);
+				set_output_code_page(code_page);
 			}
 			int name_len = buffer[11];
 			int file_len = buffer[12] | (buffer[13] << 8) | (buffer[14] << 16) | (buffer[15] << 24);
@@ -2973,7 +3018,7 @@ int main(int argc, char *argv[], char *envp[])
 			if(IS_NUMERIC(argv[i][2])) {
 				code_page = atoi(&argv[i][2]);
 			} else {
-				code_page = GetConsoleCP();
+				code_page = get_input_code_page();
 			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-d", 2) == 0) {
@@ -3274,24 +3319,18 @@ int main(int argc, char *argv[], char *envp[])
 		return(retval);
 	}
 	
-	is_winxp_or_later = is_greater_windows_version( 5, 1, 0, 0);
-	is_xp_64_or_later = is_greater_windows_version( 5, 2, 0, 0);
-	is_vista_or_later = is_greater_windows_version( 6, 0, 0, 0);
-	is_win10_or_later = is_greater_windows_version(10, 0, 0, 0);
-	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
 	CONSOLE_FONT_INFOEX fi;
-	UINT input_cp = GetConsoleCP();
-	UINT output_cp = GetConsoleOutputCP();
-	int multibyte_cp = _getmbcp();
 	
-	get_console_info_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
-	GetConsoleCursorInfo(hStdout, &ci);
-	ci_old = ci_new = ci;
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
+	
+	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
+	get_console_cursor_success = (GetConsoleCursorInfo(hStdout, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
+	
+	ci_old = ci_new = ci;
 	fi_new = fi;
 	font_width  = fi.dwFontSize.X;
 	font_height = fi.dwFontSize.Y;
@@ -3302,7 +3341,7 @@ int main(int argc, char *argv[], char *envp[])
 			SCR_BUF(y,x).Attributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
 		}
 	}
-	if(get_console_info_success) {
+	if(get_console_buffer_success) {
 		scr_width = csbi.dwSize.X;
 		scr_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 		
@@ -3391,12 +3430,17 @@ int main(int argc, char *argv[], char *envp[])
 		hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		
 		// restore console settings
-		_setmbcp(multibyte_cp);
-		SetConsoleCP(input_cp);
-		SetConsoleOutputCP(multibyte_cp);
-		
-		if(get_console_info_success) {
-			if(restore_console_on_exit) {
+		if(restore_multibyte_cp) {
+			set_multibyte_code_page(multibyte_cp);
+		}
+		if(restore_input_cp) {
+			set_input_code_page(input_cp);
+		}
+		if(restore_output_cp) {
+			set_output_code_page(output_cp);
+		}
+		if(get_console_buffer_success) {
+			if(restore_console_size) {
 				// window can't be bigger than buffer,
 				// buffer can't be smaller than window,
 				// so make a tiny window,
@@ -3419,10 +3463,12 @@ int main(int argc, char *argv[], char *envp[])
 			}
 		}
 		if(get_console_font_success) {
-			set_console_font_info(&fi);
+			if(restore_console_font) {
+				set_console_font_info(&fi);
+			}
 		}
-		if(get_console_info_success) {
-			if(restore_console_on_exit) {
+		if(get_console_buffer_success) {
+			if(restore_console_size) {
 				SMALL_RECT rect;
 				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
@@ -3432,7 +3478,11 @@ int main(int argc, char *argv[], char *envp[])
 				}
 			}
 			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
-			SetConsoleCursorInfo(hStdout, &ci);
+		}
+		if(get_console_cursor_success) {
+			if(restore_console_cursor) {
+				SetConsoleCursorInfo(hStdout, &ci);
+			}
 		}
 		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
@@ -3565,7 +3615,7 @@ void change_console_size(int width, int height)
 	mouse.max_position.x = 8 * (scr_width  - 1);
 	mouse.max_position.y = 8 * (scr_height - 1);
 	
-	restore_console_on_exit = true;
+	restore_console_size = true;
 }
 
 void clear_scr_buffer(WORD attr)
@@ -3596,8 +3646,8 @@ bool update_console_input()
 				if(ir[i].EventType & MOUSE_EVENT) {
 					if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
 						if(mouse.hidden == 0 || (mouse.call_addr_ps2.dw && mouse.enabled_ps2)) {
-							// NOTE: if restore_console_on_exit, console is not scrolled
-							if(!restore_console_on_exit && csbi.srWindow.Bottom == 0) {
+							// NOTE: if restore_console_size, console is not scrolled
+							if(!restore_console_size && csbi.srWindow.Bottom == 0) {
 								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 							}
 							// FIXME: character size is always 8x8 ???
@@ -4427,22 +4477,25 @@ void msdos_dbcs_table_update()
 
 void msdos_dbcs_table_finish()
 {
-	if(system_code_page != _getmbcp()) {
-		_setmbcp(system_code_page);
+	// we will restore code pages later in main(), so we don't need to do here :-)
+#if 0
+	if(system_code_page != get_multibyte_code_page()) {
+		set_multibyte_code_page(system_code_page);
 	}
-	if(console_code_page != GetConsoleCP()) {
-		SetConsoleCP(console_code_page);
-		SetConsoleOutputCP(console_code_page);
+	if(console_code_page != get_input_code_page()) {
+		set_input_code_page(console_code_page);
+		set_output_code_page(console_code_page);
 	}
+#endif
 }
 
 void msdos_nls_tables_init()
 {
-	active_code_page = console_code_page = GetConsoleCP();
-	system_code_page = _getmbcp();
+	active_code_page = console_code_page = get_input_code_page();
+	system_code_page = get_multibyte_code_page();
 	
 	if(active_code_page != system_code_page) {
-		if(_setmbcp(active_code_page) != 0) {
+		if(set_multibyte_code_page(active_code_page) != 0) {
 			active_code_page = system_code_page;
 		}
 	}
@@ -4482,8 +4535,16 @@ int msdos_lead_byte_check(UINT8 code)
 
 int msdos_ctrl_code_check(UINT8 code)
 {
-	if(active_code_page == 932) {
+	if(active_code_page != 437) {
 		return (code >= 0x01 && code <= 0x1a && code != 0x07 && code != 0x08 && code != 0x09 && code != 0x0a && code != 0x0d);
+	}
+	return 0;
+}
+
+int msdos_esc_code_check(UINT8 code)
+{
+	if(active_code_page != 437) {
+		return (code == 0x1b);
 	}
 	return 0;
 }
@@ -5754,7 +5815,7 @@ void msdos_putch_tmp(UINT8 data)
 			p = is_esc = 0;
 		} else if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z') || data == '*') {
 			if(cursor_moved_by_crtc) {
-				if(!restore_console_on_exit) {
+				if(!restore_console_size) {
 					GetConsoleScreenBufferInfo(hStdout, &csbi);
 					scr_top = csbi.srWindow.Top;
 				}
@@ -5973,7 +6034,7 @@ void msdos_putch_tmp(UINT8 data)
 		if(msdos_lead_byte_check(data)) {
 			is_kanji = 1;
 			return;
-		} else if(data == 0x1b) {
+		} else if(msdos_esc_code_check(data)) {
 			is_esc = 1;
 			return;
 		}
@@ -5994,7 +6055,7 @@ void msdos_putch_tmp(UINT8 data)
 		out[q++] = c;
 	}
 	if(cursor_moved_by_crtc) {
-		if(!restore_console_on_exit) {
+		if(!restore_console_size) {
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			scr_top = csbi.srWindow.Top;
 		}
@@ -6022,7 +6083,7 @@ void msdos_putch_tmp(UINT8 data)
 	}
 	p = 0;
 	
-	if(!restore_console_on_exit) {
+	if(!restore_console_size) {
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
 		scr_top = csbi.srWindow.Top;
 	}
@@ -7392,7 +7453,7 @@ void pcbios_update_cursor_position()
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-	if(!restore_console_on_exit) {
+	if(!restore_console_size) {
 		scr_top = csbi.srWindow.Top;
 	}
 	mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
@@ -7741,7 +7802,7 @@ inline void pcbios_int_10h_0eh()
 	COORD co;
 	
 	if(cursor_moved_by_crtc) {
-		if(!restore_console_on_exit) {
+		if(!restore_console_size) {
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
 			scr_top = csbi.srWindow.Top;
 		}
@@ -7911,7 +7972,7 @@ inline void pcbios_int_10h_13h()
 				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x00) {
-				if(!restore_console_on_exit) {
+				if(!restore_console_size) {
 					GetConsoleScreenBufferInfo(hStdout, &csbi);
 					scr_top = csbi.srWindow.Top;
 				}
@@ -9454,6 +9515,14 @@ inline void pcbios_int_16h_14h()
 		CPU_SET_C_FLAG(1);
 		break;
 	}
+}
+
+inline void pcbios_int_16h_51h()
+{
+	// http://radioc.web.fc2.com/column/ax/kb_bios.htm
+	pcbios_int_16h_02h();
+	
+	CPU_AH = (GetAsyncKeyState(VK_KANA) & 0x8000) ? 0x02 : 0;
 }
 
 inline void pcbios_int_16h_55h()
@@ -13456,12 +13525,12 @@ inline void msdos_int_21h_66h()
 	case 0x02:
 		if(active_code_page == CPU_BX) {
 			CPU_AX = 0xeb41;
-		} else if(_setmbcp(CPU_BX) == 0) {
+		} else if(set_multibyte_code_page(CPU_BX) == 0) {
 			active_code_page = CPU_BX;
 			msdos_nls_tables_update();
 			CPU_AX = 0xeb41;
-			SetConsoleCP(active_code_page);
-			SetConsoleOutputCP(active_code_page);
+			set_input_code_page(active_code_page);
+			set_output_code_page(active_code_page);
 		} else {
 			CPU_AX = 0x25;
 			CPU_SET_C_FLAG(1);
@@ -14972,6 +15041,9 @@ inline void msdos_int_2fh_40h()
 	case 0x00:
 		// Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
 		CPU_AL = 0x01; // does not virtualize video access
+		break;
+	case 0x07:
+		// Windows 3.x - Enable VDD Trapping of Video Registers
 		break;
 	case 0x10:
 		// OS/2 v2.0+ - Installation Check
@@ -17509,7 +17581,7 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x10:
 		// PC BIOS - Video
-		if(!restore_console_on_exit) {
+		if(!restore_console_size) {
 			change_console_size(scr_width, scr_height);
 		}
 		CPU_SET_C_FLAG(0);
@@ -17692,6 +17764,7 @@ void msdos_syscall(unsigned num)
 		case 0x12: pcbios_int_16h_12h(); break;
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
+		case 0x51: pcbios_int_16h_51h(); break;
 		case 0x55: pcbios_int_16h_55h(); break;
 		case 0x6f: pcbios_int_16h_6fh(); break;
 		case 0xda: break; // unknown
@@ -19479,6 +19552,7 @@ void hardware_update()
 		if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			SetConsoleCursorInfo(hStdout, &ci_new);
+			restore_console_cursor = true;
 		}
 		ci_old = ci_new;
 		
@@ -20046,7 +20120,7 @@ void pic_update()
 
 void pio_init()
 {
-//	bool conv_mode = (GetConsoleCP() == 932);
+//	bool conv_mode = (get_input_code_page() == 932);
 	
 	memset(pio, 0, sizeof(pio));
 	
@@ -21070,11 +21144,30 @@ UINT8 kbd_read_data()
 void kbd_write_data(UINT8 val)
 {
 	switch(kbd_command) {
+	case 0x00:
+		switch(val) {
+		case 0xed:
+		case 0xf3:
+			kbd_command = val;
+		default:
+			kbd_data = 0xfa;
+			kbd_status |= 1;
+			break;
+		}
+		break;
 	case 0xd1:
 		CPU_A20_LINE((val >> 1) & 1);
+		kbd_command = 0;
+		break;
+	case 0xed:
+		kbd_command = 0;
+		break;
+	case 0xf3:
+		kbd_command = 0;
+		kbd_data = 0xfa;
+		kbd_status |= 1;
 		break;
 	}
-	kbd_command = 0;
 	kbd_status &= ~8;
 }
 
@@ -21090,6 +21183,9 @@ void kbd_write_command(UINT8 val)
 		kbd_data = ((CPU_ADRSMASK >> 19) & 2) | 1;
 		kbd_status |= 1;
 		break;
+	case 0xd1:
+		kbd_command = val;
+		break;
 	case 0xdd:
 		CPU_A20_LINE(0);
 		break;
@@ -21104,7 +21200,6 @@ void kbd_write_command(UINT8 val)
 		CPU_A20_LINE((val >> 1) & 1);
 		break;
 	}
-	kbd_command = val;
 	kbd_status |= 8;
 }
 
