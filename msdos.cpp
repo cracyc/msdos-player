@@ -17,6 +17,22 @@
 }
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 
+#if defined(__MINGW32__)
+extern "C" int _CRT_glob = 0;
+#endif
+
+/*
+	kludge for "more-standardized" C++
+*/
+#if !defined(_MSC_VER)
+inline int kludge_min(int a, int b) { return (a<b ? a:b); }
+inline int kludge_max(int a, int b) { return (a>b ? a:b); }
+#define min(a,b) kludge_min(a,b)
+#define max(a,b) kludge_max(a,b)
+#endif
+
+void change_console_size_to_80x25();
+
 /* ----------------------------------------------------------------------------
 	MAME i86/i386
 ---------------------------------------------------------------------------- */
@@ -309,6 +325,10 @@ void write_byte(offs_t byteaddress, UINT8 data)
 	if(byteaddress < MEMORY_END) {
 		mem[byteaddress] = data;
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		if(!restore_console_on_exit && (scr_width != 80 || scr_height != 25)) {
+			change_console_size_to_80x25();
+			restore_console_on_exit = true;
+		}
 		write_text_vram_byte(byteaddress - text_vram_top_address, data);
 		mem[byteaddress] = data;
 	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
@@ -330,6 +350,10 @@ void write_word(offs_t byteaddress, UINT16 data)
 	if(byteaddress < MEMORY_END) {
 		*(UINT16 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		if(!restore_console_on_exit && (scr_width != 80 || scr_height != 25)) {
+			change_console_size_to_80x25();
+			restore_console_on_exit = true;
+		}
 		write_text_vram_word(byteaddress - text_vram_top_address, data);
 		*(UINT16 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
@@ -351,6 +375,10 @@ void write_dword(offs_t byteaddress, UINT32 data)
 	if(byteaddress < MEMORY_END) {
 		*(UINT32 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
+		if(!restore_console_on_exit && (scr_width != 80 || scr_height != 25)) {
+			change_console_size_to_80x25();
+			restore_console_on_exit = true;
+		}
 		write_text_vram_dword(byteaddress - text_vram_top_address, data);
 		*(UINT32 *)(mem + byteaddress) = data;
 	} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
@@ -397,8 +425,8 @@ void write_io_dword(offs_t byteaddress, UINT32 data);
 #if defined(HAS_I386)
 	static CPU_TRANSLATE(i386);
 	#include "mame/lib/softfloat/softfloat.c"
-	#include "mame/emu/cpu/vtlb.c"
 	#include "mame/emu/cpu/i386/i386.c"
+	#include "mame/emu/cpu/vtlb.c"
 #elif defined(HAS_I286)
 	#include "mame/emu/cpu/i86/i286.c"
 #else
@@ -496,6 +524,7 @@ int main(int argc, char *argv[], char *envp[])
 {
 	int arg_offset = 0;
 	int standard_env = 0;
+	BOOL bSuccess;
 	
 	for(int i = 1; i < argc; i++) {
 		if(_strnicmp(argv[i], "-e", 2) == 0) {
@@ -532,7 +561,7 @@ int main(int argc, char *argv[], char *envp[])
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	GetConsoleScreenBufferInfo(hStdout, &csbi);
+	bSuccess = GetConsoleScreenBufferInfo(hStdout, &csbi);
 	
 	for(int y = 0; y < SCR_BUF_SIZE; y++) {
 		for(int x = 0; x < 80; x++) {
@@ -543,8 +572,14 @@ int main(int argc, char *argv[], char *envp[])
 	scr_buf_size.X = 80;
 	scr_buf_size.Y = SCR_BUF_SIZE;
 	scr_buf_pos.X = scr_buf_pos.Y = 0;
-	scr_width = csbi.dwSize.X;
-	scr_height = csbi.dwSize.Y;
+	if(bSuccess) {
+		scr_width = csbi.dwSize.X;
+		scr_height = csbi.dwSize.Y;
+	} else {
+		// for a proof (not a console)
+		scr_width = 80;
+		scr_height = 25;
+	}
 	cursor_moved = false;
 	
 	key_buf_char = new FIFO();
@@ -559,6 +594,14 @@ int main(int argc, char *argv[], char *envp[])
 		timeGetDevCaps(&caps, sizeof(TIMECAPS));
 		timeBeginPeriod(caps.wPeriodMin);
 		hardware_run();
+		if(bSuccess) {
+			if(restore_console_on_exit) {
+				SMALL_RECT rect = {0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top};
+				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
+				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			}
+			SetConsoleTextAttribute(hStdout, csbi.wAttributes); // hStdout (and all handles) will close in msdos_finish()...
+		}
 		msdos_finish();
 		timeEndPeriod(caps.wPeriodMin);
 	}
@@ -568,9 +611,43 @@ int main(int argc, char *argv[], char *envp[])
 	delete key_buf_char;
 	delete key_buf_scan;
 	
-	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+//	SetConsoleTextAttribute(hStdout, csbi.wAttributes);
 	
 	return(retval);
+}
+
+void change_console_size_to_80x25()
+{
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	SMALL_RECT rect;
+	COORD co;
+	
+	GetConsoleScreenBufferInfo(hStdout, &csbi);
+	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > 24) {
+		if(csbi.srWindow.Right - csbi.srWindow.Left + 1 == 80 && csbi.srWindow.Bottom - csbi.srWindow.Top + 1 == 25) {
+			ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &csbi.srWindow);
+			SET_RECT(rect, 0, 0, 79, 24);
+			WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		} else if(csbi.dwCursorPosition.Y > 24) {
+			SET_RECT(rect, 0, csbi.dwCursorPosition.Y - 24, 79, csbi.dwCursorPosition.Y);
+			ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+			SET_RECT(rect, 0, 0, 79, 24);
+			WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
+		}
+	}
+	if(csbi.dwCursorPosition.Y > 24) {
+		co.X = csbi.dwCursorPosition.X;
+		co.Y = min(24, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
+		SetConsoleCursorPosition(hStdout, co);
+		cursor_moved = true;
+	}
+	SET_RECT(rect, 0, 0, 79, 24);
+	co.X = 80;
+	co.Y = 25;
+	SetConsoleWindowInfo(hStdout, TRUE, &rect);
+	SetConsoleScreenBufferSize(hStdout, co);
+	scr_width = 80;
+	scr_height = 25;
 }
 
 /* ----------------------------------------------------------------------------
@@ -3838,11 +3915,16 @@ inline void msdos_int_21h_40h()
 				_lseek(REG16(BX), 0, SEEK_END);
 				UINT32 size = _tell(REG16(BX));
 				REG16(AX) = 0;
-				for(UINT32 i = size; i < pos; i++) {
-					UINT8 tmp = 0;
-					REG16(AX) += msdos_write(REG16(BX), &tmp, 1);
+				if(pos < size) {
+					_lseek(REG16(BX), pos, SEEK_SET);
+					SetEndOfFile((HANDLE)_get_osfhandle(REG16(BX)));
+				} else {
+					for(UINT32 i = size; i < pos; i++) {
+						UINT8 tmp = 0;
+						REG16(AX) += msdos_write(REG16(BX), &tmp, 1);
+					}
+					_lseek(REG16(BX), pos, SEEK_SET);
 				}
-				_lseek(REG16(BX), pos, SEEK_SET);
 			}
 		} else {
 			REG16(AX) = 0x05;
@@ -5367,34 +5449,9 @@ void msdos_syscall(unsigned num)
 		break;
 	case 0x10:
 		// PC BIOS - Video
-		if(scr_width != 80 || scr_height != 25) {
-			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			SMALL_RECT rect;
-			COORD co;
-			
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
-			if(csbi.dwCursorPosition.Y > 24) {
-				SET_RECT(rect, 0, 0, scr_width - 1, scr_height - 1);
-				ReadConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
-				for(int y = 0, y2 = csbi.dwCursorPosition.Y - 24; y < 25; y++, y2++) {
-					for(int x = 0; x < 80; x++) {
-						scr_buf[y][x] = scr_buf[y2][x];
-					}
-				}
-				WriteConsoleOutput(hStdout, &scr_buf[0][0], scr_buf_size, scr_buf_pos, &rect);
-				
-				co.X = csbi.dwCursorPosition.X;
-				co.Y = 24;
-				SetConsoleCursorPosition(hStdout, co);
-				cursor_moved = true;
-			}
-			SET_RECT(rect, 0, 0, 79, 24);
-			co.X = 80;
-			co.Y = 25;
-			SetConsoleWindowInfo(hStdout, TRUE, &rect);
-			SetConsoleScreenBufferSize(hStdout, co);
-			scr_width = 80;
-			scr_height = 25;
+		if(!restore_console_on_exit && (scr_width != 80 || scr_height != 25)) {
+			change_console_size_to_80x25();
+			restore_console_on_exit = true;
 		}
 		m_CF = 0;
 		switch(REG8(AH)) {
@@ -6073,7 +6130,7 @@ void hardware_run()
 			} else
 #endif
 			CPU_DISASSEMBLE_CALL(x86_16);
-			fprintf(stderr, "%04x:%04x\t%s\n", SREG(CS), eip, buffer);
+			fprintf(stderr, "%04x:%04x\t%s\n", SREG(CS), (unsigned)eip, buffer);
 		}
 #endif
 #if defined(HAS_I386)

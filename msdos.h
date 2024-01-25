@@ -496,6 +496,7 @@ WORD scr_attr[80 * 25];
 COORD scr_buf_size;
 COORD scr_buf_pos;
 int scr_width, scr_height;
+bool restore_console_on_exit = false;
 bool cursor_moved;
 
 FIFO *key_buf_char;

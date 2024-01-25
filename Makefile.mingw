@@ -1,0 +1,171 @@
+# a `domestic' makefile for MS-DOS Player (for 20150108 build).
+# 20150108 lpproj
+#
+
+#
+# gcc (mingw + msys)
+#
+D = /
+O = o
+A = a
+#X = 
+X = .exe
+MKDIR = mkdir -p
+RM_F = rm -f
+CP = cp
+CC = gcc
+CXX = g++ 
+CFLAGS_OO=-o $@
+CFLAGS_OX=-o $@
+CFLAGS= -O3 -Wall -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
+CXXFLAGS = $(CFLAGS)
+LD = $(CXX)
+LIBS = -lwinmm -lpsapi
+LDFLAGS = -mconsole -s -static -static-libgcc
+
+
+#
+# Visual C++/WinSDK Command Prompt (with nmake)
+#
+#D = \ 
+#O = obj
+#A = lib
+#X = .exe
+#MKDIR = mkdir
+#RM_F = del 2>nul /F /Q
+#CP = copy /Y
+#CC = cl
+#CXX = cl
+#CFLAGS_OO = /Fo$@
+#CFLAGS_OX = /Fe$@
+#CFLAGS= /nologo /W4 /O2 /EHsc /D_MT /DWIN32 /D_MBCS /D_CONSOLE /DNDEBUG /DSUPPORT_DISASSEMBLER /errorReport:none
+#CXXFLAGS = $(CFLAGS)
+#LIBS = user32.lib winmm.lib psapi.lib
+#LDFLAGS = /MT
+
+
+#
+.SUFFIXES:
+#.SUFFIXES: $(X) .$(A) .$(O) .cpp .c .h
+
+
+CFLAGS_I286 = $(CFLAGS) -I. -DHAS_I286
+CXXFLAGS_I286 = $(CFLAGS_I286) 
+CFLAGS_I386 = $(CFLAGS) -I. -DHAS_I386
+CXXFLAGS_I386 = $(CFLAGS_I386)
+CFLAGS_I486 = $(CFLAGS) -I. -DHAS_I486
+CXXFLAGS_I486 = $(CFLAGS_I486)
+
+#COMPILE = $(CC) $(CFLAGS) $(CFLAGS_EXTRA) $(CFLAGS_OO) $?
+
+
+SRCD_BASE = .$(D)
+SRCD_EMUCPU = $(SRCD_BASE)mame$(D)emu$(D)cpu$(D)
+SRCD_I86 = $(SRCD_EMUCPU)i86$(D)
+SRCD_I386 = $(SRCD_EMUCPU)i386$(D)
+SRCD_SOFTFLOAT = $(SRCD_BASE)mame$(D)lib$(D)softfloat$(D)
+
+OUTD_BASE = ..$(D)binary$(D)
+#OUTD_BASE = .$(D)
+
+#TARGET_I286 = $(OUTD_BASE)i286$(D)msdos$(X)
+#TARGET_I386 = $(OUTD_BASE)i386$(D)msdos$(X)
+#TARGET_I486 = $(OUTD_BASE)i486$(D)msdos$(X)
+TARGET_I286 = $(OUTD_BASE)msdos_i286$(X)
+TARGET_I386 = $(OUTD_BASE)msdos_i386$(X)
+TARGET_I486 = $(OUTD_BASE)msdos_i486$(X)
+
+SRCS_I86 = \
+	$(SRCD_I86)ea.h \
+	$(SRCD_I86)host.h \
+	$(SRCD_I86)i286.c \
+	$(SRCD_I86)i286.h \
+	$(SRCD_I86)i86.c \
+	$(SRCD_I86)i86.h \
+	$(SRCD_I86)i86priv.h \
+	$(SRCD_I86)i86time.c \
+	$(SRCD_I86)instr186.c \
+	$(SRCD_I86)instr186.h \
+	$(SRCD_I86)instr286.c \
+	$(SRCD_I86)instr286.h \
+	$(SRCD_I86)instr86.c \
+	$(SRCD_I86)instr86.h \
+	$(SRCD_I86)modrm.h \
+	$(SRCD_I86)modrm286.h \
+	$(SRCD_I86)table186.h \
+	$(SRCD_I86)table286.h \
+	$(SRCD_I86)table86.h
+
+SRCS_I386DASM = \
+	$(SRCD_I386)i386dasm.c
+
+SRCS_I86DASM = $(SRCS_I386DASM)
+
+SRCS_I386 = \
+	$(SRCD_I386)cycles.h \
+	$(SRCD_I386)i386.c \
+	$(SRCD_I386)i386.h \
+	$(SRCD_I386)i386op16.c \
+	$(SRCD_I386)i386op32.c \
+	$(SRCD_I386)i386ops.c \
+	$(SRCD_I386)i386ops.h \
+	$(SRCD_I386)i386priv.h \
+	$(SRCD_I386)pentops.c \
+	$(SRCD_I386)x87ops.c \
+	$(SRCD_EMUCPU)vtlb.c \
+	$(SRCD_EMUCPU)vtlb.h
+
+SRCS_I486 = \
+	$(SRCS_I386) \
+	$(SRCD_I386)i486ops.c
+
+SRCS_PENTIUM = \
+	$(SRCS_I486) \
+	$(SRCD_I386)pentops.c
+
+SRCS_SOFTFLOAT = \
+	$(SRCD_SOFTFLOAT)fpu_constant.h \
+	$(SRCD_SOFTFLOAT)fsincos.c \
+	$(SRCD_SOFTFLOAT)fyl2x.c \
+	$(SRCD_SOFTFLOAT)mamesf.h \
+	$(SRCD_SOFTFLOAT)milieu.h \
+	$(SRCD_SOFTFLOAT)softfloat-macros \
+	$(SRCD_SOFTFLOAT)softfloat-specialize \
+	$(SRCD_SOFTFLOAT)softfloat.c \
+	$(SRCD_SOFTFLOAT)softfloat.h
+
+
+all : i286 i386 i486
+
+i286: $(TARGET_I286)
+
+i386: $(TARGET_I386)
+
+i486: $(TARGET_I486)
+
+$(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+	$(CXX) $(CXXFLAGS_I286) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
+$(TARGET_I386) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I386) $(SRCS_I386DASM) $(SRCS_SOFTFLOAT)
+	$(CXX) $(CXXFLAGS_I386) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
+$(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I386DASM) $(SRCS_SOFTFLOAT)
+	$(CXX) $(CXXFLAGS_I486) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
+clean:
+	-$(RM_F) $(TARGET_I286)
+	-$(RM_F) $(TARGET_I386)
+	-$(RM_F) $(TARGET_I486)
+
