@@ -6209,7 +6209,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs, int new_process)
 		if(!(new_process && !last_block)) {
 			if((malloc_strategy & 0x0f) >= 2 && found_seg) {
 				mcb = (mcb_t *)(mem + (found_seg << 4));
-				msdos_mem_split(found_seg + 1, mcb->paragraphs - paragraphs + 1);
+				msdos_mem_split(found_seg + 1, mcb->paragraphs - paragraphs - 1);
 				int next_seg = found_seg + 1 + mcb->paragraphs;
 				((mcb_t *)(mem + (next_seg << 4)))->psp = current_psp;
 				return(next_seg + 1);
