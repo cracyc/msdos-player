@@ -10648,16 +10648,19 @@ inline void msdos_int_21h_27h()
 		process_t *process = msdos_process_info_get(current_psp);
 		UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 		UINT32 len = fcb->record_size * REG16(CX);
-		memset(mem + dta_laddr, 0, len);
 		DWORD num = 0;
 		if(!ReadFile(fcb->handle, mem + dta_laddr, len, &num, NULL) || num == 0) {
 			REG8(AL) = 1;
+			REG16(CX) = 0;
 		} else {
-			UINT16 nrec = num / fcb->record_size + ((num % fcb->record_size) != 0);
+			int leftover = num % fcb->record_size;	
+			UINT16 nrec = num / fcb->record_size + (leftover != 0);
 			rec += nrec;
 			fcb->rand_record = (fcb->record_size >= 64) ? (fcb->rand_record & 0xff000000) | (rec & 0xffffff) : rec;
-			REG8(AL) = (num == len) ? 0 : 3;
+			REG8(AL) = !leftover ? ((num != len) ? 1 : 0) : 3;
 			REG16(CX) = nrec;
+			if(leftover)
+				memset(mem + dta_laddr + num, 0, fcb->record_size - leftover);
 		}
 	}
 	fcb->current_block = rec / 128;
