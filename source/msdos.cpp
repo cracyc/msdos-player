@@ -133,7 +133,7 @@ void ignore_invalid_parameters(const wchar_t *, const wchar_t *, const wchar_t *
 }
 #endif
 
-#define USE_VRAM_THREAD
+//#define USE_VRAM_THREAD
 
 #ifdef USE_VRAM_THREAD
 static CRITICAL_SECTION vram_crit_sect;
@@ -582,8 +582,8 @@ void write_text_vram_char(offs_t offset, UINT8 data)
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_char[0] = data;
-	MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, &scr_char, 1, &uchar, 1);
-	WriteConsoleOutputCharacterW(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
+	MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, scr_char, 1, &uchar, 1);
+	WriteConsoleOutputCharacterW(GetStdHandle(STD_OUTPUT_HANDLE), &uchar, 1, co, &num);
 #endif
 }
 
@@ -3432,7 +3432,6 @@ int main(int argc, char *argv[], char *envp[])
 		_setmbcp(multibyte_cp);
 		SetConsoleCP(input_cp);
 		SetConsoleOutputCP(multibyte_cp);
-		
 		if(get_console_info_success) {
 			if(restore_console_on_exit) {
 				// window can't be bigger than buffer,
@@ -3566,7 +3565,6 @@ void change_console_size(int width, int height)
 		SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 		SetConsoleWindowInfo(hStdout, TRUE, &rect);
 	}
-	
 	scr_width = scr_buf_size.X = width;
 	scr_height = scr_buf_size.Y = height;
 	scr_top = 0;
@@ -3645,10 +3643,15 @@ bool update_console_input()
 						POINT curpos;
 						GetCursorPos(&curpos);
 						ScreenToClient(get_console_window_handle(), &curpos);
-						if(vga_graph) {
+#ifdef SUPPORT_GRAPHIC_SCREEN
+						if(vga_graph) 
+						{
 							x = curpos.x * vga_widthscl;
 							y = curpos.y * vga_heightscl;
-						} else {
+						}
+						else 
+#endif
+						{
 							get_console_font_size(&x, &y);
 							// FIXME: character size is always 8x8 ???
 							x = (curpos.x / x) * 8;
@@ -3811,8 +3814,10 @@ bool update_console_input()
 									};
 									scn = ctrl_map[scn - 0x35];
 								}
+#ifdef SUPPORT_GRAPHIC_SCREEN
 								if((scn == 0x67) && vga_graph)
 									mouse_set(!mouse_capture);
+#endif
 							} else if(ir[i].Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) {
 								if(scn >= 0x3b && scn <= 0x44) {
 									scn += 0x54 - 0x3b;	// F1 to F10
@@ -7712,8 +7717,10 @@ inline void pcbios_int_10h_00h()
 		mem[0x487] &= ~0x80;
 	}
 	mem[0x449] = REG8(AL) & 0x7f;
+#ifdef SUPPORT_GRAPHIC_SCREEN
 	if(!vga_graph)
 		mouse_set(false);
+#endif
 }
 
 inline void pcbios_int_10h_01h()
@@ -8503,23 +8510,31 @@ inline void pcbios_int_10h_ffh()
 {
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+		HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 		COORD co;
 		DWORD num;
 		
 		vram_flush();
 		
-		co.X = (REG16(DI) >> 1) % scr_width;
+		co.X = 0;
 		co.Y = (REG16(DI) >> 1) / scr_width;
-		int ofs = pcbios_get_shadow_buffer_address(0, co.X, co.Y);
+		int ofs = pcbios_get_shadow_buffer_address(0, 0, co.Y);
 		int end = min(ofs + REG16(CX) * 2, pcbios_get_shadow_buffer_address(0, 0, scr_height));
 		int len;
 		for(len = 0; ofs < end; len++) {
 			scr_char[len] = mem[ofs++];
 			scr_attr[len] = mem[ofs++];
 		}
+		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, len * 2);
+		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, scr_char, len, uchar, len);
 		co.Y += scr_top;
-		WriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
-		WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
+		for(int i = 0; i < len; i+=scr_width, co.Y++)
+		{
+			WriteConsoleOutputCharacterW(hStdout, uchar + i, scr_width, co, &num);
+			WriteConsoleOutputAttribute(hStdout, scr_attr + i, scr_width, co, &num);
+			WriteConsoleA(hStdout, "\n", 1, NULL, NULL);
+		}
+		HeapFree(GetProcessHeap(), 0, uchar);
 	}
 	int_10h_ffh_called = true;
 }
@@ -20622,7 +20637,7 @@ UINT8 vga_read_status()
 		QueryPerformanceFrequency(&rate);
 		msrate = rate.QuadPart / 1000;
 	}
-
+#ifdef SUPPORT_GRAPHIC_SCREEN
 	if(running)
 	{
 		LARGE_INTEGER count;
@@ -20631,6 +20646,7 @@ UINT8 vga_read_status()
 			vsyncstat = true;
 	}
 	else
+#endif
 		vsyncstat = (timeGetTime() % 16) < 4;
 	if(hcount++ >= 10)
 	{
@@ -21011,10 +21027,12 @@ void debugger_write_io_byte(offs_t addr, UINT8 val)
 			if(crtc_regs[crtc_addr] != val) {
 				crtc_regs[crtc_addr] = val;
 				crtc_changed[crtc_addr] = 1;
+#ifdef SUPPORT_GRAPHIC_SCREEN
 				if(crtc_addr == 0x13 && mem[0x449] > 3) {
 					int mult = crtc_regs[0x14] & 0x40 ? 4 : 1;
 					init_graphics(vga_width, vga_height, vga_bpp, val * vga_bpp * mult);
 				}
+#endif
 			}
 		}
 		break;
