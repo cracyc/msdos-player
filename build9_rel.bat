@@ -43,16 +43,6 @@ mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i286_x64
 copy Release\msdos.exe binary\i286_x64\.
 
-devenv.com msdos.vcproj /Rebuild "Release_i386|Win32"
-mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
-mkdir binary\i386_x86
-copy Release\msdos.exe binary\i386_x86\.
-
-devenv.com msdos.vcproj /Rebuild "Release_i386|x64"
-mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
-mkdir binary\i386_x64
-copy Release\msdos.exe binary\i386_x64\.
-
 devenv.com msdos.vcproj /Rebuild "Release_i486|Win32"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i486_x86
@@ -62,6 +52,16 @@ devenv.com msdos.vcproj /Rebuild "Release_i486|x64"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i486_x64
 copy Release\msdos.exe binary\i486_x64\.
+
+devenv.com msdos.vcproj /Rebuild "Release_pentium4|Win32"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\pentium4_x86
+copy Release\msdos.exe binary\pentium4_x86\.
+
+devenv.com msdos.vcproj /Rebuild "Release_pentium4|x64"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\pentium4_x64
+copy Release\msdos.exe binary\pentium4_x64\.
 
 devenv.com msdos_np21.vcproj /Rebuild "Release|Win32"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1

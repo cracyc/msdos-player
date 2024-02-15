@@ -47,12 +47,7 @@
 	#define BYTESEX_LITTLE
 #endif
 
-#ifndef REG8
-	#define	REG8	UINT8
-#endif
-#ifndef REG16
-	#define	REG16	UINT16
-#endif
+/* Little Ending */
 
 #ifndef LOADINTELDWORD
 #define	LOADINTELDWORD(a)	(((UINT32)(((UINT8*)(a))[0])      ) |	\
@@ -77,8 +72,23 @@
 				*(((UINT8*)(a))+1) = (UINT8)((b)>>8)
 #endif
 
+/* *** */
+
+#ifndef	NELEMENTS
+#define	NELEMENTS(a)	((int)(sizeof(a) / sizeof(a[0])))
+#endif
+
+// ---- Optimize Macros
+
+#ifndef REG8
+#define	REG8		UINT8
+#endif
+#ifndef REG16
+#define	REG16		UINT16
+#endif
+
 #ifndef LOW16
-#define	LOW16(a)		((UINT16)(a))
+#define	LOW16(a)	((UINT16)(a))
 #endif
 
 #ifndef INLINE
@@ -450,6 +460,7 @@ typedef struct {
 #endif
 } I386STAT;
 
+#if 0
 typedef struct {
 	UINT8		*ext;
 	UINT32		extsize;
@@ -459,10 +470,13 @@ typedef struct {
 	UINT32		inport;
 	UINT8		*ems[4];
 } I386EXT;
+#endif
 
 typedef struct {
 	I386STAT	s;		/* STATsave'ed */
+#if 0
 	I386EXT		e;
+#endif
 } I386CORE;
 
 #define I386CPUID_VERSION	1
@@ -518,6 +532,7 @@ extern I386MSR		i386msr;
 #define CPU_TYPE	i386core.s.cpu_type
 #define CPUTYPE_V30	0x01
 
+#if 0
 #define	CPU_EXTMEM	i386core.e.ext
 #define	CPU_EXTMEMSIZE	i386core.e.extsize
 #define	CPU_EXTMEMBASE	i386core.e.extbase
@@ -525,6 +540,7 @@ extern I386MSR		i386msr;
 #define	CPU_EXTLIMIT	i386core.e.extlimit4gb
 #define	CPU_INPADRS	i386core.e.inport
 #define	CPU_EMSPTR	i386core.e.ems
+#endif
 
 #ifndef __cplusplus
 extern sigjmp_buf	exec_1step_jmpbuf;

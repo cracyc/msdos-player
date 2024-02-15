@@ -444,10 +444,10 @@ INLINE void mul64To128( bits64 a, bits64 b, bits64 *z0Ptr, bits64 *z1Ptr )
     bits32 aHigh, aLow, bHigh, bLow;
     bits64 z0, zMiddleA, zMiddleB, z1;
 
-    aLow = a;
-    aHigh = a>>32;
-    bLow = b;
-    bHigh = b>>32;
+    aLow = (bits32) a;
+    aHigh = (bits32) (a>>32);
+    bLow = (bits32) b;
+    bHigh = (bits32) (b>>32);
     z1 = ( (bits64) aLow ) * bLow;
     zMiddleA = ( (bits64) aLow ) * bHigh;
     zMiddleB = ( (bits64) aHigh ) * bLow;
@@ -654,7 +654,7 @@ static int8 countLeadingZeros64( bits64 a )
     else {
         a >>= 32;
     }
-    shiftCount += countLeadingZeros32( a );
+    shiftCount += countLeadingZeros32( (bits32) a );
     return shiftCount;
 
 }

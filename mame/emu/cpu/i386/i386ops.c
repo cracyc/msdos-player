@@ -2405,18 +2405,71 @@ static void I386OP(decimal_adjust)(int direction)
 
 static void I386OP(daa)()               // Opcode 0x27
 {
+#if 0
 	I386OP(decimal_adjust)(+1);
+#else
+	// from DOSBox
+	if (((REG8(AL) & 0x0f) > 0x09) || m_AF) {
+		if ((REG8(AL) > 0x99) || m_CF) {
+			REG8(AL) += 0x60;
+			m_CF = 1;
+		} else {
+			m_CF = 0;
+		}
+		REG8(AL) += 0x06;
+		m_AF = 1;
+	} else {
+		if ((REG8(AL) > 0x99) || m_CF) {
+			REG8(AL) += 0x60;
+			m_CF = 1;
+		} else {
+			m_CF = 0;
+		}
+		m_AF = 0;
+	}
+	m_SF = ((REG8(AL) & 0x80) != 0);
+	m_ZF = (REG8(AL) == 0);
+	m_PF = i386_parity_table[REG8(AL)];
+#endif
 	CYCLES(CYCLES_DAA);
 }
 
 static void I386OP(das)()               // Opcode 0x2f
 {
+#if 0
 	I386OP(decimal_adjust)(-1);
+#else
+	// from DOSBox
+	UINT8 osigned = REG8(AL) & 0x80;
+	if (((REG8(AL) & 0x0f) > 9) || m_AF) {
+		if ((REG8(AL) > 0x99) || m_CF) {
+			REG8(AL) -= 0x60;
+			m_CF = 1;
+		} else {
+			m_CF = (REG8(AL) <= 0x05);
+		}
+		REG8(AL) -= 6;
+		m_AF = 1;
+	} else {
+		if ((REG8(AL) > 0x99) || m_CF) {
+			REG8(AL) -= 0x60;
+			m_CF = 1;
+		} else {
+			m_CF = 0;
+		}
+		m_AF = 0;
+	}
+	m_OF = ((osigned != 0) && ((REG8(AL) & 0x80) == 0));
+	m_SF = ((REG8(AL) & 0x80) != 0);
+	m_ZF = (REG8(AL) == 0);
+	m_PF = i386_parity_table[REG8(AL)];
+#endif
 	CYCLES(CYCLES_DAS);
 }
 
 static void I386OP(aaa)()               // Opcode 0x37
 {
+#if 0
 	if( ( (REG8(AL) & 0x0f) > 9) || (m_AF != 0) ) {
 		REG16(AX) = REG16(AX) + 6;
 		REG8(AH) = REG8(AH) + 1;
@@ -2426,12 +2479,36 @@ static void I386OP(aaa)()               // Opcode 0x37
 		m_AF = 0;
 		m_CF = 0;
 	}
-	REG8(AL) = REG8(AL) & 0x0f;
+#else
+	// from DOSBox
+	m_SF = ((REG8(AL) >= 0x7a) && (REG8(AL) <= 0xf9));
+	if ((REG8(AL) & 0xf) > 9) {
+		m_OF = ((REG8(AL) & 0xf0) == 0x70);
+		REG16(AX) += 0x106;
+		m_CF = 1;
+		m_ZF = (REG8(AL) == 0);
+		m_AF = 1;
+	} else if (m_AF) {
+		REG16(AX) += 0x106;
+		m_OF = 0;
+		m_CF = 1;
+		m_ZF = 0;
+		m_AF = 1;
+	} else {
+		m_OF = 0;
+		m_CF = 0;
+		m_ZF = (REG8(AL) == 0);
+		m_AF = 0;
+	}
+	m_PF = i386_parity_table[REG8(AL)];
+#endif
+	REG8(AL) &= 0x0f;
 	CYCLES(CYCLES_AAA);
 }
 
 static void I386OP(aas)()               // Opcode 0x3f
 {
+#if 0
 	if (m_AF || ((REG8(AL) & 0xf) > 9))
 	{
 		REG16(AX) -= 6;
@@ -2444,6 +2521,29 @@ static void I386OP(aas)()               // Opcode 0x3f
 		m_AF = 0;
 		m_CF = 0;
 	}
+#else
+	// from DOSBox
+	if ((REG8(AL) & 0x0f) > 9) {
+		m_SF = (REG8(AL) > 0x85);
+		REG16(AX) -= 0x106;
+		m_OF = 0;
+		m_CF = 1;
+		m_AF = 1;
+	} else if (m_AF) {
+		m_OF = ((REG8(AL) >= 0x80) && (REG8(AL) <= 0x85));
+		m_SF = (REG8(AL) < 0x06) || (REG8(AL) > 0x85);
+		REG16(AX) -= 0x106;
+		m_CF = 1;
+		m_AF = 1;
+	} else {
+		m_SF = (REG8(AL) >= 0x80);
+		m_OF = 0;
+		m_CF = 0;
+		m_AF = 0;
+	}
+	m_ZF = (REG8(AL) == 0);
+	m_PF = i386_parity_table[REG8(AL)];
+#endif
 	REG8(AL) &= 0x0f;
 	CYCLES(CYCLES_AAS);
 }
@@ -2457,6 +2557,8 @@ static void I386OP(aad)()               // Opcode 0xd5
 	REG8(AL) = (tempAL + (tempAH * i)) & 0xff;
 	REG8(AH) = 0;
 	SetSZPF8( REG8(AL) );
+	// from DOSBox
+	m_CF = m_OF = m_AF = 0;
 	CYCLES(CYCLES_AAD);
 }
 
@@ -2473,6 +2575,8 @@ static void I386OP(aam)()               // Opcode 0xd4
 	REG8(AH) = tempAL / i;
 	REG8(AL) = tempAL % i;
 	SetSZPF8( REG8(AL) );
+	// from DOSBox
+	m_CF = m_OF = m_AF = 0;
 	CYCLES(CYCLES_AAM);
 }
 
@@ -2487,6 +2591,11 @@ static void I386OP(clts)()              // Opcode 0x0f 0x06
 
 static void I386OP(wait)()              // Opcode 0x9B
 {
+	if ((m_cr[0] & 0xa) == 0xa)
+	{
+		i386_trap(FAULT_NM, 0, 0);
+		return;
+	}
 	// TODO
 }
 
