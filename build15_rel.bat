@@ -37,6 +37,14 @@ msbuild.exe msdos.vcxproj /t:clean;rebuild /p:Configuration=Release_i286;Platfor
 mkdir binary\i286_x64
 copy Release\msdos.exe binary\i286_x64\.
 
+msbuild.exe msdos.vcxproj /t:clean;rebuild /p:Configuration=Release_i386;Platform="Win32"
+mkdir binary\i386_x86
+copy Release\msdos.exe binary\i386_x86\.
+
+msbuild.exe msdos.vcxproj /t:clean;rebuild /p:Configuration=Release_i386;Platform="x64"
+mkdir binary\i386_x64
+copy Release\msdos.exe binary\i386_x64\.
+
 msbuild.exe msdos.vcxproj /t:clean;rebuild /p:Configuration=Release_i486;Platform="Win32"
 mkdir binary\i486_x86
 copy Release\msdos.exe binary\i486_x86\.

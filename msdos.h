@@ -643,11 +643,11 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 #ifdef SUPPORT_GRAPHIC_SCREEN
 #define MEMORY_END	0xa0000
 #define VGA_VRAM_TOP	0xa0000
-#define VGA_VRAM_LAST	0xbffff
 #define VGA_VRAM_END	0xc0000
 #else
-#define MEMORY_END	0xb8000
+#define MEMORY_END	0xb0000
 #endif
+#define MDA_VRAM_TOP	0xb0000
 #define TEXT_VRAM_TOP	0xb8000
 #define EMS_TOP		0xc0000
 #define EMS_SIZE	0x10000

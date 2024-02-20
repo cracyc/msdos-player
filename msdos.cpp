@@ -83,6 +83,25 @@ void exit_handler();
 	#define unimplemented_xms nolog
 #endif
 
+#if 1
+errno_t my_strcpy_s(char *dest, rsize_t dest_size, const char *src)
+{
+	strncpy(dest, src, dest_size - 1);
+	dest[dest_size - 1] = '\0';
+	return 0;
+}
+
+errno_t my_wcscpy_s(wchar_t *dest, rsize_t dest_size, const wchar_t *src)
+{
+	wcsncpy(dest, src, dest_size - 1);
+	dest[dest_size - 1] = L'\0';
+	return 0;
+}
+#else
+#define my_strcpy_s(dest, dest_size, src) strcpy_s((dest), (dest_size), (src))
+#define my_wcscpy_s(dest, dest_size, src) wcscpy_s((dest), (dest_size), (src))
+#endif
+
 #if 0
 char *my_getenv(const char *varname)
 {
@@ -94,7 +113,7 @@ char *my_getenv(const char *varname)
 		unsigned int output_index = (table_index++) & 7;
 
 //		strcpy(result[output_index], tmp);
-		strcpy_s(result[output_index], ENV_SIZE, tmp);
+		my_strcpy_s(result[output_index], ENV_SIZE, tmp);
 		return result[output_index];
 	}
 	return NULL;
@@ -1223,7 +1242,7 @@ void debugger_main()
 	
 	char command[MAX_COMMAND_LEN + 1];
 	char prev_command[MAX_COMMAND_LEN + 1] = {0};
-	char file_path[_MAX_PATH] = "debug.bin";
+	char file_path[MAX_PATH] = "debug.bin";
 	
 	UINT32 data_seg = CPU_DS;
 	UINT32 data_ofs = 0;
@@ -1596,14 +1615,14 @@ void debugger_main()
 				}
 			} else if(stricmp(params[0], "N") == 0) {
 				if(num >= 2 && params[1][0] == '\"') {
-					strcpy_s(buffer, sizeof(buffer), prev_command);
+					my_strcpy_s(buffer, sizeof(buffer), prev_command);
 					if((token = strtok_s(buffer, "\"", &context)) != NULL && (token = strtok_s(NULL, "\"", &context)) != NULL) {
-						strcpy_s(file_path, _MAX_PATH, token);
+						my_strcpy_s(file_path, MAX_PATH, token);
 					} else {
 						telnet_printf("invalid parameter\n");
 					}
 				} else if(num == 2) {
-					strcpy_s(file_path, _MAX_PATH, params[1]);
+					my_strcpy_s(file_path, MAX_PATH, params[1]);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -2651,7 +2670,7 @@ void set_default_console_font_info(CONSOLE_FONT_INFOEX *fi)
 	fi->dwFontSize.Y = 18;
 	fi->FontFamily = 0;
 	fi->FontWeight = 400;
-	wcscpy_s(fi->FaceName, LF_FACESIZE, L"Terminal");
+	my_wcscpy_s(fi->FaceName, LF_FACESIZE, L"Terminal");
 }
 
 bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
@@ -2711,6 +2730,7 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 
 bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 {
+	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
@@ -4405,13 +4425,15 @@ void msdos_dta_info_free(UINT16 psp_seg)
 	}
 }
 
-void msdos_cds_update(int drv)
+bool msdos_cds_update(int drv)
 {
 	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
+	bool valid_drive = msdos_is_valid_drive(drv);
+	bool need_to_chdir = false;
 	
 	memset(cds, 0, 88);
 	
-	if(msdos_is_valid_drive(drv)) {
+	if(valid_drive) {
 		char path[MAX_PATH];
 		if(msdos_is_remote_drive(drv)) {
 			cds->drive_attrib = 0xc000;	// network drive
@@ -4421,24 +4443,27 @@ void msdos_cds_update(int drv)
 			cds->drive_attrib = 0x4000;	// physical drive
 		}
 		if(_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
-			strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
+			my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 		}
 	}
 	if(cds->path_name[0] == '\0') {
 		sprintf(cds->path_name, "%c:\\", 'A' + drv);
+		need_to_chdir = valid_drive; // this may not be current directory of this drive
 	}
 	cds->dpb_ptr.w.h = DPB_TOP >> 4;
 	cds->dpb_ptr.w.l = (UINT16)(sizeof(dpb_t) * drv);
 	cds->word_1 = cds->word_2 = 0xffff;
 	cds->word_3 = 0xffff; // stored user data from INT 21/AX=5F03h if this is network drive
 	cds->bs_offset = 2;
+	
+	return(need_to_chdir);
 }
 
 void msdos_cds_update(int drv, const char *path)
 {
 	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
 	
-	strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
+	my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 }
 
 // nls information tables
@@ -7557,6 +7582,8 @@ int pcbios_get_text_vram_address(int page)
 {
 	if(/*mem[0x449] == 0x03 || */mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		return TEXT_VRAM_TOP;
+	} else if(mem[0x449] == 0x07) {
+		return MDA_VRAM_TOP;
 	} else {
 		return TEXT_VRAM_TOP + VIDEO_REGEN * (page % vram_pages);
 	}
@@ -7664,14 +7691,14 @@ static void vga_write(UINT32 addr, UINT32 data, int size)
 inline void pcbios_int_10h_00h()
 {
 	switch(CPU_AL & 0x7f) {
-	case 0x70: // v-text mode
-	case 0x71: // extended cga v-text mode
+	case 0x70: // V-Text Mode
+	case 0x71: // Extended CGA V-Text Mode
 		pcbios_set_console_size(scr_width, scr_height, !(CPU_AL & 0x80));
 		break;
-	case 0x73:
-	case 0x02:
-	case 0x03:
-	case 0x07:
+	case 0x73: // Extended CGA Text Mode
+	case 0x02: // CGA Text Mode (gray)
+	case 0x03: // CGA Text Mode
+	case 0x07: // MDA Text Mode (mono)
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(CPU_AL & 0x80));
@@ -11948,7 +11975,7 @@ inline void msdos_int_21h_3fh()
 								break;
 							}
 							addr += page_total;
-							count  -= page_total;
+							count -= page_total;
 							page_count = min(count, 0x1000);
 						}
 						CPU_AX = total;
@@ -16977,25 +17004,21 @@ inline void msdos_int_67h_5ah()
 
 inline void msdos_int_67h_5bh()
 {
-	static UINT8  stored_bl = 0x00;
 	static UINT16 stored_es = 0x0000;
 	static UINT16 stored_di = 0x0000;
 	
 	if(!support_ems) {
 		CPU_AH = 0x84;
 	} else if(CPU_AL == 0x00) {
-		if(stored_bl == 0x00) {
-			if(!(stored_es == 0 && stored_di == 0)) {
-				for(int i = 0; i < 4; i++) {
-					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
-					*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
-				}
+		if(!(stored_es == 0 && stored_di == 0)) {
+			for(int i = 0; i < 4; i++) {
+				*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 0) = ems_pages[i].mapped ? ems_pages[i].handle : 0xffff;
+				*(UINT16 *)(mem + (stored_es << 4) + stored_di + 4 * i + 2) = ems_pages[i].mapped ? ems_pages[i].page   : 0xffff;
 			}
-			CPU_LOAD_SREG(CPU_ES_INDEX, stored_es);
-			CPU_DI = stored_di;
-		} else {
-			CPU_BL = stored_bl;
 		}
+		CPU_BL = 0x00;
+		CPU_LOAD_SREG(CPU_ES_INDEX, stored_es);
+		CPU_DI = stored_di;
 		CPU_AH = 0x00;
 	} else if(CPU_AL == 0x01) {
 		if(CPU_BL == 0x00) {
@@ -17011,11 +17034,12 @@ inline void msdos_int_67h_5bh()
 					}
 				}
 			}
+			stored_es = CPU_ES;
+			stored_di = CPU_DI;
+			CPU_AH = 0x00;
+		} else {
+			CPU_AH = 0x9c;
 		}
-		stored_bl = CPU_BL;
-		stored_es = CPU_ES;
-		stored_di = CPU_DI;
-		CPU_AH = 0x00;
 	} else if(CPU_AL == 0x02) {
 		CPU_DX = 4 * 4;
 		CPU_AH = 0x00;
@@ -17023,7 +17047,11 @@ inline void msdos_int_67h_5bh()
 		CPU_BL = 0x00; // not supported
 		CPU_AH = 0x00;
 	} else if(CPU_AL == 0x04) {
-		CPU_AH = 0x00;
+		if(CPU_BL == 0x00) {
+			CPU_AH = 0x00;
+		} else {
+			CPU_AH = 0x9c;
+		}
 	} else if(CPU_AL == 0x05) {
 		CPU_BL = 0x00; // not supported
 		CPU_AH = 0x00;
@@ -19607,7 +19635,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		dpb->next_dpb_seg = /*(i == 25) ? 0xffff : */DPB_TOP >> 4;
 	}
 	for(int i = 2; i < 26; i++) {
-		msdos_cds_update(i);
+		if(msdos_cds_update(i) && (_getdrive() - 1) == i) {
+			// make sure the dcwd env var is set
+			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * i);
+			_chdir(cds->path_name);
+		}
 		UINT16 seg, ofs;
 		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}
@@ -21789,6 +21821,14 @@ void beep_update()
 
 // vga
 
+UINT8 mda_read_status()
+{
+	// 50hz
+	UINT32 time = timeGetTime() % 20;
+	
+	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
+}
+
 UINT8 vga_read_status()
 {
 	// 60hz
@@ -21902,16 +21942,20 @@ UINT8 debugger_read_io_byte(UINT32 addr)
 	case 0x378: case 0x379: case 0x37a:
 		val = pio_read(0, addr);
 		break;
-	case 0x3ba: case 0x3da:
-		val = vga_read_status();
-		break;
-	case 0x3bc: case 0x3bd: case 0x3be:
-		val = pio_read(2, addr);
-		break;
+	case 0x3b1: case 0x3b3: case 0x3b5: case 0x3b7:
 	case 0x3d5:
 		if(crtc_addr < 16) {
 			val = crtc_regs[crtc_addr];
 		}
+		break;
+	case 0x3ba:
+		val = mda_read_status();
+		break;
+	case 0x3da:
+		val = vga_read_status();
+		break;
+	case 0x3bc: case 0x3bd: case 0x3be:
+		val = pio_read(2, addr);
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		val = sio_read(2, addr);
@@ -22071,12 +22115,11 @@ void debugger_write_io_byte(UINT32 addr, UINT8 val)
 	case 0x378: case 0x379: case 0x37a:
 		pio_write(0, addr, val);
 		break;
-	case 0x3bc: case 0x3bd: case 0x3be:
-		pio_write(2, addr, val);
-		break;
+	case 0x3b0: case 0x3b2: case 0x3b4: case 0x3b6:
 	case 0x3d4:
 		crtc_addr = val;
 		break;
+	case 0x3b1: case 0x3b3: case 0x3b5: case 0x3b7:
 	case 0x3d5:
 		if(crtc_addr < 16) {
 			if(crtc_regs[crtc_addr] != val) {
@@ -22084,6 +22127,9 @@ void debugger_write_io_byte(UINT32 addr, UINT8 val)
 				crtc_changed[crtc_addr] = 1;
 			}
 		}
+		break;
+	case 0x3bc: case 0x3bd: case 0x3be:
+		pio_write(2, addr, val);
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		sio_write(2, addr, val);

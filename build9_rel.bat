@@ -43,6 +43,16 @@ mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i286_x64
 copy Release\msdos.exe binary\i286_x64\.
 
+devenv.com msdos.vcproj /Rebuild "Release_i386|Win32"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\i386_x86
+copy Release\msdos.exe binary\i386_x86\.
+
+devenv.com msdos.vcproj /Rebuild "Release_i386|x64"
+mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
+mkdir binary\i386_x64
+copy Release\msdos.exe binary\i386_x64\.
+
 devenv.com msdos.vcproj /Rebuild "Release_i486|Win32"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\i486_x86

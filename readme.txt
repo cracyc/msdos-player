@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/1/2022
+								2/18/2024
 
 ----- What's This
 
@@ -119,7 +119,7 @@ the table on the virtual machine (hereinafter, referred to as "virtual table"),
 and in this time, APPEND/MSDOS_PATH/PATH/TEMP/TMP values are converted to
 short path.
 
-Some softwares (for example DoDiary Version 1.55) invite that the environment
+Some softwares (for example DoDiary Version 1.55) expect that the environment
 variable table should be less than 1024 bytes.
 On the Windows OS, there are too many variables and the environment variable
 table size will be more than 1024 bytes and it causes an error.
@@ -353,13 +353,15 @@ This archive contains 12 executable binaries:
 	i386_x64	Emulates 80386 and supports only 64bit Windows
 	i486_x86	Emulates 80486 and supports both 32bit/64bit Windows
 	i486_x64	Emulates 80486 and supports only 64bit Window
+	pentium4_x86	Emulates Pentium4 and supports both 32bit/64bit Windows
+	pentium4_x64	Emulates Pentium4 and supports only 64bit Window
 	v30_x86 	Emulates NEC V30 and supports both 32bit/64bit Windows
 	v30_x64 	Emulates NEC V30 and supports only 64bit Windows
 	ia32_x86	Emulates IA32 and supports both 32bit/64bit Windows
 	ia32_x64	Emulates IA32 and supports only 64bit Windows
 
-8086 binaries are much faster than 80286/80386/80486/IA32 binaries.
-If you don't need the protected mode or new mnemonics of 80286/80386/80486,
+8086 binaries are much faster than 80286/80386/80486/Pentium4/IA32 binaries.
+If you don't need the protected mode or new mnemonics added after 80286,
 I recommend i86_x86 or i86_x64 binary.
 
 NEC V30 binaries support 8080 emulation mode.
@@ -369,10 +371,10 @@ IA32 binaries include Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
 These binaries will emulate the protected mode more correctly.
 
 The VC++ project file "msdos.vcproj/vcxproj" also contains the configurations
-for 80186, Pentium/PRO/MMX/2/3/4, and Cyrix MediaGX.
+for 80186, Pentium/PRO/MMX/2/3, and Cyrix MediaGX.
 You can build all binaries for several cpu models by running build9_all.bat
-or build12_all.bat.
-(You need VC++ 2008 with Service Pack 1 or VC++ 2013 with Update 5.)
+or build15_all.bat.
+(You need VC++ 2008 with Service Pack 1 or VC++ 2017)
 
 
 ----- Internal Debugger
@@ -412,10 +414,10 @@ They are very similar to DEBUG command, and some break point functions
 
 This emulator provides a very simple IBM PC-like hardware emulation:
 
-CPU 8086/80286/80386/80486, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
+CPU 8086/286/386/486/Pentium4, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
 PC BIOS, DMA Controller (dummy), Interrupt Controller, System Timer,
 Parallel I/O (LPT1-3), Serial I/O (COM1-4), Real Time Clock + CMOS Memory,
-VGA Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
+MDA/CGA CRTC + Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
 and 2-Button Mouse
 
 NOTE:
@@ -428,8 +430,9 @@ NOTE:
 
 ----- Memory Map
 
-000000H -	Conventional Memory (736KB)
-0B8000H -	VGA Text Video RAM (32KB)
+000000H -	Conventional Memory (704KB)
+0B0000H -	MDA Text Video RAM (32KB)
+0B8000H -	CGA Text Video RAM (32KB)
 ----------
 0C0000H -	Upper Memory Block (224KB)
 --- Or ---
@@ -1028,7 +1031,7 @@ waits until the child process is terminated.
 In this time, any characters output to the console by this Win32/64 child
 process is not hooked by INT 29H service.
 
-When you run a Win32/64 program with pipe, it may not work as you invite.
+When you run a Win32/64 program with pipe, it may not work as you expect.
 For example, you may run Win32/64 version of more.com with pipe as follows:
 
 > msdos command.com
@@ -1070,7 +1073,7 @@ Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player
 
 Patched by Mr.Sagawa, Mr.sava (lukewarm), Mr.Kimura (emk), Mr.Jason Hood,
-Mr.N2583ZYOB6, and Mr.Fujita.
+Mr.N2583ZYOB6, Mr.Fujita, Mr.Mark Ogden, Mr.cacyc, and Mr.roytam
 
 ----------------------------------------
 TAKEDA, toshiya
