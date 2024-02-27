@@ -83,6 +83,12 @@ void exit_handler();
 	#define unimplemented_xms nolog
 #endif
 
+BOOL is_win2k_or_later;
+BOOL is_winxp_or_later;
+BOOL is_xp_64_or_later;
+BOOL is_vista_or_later;
+BOOL is_win10_or_later;
+
 #if 1
 errno_t my_strcpy_s(char *dest, rsize_t dest_size, const char *src)
 {
@@ -101,6 +107,13 @@ errno_t my_wcscpy_s(wchar_t *dest, rsize_t dest_size, const wchar_t *src)
 #define my_strcpy_s(dest, dest_size, src) strcpy_s((dest), (dest_size), (src))
 #define my_wcscpy_s(dest, dest_size, src) wcscpy_s((dest), (dest_size), (src))
 #endif
+
+size_t my_strlcpy(char *dst, const char *src, size_t size)
+{
+	strncpy(dst, src, size - 1);
+	dst[size - 1] = '\0';
+	return strlen(src);
+}
 
 #if 0
 char *my_getenv(const char *varname)
@@ -155,6 +168,62 @@ inline char *my_strupr(char *str)
 #endif
 #define array_length(array) (sizeof(array) / sizeof(array[0]))
 
+DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuffer)
+{
+	if(is_win2k_or_later) {
+		HMODULE hLibrary = NULL;
+		typedef DWORD (WINAPI* GetLongPathNameFunction)(LPCSTR, LPSTR, DWORD);
+		GetLongPathNameFunction lpfnGetLongPathNameA = NULL;
+		
+		if((hLibrary = LoadLibraryA("Kernel32.dll")) != NULL) {
+			if((lpfnGetLongPathNameA = reinterpret_cast<GetLongPathNameFunction>(::GetProcAddress(hLibrary, "GetLongPathNameA"))) != NULL) {
+				DWORD result = lpfnGetLongPathNameA(lpszShortPath, lpszLongPath, cchBuffer);
+				FreeLibrary(hLibrary);
+				return result;
+			}
+			FreeLibrary(hLibrary);
+		}
+	}
+	
+	// Windows NT4 does not support GetLongPathNameA
+	// http://www.expertmg.co.jp/html/cti/vctips/file.htm
+	
+	WIN32_FIND_DATAA ffd;
+	char szTempShortPath[1024];
+	char szLongPath[1024] = {0};
+	char szTempPath[1024];
+	LPSTR lpSeparator = NULL;
+	DWORD dwLength;
+	
+	my_strlcpy(szTempShortPath, lpszShortPath, sizeof(szTempShortPath));
+	
+	if(FindFirstFileA(szTempShortPath, &ffd ) == INVALID_HANDLE_VALUE) {
+		return 0;
+	}
+	do {
+		if((lpSeparator = my_strrchr(szTempShortPath, '\\')) != NULL) {
+			int nPos = lpSeparator - szTempShortPath;
+			if(strlen(szLongPath) == 0) {
+				my_strlcpy(szLongPath, ffd.cFileName, sizeof(szLongPath));
+			} else {
+				_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", ffd.cFileName, szLongPath);
+				my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
+			}
+			szTempShortPath[nPos] = '\0';
+			FindFirstFile(szTempShortPath ,&ffd);
+		} else {
+			_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempShortPath, szLongPath);
+			my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
+		}
+	} while(lpSeparator != NULL);
+	
+	if((dwLength = (DWORD)strlen(szLongPath)) >= cchBuffer) {
+		return dwLength + 1;
+	}
+	my_strlcpy(lpszLongPath, szLongPath, cchBuffer);
+	return dwLength;
+}
+
 #if defined(__MINGW32__)
 extern "C" int _CRT_glob = 0;
 #endif
@@ -207,11 +276,6 @@ bool sio_dsr_flow_ctrl = false;
 bool sio_cts_flow_ctrl = false;
 bool ansi_sys = true;
 bool box_line = false;
-
-BOOL is_winxp_or_later;
-BOOL is_xp_64_or_later;
-BOOL is_vista_or_later;
-BOOL is_win10_or_later;
 
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
@@ -270,12 +334,13 @@ cpu_trace_t cpu_trace[MAX_CPU_TRACE] = {0};
 int cpu_trace_ptr = 0;
 UINT32 prev_trace_pc = -1;
 
-void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip)
+void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32)
 {
 	if(prev_trace_pc != pc) {
 		cpu_trace[cpu_trace_ptr].pc = prev_trace_pc = pc;
 		cpu_trace[cpu_trace_ptr].cs = cs;
 		cpu_trace[cpu_trace_ptr].eip = eip;
+		cpu_trace[cpu_trace_ptr].op32 = op32;
 		cpu_trace_ptr = (cpu_trace_ptr + 1) & (MAX_CPU_TRACE - 1);
 	}
 }
@@ -900,8 +965,8 @@ void debugger_init()
 
 bool check_file_extension(const char *file_path, const char *ext)
 {
-	int nam_len = strlen(file_path);
-	int ext_len = strlen(ext);
+	int nam_len = (int)strlen(file_path);
+	int ext_len = (int)strlen(ext);
 	
 	return (nam_len >= ext_len && strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
 }
@@ -917,7 +982,7 @@ void telnet_send(const char *string)
 		strcpy(buffer, tmp);
 	}
 	
-	int len = strlen(buffer), res;
+	int len = (int)strlen(buffer), res;
 	ptr = buffer;
 	while(len > 0) {
 		if((res = send(cli_socket, ptr, len, 0)) > 0) {
@@ -1037,7 +1102,7 @@ void telnet_set_color(int color)
 	telnet_command("\033[%dm\033[3%dm", (color >> 3) & 1, (color & 7));
 }
 
-int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip)
+int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip, BOOL op32)
 {
 //	UINT8 *oprom = mem + (pc & ADDR_MASK);
 	UINT8 oprom[16];
@@ -1046,12 +1111,23 @@ int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip)
 		oprom[i] = debugger_read_byte((pc++) & ADDR_MASK);
 	}
 	
-#if defined(HAS_I386)
-	if(CPU_INST_OP32) {
+#if defined(HAS_I386) || defined(HAS_V30)
+	if(op32) {
 		return CPU_DISASSEMBLE(oprom, eip, true, buffer, buffer_len);
 	} else
 #endif
 	return CPU_DISASSEMBLE(oprom, eip, false, buffer, buffer_len);
+}
+
+int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip)
+{
+#if defined(HAS_I386)
+	return debugger_dasm(buffer, buffer_len, pc, eip, CPU_INST_OP32);
+#elif defined(HAS_V30)
+	return debugger_dasm(buffer, buffer_len, pc, eip, CPU_INST_8080);
+#else
+	return debugger_dasm(buffer, buffer_len, pc, eip, 0);
+#endif
 }
 
 void debugger_regs_info(char *buffer)
@@ -1060,7 +1136,7 @@ void debugger_regs_info(char *buffer)
 	
 #if defined(HAS_I386)
 	if(CPU_INST_OP32) {
-		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		CPU_EAX, CPU_EBX, CPU_ECX, CPU_EDX, CPU_ESP, CPU_EBP, CPU_ESI, CPU_EDI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
 		CPU_STAT_PM ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
@@ -1080,7 +1156,7 @@ void debugger_regs_info(char *buffer)
 		(flags & 0x00001) ? 'C' : '-');
 	} else {
 #endif
-		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%c %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		sprintf(buffer, "AX=%04X  BX=%04X  CX=%04X  DX=%04X  SP=%04X  BP=%04X  SI=%04X  DI=%04X\nIP=%04X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SP, CPU_BP, CPU_SI, CPU_DI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
 #if defined(HAS_I386)
 		CPU_STAT_PM ? "PE" : "--",
@@ -1232,7 +1308,7 @@ void debugger_main()
 	debugger_regs_info(buffer);
 	telnet_printf("%s", buffer);
 	telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-	telnet_printf("breaked at %08X(%04X:%04X)\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
+	telnet_printf("breaked at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
 	telnet_set_color(TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 	debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
 	telnet_printf("next\t%08X(%04X:%04X)  %s\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, buffer);
@@ -1384,7 +1460,7 @@ void debugger_main()
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					strcpy(buffer, prev_command);
 					if((token = strtok(buffer, "\"")) != NULL && (token = strtok(NULL, "\"")) != NULL) {
-						int len = strlen(token);
+						int len = (int)strlen(token);
 						for(int i = 0; i < len; i++) {
 							debugger_write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
 						}
@@ -1554,10 +1630,7 @@ void debugger_main()
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
-							if((dasm_ofs += len) > 0xffff) {
-								dasm_seg += 0x1000;
-								dasm_ofs -= 0x10000;
-							}
+							dasm_ofs += len;
 							dasm_adr += len;
 						}
 					} else {
@@ -1571,10 +1644,7 @@ void debugger_main()
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
-							if((dasm_ofs += len) > 0xffff) {
-								dasm_seg += 0x1000;
-								dasm_ofs -= 0x10000;
-							}
+							dasm_ofs += len;
 							dasm_adr += len;
 						}
 					}
@@ -1756,7 +1826,7 @@ void debugger_main()
 					bool found = false;
 					for(int i = 0; i < MAX_BREAK_POINTS && !found; i++) {
 						if(break_point_ptr->table[i].status == 0 || (break_point_ptr->table[i].seg == seg && break_point_ptr->table[i].ofs == ofs)) {
-							break_point_ptr->table[i].addr = CPU_TRANS_CODE_ADDR(seg, ofs);
+							break_point_ptr->table[i].addr = (seg << 4) + ofs;
 							break_point_ptr->table[i].seg = seg;
 							break_point_ptr->table[i].ofs = ofs;
 							break_point_ptr->table[i].status = 1;
@@ -1965,7 +2035,8 @@ void debugger_main()
 						memset(&break_point, 0, sizeof(break_point_t));
 						break_points_stored = true;
 						
-						break_point.table[0].addr = CPU_GET_NEXT_PC() + debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
+						break_point.table[0].seg = CPU_CS;
+						break_point.table[0].ofs = CPU_EIP + debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);;
 						break_point.table[0].status = 1;
 					} else if(num >= 2) {
 						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
@@ -1974,7 +2045,6 @@ void debugger_main()
 						
 						UINT32 seg = debugger_get_seg(params[1], CPU_CS);
 						UINT32 ofs = debugger_get_ofs(params[1]);
-						break_point.table[0].addr = CPU_TRANS_CODE_ADDR(seg, ofs);
 						break_point.table[0].seg = seg;
 						break_point.table[0].ofs = ofs;
 						break_point.table[0].status = 1;
@@ -2484,6 +2554,7 @@ long get_section_in_exec_file(FILE *fp, const char *name)
 	return(0);
 }
 
+#if 0
 bool is_started_from(const char *name)
 {
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -2505,11 +2576,10 @@ bool is_started_from(const char *name)
 			HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, dwParentProcessID);
 			if(hProcess != NULL) {
 				char module_path[MAX_PATH];
-				if(GetProcessImageFileNameA(hProcess, module_path, MAX_PATH)) {
-					int path_len = (int)strlen(module_path);
-					int name_len = (int)strlen(name);
-					if(path_len >= name_len) {
-						result = (_strnicmp(module_path + path_len - name_len, name, name_len) == 0);
+				if(GetModuleFileNameExA(hProcess, NULL, module_path, MAX_PATH)) {
+					char *module_name = my_strrchr(module_path, '\\');
+					if(module_name) {
+						result = (_stricmp(module_name + 1, name) == 0);
 					}
 				}
 				CloseHandle(hProcess);
@@ -2519,10 +2589,11 @@ bool is_started_from(const char *name)
 	}
 	return(result);
 }
+#endif
 
 bool is_started_from_console()
 {
-	bool result = false;
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	
 	if(is_winxp_or_later) {
 		HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
@@ -2533,14 +2604,20 @@ bool is_started_from_console()
 			lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
 			if(lpfnGetConsoleProcessList) { // Windows XP or later
 				DWORD dwProcessList[32];
-				result = (lpfnGetConsoleProcessList(dwProcessList, 32) > 1);
+				bool result = (lpfnGetConsoleProcessList(dwProcessList, 32) > 1);
 				FreeLibrary(hLibrary);
 				return(result);
 			}
 			FreeLibrary(hLibrary);
 		}
 	}
-	return is_started_from("cmd.exe") || is_started_from("powershell.exe");
+	if(GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+		// If cursor position is (0,0) then we may be launched in a separate console
+		// Notice: a 4NT console window without scrollback and run with `cls && msdos.exe` can trigger this as well
+		return !(csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0);
+	}
+	return false;
+//	return is_started_from("cmd.exe") || is_started_from("powershell.exe");
 }
 
 BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD wServicePackMajor, WORD wServicePackMinor)
@@ -2552,9 +2629,9 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 		typedef BOOL(WINAPI* VerifyVersionInfoFunction)(LPOSVERSIONINFOEXA, DWORD, DWORDLONG);
 		
 		VerSetConditionMaskFunction lpfnVerSetConditionMask = reinterpret_cast<VerSetConditionMaskFunction>(::GetProcAddress(hLibrary, "VerSetConditionMask"));
-		VerifyVersionInfoFunction lpfnVerifyVersionInfo = reinterpret_cast<VerifyVersionInfoFunction>(::GetProcAddress(hLibrary, "VerifyVersionInfoA"));
+		VerifyVersionInfoFunction lpfnVerifyVersionInfoA = reinterpret_cast<VerifyVersionInfoFunction>(::GetProcAddress(hLibrary, "VerifyVersionInfoA"));
 		
-		if(lpfnVerSetConditionMask && lpfnVerifyVersionInfo) { // Windows 2000 or later
+		if(lpfnVerSetConditionMask && lpfnVerifyVersionInfoA) { // Windows 2000 or later
 			// https://msdn.microsoft.com/en-us/library/windows/desktop/ms725491(v=vs.85).aspx
 			OSVERSIONINFOEXA osvi;
 			DWORDLONG dwlConditionMask = 0;
@@ -2577,7 +2654,7 @@ BOOL is_greater_windows_version(DWORD dwMajorVersion, DWORD dwMinorVersion, WORD
 			MY_VER_SET_CONDITION( dwlConditionMask, VER_SERVICEPACKMINOR, op );
 			
 			// Perform the test.
-			BOOL result = lpfnVerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, dwlConditionMask);
+			BOOL result = lpfnVerifyVersionInfoA(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, dwlConditionMask);
 			FreeLibrary(hLibrary);
 			return(result);
 		}
@@ -2687,11 +2764,18 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
 			if(lpfnGetCurrentConsoleFontEx) {
 				if(lpfnGetCurrentConsoleFontEx(hStdout, FALSE, fi)) {
-					if(is_started_from("cmd.exe")) {
+//					if(is_started_from("cmd.exe")) {
+						// GetCurrentConsoleFontEx sets font name in fi->FaceName with UNICODE wide char
+						// But SetCurrentConsoleFontEx seems to request fi->FaceName contains font name with ANSI multi byte char code (why?)
 						char mbs[LF_FACESIZE];
 						WideCharToMultiByte(CP_THREAD_ACP, 0, fi->FaceName, (int)wcslen(fi->FaceName) + 1, mbs, LF_FACESIZE,NULL,NULL);
-						mbstowcs(fi->FaceName, mbs, LF_FACESIZE);
-					}
+						// mbstowcs() depends on locale settings, so I don't use it
+						for(int i = 0; i < LF_FACESIZE; i++) {
+							fi->FaceName[i] = (WCHAR)(UINT8)mbs[i];
+							if(mbs[i] == '\0') break;
+						}
+//						mbstowcs(fi->FaceName, mbs, LF_FACESIZE);
+//					}
 					result = true;
 				}
 			}
@@ -2751,9 +2835,7 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 					}
 				}
 			}
-		}
-//		if(!result) {
-		else {
+		} else {
 			typedef BOOL (WINAPI* GetConsoleFontInfoFunction)(HANDLE, BOOL, DWORD, PCONSOLE_FONT_INFO);
 			typedef DWORD (WINAPI* GetNumberOfConsoleFontsFunction)(VOID);
 			typedef COORD (WINAPI* GetConsoleFontSizeFunction)(HANDLE, DWORD);
@@ -2895,6 +2977,7 @@ void get_sio_port_numbers()
 
 int main(int argc, char *argv[], char *envp[])
 {
+	is_win2k_or_later = is_greater_windows_version( 5, 0, 0, 0);
 	is_winxp_or_later = is_greater_windows_version( 5, 1, 0, 0);
 	is_xp_64_or_later = is_greater_windows_version( 5, 2, 0, 0);
 	is_vista_or_later = is_greater_windows_version( 6, 0, 0, 0);
@@ -2904,6 +2987,10 @@ int main(int argc, char *argv[], char *envp[])
 	output_cp = get_output_code_page();
 	multibyte_cp = get_multibyte_code_page();
 	
+	active_code_page = console_code_page = input_cp;
+	system_code_page = multibyte_cp;
+	
+	bool started_from_console = is_started_from_console();
 	int arg_offset = 0;
 	int standard_env = 0;
 	int buf_width = 0, buf_height = 0;
@@ -3167,7 +3254,7 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-l\tdraw box lines with ank characters\n"
 		);
 		
-		if(!is_started_from_console()) {
+		if(!started_from_console) {
 			fprintf(stderr, "\nStart this program from a command prompt!\n\nHit any key to quit...");
 			while(!_kbhit()) {
 				Sleep(10);
@@ -3594,21 +3681,31 @@ void change_console_size(int width, int height)
 	}
 	
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
-	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
-		if(csbi.srWindow.Right - csbi.srWindow.Left + 1 == width && csbi.srWindow.Bottom - csbi.srWindow.Top + 1 == height) {
+	
+	int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+	int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+	int cur_buffer_width  = csbi.dwSize.X;
+	int cur_buffer_height = csbi.dwSize.Y;
+	
+	// conhost-v2 may crash when cursor is at bottom line, so we need to change cursor position
+	if(csbi.dwCursorPosition.Y > height - 2) {
+		printf("\n"); // hack
+	}
+	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 2) {
+		if(cur_window_width == width && cur_window_height == height) {
 			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
 			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
-		} else if(csbi.dwCursorPosition.Y > height - 1) {
+		} else if(csbi.dwCursorPosition.Y > height - 2) {
 			SET_RECT(rect, 0, csbi.dwCursorPosition.Y - (height - 1), width - 1, csbi.dwCursorPosition.Y);
 			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
 			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		}
 	}
-	if(csbi.dwCursorPosition.Y > height - 1) {
-		co.X = csbi.dwCursorPosition.X;
-		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
+	if(csbi.dwCursorPosition.X > width - 1 || csbi.dwCursorPosition.Y > height - 2) {
+		co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
+		co.Y = min(height - 2, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
 		SetConsoleCursorPosition(hStdout, co);
 		cursor_moved = true;
 		cursor_moved_by_crtc = false;
@@ -3619,18 +3716,29 @@ void change_console_size(int width, int height)
 	// so make a tiny window,
 	// set the required buffer,
 	// then set the required window
-	int min_width  = min(csbi.srWindow.Right - csbi.srWindow.Left + 1, width);
-	int min_height = min(csbi.srWindow.Bottom - csbi.srWindow.Top + 1, height);
+	int min_width  = min(cur_window_width,  width );
+	int min_height = min(cur_window_height, height);
 	
-	SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
-	SetConsoleWindowInfo(hStdout, TRUE, &rect);
-	co.X = width;
-	co.Y = height;
-	SetConsoleScreenBufferSize(hStdout, co);
-	SET_RECT(rect, 0, 0, width - 1, height - 1);
-	if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
-		SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-		SetConsoleWindowInfo(hStdout, TRUE, &rect);
+	if(cur_window_width != min_width || cur_window_height != min_height) {
+		SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
+		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+			SetConsoleWindowInfo(hStdout, TRUE, &rect);
+		}
+		cur_window_width  = min_width;
+		cur_window_height = min_height;
+	}
+	if(cur_buffer_width != width || cur_buffer_height != height) {
+		co.X = width;
+		co.Y = height;
+		SetConsoleScreenBufferSize(hStdout, co);
+	}
+	if(cur_window_width != width || cur_window_height != height) {
+		SET_RECT(rect, 0, 0, width - 1, height - 1);
+		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+			SetConsoleWindowInfo(hStdout, TRUE, &rect);
+		}
 	}
 	
 	scr_width = scr_buf_size.X = width;
@@ -12107,15 +12215,15 @@ inline void msdos_int_21h_43h(int lfn)
 			WIN32_FILE_ATTRIBUTE_DATA tFileInfo;
 			HMODULE hLibrary = NULL;
 			typedef DWORD (WINAPI* GetCompressedFileSizeFunction)(_In_ LPCSTR, _Out_opt_ LPDWORD);
-			GetCompressedFileSizeFunction lpfnGetCompressedFileSize = NULL;
+			GetCompressedFileSizeFunction lpfnGetCompressedFileSizeA = NULL;
 			
 			if(GetFileAttributesExA(path, GetFileExInfoStandard, &tFileInfo) != 0) {
 				file_size = tFileInfo.nFileSizeLow;
 				compressed_size = file_size; // temporary
 				
 				if((hLibrary = LoadLibraryA("Kernel32.dll")) != NULL) {
-					if((lpfnGetCompressedFileSize = reinterpret_cast<GetCompressedFileSizeFunction>(::GetProcAddress(hLibrary, "GetCompressedFileSizeA"))) != NULL) {
-						if((compressed_size = lpfnGetCompressedFileSize(path, NULL)) == INVALID_FILE_SIZE) {
+					if((lpfnGetCompressedFileSizeA = reinterpret_cast<GetCompressedFileSizeFunction>(::GetProcAddress(hLibrary, "GetCompressedFileSizeA"))) != NULL) {
+						if((compressed_size = lpfnGetCompressedFileSizeA(path, NULL)) == INVALID_FILE_SIZE) {
 							error = GetLastError();
 						}
 					}
@@ -12246,10 +12354,9 @@ inline void msdos_int_21h_44h()
 	case 0x01:
 	case 0x02:
 	case 0x03:
-	case 0x04:
-	case 0x05:
 	case 0x06:
 	case 0x07:
+	case 0x0a:
 		process = msdos_process_info_get(current_psp);
 		fd = msdos_psp_get_file_table(CPU_BX, current_psp);
 		if(fd >= process->max_files || !file_handler[fd].valid) {
@@ -12258,8 +12365,12 @@ inline void msdos_int_21h_44h()
 			return;
 		}
 		break;
+	case 0x04:
+	case 0x05:
 	case 0x08:
 	case 0x09:
+	case 0x0e:
+	case 0x0f:
 		drv = (CPU_BL ? CPU_BL : _getdrive()) - 1;
 		if(!msdos_is_valid_drive(drv)) {
 			// invalid drive
@@ -12743,18 +12854,9 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x0e: // Get Lgical Drive Map
-		if(!msdos_is_valid_drive((CPU_BL ? CPU_BL : _getdrive()) - 1)) {
-			CPU_AX = 0x0f; // invalid drive
-			CPU_SET_C_FLAG(1);
-		} else {
-			CPU_AL = 0;
-		}
+		CPU_AL = 0;
 		break;
 	case 0x0f: // Set Logical Drive Map
-		if(!msdos_is_valid_drive((CPU_BL ? CPU_BL : _getdrive()) - 1)) {
-			CPU_AX = 0x0f; // invalid drive
-			CPU_SET_C_FLAG(1);
-		}
 		break;
 	case 0x10: // Query Generic IOCTRL Capability (Handle)
 		switch(CPU_CL) {
@@ -12882,7 +12984,7 @@ inline void msdos_int_21h_47h(int lfn)
 		if(!lfn) {
 			strcpy(path, msdos_short_path(path));
 		} else {
-			GetLongPathNameA(path, path, MAX_PATH);
+			MyGetLongPathNameA(path, path, MAX_PATH);
 		}
 		if(path[1] == ':') {
 			// the returned path does not include a drive or the initial backslash
@@ -13668,7 +13770,7 @@ inline void msdos_int_21h_60h(int lfn)
 			my_strupr(full);
 			break;
 		case 2:
-			GetLongPathNameA(full, full, MAX_PATH);
+			MyGetLongPathNameA(full, full, MAX_PATH);
 			break;
 		}
 		path = full;

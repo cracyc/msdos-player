@@ -9,8 +9,8 @@
 #define _COMMON_H_
 
 #ifndef _WIN32_WINNT
-//#define _WIN32_WINNT 0x400	// Windows NT 4.0
-#define _WIN32_WINNT 0x500	// Windows 2000
+#define _WIN32_WINNT 0x400	// Windows NT 4.0
+//#define _WIN32_WINNT 0x500	// Windows 2000
 //#define _WIN32_WINNT 0x501	// Windows XP
 #endif
 #include <windows.h>
@@ -190,9 +190,10 @@ typedef struct {
 	UINT32 pc;
 	UINT16 cs;
 	UINT32 eip;
+	BOOL op32; // 32bit protected mode in i386, or 8080 mode in NEC V30
 } cpu_trace_t;
 
-void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip);
+void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32);
 #endif
 
 #endif

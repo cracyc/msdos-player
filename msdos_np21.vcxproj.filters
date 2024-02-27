@@ -266,4 +266,7 @@
       <Filter>Header Files\np21w i386c Header Files\ia32\sse3</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="vista.manifest" />
+  </ItemGroup>
 </Project>

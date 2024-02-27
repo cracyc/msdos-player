@@ -178,8 +178,6 @@ UINT32 debugger_read_io_dword(UINT32 addr);
 void debugger_write_io_byte(UINT32 addr, UINT8 val);
 void debugger_write_io_word(UINT32 addr, UINT16 val);
 void debugger_write_io_dword(UINT32 addr, UINT32 val);
-
-void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip);
 #endif
 
 /* ----------------------------------------------------------------------------

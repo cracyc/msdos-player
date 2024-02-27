@@ -307,7 +307,7 @@ void CPU_EXECUTE()
 		} else {
 			UINT32 next_pc = CPU_GET_NEXT_PC();
 			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-				if(break_point.table[i].status == 1 && break_point.table[i].addr == next_pc) {
+				if(break_point.table[i].status == 1 && break_point.table[i].seg == CPU_CS && break_point.table[i].ofs == CPU_EIP) {
 					break_point.hit = i + 1;
 					now_suspended = true;
 					break;
@@ -488,14 +488,27 @@ UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 {
 	if(CPU_STAT_PM && !CPU_STAT_VM86) {
-		UINT32 seg_base = 0;
-		if(seg) {
-			UINT32 base = (seg & 4) ? CPU_LDTR_BASE : CPU_GDTR_BASE;
-			UINT32 v1 = read_dword(CPU_TRANS_PAGING_ADDR(base + (seg & ~7) + 0) & CPU_ADRSMASK);
-			UINT32 v2 = read_dword(CPU_TRANS_PAGING_ADDR(base + (seg & ~7) + 4) & CPU_ADRSMASK);
-			seg_base = (v2 & 0xff000000) | ((v2 & 0xff) << 16) | ((v1 >> 16) & 0xffff);
-		}
-		return seg_base + ofs;
+		selector_t sel;
+		descriptor_t *sdp = &sel.desc;
+
+		//segdesc_set_default(CPU_CS_INDEX, seg, sdp);
+		sdp->u.seg.segbase = seg << 4;
+		sdp->u.seg.limit = 0xffff;
+		sdp->u.seg.c = 1;	/* code or data */
+		sdp->u.seg.g = 0;	/* non 4k factor scale */
+		sdp->u.seg.wr = 1;	/* execute/read(CS) or read/write(others) */
+		sdp->u.seg.ec = 0;	/* nonconforming(CS) or expand-up(others) */
+		sdp->valid = 1;		/* valid */
+		sdp->p = 1;		/* present */
+		sdp->type = CPU_SEGDESC_TYPE_WR  | (CPU_SEGDESC_H_D_C >> CPU_DESC_H_TYPE_SHIFT);
+		sdp->dpl = CPU_STAT_VM86 ? 3 : 0; /* descriptor privilege level */
+		sdp->rpl = CPU_STAT_VM86 ? 3 : 0; /* request privilege level */
+		sdp->s = 1;		/* code/data */
+		sdp->d = 0;		/* 16bit */
+		sdp->flag = CPU_DESC_FLAG_READABLE|CPU_DESC_FLAG_WRITABLE;
+
+		parse_selector(&sel, seg);
+		return CPU_TRANS_PAGING_ADDR(sdp->u.seg.segbase + ofs);
 	}
 	return (seg << 4) + ofs;
 }
@@ -507,6 +520,7 @@ UINT32 CPU_GET_PREV_PC()
 
 UINT32 CPU_GET_NEXT_PC()
 {
-	return CPU_TRANS_CODE_ADDR(CPU_CS, CPU_EIP);
+	descriptor_t *sdp = &CPU_CS_DESC;
+	return CPU_TRANS_PAGING_ADDR(sdp->u.seg.segbase + CPU_EIP);
 }
 #endif

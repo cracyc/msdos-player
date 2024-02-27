@@ -228,8 +228,9 @@ static CPU_EXECUTE( i80286 )
 					force_suspend = false;
 					now_suspended = true;
 				} else {
+					UINT32 eip = m_pc - m_base[CS];
 					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-						if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+						if(break_point.table[i].status == 1 && break_point.table[i].seg == m_sregs[CS] && break_point.table[i].ofs == eip) {
 							break_point.hit = i + 1;
 							now_suspended = true;
 							break;
@@ -240,7 +241,7 @@ static CPU_EXECUTE( i80286 )
 					Sleep(10);
 				}
 			}
-			add_cpu_trace(m_pc, m_sregs[CS], m_pc - m_base[CS]);
+			add_cpu_trace(m_pc, m_sregs[CS], m_pc - m_base[CS], 0);
 			m_prev_cs = m_sregs[CS];
 			m_prev_eip = m_pc - m_base[CS];
 #endif

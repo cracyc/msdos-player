@@ -192,10 +192,10 @@ typedef UINT32	offs_t;
 
 #undef CPU_DISASSEMBLE
 
-int CPU_DISASSEMBLE(UINT8 *oprom, offs_t eip, bool is_ia32, char *buffer, size_t buffer_len)
+int CPU_DISASSEMBLE(UINT8 *oprom, offs_t eip, bool is_8080mode, char *buffer, size_t buffer_len)
 {
 #if defined(HAS_V30)
-	if(m_MF == 0) {
+	if(is_8080mode) {
 		int ptr = 0;
 		
 		switch(oprom[ptr++]) {
@@ -591,7 +591,10 @@ inline void CPU_IRQ_LINE(int state)
 	}
 }
 
-#define CPU_INST_OP32			m_operand_size
+#ifdef HAS_V30
+#define CPU_INST_8080			(m_MF == 0)
+#endif
+#define CPU_INST_OP32			0
 
 void CPU_INIT()
 {

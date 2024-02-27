@@ -3432,7 +3432,7 @@ static CPU_EXECUTE( i386 )
 				now_suspended = true;
 			} else {
 				for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-					if(break_point.table[i].status == 1 && break_point.table[i].addr == m_pc) {
+					if(break_point.table[i].status == 1 && break_point.table[i].seg == m_sreg[CS].selector && break_point.table[i].ofs == m_eip) {
 						break_point.hit = i + 1;
 						now_suspended = true;
 						break;
@@ -3456,7 +3456,9 @@ static CPU_EXECUTE( i386 )
 
 		m_segment_prefix = 0;
 #ifdef USE_DEBUGGER
-		add_cpu_trace(m_pc, m_sreg[CS].selector, m_eip);
+		UINT32 address = m_pc;
+		translate_address(m_CPL, TRANSLATE_FETCH, &address, NULL);
+		add_cpu_trace(address, m_sreg[CS].selector, m_eip, m_operand_size);
 		m_prev_pc = m_pc;
 		m_prev_cs = m_sreg[CS].selector;
 #endif

@@ -144,7 +144,7 @@ exec_1step(void)
 		if (prefix == 0) {
 			CPU_PREV_PC = codefetch_address;
 #if defined(USE_DEBUGGER)
-			add_cpu_trace(CPU_PREV_PC, CPU_PREV_CS, CPU_PREV_EIP);
+			add_cpu_trace(CPU_PREV_PC, CPU_PREV_CS, CPU_PREV_EIP, CPU_INST_OP32);
 #endif
 		}
 #if defined(IA32_INSTRUCTION_TRACE)

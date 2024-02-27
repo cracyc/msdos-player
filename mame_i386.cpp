@@ -500,21 +500,28 @@ UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 {
 	if(PROTECTED_MODE && !V8086_MODE) {
-		I386_SREG pseg;
-		pseg.selector = seg;
-		i386_load_protected_mode_segment(&pseg, NULL);
-		return pseg.base + ofs;
+		I386_SREG desc;
+		memset(&desc, 0, sizeof(desc));
+		desc.selector = seg;
+		i386_load_protected_mode_segment(&desc, NULL);
+		UINT32 addr = desc.base + ofs;
+		translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+		return addr;
 	}
 	return (seg << 4) + ofs;
 }
 
 UINT32 CPU_GET_PREV_PC()
 {
-	return m_prev_pc;
+	UINT32 addr = m_prev_pc;
+	translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+	return addr;
 }
 
 UINT32 CPU_GET_NEXT_PC()
 {
-	return m_pc;
+	UINT32 addr = m_pc;
+	translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+	return addr;
 }
 #endif
