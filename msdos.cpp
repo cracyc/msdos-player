@@ -610,7 +610,11 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 		*lpNumberOfCharsWritten = written;
 		return TRUE;
 	} else {
-		return WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter, nLength, dwWriteCoord, lpNumberOfCharsWritten);
+		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
+		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter, nLength, uchar, nLength);
+		BOOL ret = WriteConsoleOutputCharacterW(hConsoleOutput, uchar, nLength, dwWriteCoord, lpNumberOfCharsWritten);
+		HeapFree(GetProcessHeap(), 0, uchar);
+		return ret;
 	}
 }
 #else
