@@ -20,7 +20,7 @@ CFLAGS_OX=-o $@
 CFLAGS= -O3 -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
-LIBS = -lwinmm -lpsapi -lwsock32
+LIBS = -lwinmm -lpsapi -lwsock32 -lgdi32 -lmpr -luuid -lsetupapi
 LDFLAGS = -mconsole -s -static -static-libgcc
 
 
@@ -65,7 +65,7 @@ SRCD_I86 = $(SRCD_EMUCPU)i86$(D)
 SRCD_I386 = $(SRCD_EMUCPU)i386$(D)
 SRCD_SOFTFLOAT = $(SRCD_BASE)mame$(D)lib$(D)softfloat$(D)
 
-OUTD_BASE = ..$(D)binary$(D)
+OUTD_BASE = .$(D)binary$(D)
 #OUTD_BASE = .$(D)
 
 #TARGET_I286 = $(OUTD_BASE)i286$(D)msdos$(X)

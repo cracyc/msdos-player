@@ -2613,7 +2613,7 @@ bool is_started_from_console()
 		HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 		
 		if(hLibrary) {
-			typedef DWORD (WINAPI *GetConsoleProcessListFunction)(__out LPDWORD lpdwProcessList, __in DWORD dwProcessCount);
+			typedef DWORD (WINAPI *GetConsoleProcessListFunction)(LPDWORD lpdwProcessList, DWORD dwProcessCount);
 			GetConsoleProcessListFunction lpfnGetConsoleProcessList;
 			lpfnGetConsoleProcessList = reinterpret_cast<GetConsoleProcessListFunction>(::GetProcAddress(hLibrary, "GetConsoleProcessList"));
 			if(lpfnGetConsoleProcessList) { // Windows XP or later
