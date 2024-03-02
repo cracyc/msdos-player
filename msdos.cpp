@@ -592,7 +592,7 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 		for(DWORD pos = 0, start_pos = 0; pos < nLength; pos++) {
 			CHAR code = lpCharacter[pos], replace;
 			
-			if(code >= 0x01 && code <= 0x19 && (replace = box_drawings_char[code]) != 0) {
+			if(code >= 0x01 && code <= 0x19 && (replace = box_drawings_char[(int)code]) != 0) {
 				if(pos > start_pos) {
 					WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos, shift_coord(dwWriteCoord, start_pos), &written_tmp);
 					written += written_tmp;
@@ -3011,6 +3011,8 @@ int main(int argc, char *argv[], char *envp[])
 	unsigned int code_page = 0;
 	
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
+
+	if(is_win10_or_later) use_vt = true;
 	
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	GetFullPathNameA(path, MAX_PATH, full, &name);
@@ -4124,10 +4126,10 @@ bool update_key_buffer()
 ---------------------------------------------------------------------------- */
 
 static const struct {
-	char *name;
+	const char *name;
 	DWORD lcid;
-	char *std;
-	char *dlt;
+	const char *std;
+	const char *dlt;
 } tz_table[] = {
 	// https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
 //	0	GMT		Greenwich Mean Time		GMT0
@@ -4252,8 +4254,8 @@ static const struct {
 
 static const struct {
 	UINT16 code;
-	char *message_english;
-	char *message_japanese;
+	const char *message_english;
+	const char *message_japanese;
 } standard_error_table[] = {
 	{0x01,	"Invalid function", "無効なファンクションです."},
 	{0x02,	"File not found", "ファイルが見つかりません."},
@@ -4289,7 +4291,7 @@ static const struct {
 	{0x21,	"Lock violation", "ロック違反です."},
 	{0x22,	"Invalid disk change", "無効なディスクの交換です."},
 	{0x23,	"FCB unavailable", "FCB は使えません."},
-	{0x24,	"System resource exhausted", "システムリソースはもう使えません."},
+	{0x24,	"System resource exhausted", "システムリソ\ースはもう使えません."},
 	{0x25,	"Code page mismatch", "コード ページが一致しません."},
 	{0x26,	"Out of input", "入力が終わりました."},
 	{0x27,	"Insufficient disk space", "ディスクの空き領域が足りません."},
@@ -4348,8 +4350,8 @@ static const struct {
 
 static const struct {
 	UINT16 code;
-	char *message_english;
-	char *message_japanese;
+	const char *message_english;
+	const char *message_japanese;
 } param_error_table[] = {
 	{0x01,	"Too many parameters", "パラメータが多すぎます."},
 	{0x02,	"Required parameter missing", "パラメータが足りません."},
@@ -4367,8 +4369,8 @@ static const struct {
 
 static const struct {
 	UINT16 code;
-	char *message_english;
-	char *message_japanese;
+	const char *message_english;
+	const char *message_japanese;
 } critical_error_table[] = {
 	{0x00,	"Write protect error", "書き込み保護エラーです."},
 	{0x01,	"Invalid unit", "無効なユニットです."},
@@ -4387,7 +4389,7 @@ static const struct {
 	{0x0E,	"Lock violation", "ロック違反です."},
 	{0x0F,	"Invalid disk change", "無効なディスクの交換です."},
 	{0x10,	"FCB unavailable", "FCB は使えません."},
-	{0x11,	"System resource exhausted", "システムリソースはもう使えません."},
+	{0x11,	"System resource exhausted", "システムリソ\ースはもう使えません."},
 	{0x12,	"Code page mismatch", "コード ページが一致しません."},
 	{0x13,	"Out of input", "入力が終わりました."},
 	{0x14,	"Insufficient disk space", "ディスクの空き領域が足りません."},
@@ -10207,10 +10209,10 @@ inline void pcbios_int_17h_50h()
 	switch(CPU_AL) {
 	case 0x00:
 		if(CPU_DX < 3) {
-			if(CPU_BX = 0x0001) {
+			if(CPU_BX == 0x0001) {
 				pio[CPU_DX].conv_mode = false;
 				CPU_AL = 0x00;
-			} else if(CPU_BX = 0x0051) {
+			} else if(CPU_BX == 0x0051) {
 				pio[CPU_DX].conv_mode = true;
 				CPU_AL = 0x00;
 			} else {
@@ -19387,9 +19389,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			RegCloseKey(hKey);
 		}
 		if((tzi.Bias % 60) != 0) {
-			sprintf(tz_value, "%s%d:%2d", tz_std, tzi.Bias / 60, abs(tzi.Bias % 60));
+			sprintf(tz_value, "%s%ld:%2ld", tz_std, tzi.Bias / 60, abs(tzi.Bias % 60));
 		} else {
-			sprintf(tz_value, "%s%d", tz_std, tzi.Bias / 60);
+			sprintf(tz_value, "%s%ld", tz_std, tzi.Bias / 60);
 		}
 		if(daylight) {
 			strcat(tz_value, tz_dlt);
@@ -19451,7 +19453,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
 	static const struct {
 		UINT16 attributes;
-		char *dev_name;
+		const char *dev_name;
 	} dummy_devices[] = {
 		{0x8013, "CON     "},
 		{0x8000, "AUX     "},
@@ -20729,7 +20731,7 @@ void printer_out(int c, UINT8 data)
 		// create a new file in the temp folder
 		char file_name[MAX_PATH];
 		
-		sprintf(file_name, "%d-%0.2d-%0.2d_%0.2d-%0.2d-%0.2d.PRN", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
+		sprintf(file_name, "%d-%.2d-%.2d_%.2d-%.2d-%.2d.PRN", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
 		if(GetTempPathA(MAX_PATH, pio[c].path)) {
 			strcat(pio[c].path, file_name);
 		} else {
