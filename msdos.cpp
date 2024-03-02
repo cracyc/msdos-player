@@ -579,23 +579,71 @@ COORD shift_coord(COORD origin, DWORD pos)
 	return co;
 }
 
-BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, DWORD nLength, COORD dwWriteCoord, LPDWORD lpNumberOfCharsWritten)
+void set_console_attr(HANDLE hout, WORD attr)
+{
+	WCHAR buf[8];
+	int len;
+
+	if ((attr & 0x0f) != 7)
+	{
+		int n = 30;
+		if (attr & FOREGROUND_BLUE)  n += 4;
+		if (attr & FOREGROUND_GREEN) n += 2;
+		if (attr & FOREGROUND_RED)   n += 1;
+		if (attr & FOREGROUND_INTENSITY) n += 60;
+		len = swprintf(buf, L"\x1b[%dm", n);
+		WriteConsoleW(hout, buf, len, NULL, NULL);
+	}
+	else WriteConsoleW(hout, L"\x1b[m", 3, NULL, NULL);
+
+	int n = 40;
+	if (attr & BACKGROUND_BLUE)  n += 4;
+	if (attr & BACKGROUND_GREEN) n += 2;
+	if (attr & BACKGROUND_RED)   n += 1;
+	if (attr & BACKGROUND_INTENSITY) n += 60;
+	len = swprintf(buf, L"\x1b[%dm", n);
+	WriteConsoleW(hout, buf, len, NULL, NULL);
+}
+
+void write_line_with_attrs(HANDLE hout, LPCWSTR chrs, LPWORD attrs, DWORD len)
+{
+	if(!attrs) {
+		WriteConsoleW(hout, chrs, len, NULL, NULL);
+		return;
+	}
+	DWORD attr = attrs[0];
+	int start = 0, slen = 0;
+	for(int i = 0; i < len; i++)
+	{
+		if(attr != attrs[i]) {
+			set_console_attr(hout, attr);
+			WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
+			attr = attrs[i];
+			slen = 0;
+			start = i;
+		}
+		slen++;
+	}
+	set_console_attr(hout, attr);
+	WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
+}
+
+void MyWriteConsoleOutputA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPWORD attributes, DWORD nLength, COORD dwWriteCoord)
 {
 	if(use_vt) {
 		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
 		WCHAR buf[20];
-		BOOL ret;
 		int len, x = dwWriteCoord.X + 1, y = dwWriteCoord.Y + 1;
 		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter, nLength, uchar, nLength);
 		len = swprintf(buf, L"\x1b" L"7\x1b[%d;%dH", y, x);
 		WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
-		if((nLength + x - 1) < scr_width) {
-			ret = WriteConsoleW(hConsoleOutput, uchar, nLength, lpNumberOfCharsWritten, NULL);
+		if((nLength + x - 1) <= scr_width) {
+			write_line_with_attrs(hConsoleOutput, uchar, attributes, nLength);
 		} else {
 			DWORD pos = 0;
 			if(x > 1) {
 				WriteConsoleW(hConsoleOutput, L"\x1b[0K", 4, NULL, NULL);
-				ret = WriteConsoleW(hConsoleOutput, uchar, scr_width - x, NULL, NULL);
+				write_line_with_attrs(hConsoleOutput, uchar, attributes, scr_width - x);
 				y++;
 				nLength -= scr_width - x;
 				pos = scr_width - x;
@@ -603,7 +651,7 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 			while(nLength > scr_width) {
 				len = swprintf(buf, L"\x1b[%d;1H\x1b[0K", y);
 				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
-				ret = WriteConsoleW(hConsoleOutput, uchar + pos, scr_width, NULL, NULL);
+				write_line_with_attrs(hConsoleOutput, uchar + pos, attributes + pos, scr_width);
 				y++;
 				nLength -= scr_width;
 				pos += scr_width;
@@ -611,17 +659,17 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 			if(nLength) {
 				len = swprintf(buf, L"\x1b[%d;1H\x1b[%dX", y, nLength);
 				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
-				ret = WriteConsoleW(hConsoleOutput, uchar + pos, nLength, NULL, NULL);
+				write_line_with_attrs(hConsoleOutput, uchar + pos, attributes + pos, nLength);
 			}				
-			*lpNumberOfCharsWritten = pos + nLength;
 		}
 		WriteConsoleW(hConsoleOutput, L"\x1b" L"8", 2, NULL, NULL);
 		HeapFree(GetProcessHeap(), 0, uchar);
-		return ret;
+		return;
 	}
 //	if(is_win10_or_later && active_code_page == 932) {
+	DWORD written = 0;
 	if(box_line) {
-		DWORD written = 0, written_tmp;
+		DWORD written_tmp;
 		
 		for(DWORD pos = 0, start_pos = 0; pos < nLength; pos++) {
 			CHAR code = lpCharacter[pos], replace;
@@ -641,27 +689,30 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 				}
 			}
 		}
-		*lpNumberOfCharsWritten = written;
-		return TRUE;
 	} else {
 		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
 		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter, nLength, uchar, nLength);
-		BOOL ret = WriteConsoleOutputCharacterW(hConsoleOutput, uchar, nLength, dwWriteCoord, lpNumberOfCharsWritten);
+		WriteConsoleOutputCharacterW(hConsoleOutput, uchar, nLength, dwWriteCoord, &written);
 		HeapFree(GetProcessHeap(), 0, uchar);
-		return ret;
+	}
+	if(attributes) {
+		WriteConsoleOutputAttribute(hConsoleOutput, attributes, nLength, dwWriteCoord, &written);
 	}
 }
 #else
-#define MyWriteConsoleOutputCharacterA WriteConsoleOutputCharacterA
+void MyWriteConsoleOutputA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPCSTR attributes, DWORD nLength, COORD dwWriteCoord)
+{
+	DWORD num;
+	WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter, nLength, dwWriteCoord, &num);
+	WriteConsoleOutputAttribute(hConsoleOutput, scr_attr, nLength, dwWriteCoord, &num);
+}
 #endif
 
 void vram_flush()
 {
 	if(vram_length != 0) {
 		EnterCriticalSection(&vram_crit_sect);
-		DWORD num;
-		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length, vram_coord, &num);
-		WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, vram_length, vram_coord, &num);
+		MyWriteConsoleOutputA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, vram_length, vram_coord);
 		vram_length = vram_last_length = 0;
 		LeaveCriticalSection(&vram_crit_sect);
 	}
@@ -706,14 +757,12 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 	LeaveCriticalSection(&vram_crit_sect);
 #else
 	COORD co;
-	DWORD num;
 	
 	co.X = (offset >> 1) % scr_width;
 	co.Y = (offset >> 1) / scr_width;
 	scr_char[0] = chr;
 	scr_attr[0] = attr;
-	MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
-	WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, 1, co, &num);
+	MyWriteConsoleOutputA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, 1, co);
 #endif
 }
 
@@ -3157,6 +3206,9 @@ int main(int argc, char *argv[], char *envp[])
 				get_sio_port_numbers();
 			}
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-vt", 3) == 0) {
+			use_vt = !use_vt;
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
 				dos_major_version = argv[i][2] - '0';
@@ -3230,8 +3282,9 @@ int main(int argc, char *argv[], char *envp[])
 #else
 			"\t-x\tenable LIM EMS\n"
 #endif
-			"\t-a\tdisable ANSI.SYS\n"
+			"\t-a\tdisable ANSI.SYS, has no effect in vt mode\n"
 			"\t-l\tdraw box lines with ank characters\n"
+			"\t-vt\ttoggle vt mode, default is on for win10 and above\n"
 		);
 		
 		if(!started_from_console) {
@@ -3453,6 +3506,7 @@ int main(int argc, char *argv[], char *envp[])
 		DWORD mode;
 		GetConsoleMode(hStdout, &mode);
 		SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		ansi_sys = false;  // pass escape directly to terminal
 	}
 	
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
@@ -6324,7 +6378,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		}
 	}
 	
-	DWORD q = 0, num;
+	DWORD q = 0;
 	is_kanji = 0;
 	for(int i = 0; i < p; i++) {
 		UINT8 c = tmp[i];
@@ -6352,7 +6406,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	}
 	if(q == 1 && msdos_symbol_code_check(out[0], int_num, reg_ah)) {
 		const char *dummy = " ";
-		WriteConsoleA(hStdout, dummy, 1, &num, NULL);
+		WriteConsoleA(hStdout, dummy, 1, NULL, NULL);
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
@@ -6364,7 +6418,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 			// XXX: in usually we should not reach here
 			co.X = co.Y = 0;
 		}
-		MyWriteConsoleOutputCharacterA(hStdout, out, 1, co, &num);
+		MyWriteConsoleOutputA(hStdout, out, NULL, 1, co);
 	} else if(q == 1 && out[0] == 0x08) {
 		// back space
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
@@ -6377,10 +6431,10 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 			co.Y = csbi.dwCursorPosition.Y - 1;
 			SetConsoleCursorPosition(hStdout, co);
 		} else {
-			WriteConsoleA(hStdout, out, 1, &num, NULL); // to make sure
+			WriteConsoleA(hStdout, out, 1, NULL, NULL); // to make sure
 		}
 	} else {
-		WriteConsoleA(hStdout, out, q, &num, NULL);
+		WriteConsoleA(hStdout, out, q, NULL, NULL);
 	}
 	p = 0;
 	
@@ -8269,7 +8323,6 @@ inline void pcbios_int_10h_13h()
 {
 	int ofs = CPU_ES_BASE + CPU_BP;
 	COORD co;
-	DWORD num;
 	
 	co.X = CPU_DL;
 	co.Y = CPU_DH + scr_top;
@@ -8289,7 +8342,7 @@ inline void pcbios_int_10h_13h()
 			if(csbi.wAttributes != CPU_BL) {
 				SetConsoleTextAttribute(hStdout, CPU_BL);
 			}
-			WriteConsoleA(hStdout, &mem[ofs], CPU_CX, &num, NULL);
+			WriteConsoleA(hStdout, &mem[ofs], CPU_CX, NULL, NULL);
 			
 			if(csbi.wAttributes != CPU_BL) {
 				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
@@ -8324,7 +8377,7 @@ inline void pcbios_int_10h_13h()
 					SetConsoleTextAttribute(hStdout, mem[ofs + 1]);
 					wAttributes = mem[ofs + 1];
 				}
-				WriteConsoleA(hStdout, &mem[ofs], 1, &num, NULL);
+				WriteConsoleA(hStdout, &mem[ofs], 1, NULL, NULL);
 			}
 			if(csbi.wAttributes != wAttributes) {
 				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
@@ -8344,6 +8397,7 @@ inline void pcbios_int_10h_13h()
 	case 0x10:
 	case 0x11:
 		if(mem[0x462] == CPU_BH) {
+			DWORD num;
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			ReadConsoleOutputCharacterA(hStdout, scr_char, CPU_CX, co, &num);
 			ReadConsoleOutputAttribute(hStdout, scr_attr, CPU_CX, co, &num);
@@ -8386,8 +8440,7 @@ inline void pcbios_int_10h_13h()
 					ofs += 2;
 				}
 			}
-			MyWriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
-			WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
+			MyWriteConsoleOutputA(hStdout, scr_char, scr_attr, len, co);
 		} else {
 			for(int i = 0, dest = pcbios_get_shadow_buffer_address(CPU_BH, co.X, co.Y - scr_top); i < CPU_CX; i++) {
 				mem[dest++] = mem[ofs++];
@@ -8565,7 +8618,6 @@ inline void pcbios_int_10h_ffh()
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		COORD co;
-		DWORD num;
 		
 		if(use_vram_thread) {
 			vram_flush();
@@ -8580,8 +8632,7 @@ inline void pcbios_int_10h_ffh()
 			scr_attr[len] = mem[ofs++];
 		}
 		co.Y += scr_top;
-		MyWriteConsoleOutputCharacterA(hStdout, scr_char, len, co, &num);
-		WriteConsoleOutputAttribute(hStdout, scr_attr, len, co, &num);
+		MyWriteConsoleOutputA(hStdout, scr_char, scr_attr, len, co);
 	}
 	int_10h_ffh_called = true;
 }
