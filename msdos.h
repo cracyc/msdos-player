@@ -1159,6 +1159,7 @@ bool restore_console_cursor = false;
 bool restore_console_font = false;
 bool cursor_moved;
 bool cursor_moved_by_crtc;
+bool use_vt = false;
 
 FIFO *key_buf_char = NULL;
 FIFO *key_buf_scan = NULL;

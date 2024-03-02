@@ -252,9 +252,9 @@ static CRITICAL_SECTION vram_crit_sect;
 void change_console_size(int width, int height);
 void clear_scr_buffer(WORD attr);
 
-static UINT32 vram_length_char = 0, vram_length_attr = 0;
-static UINT32 vram_last_length_char = 0, vram_last_length_attr = 0;
-static COORD vram_coord_char, vram_coord_attr;
+static UINT32 vram_length = 0;
+static UINT32 vram_last_length = 0;
+static COORD vram_coord;
 
 char temp_file_path[MAX_PATH];
 bool temp_file_created = false;
@@ -302,7 +302,7 @@ inline void maybe_idle()
 {
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
-	if(!stay_busy && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
+	if(!stay_busy && idle_ops < 1024 && vram_length <= 1) {
 		if(is_sse2_ready()) {
 			_mm_pause();	// SSE2 pause
 		} else if(is_xp_64_or_later) {
@@ -581,6 +581,44 @@ COORD shift_coord(COORD origin, DWORD pos)
 
 BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, DWORD nLength, COORD dwWriteCoord, LPDWORD lpNumberOfCharsWritten)
 {
+	if(use_vt) {
+		WCHAR *uchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
+		WCHAR buf[20];
+		BOOL ret;
+		int len, x = dwWriteCoord.X + 1, y = dwWriteCoord.Y + 1;
+		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter, nLength, uchar, nLength);
+		len = swprintf(buf, L"\x1b" L"7\x1b[%d;%dH", y, x);
+		WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
+		if((nLength + x - 1) < scr_width) {
+			ret = WriteConsoleW(hConsoleOutput, uchar, nLength, lpNumberOfCharsWritten, NULL);
+		} else {
+			DWORD pos = 0;
+			if(x > 1) {
+				WriteConsoleW(hConsoleOutput, L"\x1b[0K", 4, NULL, NULL);
+				ret = WriteConsoleW(hConsoleOutput, uchar, scr_width - x, NULL, NULL);
+				y++;
+				nLength -= scr_width - x;
+				pos = scr_width - x;
+			}
+			while(nLength > scr_width) {
+				len = swprintf(buf, L"\x1b[%d;1H\x1b[0K", y);
+				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
+				ret = WriteConsoleW(hConsoleOutput, uchar + pos, scr_width, NULL, NULL);
+				y++;
+				nLength -= scr_width;
+				pos += scr_width;
+			}
+			if(nLength) {
+				len = swprintf(buf, L"\x1b[%d;1H\x1b[%dX", y, nLength);
+				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
+				ret = WriteConsoleW(hConsoleOutput, uchar + pos, nLength, NULL, NULL);
+			}				
+			*lpNumberOfCharsWritten = pos + nLength;
+		}
+		WriteConsoleW(hConsoleOutput, L"\x1b" L"8", 2, NULL, NULL);
+		HeapFree(GetProcessHeap(), 0, uchar);
+		return ret;
+	}
 //	if(is_win10_or_later && active_code_page == 932) {
 	if(box_line) {
 		DWORD written = 0, written_tmp;
@@ -617,52 +655,33 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 #define MyWriteConsoleOutputCharacterA WriteConsoleOutputCharacterA
 #endif
 
-void vram_flush_char()
-{
-	if(vram_length_char != 0) {
-		DWORD num;
-		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length_char, vram_coord_char, &num);
-		vram_length_char = vram_last_length_char = 0;
-	}
-}
-
-void vram_flush_attr()
-{
-	if(vram_length_attr != 0) {
-		DWORD num;
-		WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, vram_length_attr, vram_coord_attr, &num);
-		vram_length_attr = vram_last_length_attr = 0;
-	}
-}
-
 void vram_flush()
 {
-	if(vram_length_char != 0 || vram_length_attr != 0) {
+	if(vram_length != 0) {
 		EnterCriticalSection(&vram_crit_sect);
-		vram_flush_char();
-		vram_flush_attr();
+		DWORD num;
+		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, vram_length, vram_coord, &num);
+		WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, vram_length, vram_coord, &num);
+		vram_length = vram_last_length = 0;
 		LeaveCriticalSection(&vram_crit_sect);
 	}
 }
 
-void write_text_vram_char(UINT32 offset, UINT8 data)
+void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 {
 	if(use_vram_thread) {
-		static UINT32 first_offset_char, last_offset_char;
-		
-		if(vram_length_char != 0) {
-			if(offset <= last_offset_char && offset >= first_offset_char) {
-				scr_char[(offset - first_offset_char) >> 1] = data;
-				return;
-			}
-			if(offset != last_offset_char + 2) {
-				vram_flush_char();
-			}
+	static UINT32 first_offset, last_offset;
+	
+	EnterCriticalSection(&vram_crit_sect);
+	if(vram_length != 0) {
+		if(offset <= last_offset && offset >= first_offset) {
+			scr_char[(offset - first_offset) >> 1] = chr;
+			scr_attr[(offset - first_offset) >> 1] = attr;
+			LeaveCriticalSection(&vram_crit_sect);
+			return;
 		}
-		if(vram_length_char == 0) {
-			first_offset_char = offset;
-			vram_coord_char.X = (offset >> 1) % scr_width;
-			vram_coord_char.Y = (offset >> 1) / scr_width + scr_top;
+		if(offset != last_offset + 2) {
+			vram_flush();
 		}
 		scr_char[vram_length_char++] = data;
 		last_offset_char = offset;
@@ -675,91 +694,27 @@ void write_text_vram_char(UINT32 offset, UINT8 data)
 		scr_char[0] = data;
 		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
 	}
-}
-
-void write_text_vram_attr(UINT32 offset, UINT8 data)
-{
-	if(use_vram_thread) {
-		static UINT32 first_offset_attr, last_offset_attr;
-		
-		if(vram_length_attr != 0) {
-			if(offset <= last_offset_attr && offset >= first_offset_attr) {
-				scr_attr[(offset - first_offset_attr) >> 1] = data;
-				return;
-			}
-			if(offset != last_offset_attr + 2) {
-				vram_flush_attr();
-			}
-		}
-		if(vram_length_attr == 0) {
-			first_offset_attr = offset;
-			vram_coord_attr.X = (offset >> 1) % scr_width;
-			vram_coord_attr.Y = (offset >> 1) / scr_width + scr_top;
-		}
-		scr_attr[vram_length_attr++] = data;
-		last_offset_attr = offset;
-	} else {
-		COORD co;
-		DWORD num;
-		
-		co.X = (offset >> 1) % scr_width;
-		co.Y = (offset >> 1) / scr_width;
-		scr_attr[0] = data;
-		WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, 1, co, &num);
+	if(vram_length == 0) {
+		first_offset = offset;
+		vram_coord.X = (offset >> 1) % scr_width;
+		vram_coord.Y = (offset >> 1) / scr_width + scr_top;
 	}
-}
-
-void write_text_vram_byte(UINT32 offset, UINT8 data)
-{
-	if(use_vram_thread) {
-		EnterCriticalSection(&vram_crit_sect);
-	}
-	if(offset & 1) {
-		write_text_vram_attr(offset, data);
-	} else {
-		write_text_vram_char(offset, data);
-	}
-	if(use_vram_thread) {
-		LeaveCriticalSection(&vram_crit_sect);
-	}
-}
-
-void write_text_vram_word(UINT32 offset, UINT16 data)
-{
-	if(use_vram_thread) {
-		EnterCriticalSection(&vram_crit_sect);
-	}
-	if(offset & 1) {
-		write_text_vram_attr(offset    , (data     ) & 0xff);
-		write_text_vram_char(offset + 1, (data >> 8) & 0xff);
-	} else {
-		write_text_vram_char(offset    , (data     ) & 0xff);
-		write_text_vram_attr(offset + 1, (data >> 8) & 0xff);
-	}
-	if(use_vram_thread) {
-		LeaveCriticalSection(&vram_crit_sect);
-	}
-}
-
-void write_text_vram_dword(UINT32 offset, UINT32 data)
-{
-	if(use_vram_thread) {
-		EnterCriticalSection(&vram_crit_sect);
-	}
-	if(offset & 1) {
-		write_text_vram_attr(offset    , (data      ) & 0xff);
-		write_text_vram_char(offset + 1, (data >>  8) & 0xff);
-		write_text_vram_attr(offset + 2, (data >> 16) & 0xff);
-		write_text_vram_char(offset + 3, (data >> 24) & 0xff);
-	} else {
-		write_text_vram_char(offset    , (data      ) & 0xff);
-		write_text_vram_attr(offset + 1, (data >>  8) & 0xff);
-		write_text_vram_char(offset + 2, (data >> 16) & 0xff);
-		write_text_vram_attr(offset + 3, (data >> 24) & 0xff);
-	}
-	if(use_vram_thread) {
-		LeaveCriticalSection(&vram_crit_sect);
-	}
+	scr_char[vram_length] = chr;
+	scr_attr[vram_length] = attr;
+	vram_length++;
+	last_offset = offset;
+	LeaveCriticalSection(&vram_crit_sect);
+#else
+	COORD co;
+	DWORD num;
+	
+	co.X = (offset >> 1) % scr_width;
+	co.Y = (offset >> 1) / scr_width;
+	scr_char[0] = chr;
+	scr_attr[0] = attr;
+	MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
+	WriteConsoleOutputAttribute(GetStdHandle(STD_OUTPUT_HANDLE), scr_attr, 1, co, &num);
+#endif
 }
 
 void write_byte(UINT32 byteaddress, UINT8 data)
@@ -795,10 +750,14 @@ void debugger_write_byte(UINT32 byteaddress, UINT8 data)
 			if(!restore_console_size) {
 				change_console_size(scr_width, scr_height);
 			}
-			write_text_vram_byte(byteaddress - text_vram_top_address, data);
+			char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
+			char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
+			write_text_vram(byteaddress - text_vram_top_address, chr, attr);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
 			if(int_10h_feh_called && !int_10h_ffh_called) {
-				write_text_vram_byte(byteaddress - shadow_buffer_top_address, data);
+				char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
+				char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
+				write_text_vram(byteaddress - shadow_buffer_top_address, chr, attr);
 			}
 #ifdef SUPPORT_GRAPHIC_SCREEN
 		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
@@ -857,10 +816,10 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 			if(!restore_console_size) {
 				change_console_size(scr_width, scr_height);
 			}
-			write_text_vram_word(byteaddress - text_vram_top_address, data);
+			write_text_vram(byteaddress - text_vram_top_address, data & 0xff, data >> 8);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
 			if(int_10h_feh_called && !int_10h_ffh_called) {
-				write_text_vram_word(byteaddress - shadow_buffer_top_address, data);
+				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, data >> 8);
 			}
 #ifdef SUPPORT_GRAPHIC_SCREEN
 		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
@@ -915,10 +874,12 @@ void debugger_write_dword(UINT32 byteaddress, UINT32 data)
 			if(!restore_console_size) {
 				change_console_size(scr_width, scr_height);
 			}
-			write_text_vram_dword(byteaddress - text_vram_top_address, data);
+			write_text_vram(byteaddress - text_vram_top_address, data & 0xff, (data >> 8) & 0xff);
+			write_text_vram(byteaddress - text_vram_top_address, (data >> 16) & 0xff, data >> 24);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
 			if(int_10h_feh_called && !int_10h_ffh_called) {
-				write_text_vram_dword(byteaddress - shadow_buffer_top_address, data);
+				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, (data >> 8) & 0xff);
+				write_text_vram(byteaddress - shadow_buffer_top_address, (data >> 16) & 0xff, data >> 24);
 			}
 #ifdef SUPPORT_GRAPHIC_SCREEN
 		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
@@ -2524,14 +2485,10 @@ DWORD WINAPI vram_thread(LPVOID)
 {
 	while(!msdos_exit) {
 		EnterCriticalSection(&vram_crit_sect);
-		if(vram_length_char != 0 && vram_length_char == vram_last_length_char) {
-			vram_flush_char();
+		if(vram_length != 0 && vram_length == vram_last_length) {
+			vram_flush();
 		}
-		if(vram_length_attr != 0 && vram_length_attr == vram_last_length_attr) {
-			vram_flush_attr();
-		}
-		vram_last_length_char = vram_length_char;
-		vram_last_length_attr = vram_length_attr;
+		vram_last_length = vram_length;
 		LeaveCriticalSection(&vram_crit_sect);
 		// this is about half the maximum keyboard repeat rate - any
 		// lower tends to be jerky, any higher misses updates
@@ -3491,6 +3448,12 @@ int main(int argc, char *argv[], char *envp[])
 	CONSOLE_FONT_INFOEX fi;
 	
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
+
+	if(use_vt) {
+		DWORD mode;
+		GetConsoleMode(hStdout, &mode);
+		SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+	}
 	
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	get_console_cursor_success = (GetConsoleCursorInfo(hStdout, &ci) != 0);
@@ -7803,8 +7766,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
 		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
-		vram_length_char = vram_last_length_char = 0;
-		vram_length_attr = vram_last_length_attr = 0;
+		vram_length = vram_last_length = 0;
 		if(use_vram_thread) {
 			LeaveCriticalSection(&vram_crit_sect);
 		}
@@ -8081,18 +8043,11 @@ inline void pcbios_int_10h_09h()
 	int end = min(dest + CPU_CX * 2, pcbios_get_shadow_buffer_address(CPU_BH, 0, scr_height));
 	
 	if(mem[0x462] == CPU_BH) {
-		if(use_vram_thread) {
-			EnterCriticalSection(&vram_crit_sect);
-		}
 		int vram = pcbios_get_shadow_buffer_address(CPU_BH);
 		while(dest < end) {
-			write_text_vram_char(dest - vram, CPU_AL);
+			write_text_vram(dest - vram, CPU_AL, CPU_BL);
 			mem[dest++] = CPU_AL;
-			write_text_vram_attr(dest - vram, CPU_BL);
 			mem[dest++] = CPU_BL;
-		}
-		if(use_vram_thread) {
-			LeaveCriticalSection(&vram_crit_sect);
 		}
 	} else {
 		while(dest < end) {
@@ -8113,17 +8068,11 @@ inline void pcbios_int_10h_0ah()
 	int end = min(dest + CPU_CX * 2, pcbios_get_shadow_buffer_address(CPU_BH, 0, scr_height));
 	
 	if(mem[0x462] == CPU_BH) {
-		if(use_vram_thread) {
-			EnterCriticalSection(&vram_crit_sect);
-		}
 		int vram = pcbios_get_shadow_buffer_address(CPU_BH);
 		while(dest < end) {
-			write_text_vram_char(dest - vram, CPU_AL);
+			write_text_vram(dest - vram, CPU_AL, mem[dest + 1]);
 			mem[dest++] = CPU_AL;
 			dest++;
-		}
-		if(use_vram_thread) {
-			LeaveCriticalSection(&vram_crit_sect);
 		}
 	} else {
 		while(dest < end) {
@@ -8202,14 +8151,8 @@ inline void pcbios_int_10h_0eh()
 		cursor_moved = true;
 	} else {
 		int dest = pcbios_get_shadow_buffer_address(mem[0x462], co.X, co.Y);
-		if(use_vram_thread) {
-			EnterCriticalSection(&vram_crit_sect);
-		}
 		int vram = pcbios_get_shadow_buffer_address(mem[0x462]);
-		write_text_vram_char(dest - vram, CPU_AL);
-		if(use_vram_thread) {
-			LeaveCriticalSection(&vram_crit_sect);
-		}
+		write_text_vram(dest - vram, CPU_AL, mem[dest + 1]);
 		if(++co.X == scr_width) {
 			co.X = 0;
 			if(++co.Y == scr_height) {
