@@ -184,8 +184,6 @@ void debugger_write_io_dword(UINT32 addr, UINT32 val);
 	service thread
 ---------------------------------------------------------------------------- */
 
-#define USE_SERVICE_THREAD
-
 UINT16 CPU_AX_in_service;
 UINT16 CPU_CX_in_service;
 UINT16 CPU_DX_in_service;
@@ -194,7 +192,7 @@ UINT32 CPU_DS_BASE_in_service;
 void prepare_service_loop();
 void cleanup_service_loop();
 
-#ifdef USE_SERVICE_THREAD
+BOOL use_service_thread = FALSE;
 CRITICAL_SECTION input_crit_sect;
 CRITICAL_SECTION key_buf_crit_sect;
 CRITICAL_SECTION putch_crit_sect;
@@ -204,7 +202,6 @@ DWORD main_thread_id;
 
 void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress);
 void finish_service_loop();
-#endif
 
 bool in_service_29h = false;
 

@@ -95,6 +95,24 @@ inline void CPU_SET_C_FLAG(UINT8 value)
 	}
 }
 
+inline void CPU_SET_P_FLAG(UINT8 value)
+{
+	if(value) {
+		CPU_FLAG |=  P_FLAG;
+	} else {
+		CPU_FLAG &= ~P_FLAG;
+	}
+}
+
+inline void CPU_SET_A_FLAG(UINT8 value)
+{
+	if(value) {
+		CPU_FLAG |=  A_FLAG;
+	} else {
+		CPU_FLAG &= ~A_FLAG;
+	}
+}
+
 inline void CPU_SET_Z_FLAG(UINT8 value)
 {
 	if(value) {
@@ -113,12 +131,39 @@ inline void CPU_SET_S_FLAG(UINT8 value)
 	}
 }
 
+inline void CPU_SET_T_FLAG(UINT8 value)
+{
+	if(value) {
+		CPU_FLAG |=  T_FLAG;
+	} else {
+		CPU_FLAG &= ~T_FLAG;
+	}
+}
+
 inline void CPU_SET_I_FLAG(UINT8 value)
 {
 	if(value) {
 		CPU_FLAG |=  I_FLAG;
 	} else {
 		CPU_FLAG &= ~I_FLAG;
+	}
+}
+
+inline void CPU_SET_D_FLAG(UINT8 value)
+{
+	if(value) {
+		CPU_FLAG |=  D_FLAG;
+	} else {
+		CPU_FLAG &= ~D_FLAG;
+	}
+}
+
+inline void CPU_SET_O_FLAG(UINT8 value)
+{
+	if(value) {
+		CPU_FLAG |=  O_FLAG;
+	} else {
+		CPU_FLAG &= ~O_FLAG;
 	}
 }
 
