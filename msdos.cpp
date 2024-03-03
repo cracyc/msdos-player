@@ -3506,7 +3506,6 @@ int main(int argc, char *argv[], char *envp[])
 		DWORD mode;
 		GetConsoleMode(hStdout, &mode);
 		SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-		ansi_sys = false;  // pass escape directly to terminal
 	}
 	
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
@@ -6140,7 +6139,11 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		is_kanji = 0;
 	} else if(is_esc) {
 		// escape sequense
-		if((tmp[1] == ')' || tmp[1] == '(') && p == 3) {
+		if(use_vt) {
+			WriteConsoleA(hStdout, tmp, p, NULL, NULL);
+			p = is_esc = 0;
+			return;
+		} else if((tmp[1] == ')' || tmp[1] == '(') && p == 3) {
 			p = is_esc = 0;
 		} else if(tmp[1] == '=' && p == 4) {
 			co.X = tmp[3] - 0x20;
