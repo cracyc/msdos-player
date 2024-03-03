@@ -721,49 +721,39 @@ void vram_flush()
 void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 {
 	if(use_vram_thread) {
-	static UINT32 first_offset, last_offset;
-	
-	EnterCriticalSection(&vram_crit_sect);
-	if(vram_length != 0) {
-		if(offset <= last_offset && offset >= first_offset) {
-			scr_char[(offset - first_offset) >> 1] = chr;
-			scr_attr[(offset - first_offset) >> 1] = attr;
-			LeaveCriticalSection(&vram_crit_sect);
-			return;
+		static UINT32 first_offset, last_offset;
+
+		EnterCriticalSection(&vram_crit_sect);
+		if(vram_length != 0) {
+			if(offset <= last_offset && offset >= first_offset) {
+				scr_char[(offset - first_offset) >> 1] = chr;
+				scr_attr[(offset - first_offset) >> 1] = attr;
+				LeaveCriticalSection(&vram_crit_sect);
+				return;
+			}
+			if(offset != last_offset + 2) {
+				vram_flush();
+			}
 		}
-		if(offset != last_offset + 2) {
-			vram_flush();
+		if(vram_length == 0) {
+			first_offset = offset;
+			vram_coord.X = (offset >> 1) % scr_width;
+			vram_coord.Y = (offset >> 1) / scr_width + scr_top;
 		}
-		scr_char[vram_length_char++] = data;
-		last_offset_char = offset;
+		scr_char[vram_length] = chr;
+		scr_attr[vram_length] = attr;
+		vram_length++;
+		last_offset = offset;
+		LeaveCriticalSection(&vram_crit_sect);
 	} else {
 		COORD co;
-		DWORD num;
-		
+
 		co.X = (offset >> 1) % scr_width;
 		co.Y = (offset >> 1) / scr_width;
-		scr_char[0] = data;
-		MyWriteConsoleOutputCharacterA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, 1, co, &num);
+		scr_char[0] = chr;
+		scr_attr[0] = attr;
+		MyWriteConsoleOutputA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, 1, co);
 	}
-	if(vram_length == 0) {
-		first_offset = offset;
-		vram_coord.X = (offset >> 1) % scr_width;
-		vram_coord.Y = (offset >> 1) / scr_width + scr_top;
-	}
-	scr_char[vram_length] = chr;
-	scr_attr[vram_length] = attr;
-	vram_length++;
-	last_offset = offset;
-	LeaveCriticalSection(&vram_crit_sect);
-#else
-	COORD co;
-	
-	co.X = (offset >> 1) % scr_width;
-	co.Y = (offset >> 1) / scr_width;
-	scr_char[0] = chr;
-	scr_attr[0] = attr;
-	MyWriteConsoleOutputA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, 1, co);
-#endif
 }
 
 void write_byte(UINT32 byteaddress, UINT8 data)
@@ -3282,7 +3272,7 @@ int main(int argc, char *argv[], char *envp[])
 #else
 			"\t-x\tenable LIM EMS\n"
 #endif
-			"\t-a\tdisable ANSI.SYS, has no effect in vt mode\n"
+			"\t-a\tdisable ANSI.SYS\n"
 			"\t-l\tdraw box lines with ank characters\n"
 			"\t-vt\ttoggle vt mode, default is on for win10 and above\n"
 		);
