@@ -1,0 +1,28 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@master
+    - run: mkdir -p binary
+      working-directory: .
+    - name: make i286
+      run: make -f Makefile.mingw i286
+    - name: make i386
+      run: make -f Makefile.mingw i386
+    - name: make i486
+      run: make -f Makefile.mingw i486
+    - uses: actions/upload-artifact@master
+      with:
+        name: mingw
+        path: ./binary
+
