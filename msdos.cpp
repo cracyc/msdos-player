@@ -3847,7 +3847,7 @@ bool update_console_input()
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
 					if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
-						if(mouse.hidden == 0 || (mouse.call_addr_ps2.dw && mouse.enabled_ps2)) {
+						if(mouse.hidden == 0 || mouse.enabled_ps2) {
 							// NOTE: if restore_console_size, console is not scrolled
 							if(!restore_console_size && csbi.srWindow.Bottom == 0) {
 								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
@@ -15955,20 +15955,18 @@ inline void msdos_int_33h_0001h()
 		mouse.hidden--;
 	}
 	if(mouse.hidden == 0) {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
-		pic[1].imr &= ~0x10; // enable irq12
+		CPU_AX = 0;
+		CPU_BX = 0x100;
+		pcbios_int_15h_c2h();
 	}
 }
 
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-	if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
-	} else {
-		SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
-	}
-	pic[1].imr |= 0x10; // disable irq12
+	CPU_AX = 0;
+	CPU_BX = 0;
+	pcbios_int_15h_c2h();
 }
 
 inline void msdos_int_33h_0003h()
@@ -16063,6 +16061,13 @@ inline void msdos_int_33h_000ch()
 	mouse.call_mask = CPU_CX;
 	mouse.call_addr.w.l = CPU_DX;
 	mouse.call_addr.w.h = CPU_ES;
+	if(mouse.call_addr.dw) {
+		CPU_BX = 0x100;
+	} else {
+		CPU_BX = 0;
+	}
+	CPU_AX = 0;
+	pcbios_int_15h_c2h();
 }
 
 inline void msdos_int_33h_000fh()
@@ -19373,7 +19378,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 irq12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0xbe + 0) = 0x00bd;	// dos4gw wants two vectors pointing to the same address
+	for(int i = 0x50; i < 0x60; i++) {		// desqview wants 0x50-0x58 to point at the same address
+		*(UINT16 *)(mem + 4 * i + 0) = 0x0050;	// dos4gw wants two vectors pointing to the same address
+	}
 	*(UINT16 *)(mem + 4 * 0xbf + 0) = 0x0000;	// 123R3 wants a null vector
 	*(UINT16 *)(mem + 4 * 0xbf + 2) = 0x0000;
 	
@@ -20360,7 +20367,6 @@ void dma_run(int c, int ch)
 void pic_init()
 {
 	memset(pic, 0, sizeof(pic));
-	pic[0].imr = pic[1].imr = 0xff;
 	
 	// from bochs bios
 	pic_write(0, 0, 0x11);	// icw1 = 11h
@@ -20372,6 +20378,7 @@ void pic_init()
 	pic_write(1, 1, 0x70);	// icw2 = 70h
 	pic_write(1, 1, 0x02);	// icw3 = 02h
 	pic_write(1, 1, 0x01);	// icw4 = 01h
+	pic_write(1, 1, 0xff);	// ocw1 = ffh
 }
 
 void pic_write(int c, UINT32 addr, UINT8 data)
