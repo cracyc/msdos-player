@@ -736,6 +736,18 @@ BOOL MyWriteConsoleOutputA(HANDLE hConsoleOutput, const CHAR_INFO *lpBuffer, COO
 	}
 	return TRUE;
 }
+
+BOOL MySetConsoleCursorPosition(HANDLE hConsoleOutput, COORD dwCursorPosition)
+{
+	if(use_vt) {
+		WCHAR buf[20];
+		int len = swprintf(buf, L"\x1b[%d;%dH", dwCursorPosition.Y + 1, dwCursorPosition.X + 1);
+		return WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
+	} else {
+		return SetConsoleCursorPosition(hConsoleOutput, dwCursorPosition);
+	}
+}
+
 #else
 void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPCSTR attributes, DWORD nLength, COORD dwWriteCoord)
 {
@@ -745,6 +757,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 }
 
 #define MyWriteConsoleOutputA WriteConsoleOutputA
+#define MySetConsoleCursorPosition SetConsoleCursorPosition
 #endif
 
 void vram_flush()
@@ -873,7 +886,7 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 				COORD co;
 				co.X = data & 0xff;
 				co.Y = (data >> 8) + scr_top;
-				SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+				MySetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
 				cursor_moved = false;
 				cursor_moved_by_crtc = false;
 			}
@@ -3765,7 +3778,7 @@ void change_console_size(int width, int height)
 	if(is_win10_or_later) {
 		co.X = 0;
 		co.Y = 0;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 	}
 
 	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
@@ -3783,7 +3796,7 @@ void change_console_size(int width, int height)
 	if(!is_win10_or_later && (csbi.dwCursorPosition.X > width - 1 || csbi.dwCursorPosition.Y > height - 1)) {
 		co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
 		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved = true;
 		cursor_moved_by_crtc = false;
 	}
@@ -3822,7 +3835,7 @@ void change_console_size(int width, int height)
 	if(is_win10_or_later) {
 		co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
 		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved = true;
 		cursor_moved_by_crtc = false;
 	}
@@ -6377,7 +6390,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved_by_crtc = false;
 	}
 	if(q == 1 && msdos_symbol_code_check(out[0], int_num, reg_ah)) {
@@ -6401,11 +6414,11 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
 			co.Y = csbi.dwCursorPosition.Y;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		} else if(csbi.dwCursorPosition.Y > 0) {
 			co.X = csbi.dwSize.X - 1;
 			co.Y = csbi.dwCursorPosition.Y - 1;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		} else {
 			WriteConsoleA(hStdout, out, 1, NULL, NULL); // to make sure
 		}
@@ -7802,7 +7815,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	COORD co;
 	co.X = 0;
 	co.Y = scr_top;
-	SetConsoleCursorPosition(hStdout, co);
+	MySetConsoleCursorPosition(hStdout, co);
 	cursor_moved = true;
 	cursor_moved_by_crtc = false;
 	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
@@ -7882,7 +7895,7 @@ inline void pcbios_int_10h_02h()
 		static bool hidden = false;
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		
-		if(CPU_DH >= scr_height || !SetConsoleCursorPosition(hStdout, co)) {
+		if(CPU_DH >= scr_height || !MySetConsoleCursorPosition(hStdout, co)) {
 			if(ci_new.bVisible) {
 				ci_new.bVisible = FALSE;
 				hidden = true;
@@ -7939,7 +7952,7 @@ inline void pcbios_int_10h_05h()
 		co.X = mem[0x450 + CPU_AL * 2];
 		co.Y = mem[0x451 + CPU_AL * 2] + scr_top;
 		if(co.Y < scr_top + scr_height) {
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		}
 		cursor_moved_by_crtc = false;
 	}
@@ -8163,7 +8176,7 @@ inline void pcbios_int_10h_0eh()
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved_by_crtc = false;
 	}
 	co.X = mem[0x450 + mem[0x462] * 2];
@@ -8193,7 +8206,7 @@ inline void pcbios_int_10h_0eh()
 		}
 		if(!cursor_moved) {
 			co.Y += scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			cursor_moved = true;
 		}
 		mem[dest] = CPU_AL;
@@ -8311,7 +8324,7 @@ inline void pcbios_int_10h_13h()
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			if(csbi.wAttributes != CPU_BL) {
 				SetConsoleTextAttribute(hStdout, CPU_BL);
@@ -8328,7 +8341,7 @@ inline void pcbios_int_10h_13h()
 				}
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hStdout, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -8343,7 +8356,7 @@ inline void pcbios_int_10h_13h()
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
 			GetConsoleScreenBufferInfo(hStdout, &csbi);
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			WORD wAttributes = csbi.wAttributes;
 			for(int i = 0; i < CPU_CX; i++, ofs += 2) {
@@ -8359,7 +8372,7 @@ inline void pcbios_int_10h_13h()
 			if(CPU_AL == 0x02) {
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hStdout, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -20011,7 +20024,7 @@ void hardware_update()
 			COORD co;
 			co.X = position % width;
 			co.Y = position / width + scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			crtc_changed[14] = crtc_changed[15] = 0;
 			cursor_moved_by_crtc = true;

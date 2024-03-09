@@ -1,10 +1,6 @@
 name: C/C++ CI
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+on: [push, pull_request]
 
 jobs:
   build:
@@ -17,10 +13,13 @@ jobs:
       working-directory: .
     - name: make i286
       run: make -f Makefile.mingw i286
+      working-directory: ./source
     - name: make i386
       run: make -f Makefile.mingw i386
+      working-directory: ./source
     - name: make i486
       run: make -f Makefile.mingw i486
+      working-directory: ./source
     - uses: actions/upload-artifact@master
       with:
         name: mingw
