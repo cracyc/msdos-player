@@ -748,6 +748,19 @@ BOOL MySetConsoleCursorPosition(HANDLE hConsoleOutput, COORD dwCursorPosition)
 	}
 }
 
+BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
+{
+	if(use_vt) {
+		HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+		WriteConsoleA(hStdOut, "\x1b];", 3, NULL, NULL);
+		WriteConsoleA(hStdOut, lpConsoleTitle, strlen(lpConsoleTitle), NULL, NULL);
+		WriteConsoleA(hStdOut, "\x07", 1, NULL, NULL);
+	} else {
+		return SetConsoleTitleA(lpConsoleTitle);
+	}
+	return TRUE;
+}
+
 #else
 void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPCSTR attributes, DWORD nLength, COORD dwWriteCoord)
 {
@@ -758,6 +771,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 
 #define MyWriteConsoleOutputA WriteConsoleOutputA
 #define MySetConsoleCursorPosition SetConsoleCursorPosition
+#define MySetConsoleTitleA SetConsoleTitleA
 #endif
 
 void vram_flush()
@@ -2751,10 +2765,10 @@ HWND get_console_window_handle()
 		
 		GetConsoleTitleA(pszOldWindowTitle, 1024);
 		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
-		SetConsoleTitleA(pszNewWindowTitle);
+		MySetConsoleTitleA(pszNewWindowTitle);
 		Sleep(100);
 		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
-		SetConsoleTitleA(pszOldWindowTitle);
+		MySetConsoleTitleA(pszOldWindowTitle);
 	}
 	return hwndFound;
 }
@@ -2810,6 +2824,9 @@ void set_default_console_font_info(CONSOLE_FONT_INFOEX *fi)
 
 bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 {
+	if(use_vt) {
+		return false;
+	}
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	
@@ -2872,6 +2889,9 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 
 bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 {
+	if(use_vt) {
+		return false;
+	}
 	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
@@ -2954,6 +2974,9 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 
 bool set_console_font_size(int width, int height)
 {
+	if(use_vt) {
+		return false;
+	}
 	if(is_win10_or_later && active_code_page == 932) {
 		set_default_console_font_info(&fi_new);
 	}
@@ -3547,7 +3570,7 @@ int main(int argc, char *argv[], char *envp[])
 	}
 	
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
-	get_console_cursor_success = (GetConsoleCursorInfo(hStdout, &ci) != 0);
+	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hStdout, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
 	
 	ci_old = ci_new = ci;
@@ -7503,6 +7526,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		
 		*(UINT16 *)(mem + (ss << 4) + sp) = 0;
 		CPU_JMP_FAR(cs, ip);
+		MySetConsoleTitleA(process->module_path);
 	} else if(al == 0x01) {
 		// copy ss:sp and cs:ip to param block
 		param->sp = sp;
@@ -8125,6 +8149,10 @@ inline void pcbios_int_10h_0ah()
 
 inline void pcbios_int_10h_0ch()
 {
+	if(use_vt) { // this can't work in vt mode
+		CPU_SET_C_FLAG(1);
+		return;
+	}
 	HDC hdc = get_console_window_device_context();
 	
 	if(hdc != NULL) {
@@ -8146,6 +8174,10 @@ inline void pcbios_int_10h_0ch()
 
 inline void pcbios_int_10h_0dh()
 {
+	if(use_vt) { // this can't work in vt mode
+		CPU_SET_C_FLAG(1);
+		return;
+	}
 	HDC hdc = get_console_window_device_context();
 	BYTE r = 0;
 	BYTE g = 0;
@@ -13256,6 +13288,9 @@ inline void msdos_int_21h_50h()
 inline void msdos_int_21h_51h()
 {
 	CPU_BX = current_psp;
+	process_t *process = msdos_process_info_get(current_psp, false);
+	if (process)
+		MySetConsoleTitleA(process->module_path);
 }
 
 inline void msdos_int_21h_52h()
