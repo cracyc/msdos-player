@@ -20077,8 +20077,20 @@ void hardware_update()
 		}
 		if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-			SetConsoleCursorInfo(hStdout, &ci_new);
-			restore_console_cursor = true;
+			if(use_vt) {
+				const char *buf;
+				if(!ci_new.bVisible) {
+					buf = "\x1b[?25l";
+				} else if(ci_new.dwSize < 50) {
+					buf = "\x1b[?25h\x1b[3 q";
+				} else {
+					buf = "\x1b[?25h\x1b[1 q";
+				}
+				WriteConsoleA(hStdout, buf, strlen(buf), NULL, NULL);
+			} else {
+				SetConsoleCursorInfo(hStdout, &ci_new);
+				restore_console_cursor = true;
+			}
 		}
 		ci_old = ci_new;
 		
