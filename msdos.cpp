@@ -641,14 +641,13 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 		} else {
 			DWORD pos = 0;
 			if(x > 1) {
-				WriteConsoleW(hConsoleOutput, L"\x1b[0K", 4, NULL, NULL);
 				write_line_with_attrs(hConsoleOutput, uchar, attributes, scr_width - x);
 				y++;
-				nLength -= scr_width - x;
-				pos = scr_width - x;
+				nLength -= scr_width - x + 1;
+				pos = scr_width - x + 1;
 			}
 			while(nLength > scr_width) {
-				len = swprintf(buf, L"\x1b[%d;1H\x1b[0K", y);
+				len = swprintf(buf, L"\x1b[%d;1H", y);
 				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
 				write_line_with_attrs(hConsoleOutput, uchar + pos, attributes + pos, scr_width);
 				y++;
@@ -656,7 +655,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 				pos += scr_width;
 			}
 			if(nLength) {
-				len = swprintf(buf, L"\x1b[%d;1H\x1b[%dX", y, nLength);
+				len = swprintf(buf, L"\x1b[%d;1H", y);
 				WriteConsoleW(hConsoleOutput, buf, len, NULL, NULL);
 				write_line_with_attrs(hConsoleOutput, uchar + pos, attributes + pos, nLength);
 			}				
@@ -702,35 +701,42 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 BOOL MyWriteConsoleOutputA(HANDLE hConsoleOutput, const CHAR_INFO *lpBuffer, COORD dwBufferSize, COORD dwBufferCoord, PSMALL_RECT lpWriteRegion)
 {
 	if(use_vt) {
-		COORD tl, br;
-		tl.X = dwBufferCoord.X;
-		tl.Y = dwBufferCoord.Y;
-		br.X = dwBufferSize.X + dwBufferCoord.X;
-		br.Y = dwBufferSize.Y + dwBufferCoord.Y;
-		if((tl.X > scr_width) || (tl.Y > scr_height)) {
+		if(lpWriteRegion->Right > scr_width) {
+			lpWriteRegion->Right = scr_width;
+		}
+		if(lpWriteRegion->Bottom > scr_height) {
+			lpWriteRegion->Bottom = scr_height;
+		}
+		if((lpWriteRegion->Left >= lpWriteRegion->Right) || (lpWriteRegion->Top >= lpWriteRegion->Bottom)) {
 			return TRUE;
 		}
-		if(br.X > scr_width) br.Y = scr_width;
-		if(br.Y > scr_height) br.Y = scr_height;
-		int linelen = br.X - tl.X;
-		char *chr = (char *)HeapAlloc(GetProcessHeap(), 0, linelen);
-		WORD *attr = (WORD *)HeapAlloc(GetProcessHeap(), 0, linelen * 2);
-		int pos = 0;
-		for(int y = 0; y < dwBufferSize.Y; y++) {
-			for(int x = 0; x < linelen; x++) {
-				chr[x] = lpBuffer[pos].Char.AsciiChar;
-				attr[x] = lpBuffer[pos].Attributes;
+		int width = lpWriteRegion->Right - lpWriteRegion->Left;
+		int height = lpWriteRegion->Bottom - lpWriteRegion->Top;
+		if(width > (dwBufferSize.X - dwBufferCoord.X)) {
+			width = dwBufferSize.X - dwBufferCoord.X;
+		}
+		if(height > (dwBufferSize.Y - dwBufferCoord.Y)) {
+			height = dwBufferSize.Y - dwBufferCoord.Y;
+		}
+		char *chr = (char *)HeapAlloc(GetProcessHeap(), 0, width);
+		WORD *attr = (WORD *)HeapAlloc(GetProcessHeap(), 0, width * 2);
+		int pos = dwBufferCoord.Y * dwBufferSize.X + dwBufferCoord.X;
+		COORD coord;
+		coord.X = lpWriteRegion->Left;
+		coord.Y = lpWriteRegion->Top;
+		for(int y = 0; y < height; y++) {
+			for(int x = 0; x < width; x++) {
+				chr[x] = lpBuffer[pos + x].Char.AsciiChar;
+				attr[x] = lpBuffer[pos + x].Attributes;
 			}
-			MyWriteConsoleOutputCharAttrA(hConsoleOutput, chr, attr, linelen, tl);
-			tl.Y++;
+			MyWriteConsoleOutputCharAttrA(hConsoleOutput, chr, attr, width, coord);
 			pos += dwBufferSize.X;
+			coord.Y++;
 		}
 		HeapFree(GetProcessHeap(), 0, chr);
 		HeapFree(GetProcessHeap(), 0, attr);
-		lpWriteRegion->Left = tl.X;
-		lpWriteRegion->Top = tl.Y;
-		lpWriteRegion->Right = br.X;
-		lpWriteRegion->Bottom = br.Y;
+		lpWriteRegion->Right = lpWriteRegion->Left + width;
+		lpWriteRegion->Bottom = lpWriteRegion->Top + height;
 	} else {
 		return WriteConsoleOutputA(hConsoleOutput, lpBuffer, dwBufferSize, dwBufferCoord, lpWriteRegion);
 	}
@@ -3684,7 +3690,7 @@ int main(int argc, char *argv[], char *envp[])
 			set_output_code_page(output_cp);
 		}
 		if(get_console_buffer_success) {
-			if(restore_console_size) {
+			if(restore_console_size && !use_vt) {
 				// window can't be bigger than buffer,
 				// buffer can't be smaller than window,
 				// so make a tiny window,
@@ -3712,7 +3718,7 @@ int main(int argc, char *argv[], char *envp[])
 			}
 		}
 		if(get_console_buffer_success) {
-			if(restore_console_size) {
+			if(restore_console_size && !use_vt) {
 				SMALL_RECT rect;
 				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
@@ -3832,7 +3838,7 @@ void change_console_size(int width, int height)
 	int min_width  = min(cur_window_width,  width );
 	int min_height = min(cur_window_height, height);
 	
-	if(cur_window_width != min_width || cur_window_height != min_height) {
+	if((cur_window_width != min_width || cur_window_height != min_height) && !use_vt) {
 		SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
 		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
 			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
@@ -3841,12 +3847,12 @@ void change_console_size(int width, int height)
 		cur_window_width  = min_width;
 		cur_window_height = min_height;
 	}
-	if(cur_buffer_width != width || cur_buffer_height != height) {
+	if((cur_buffer_width != width || cur_buffer_height != height) && !use_vt) {
 		co.X = width;
 		co.Y = height;
 		SetConsoleScreenBufferSize(hStdout, co);
 	}
-	if(cur_window_width != width || cur_window_height != height) {
+	if((cur_window_width != width || cur_window_height != height) && !use_vt) {
 		SET_RECT(rect, 0, 0, width - 1, height - 1);
 		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
 			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
