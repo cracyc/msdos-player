@@ -20072,7 +20072,7 @@ void hardware_update()
 		}
 		
 		// update cursor info
-		if(!is_cursor_blink_off()) {
+		if(!use_vt && !is_cursor_blink_off()) {
 			ci_new.bVisible = TRUE;
 		}
 		if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
