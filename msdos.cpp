@@ -641,7 +641,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 		} else {
 			DWORD pos = 0;
 			if(x > 1) {
-				write_line_with_attrs(hConsoleOutput, uchar, attributes, scr_width - x);
+				write_line_with_attrs(hConsoleOutput, uchar, attributes, scr_width - x + 1);
 				y++;
 				nLength -= scr_width - x + 1;
 				pos = scr_width - x + 1;
