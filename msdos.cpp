@@ -604,7 +604,7 @@ void set_console_attr(HANDLE hout, WORD attr)
 	WriteConsoleW(hout, buf, len, NULL, NULL);
 }
 
-void write_line_with_attrs(HANDLE hout, LPCWSTR chrs, LPWORD attrs, DWORD len)
+void write_line_with_attrs(HANDLE hout, WCHAR *chrs, LPWORD attrs, DWORD len)
 {
 	if(!attrs) {
 		WriteConsoleW(hout, chrs, len, NULL, NULL);
@@ -614,6 +614,9 @@ void write_line_with_attrs(HANDLE hout, LPCWSTR chrs, LPWORD attrs, DWORD len)
 	int start = 0, slen = 0;
 	for(int i = 0; i < len; i++)
 	{
+		if(!chrs[i]) {
+			chrs[i] = 0x20;
+		}
 		if(attr != attrs[i]) {
 			set_console_attr(hout, attr);
 			WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
@@ -767,6 +770,16 @@ BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
 	return TRUE;
 }
 
+BOOL MySetConsoleTextAttribute(HANDLE hConsoleOutput, WORD wAttributes)
+{
+	if(use_vt) {
+		set_console_attr(hConsoleOutput, wAttributes);
+	} else {
+		return SetConsoleTextAttribute(hConsoleOutput, wAttributes);
+	}
+	return TRUE;
+}
+
 #else
 void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPCSTR attributes, DWORD nLength, COORD dwWriteCoord)
 {
@@ -778,6 +791,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 #define MyWriteConsoleOutputA WriteConsoleOutputA
 #define MySetConsoleCursorPosition SetConsoleCursorPosition
 #define MySetConsoleTitleA SetConsoleTitleA
+#define MySetConsoleTextAttribute SetConsoleTextAttribute
 #endif
 
 void vram_flush()
@@ -3727,7 +3741,7 @@ int main(int argc, char *argv[], char *envp[])
 					SetConsoleWindowInfo(hStdout, TRUE, &rect);
 				}
 			}
-			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+			MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 		}
 		if(get_console_cursor_success) {
 			if(restore_console_cursor) {
@@ -3789,84 +3803,87 @@ void change_console_size(int width, int height)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	SMALL_RECT rect;
 	COORD co;
-	
-	if(is_win10_or_later && active_code_page == 932) {
-		if(wcscmp(fi_new.FaceName, L"Terminal") != 0) {
-			set_console_font_size(font_width, font_height);
+
+	if(!use_vt) {  // window cannot be resized in vt mode
+		if(is_win10_or_later && active_code_page == 932) {
+			if(wcscmp(fi_new.FaceName, L"Terminal") != 0) {
+				set_console_font_size(font_width, font_height);
+			}
 		}
-	}
-	
-	GetConsoleScreenBufferInfo(hStdout, &csbi);
-	
-	int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-	int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-	int cur_buffer_width  = csbi.dwSize.X;
-	int cur_buffer_height = csbi.dwSize.Y;
 
-	// workaround win10 conhost v2 bug that crash when cursor is out of range
-	if(is_win10_or_later) {
-		co.X = 0;
-		co.Y = 0;
-		MySetConsoleCursorPosition(hStdout, co);
-	}
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
 
-	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
-		if(cur_window_width == width && cur_window_height == height) {
-			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
+		int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+		int cur_buffer_width  = csbi.dwSize.X;
+		int cur_buffer_height = csbi.dwSize.Y;
+
+		// workaround win10 conhost v2 bug that crash when cursor is out of range
+		if(is_win10_or_later) {
+			co.X = 0;
+			co.Y = 0;
+			MySetConsoleCursorPosition(hStdout, co);
+		}
+
+		if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
+			if(cur_window_width == width && cur_window_height == height) {
+				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
+				SET_RECT(rect, 0, 0, width - 1, height - 1);
+				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			} else if(csbi.dwCursorPosition.Y > height - 1) {
+				SET_RECT(rect, 0, csbi.dwCursorPosition.Y - (height - 1), width - 1, csbi.dwCursorPosition.Y);
+				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				SET_RECT(rect, 0, 0, width - 1, height - 1);
+				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			}
+		}
+		if(!is_win10_or_later && (csbi.dwCursorPosition.X > width - 1 || csbi.dwCursorPosition.Y > height - 1)) {
+			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
+			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
+			SetConsoleCursorPosition(hStdout, co);
+			cursor_moved = true;
+			cursor_moved_by_crtc = false;
+		}
+
+		// window can't be bigger than buffer,
+		// buffer can't be smaller than window,
+		// so make a tiny window,
+		// set the required buffer,
+		// then set the required window
+		int min_width  = min(cur_window_width,  width );
+		int min_height = min(cur_window_height, height);
+
+		if((cur_window_width != min_width || cur_window_height != min_height) && !use_vt) {
+			SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
+			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			}
+			cur_window_width  = min_width;
+			cur_window_height = min_height;
+		}
+		if((cur_buffer_width != width || cur_buffer_height != height) && !use_vt) {
+			co.X = width;
+			co.Y = height;
+			SetConsoleScreenBufferSize(hStdout, co);
+		}
+		if((cur_window_width != width || cur_window_height != height) && !use_vt) {
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
-			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
-		} else if(csbi.dwCursorPosition.Y > height - 1) {
-			SET_RECT(rect, 0, csbi.dwCursorPosition.Y - (height - 1), width - 1, csbi.dwCursorPosition.Y);
-			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
-			SET_RECT(rect, 0, 0, width - 1, height - 1);
-			WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			}
 		}
-	}
-	if(!is_win10_or_later && (csbi.dwCursorPosition.X > width - 1 || csbi.dwCursorPosition.Y > height - 1)) {
-		co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
-		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-		MySetConsoleCursorPosition(hStdout, co);
-		cursor_moved = true;
-		cursor_moved_by_crtc = false;
-	}
-	
-	// window can't be bigger than buffer,
-	// buffer can't be smaller than window,
-	// so make a tiny window,
-	// set the required buffer,
-	// then set the required window
-	int min_width  = min(cur_window_width,  width );
-	int min_height = min(cur_window_height, height);
-	
-	if((cur_window_width != min_width || cur_window_height != min_height) && !use_vt) {
-		SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
-		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
-			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-			SetConsoleWindowInfo(hStdout, TRUE, &rect);
-		}
-		cur_window_width  = min_width;
-		cur_window_height = min_height;
-	}
-	if((cur_buffer_width != width || cur_buffer_height != height) && !use_vt) {
-		co.X = width;
-		co.Y = height;
-		SetConsoleScreenBufferSize(hStdout, co);
-	}
-	if((cur_window_width != width || cur_window_height != height) && !use_vt) {
-		SET_RECT(rect, 0, 0, width - 1, height - 1);
-		if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
-			SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-			SetConsoleWindowInfo(hStdout, TRUE, &rect);
-		}
-	}
 
-	// restore cursor position
-	if(is_win10_or_later) {
-		co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
-		co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-		MySetConsoleCursorPosition(hStdout, co);
-		cursor_moved = true;
-		cursor_moved_by_crtc = false;
+		// restore cursor position
+		if(is_win10_or_later) {
+			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
+			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
+			SetConsoleCursorPosition(hStdout, co);
+			cursor_moved = true;
+			cursor_moved_by_crtc = false;
+		}
+		restore_console_size = true;
 	}
 	
 	scr_width = scr_buf_size.X = width;
@@ -3900,8 +3917,6 @@ void change_console_size(int width, int height)
 	mouse.min_position.y = 0;
 	mouse.max_position.x = 8 * (scr_width  - 1);
 	mouse.max_position.y = 8 * (scr_height - 1);
-	
-	restore_console_size = true;
 }
 
 void clear_scr_buffer(WORD attr)
@@ -7836,7 +7851,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		}
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
-		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length = vram_last_length = 0;
 		if(use_vram_thread) {
 			LeaveCriticalSection(&vram_crit_sect);
@@ -7848,7 +7863,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	MySetConsoleCursorPosition(hStdout, co);
 	cursor_moved = true;
 	cursor_moved_by_crtc = false;
-	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+	MySetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
 
 void pcbios_update_cursor_position()
@@ -8365,12 +8380,12 @@ inline void pcbios_int_10h_13h()
 			MySetConsoleCursorPosition(hStdout, co);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				SetConsoleTextAttribute(hStdout, CPU_BL);
+				MySetConsoleTextAttribute(hStdout, CPU_BL);
 			}
 			WriteConsoleA(hStdout, &mem[ofs], CPU_CX, NULL, NULL);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x00) {
 				if(!restore_console_size) {
@@ -8399,13 +8414,13 @@ inline void pcbios_int_10h_13h()
 			WORD wAttributes = csbi.wAttributes;
 			for(int i = 0; i < CPU_CX; i++, ofs += 2) {
 				if(wAttributes != mem[ofs + 1]) {
-					SetConsoleTextAttribute(hStdout, mem[ofs + 1]);
+					MySetConsoleTextAttribute(hStdout, mem[ofs + 1]);
 					wAttributes = mem[ofs + 1];
 				}
 				WriteConsoleA(hStdout, &mem[ofs], 1, NULL, NULL);
 			}
 			if(csbi.wAttributes != wAttributes) {
-				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x02) {
 				co.X = mem[0x450 + CPU_BH * 2];
