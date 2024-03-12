@@ -16064,18 +16064,23 @@ inline void msdos_int_33h_0001h()
 		mouse.hidden--;
 	}
 	if(mouse.hidden == 0) {
+		WORD bx = CPU_BX;
 		CPU_AX = 0;
 		CPU_BX = 0x100;
 		pcbios_int_15h_c2h();
+		CPU_BX = bx;
 	}
+	CPU_AX = 0xffff;
 }
 
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
+	WORD bx = CPU_BX;
 	CPU_AX = 0;
 	CPU_BX = 0;
 	pcbios_int_15h_c2h();
+	CPU_BX = bx;
 }
 
 inline void msdos_int_33h_0003h()
