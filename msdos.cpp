@@ -7913,6 +7913,12 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(CPU_AL & 0x80));
 		break;
+	case 0x00:
+	case 0x01:
+		change_console_size(40, 25);
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(40, 25, !(CPU_AL & 0x80));
+		break;
 	}
 	if(CPU_AL & 0x80) {
 		mem[0x487] |= 0x80;
