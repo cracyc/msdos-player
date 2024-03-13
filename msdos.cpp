@@ -18875,6 +18875,8 @@ void msdos_syscall(unsigned num)
 		mouse_push_dx = CPU_DX;
 		mouse_push_si = CPU_SI;
 		mouse_push_di = CPU_DI;
+		mouse_push_ds = CPU_DS;
+		mouse_push_es = CPU_ES;
 		
 		if(mouse.status_irq && mouse.call_addr.dw) {
 			CPU_AX = mouse.status_irq;
@@ -18952,6 +18954,8 @@ void msdos_syscall(unsigned num)
 		CPU_DX = mouse_push_dx;
 		CPU_SI = mouse_push_si;
 		CPU_DI = mouse_push_di;
+		CPU_LOAD_SREG(DS, mouse_push_ds);
+		CPU_LOAD_SREG(ES, mouse_push_es);
 		
 		// EOI
 		if((pic[1].isr &= ~(1 << 4)) == 0) {

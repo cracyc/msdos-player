@@ -1244,6 +1244,8 @@ UINT16 mouse_push_cx;
 UINT16 mouse_push_dx;
 UINT16 mouse_push_si;
 UINT16 mouse_push_di;
+UINT16 mouse_push_ds;
+UINT16 mouse_push_es;
 
 // hma
 
