@@ -16094,6 +16094,11 @@ inline void msdos_int_33h_0002h()
 
 inline void msdos_int_33h_0003h()
 {
+	if(!mouse.enabled_ps2) { // if this is called then enable the mouse, zzt requires this
+		CPU_AX = 0;
+		CPU_BX = 0x100;
+		pcbios_int_15h_c2h();
+	}	
 //	if(mouse.hidden > 0) {
 		update_console_input();
 //	}
