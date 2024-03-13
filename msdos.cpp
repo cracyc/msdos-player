@@ -1000,11 +1000,11 @@ void debugger_write_dword(UINT32 byteaddress, UINT32 data)
 				change_console_size(scr_width, scr_height);
 			}
 			write_text_vram(byteaddress - text_vram_top_address, data & 0xff, (data >> 8) & 0xff);
-			write_text_vram(byteaddress - text_vram_top_address, (data >> 16) & 0xff, data >> 24);
+			write_text_vram(byteaddress - text_vram_top_address + 2, (data >> 16) & 0xff, data >> 24);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
 			if(int_10h_feh_called && !int_10h_ffh_called) {
 				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, (data >> 8) & 0xff);
-				write_text_vram(byteaddress - shadow_buffer_top_address, (data >> 16) & 0xff, data >> 24);
+				write_text_vram(byteaddress - shadow_buffer_top_address + 2, (data >> 16) & 0xff, data >> 24);
 			}
 #ifdef SUPPORT_GRAPHIC_SCREEN
 		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
