@@ -45,6 +45,7 @@ void exit_handler();
 		#define unimplemented_67h fatalerror
 		#define unimplemented_xms fatalerror
 	#endif
+	bool debug_trace = false;
 #endif
 #ifndef unimplemented_10h
 	#define unimplemented_10h nolog
@@ -2239,6 +2240,14 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
+#ifdef ENABLE_DEBUG_LOG
+			} else if(stricmp(params[0], "TE") == 0) {
+				telnet_printf("debug trace enabled\n");
+				debug_trace = true;
+			} else if(stricmp(params[0], "TD") == 0) {
+				telnet_printf("debug trace disabled\n");
+				debug_trace = false;
+#endif
 			} else if(stricmp(params[0], "T") == 0) {
 				if(num == 1 || num == 2) {
 					int steps = 1;
@@ -19926,7 +19935,14 @@ inline void hardware_run_cpu()
 		idle_ops++;
 	}
 #ifdef USE_DEBUGGER
-	// Disallow reentering CPU_EXECUTE() in msdos_syscall()
+#ifdef ENABLE_DEBUG_LOG
+        	if(debug_trace && fp_debug_log != NULL) {
+			char buffer[256];
+			debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
+			fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
+		}
+#endif
+// Disallow reentering CPU_EXECUTE() in msdos_syscall()
 	if(msdos_int_num >= 0) {
 		unsigned num = (unsigned)msdos_int_num;
 		msdos_int_num = -1;
