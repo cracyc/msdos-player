@@ -10993,7 +10993,8 @@ inline void msdos_int_21h_1bh()
 		CPU_AL = dpb->highest_sector_num + 1;
 		CPU_CX = dpb->bytes_per_sector;
 		CPU_DX = dpb->highest_cluster_num - 1;
-		*(UINT8 *)(mem + CPU_DS_BASE + CPU_BX) = dpb->media_type;
+		CPU_LOAD_SREG(CPU_DS_INDEX, seg);
+		CPU_BX = ofs + offsetof(dpb_t, media_type);
 	} else {
 		CPU_AL = 0xff;
 		CPU_SET_C_FLAG(1);
@@ -11011,7 +11012,8 @@ inline void msdos_int_21h_1ch()
 		CPU_AL = dpb->highest_sector_num + 1;
 		CPU_CX = dpb->bytes_per_sector;
 		CPU_DX = dpb->highest_cluster_num - 1;
-		*(UINT8 *)(mem + CPU_DS_BASE + CPU_BX) = dpb->media_type;
+		CPU_LOAD_SREG(CPU_DS_INDEX, seg);
+		CPU_BX = ofs + offsetof(dpb_t, media_type);
 	} else {
 		CPU_AL = 0xff;
 		CPU_SET_C_FLAG(1);
@@ -18965,8 +18967,8 @@ void msdos_syscall(unsigned num)
 		CPU_DX = mouse_push_dx;
 		CPU_SI = mouse_push_si;
 		CPU_DI = mouse_push_di;
-		CPU_LOAD_SREG(DS, mouse_push_ds);
-		CPU_LOAD_SREG(ES, mouse_push_es);
+		CPU_LOAD_SREG(CPU_DS_INDEX, mouse_push_ds);
+		CPU_LOAD_SREG(CPU_ES_INDEX, mouse_push_es);
 		
 		// EOI
 		if((pic[1].isr &= ~(1 << 4)) == 0) {
