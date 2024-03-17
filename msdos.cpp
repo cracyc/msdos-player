@@ -277,6 +277,7 @@ bool sio_cts_flow_ctrl = false;
 bool ansi_sys = true;
 bool box_line = false;
 bool glyph_char = false;
+bool is_dbcs_cp = false;
 
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
@@ -649,7 +650,7 @@ void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 {
 	WORD attr = attrs[0];
 	int start = 0, slen = 0, apos = 0;
-	WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, len * 2);
+	WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, len * 4);
 	int wcharlen = MultiByteToWideChar(active_code_page, 0, chrs, len, wchar, len);
 	for(int i = 0; i < wcharlen; i++) {
 		if(attr != attrs[apos]) {
@@ -658,6 +659,12 @@ void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 			attr = attrs[apos];
 			slen = 0;
 			start = i;
+		}
+		// add space after ambiguous width chars in cjk codepages
+		if(is_dbcs_cp && get_ambiguous(wchar[i])) {
+			memmove(wchar + i + 2, wchar + i + 1, (wcharlen - i - 1) * 2);
+			wchar[i + 1] = 0x20;
+			wcharlen++;
 		}
 		if(!wchar[i]) {
 			wchar[i] = 0x20;
@@ -669,7 +676,7 @@ void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 				wchar[i] = 0x2302; // HOUSE
 			}
 		}
-		apos += mk_wcwidth_cjk(wchar[i]);
+		apos += mk_wcwidth(wchar[i]);
 		slen++;
 	}
 	set_console_attr(hout, attr);
@@ -4864,6 +4871,7 @@ void msdos_dbcs_table_update()
 		dbcs_data[0] = 2;	// ???
 	}
 	memcpy(mem + DBCS_TOP, dbcs_data, sizeof(dbcs_data));
+	is_dbcs_cp = info.MaxCharSize == 2;
 }
 
 void msdos_dbcs_table_finish()
