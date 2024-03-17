@@ -853,6 +853,18 @@ void vram_flush()
 	}
 }
 
+WORD read_text_vram_byte(UINT32 offset)
+{
+	bool shadow = int_10h_feh_called && !int_10h_ffh_called;
+	UINT32 vrambase = shadow ? shadow_buffer_top_address : text_vram_top_address;
+	if(!offset || (offset > (shadow ? shadow_buffer_end_address : text_vram_end_address))) {
+		return 0;
+	}
+	return mem[vrambase + offset];
+}
+
+int msdos_lead_byte_check(UINT8 code);
+
 void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 {
 	if(use_vram_thread) {
@@ -867,13 +879,21 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 				return;
 			}
 			if(offset != last_offset + 2) {
+				if(msdos_lead_byte_check(read_text_vram_byte(last_offset))) {
+					write_text_vram(last_offset + 2, read_text_vram_byte(last_offset + 2), read_text_vram_byte(last_offset + 3));
+				}
 				vram_flush();
 			}
 		}
 		if(vram_length == 0) {
-			first_offset = offset;
-			vram_coord.X = (offset >> 1) % scr_width;
-			vram_coord.Y = (offset >> 1) / scr_width + scr_top;
+			char lead = read_text_vram_byte(offset - 2);
+			if(msdos_lead_byte_check(lead)) {
+				write_text_vram(offset - 2, lead, read_text_vram_byte(offset - 1));
+			} else {
+				first_offset = offset;
+				vram_coord.X = (offset >> 1) % scr_width;
+				vram_coord.Y = (offset >> 1) / scr_width + scr_top;
+			}
 		}
 		scr_char[vram_length] = chr;
 		scr_attr[vram_length] = attr;
@@ -926,12 +946,12 @@ void debugger_write_byte(UINT32 byteaddress, UINT8 data)
 			}
 			char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
 			char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
-			write_text_vram(byteaddress - text_vram_top_address, chr, attr);
+			write_text_vram((byteaddress & ~1) - text_vram_top_address, chr, attr);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
 			if(int_10h_feh_called && !int_10h_ffh_called) {
 				char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
 				char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
-				write_text_vram(byteaddress - shadow_buffer_top_address, chr, attr);
+				write_text_vram((byteaddress & ~1) - shadow_buffer_top_address, chr, attr);
 			}
 #ifdef SUPPORT_GRAPHIC_SCREEN
 		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
