@@ -645,77 +645,71 @@ void set_console_attr(HANDLE hout, WORD attr)
 	WriteConsoleA(hout, buf, len, NULL, NULL);
 }
 
-int write_line_with_attrs(HANDLE hout, WCHAR *chrs, LPWORD attrs, DWORD len)
+void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 {
-	DWORD attr = attrs[0];
-	int start = 0, slen = 0, adiff = 0;
-	for(int i = 0; i < len; i++) {
-		if(attr != attrs[i + adiff]) {
+	WORD attr = attrs[0];
+	int start = 0, slen = 0, apos = 0;
+	WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, len * 2);
+	int wcharlen = MultiByteToWideChar(active_code_page, 0, chrs, len, wchar, len);
+	for(int i = 0; i < wcharlen; i++) {
+		if(attr != attrs[apos]) {
 			set_console_attr(hout, attr);
-			WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
-			attr = attrs[i + adiff];
+			WriteConsoleW(hout, wchar + start, slen, NULL, NULL);
+			attr = attrs[apos];
 			slen = 0;
 			start = i;
 		}
-		if(!chrs[i]) {
-			chrs[i] = 0x20;
+		if(!wchar[i]) {
+			wchar[i] = 0x20;
 		}
 		if(glyph_char) {
-			if(chrs[i] <= 0x1f) {
-				chrs[i] = glyph_chars[chrs[i]];
-			} else if(chrs[i] == 0x7f) {
-				chrs[i] = 0x2302; // HOUSE
+			if(wchar[i] <= 0x1f) {
+				wchar[i] = glyph_chars[wchar[i]];
+			} else if(wchar[i] == 0x7f) {
+				wchar[i] = 0x2302; // HOUSE
 			}
 		}
-		int csize = mk_wcwidth(chrs[i]);
-		len -= csize ? csize - 1 : 0;
-		adiff += csize ? csize - 1 : 0;
+		apos += mk_wcwidth_cjk(wchar[i]);
 		slen++;
 	}
 	set_console_attr(hout, attr);
-	WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
-	return len;
+	WriteConsoleW(hout, wchar + start, slen, NULL, NULL);
+	HeapFree(GetProcessHeap(), 0, wchar);
+	return;
 }
 
 void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPWORD attributes, DWORD nLength, COORD dwWriteCoord)
 {
 	if(use_vt) {
-		WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
 		char buf[20];
-		int len, x = dwWriteCoord.X + 1, y = dwWriteCoord.Y + 1, dsize = nLength;
-		nLength = MultiByteToWideChar(active_code_page, 0, lpCharacter, nLength, wchar, nLength);
+		int len, x = dwWriteCoord.X + 1, y = dwWriteCoord.Y + 1;
 		len = sprintf(buf, "\x1b" "7\x1b[%d;%dH", y, x);
 		WriteConsoleA(hConsoleOutput, buf, len, NULL, NULL);
-		if((dsize + x - 1) <= scr_width) {
-			write_line_with_attrs(hConsoleOutput, wchar, attributes, dsize);
+		if((nLength + x - 1) <= scr_width) {
+			write_line_with_attrs(hConsoleOutput, lpCharacter, attributes, nLength);
 		} else {
-			DWORD cpos = 0, apos = 0, wlen;
+			DWORD pos = 0;
 			if(x > 1) {
-				wlen = write_line_with_attrs(hConsoleOutput, wchar, attributes, scr_width - x + 1);
+				write_line_with_attrs(hConsoleOutput, lpCharacter, attributes, scr_width - x + 1);
 				y++;
-				dsize -= scr_width - x + 1;
-				apos += scr_width - x + 1;
-				cpos += wlen;
-				nLength -= wlen;
+				nLength -= scr_width - x + 1;
+				pos += scr_width - x + 1;
 			}
-			while(dsize > scr_width) {
+			while(nLength > scr_width) {
 				len = sprintf(buf, "\x1b[%d;1H", y);
 				WriteConsoleA(hConsoleOutput, buf, len, NULL, NULL);
-				wlen = write_line_with_attrs(hConsoleOutput, wchar + cpos, attributes + apos, scr_width);
+				write_line_with_attrs(hConsoleOutput, lpCharacter + pos, attributes + pos, scr_width);
 				y++;
-				dsize -= scr_width;
-				apos += scr_width;
-				cpos += wlen;
-				nLength -= wlen;
+				nLength -= scr_width;
+				pos += scr_width;
 			}
-			if(dsize) {
+			if(nLength) {
 				len = sprintf(buf, "\x1b[%d;1H", y);
 				WriteConsoleA(hConsoleOutput, buf, len, NULL, NULL);
-				write_line_with_attrs(hConsoleOutput, wchar + cpos, attributes + apos, dsize);
+				write_line_with_attrs(hConsoleOutput, lpCharacter + pos, attributes + pos, nLength);
 			}				
 		}
 		WriteConsoleA(hConsoleOutput, "\x1b" "8", 2, NULL, NULL);
-		HeapFree(GetProcessHeap(), 0, wchar);
 		return;
 	}
 //	if(is_win10_or_later && active_code_page == 932) {
