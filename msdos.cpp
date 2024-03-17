@@ -650,18 +650,22 @@ int write_line_with_attrs(HANDLE hout, WCHAR *chrs, LPWORD attrs, DWORD len)
 	DWORD attr = attrs[0];
 	int start = 0, slen = 0, adiff = 0;
 	for(int i = 0; i < len; i++) {
-		if(!chrs[i]) {
-			chrs[i] = 0x20;
-		}
-		if(glyph_char && (chrs[i] <= 0x1f)) {
-			chrs[i] = glyph_chars[chrs[i]];
-		}	
 		if(attr != attrs[i + adiff]) {
 			set_console_attr(hout, attr);
 			WriteConsoleW(hout, chrs + start, slen, NULL, NULL);
 			attr = attrs[i + adiff];
 			slen = 0;
 			start = i;
+		}
+		if(!chrs[i]) {
+			chrs[i] = 0x20;
+		}
+		if(glyph_char) {
+			if(chrs[i] <= 0x1f) {
+				chrs[i] = glyph_chars[chrs[i]];
+			} else if(chrs[i] == 0x7f) {
+				chrs[i] = 0x2302; // HOUSE
+			}
 		}
 		int csize = mk_wcwidth(chrs[i]);
 		len -= csize ? csize - 1 : 0;
