@@ -606,6 +606,41 @@ static const WCHAR glyph_chars[] = {
 	/*0x1f*/ 0x25bc,	//BLACK DOWN-POINTING TRIANGLE
 };
 
+static const WCHAR box_chars_ucs[] = {
+	/*0x00*/ 0,
+	/*0x01*/ 0x2554,	//BOX DRAWINGS DOUBLE DOWN AND RIGHT
+	/*0x02*/ 0x2557,	//BOX DRAWINGS DOUBLE DOWN AND LEFT
+	/*0x03*/ 0x255a,	//BOX DRAWINGS DOUBLE UP AND RIGHT
+	/*0x04*/ 0x255d,	//BOX DRAWINGS DOUBLE UP AND LEFT
+	/*0x05*/ 0x2551,	//BOX DRAWINGS DOUBLE VERTICAL
+	/*0x06*/ 0x2550,	//BOX DRAWINGS DOUBLE HORIZONTAL
+	/*0x07*/ 0x2193,	//DOWNWARDS ARROW
+	/*0x08*/ 0,
+	/*0x09*/ 0x25cb,	//WHITE CIRCLE
+	/*0x0a*/ 0,
+	/*0x0b*/ 0x2612,	//BALLOT BOX WITH X
+	/*0x0c*/ 0,
+	/*0x0d*/ 0,
+	/*0x0e*/ 0x25a0,	//BLACK SQUARE
+	/*0x0f*/ 0x263c,	//WHITE SUN WITH RAYS
+	/*0x10*/ 0x256c,	//BOX DRAWINGS DOUBLE VERTICAL AND HORIZONTAL
+	/*0x11*/ 0,
+	/*0x12*/ 0x2195,	//UP DOWN ARROW
+	/*0x13*/ 0,
+	/*0x14*/ 0x2593,	//DARK SHADE
+	/*0x15*/ 0x2569,	//BOX DRAWINGS DOUBLE UP AND HORIZONTAL
+	/*0x16*/ 0x2566,	//BOX DRAWINGS DOUBLE DOWN AND HORIZONTAL
+	/*0x17*/ 0x2563,	//BOX DRAWINGS DOUBLE VERTICAL AND LEFT
+	/*0x18*/ 0,
+	/*0x19*/ 0x2560,	//BOX DRAWINGS DOUBLE VERTICAL AND RIGHT
+	/*0x1a*/ 0x2591,	//LIGHT SHADE
+	/*0x1b*/ 0x21b5,	//DOWNWARDS ARROW WITH CORNER LEFTWARDS
+	/*0x1c*/ 0x2191,	//UPWARDS ARROW
+	/*0x1d*/ 0x007c,	//VERTICAL LINE
+	/*0x1e*/ 0x2192,	//RIGHTWARDS ARROW
+	/*0x1f*/ 0x2190,	//LEFTWARDS ARROW
+};
+
 COORD shift_coord(COORD origin, DWORD pos)
 {
 	COORD co;
@@ -666,15 +701,17 @@ void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 			wchar[i + 1] = 0x20;
 			wcharlen++;
 		}
-		if(!wchar[i]) {
-			wchar[i] = 0x20;
-		}
 		if(glyph_char) {
 			if(wchar[i] <= 0x1f) {
 				wchar[i] = glyph_chars[wchar[i]];
 			} else if(wchar[i] == 0x7f) {
 				wchar[i] = 0x2302; // HOUSE
 			}
+		} else if(box_line && (wchar[i] <= 0x1f)) {
+			wchar[i] = box_chars_ucs[wchar[i]];
+		}
+		if(!wchar[i]) {
+			wchar[i] = 0x20;
 		}
 		apos += mk_wcwidth(wchar[i]);
 		slen++;
