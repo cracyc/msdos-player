@@ -658,27 +658,49 @@ COORD shift_coord(COORD origin, DWORD pos)
 void set_console_attr(HANDLE hout, WORD attr)
 {
 	char buf[8];
-	int len;
+	int len, n;
+	bool blink = (mem[0x465] & 0x20) != 0;
 
-	if ((attr & 0x0f) != 7)
-	{
-		int n = 30;
-		if (attr & FOREGROUND_BLUE)  n += 4;
-		if (attr & FOREGROUND_GREEN) n += 2;
-		if (attr & FOREGROUND_RED)   n += 1;
-		if (attr & FOREGROUND_INTENSITY) n += 60;
+	WriteConsoleA(hout, "\x1b[m", 3, NULL, NULL);
+	if(mem[0x449] == 0x07) {
+		if((attr & 7) == 1) { // underline
+			WriteConsoleA(hout, "\x1b[4m", 4, NULL, NULL);
+		}
+		if(attr & 0x80) { // blink
+			WriteConsoleA(hout, "\x1b[5m", 4, NULL, NULL);
+		}
+		n = 30;
+		if((attr & 0x77) && !((attr & 0x77) == 0x70)) n += 7;
+		if(attr & FOREGROUND_INTENSITY) n += 60;
 		len = sprintf(buf, "\x1b[%dm", n);
 		WriteConsoleA(hout, buf, len, NULL, NULL);
-	}
-	else WriteConsoleA(hout, "\x1b[m", 3, NULL, NULL);
 
-	int n = 40;
-	if (attr & BACKGROUND_BLUE)  n += 4;
-	if (attr & BACKGROUND_GREEN) n += 2;
-	if (attr & BACKGROUND_RED)   n += 1;
-	if (attr & BACKGROUND_INTENSITY) n += 60;
+		n = 40;
+		if(!(attr & 7) && ((attr & 0x70) == 0x70)) n += 7;
+		len = sprintf(buf, "\x1b[%dm", n);
+		WriteConsoleA(hout, buf, len, NULL, NULL);
+		return;
+	}
+
+	n = 30;
+	if(attr & FOREGROUND_BLUE)  n += 4;
+	if(attr & FOREGROUND_GREEN) n += 2;
+	if(attr & FOREGROUND_RED)   n += 1;
+	if(attr & FOREGROUND_INTENSITY) n += 60;
 	len = sprintf(buf, "\x1b[%dm", n);
 	WriteConsoleA(hout, buf, len, NULL, NULL);
+
+	n = 40;
+	if(attr & BACKGROUND_BLUE)  n += 4;
+	if(attr & BACKGROUND_GREEN) n += 2;
+	if(attr & BACKGROUND_RED)   n += 1;
+	if((attr & BACKGROUND_INTENSITY) && !blink) n += 60;
+	len = sprintf(buf, "\x1b[%dm", n);
+	WriteConsoleA(hout, buf, len, NULL, NULL);
+
+	if((attr & 0x80) && blink) { // blink
+		WriteConsoleA(hout, "\x1b[5m", 4, NULL, NULL);
+	}
 }
 
 void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
@@ -8404,6 +8426,19 @@ inline void pcbios_int_10h_0fh()
 	CPU_AL = mem[0x449];
 	CPU_AH = mem[0x44a];
 	CPU_BH = mem[0x462];
+}
+
+inline void pcbios_int_10h_10h()
+{
+	switch(CPU_AL) {
+	case 0x10:
+		mem[0x465] &= ~0x20 | (CPU_BL << 5);
+		break;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_SET_C_FLAG(1);
+		break;
+	}
 }
 
 inline void pcbios_int_10h_11h()
@@ -16224,7 +16259,7 @@ inline void msdos_int_33h_0003h()
 		CPU_AX = 0;
 		CPU_BX = 0x100;
 		pcbios_int_15h_c2h();
-	}	
+	}
 //	if(mouse.hidden > 0) {
 		update_console_input();
 //	}
@@ -18271,7 +18306,7 @@ void msdos_syscall(unsigned num)
 		case 0x0d: pcbios_int_10h_0dh(); break;
 		case 0x0e: pcbios_int_10h_0eh(); break;
 		case 0x0f: pcbios_int_10h_0fh(); break;
-		case 0x10: break;
+		case 0x10: pcbios_int_10h_10h(); break;
 		case 0x11: pcbios_int_10h_11h(); break;
 		case 0x12: pcbios_int_10h_12h(); break;
 		case 0x13: pcbios_int_10h_13h(); break;
