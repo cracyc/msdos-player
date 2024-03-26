@@ -2737,6 +2737,9 @@ void exit_handler()
 		delete key_buf_data;
 		key_buf_data = NULL;
 	}
+	if(use_vt) {
+		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[!p\x1b[0 q", 9, NULL, NULL);
+	}
 #ifdef SUPPORT_XMS
 	msdos_xms_release();
 #endif
@@ -3739,7 +3742,10 @@ int main(int argc, char *argv[], char *envp[])
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hStdout, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
-	
+
+	if(!get_console_cursor_success) {
+		ci.bVisible = TRUE;
+	}
 	ci_old = ci_new = ci;
 	fi_new = fi;
 	font_width  = fi.dwFontSize.X;
@@ -3894,6 +3900,9 @@ int main(int argc, char *argv[], char *envp[])
 			if(restore_console_cursor) {
 				SetConsoleCursorInfo(hStdout, &ci);
 			}
+		}
+		if(use_vt) {
+			WriteConsoleA(hStdout, "\x1b[!p\x1b[0 q", 9, NULL, NULL);
 		}
 		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
