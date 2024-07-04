@@ -3214,6 +3214,8 @@ static void zero_state()
 	m_cpu_version = 0;
 	m_feature_flags = 0;
 	m_tsc = 0;
+//	m_rdtsc = __rdtsc();
+	m_rdtsc = 0;
 	m_perfctr[0] = m_perfctr[1] = 0;
 	memset( m_x87_reg, 0, sizeof(m_x87_reg) );
 	m_x87_cw = 0;

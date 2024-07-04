@@ -8,11 +8,15 @@
 #ifndef _COMMON_H_
 #define _COMMON_H_
 
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x400	// Windows NT 4.0
-//#define _WIN32_WINNT 0x500	// Windows 2000
+#if 0
+#ifdef _WIN32_WINNT
+#undef _WIN32_WINNT
+#endif
+//#define _WIN32_WINNT 0x400	// Windows NT 4.0
+#define _WIN32_WINNT 0x500	// Windows 2000
 //#define _WIN32_WINNT 0x501	// Windows XP
 #endif
+
 #include <windows.h>
 #include <winioctl.h>
 #ifdef _MBCS
@@ -86,7 +90,60 @@
 	#define __LITTLE_ENDIAN__
 #endif
 
-// compat for mingw32 headers
+#ifndef IMC_GETCONVERSIONMODE
+#define IMC_GETCONVERSIONMODE 0x0001
+#endif
+#ifndef IMC_SETCONVERSIONMODE
+#define IMC_SETCONVERSIONMODE 0x0002
+#endif
+#ifndef IMC_GETOPENSTATUS
+#define IMC_GETOPENSTATUS 0x0005
+#endif
+#ifndef IMC_SETOPENSTATUS
+#define IMC_SETOPENSTATUS 0x0006
+#endif
+
+#ifndef IME_CMODE_ALPHANUMERIC
+#define IME_CMODE_ALPHANUMERIC 0x0000
+#endif
+#ifndef IME_CMODE_NATIVE
+#define IME_CMODE_NATIVE 0x0001
+#endif
+#ifndef IME_CMODE_KATAKANA
+#define IME_CMODE_KATAKANA 0x0002
+#endif
+#ifndef IME_CMODE_FULLSHAPE
+#define IME_CMODE_FULLSHAPE 0x0008
+#endif
+#ifndef IME_CMODE_ROMAN
+#define IME_CMODE_ROMAN 0x0010
+#endif
+#ifndef IME_CMODE_CHARCODE
+#define IME_CMODE_CHARCODE 0x0020
+#endif
+#ifndef IME_CMODE_SYMBOL
+#define IME_CMODE_SYMBOL 0x0400
+#endif
+
+#ifndef SUBLANG_SWAHILI
+#define SUBLANG_SWAHILI 0x01
+#endif
+#ifndef SUBLANG_TSWANA_BOTSWANA
+#define SUBLANG_TSWANA_BOTSWANA 0x02
+#endif
+#ifndef SUBLANG_LITHUANIAN_LITHUANIA
+#define SUBLANG_LITHUANIAN_LITHUANIA 0x01
+#endif
+#ifndef LANG_BANGLA
+#define LANG_BANGLA 0x45
+#endif
+#ifndef SUBLANG_BANGLA_BANGLADESH
+#define SUBLANG_BANGLA_BANGLADESH 0x02
+#endif
+#ifndef SUBLANG_SERBIAN_CROATIA
+#define SUBLANG_SERBIAN_CROATIA 0x01
+#endif
+
 #ifndef COMMON_LVB_UNDERSCORE
 #define COMMON_LVB_UNDERSCORE 0x8000
 #endif

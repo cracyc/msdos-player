@@ -13,6 +13,8 @@ enum
 	PARAM_REG = 1,      /* 16 or 32-bit register */
 	PARAM_REG8,         /* 8-bit register */
 	PARAM_REG16,        /* 16-bit register */
+	PARAM_REG2_8,       /* 8-bit register */
+	PARAM_REG2_16,      /* 16-bit register */
 	PARAM_REG32,        /* 32-bit register */
 	PARAM_REG3264,      /* 32-bit or 64-bit register */
 	PARAM_REG2_32,      /* 32-bit register */
@@ -33,6 +35,7 @@ enum
 	PARAM_M64PTR,       /* 64-bit memory */
 	PARAM_MMXM,         /* 64-bit memory or MMX register */
 	PARAM_XMMM,         /* 128-bit memory or XMM register */
+	PARAM_I3,           /* 3-bit immediate */
 	PARAM_I4,           /* 4-bit signed immediate */
 	PARAM_I8,           /* 8-bit signed immediate */
 	PARAM_I16,          /* 16-bit signed immediate */
@@ -46,6 +49,7 @@ enum
 	PARAM_MEM_OFFS,     /* 16 or 32-bit mem offset */
 	PARAM_PREIMP,       /* prefix with implicit register */
 	PARAM_SREG,         /* segment register */
+	PARAM_SFREG,        /* V25/V35 special function register */
 	PARAM_CREG,         /* control register */
 	PARAM_DREG,         /* debug register */
 	PARAM_TREG,         /* test register */
@@ -273,7 +277,7 @@ static const I386_OPCODE i386_opcode_table1[256] =
 	{"mov",             MODRM,          PARAM_SREG,         PARAM_RM,           0               },
 	{"pop",             MODRM,          PARAM_RM,           0,                  0               },
 	// 0x90
-	{"nop\0???\0???\0pause",    VAR_NAME4,          0,                  0,                  0               },
+	{"nop\0???\0???\0pause", VAR_NAME4, 0,                  0,                  0               },
 	{"xchg",            0,              PARAM_EAX,          PARAM_ECX,          0               },
 	{"xchg",            0,              PARAM_EAX,          PARAM_EDX,          0               },
 	{"xchg",            0,              PARAM_EAX,          PARAM_EBX,          0               },
@@ -414,44 +418,44 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"???",             0,              0,                  0,                  0               },
 	{"ud2",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
-	{"group0F0D",           GROUP,              0,                  0,                  0               }, //AMD only
+	{"group0F0D",       GROUP,          0,                  0,                  0               }, //AMD only
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	// 0x10
 	{"movups\0"
-		"movupd\0"
-		"movsd\0"
-		"movss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "movupd\0"
+	 "movsd\0"
+	 "movss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movups\0"
-		"movupd\0"
-		"movsd\0"
-		"movss",            MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
-	{"group0F12",      GROUP|GROUP_MOD, 0,                  0,                  0                   },
+	 "movupd\0"
+	 "movsd\0"
+	 "movss",           MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	{"group0F12",       GROUP|GROUP_MOD,0,                  0,                  0               },
 	{"movlps\0"
-		"movlpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	 "movlpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"unpcklps\0"
-		"unpcklpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "unpcklpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"unpckhps\0"
-		"unpckhpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
-	{ "group0F16",     GROUP|GROUP_MOD, 0,                  0,                  0                   },
+	 "unpckhpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{ "group0F16",      GROUP|GROUP_MOD,0,                  0,                  0               },
 	{"movhps\0"
-		"movhpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMMM,          PARAM_XMM,         0               },
+	 "movhpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"group0F18",       GROUP,          0,                  0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
-	{"nop_hint",        0,              PARAM_RMPTR8,               0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
+	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
 	// 0x20
 	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_CREG,         0               },
 	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_DREG,         0               },
@@ -462,37 +466,37 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"mov",             MODRM,          PARAM_TREG,         PARAM_REG2_32,      0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"movaps\0"
-		"movapd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "movapd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movaps\0"
-		"movapd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	 "movapd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"cvtpi2ps\0"
-		"cvtpi2pd\0"
-		"cvtsi2sd\0"
-		"cvtsi2ss",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RMXMM,        0               },
+	 "cvtpi2pd\0"
+	 "cvtsi2sd\0"
+	 "cvtsi2ss",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RMXMM,        0               },
 	{"movntps\0"
-		"movntpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	 "movntpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
 	{"cvttps2pi\0"
-		"cvttpd2pi\0"
-		"cvttsd2si\0"
-		"cvttss2si",        MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
+	 "cvttpd2pi\0"
+	 "cvttsd2si\0"
+	 "cvttss2si",       MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
 	{"cvtps2pi\0"
-		"cvtpd2pi\0"
-		"cvtsd2si\0"
-		"cvtss2si",     MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
+	 "cvtpd2pi\0"
+	 "cvtsd2si\0"
+	 "cvtss2si",        MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
 	{"ucomiss\0"
-		"ucomisd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "ucomisd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"comiss\0"
-		"comisd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "comisd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0x30
 	{"wrmsr",           0,              0,                  0,                  0               },
 	{"rdtsc",           0,              0,                  0,                  0               },
@@ -502,9 +506,9 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"sysexit",         0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
-	{"three_byte",          THREE_BYTE,         0,                  0,                  0               },
+	{"three_byte",      THREE_BYTE,     0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
-	{"three_byte",          THREE_BYTE,         0,                  0,                  0               },
+	{"three_byte",      THREE_BYTE,     0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
@@ -529,69 +533,69 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"cmovg",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	// 0x50
 	{"movmskps\0"
-		"movmskpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_REG3264,      PARAM_XMMM,         0               },
+	 "movmskpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG3264,      PARAM_XMMM,         0               },
 	{"sqrtps\0"
-		"sqrtpd\0"
-		"sqrtsd\0"
-		"sqrtss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "sqrtpd\0"
+	 "sqrtsd\0"
+	 "sqrtss",          MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"rsqrtps\0"
-		"???\0"
-		"???\0"
-		"rsqrtss",          MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "???\0"
+	 "???\0"
+	 "rsqrtss",         MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"rcpps\0"
-		"???\0"
-		"???\0"
-		"rcpss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "???\0"
+	 "???\0"
+	 "rcpss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"andps\0"
-		"andpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "andpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"andnps\0"
-		"andnpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "andnpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"orps\0"
-		"orpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "orpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"xorps\0"
-		"xorpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "xorpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"addps\0"
-		"addpd\0"
-		"addsd\0"
-		"addss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "addpd\0"
+	 "addsd\0"
+	 "addss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"mulps\0"
-		"mulpd\0"
-		"mulsd\0"
-		"mulss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "mulpd\0"
+	 "mulsd\0"
+	 "mulss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"cvtps2pd\0"
-		"cvtpd2ps\0"
-		"cvtsd2ss\0"
-		"cvtss2sd",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "cvtpd2ps\0"
+	 "cvtsd2ss\0"
+	 "cvtss2sd",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"cvtdq2ps\0"
-		"cvtps2dq\0"
-		"???\0"
-		"cvttps2dq",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "cvtps2dq\0"
+	 "???\0"
+	 "cvttps2dq",       MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"subps\0"
-		"subpd\0"
-		"subsd\0"
-		"subss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "subpd\0"
+	 "subsd\0"
+	 "subss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"minps\0"
-		"minpd\0"
-		"minsd\0"
-		"minss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "minpd\0"
+	 "minsd\0"
+	 "minss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"divps\0"
-		"divpd\0"
-		"divsd\0"
-		"divss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "divpd\0"
+	 "divsd\0"
+	 "divss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"maxps\0"
-		"maxpd\0"
-		"maxsd\0"
-		"maxss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "maxpd\0"
+	 "maxsd\0"
+	 "maxss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0x60
 	{"punpcklbw",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"punpcklwd",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -606,23 +610,23 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"punpckhdq",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"packssdw",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"???\0"
-		"punpcklqdq\0"
-		"???\0"
-		"???\0",        MODRM|VAR_NAME4,            PARAM_XMM,          PARAM_XMMM,         0               },
+	 "punpcklqdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"punpckhqdq\0"
-		"???\0"
-		"???\0",        MODRM|VAR_NAME4,            PARAM_XMM,          PARAM_XMMM,         0               },
+	 "punpckhqdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movd",            MODRM,          PARAM_MMX,          PARAM_RM,           0               },
 	{"movq\0"
-		"movdqa\0"
-		"???\0"
-		"movdqu",           MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	 "movdqa\0"
+	 "???\0"
+	 "movdqu",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	// 0x70
 	{"pshufw\0"
-		"pshufd\0"
-		"pshuflw\0"
-		"pshufhw",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
+	 "pshufd\0"
+	 "pshuflw\0"
+	 "pshufhw",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
 	{"group0F71",       GROUP,          0,                  0,                  0               },
 	{"group0F72",       GROUP,          0,                  0,                  0               },
 	{"group0F73",       GROUP,          0,                  0,                  0               },
@@ -630,26 +634,26 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"pcmpeqw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pcmpeqd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"emms",            0,              0,                  0,                  0               },
-	{"vmread",          MODRM,              PARAM_RM,               PARAM_REG,              0               },
-	{"vmwrite",         MODRM,              PARAM_RM,               PARAM_REG,              0               },
+	{"vmread",          MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"vmwrite",         MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"haddpd\0"
-		"haddps\0"
-		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	 "haddpd\0"
+	 "haddps\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"???\0"
-		"hsubpd\0"
-		"hsubps\0"
-		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	 "hsubpd\0"
+	 "hsubps\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"movd\0"
-		"movd\0"
-		"???\0"
-		"movq",         MODRM|VAR_NAME4,PARAM_RM,           PARAM_MMX,          0               },
+	 "movd\0"
+	 "???\0"
+	 "movq",            MODRM|VAR_NAME4,PARAM_RM,           PARAM_MMX,          0               },
 	{"movq\0"
-		"movdqa\0"
-		"???\0"
-		"movdqu",           MODRM|VAR_NAME4,PARAM_MMXM,         PARAM_MMX,          0               },
+	 "movdqa\0"
+	 "???\0"
+	 "movdqu",          MODRM|VAR_NAME4,PARAM_MMXM,         PARAM_MMX,          0               },
 	// 0x80
 	{"jo",              0,              PARAM_REL,          0,                  0               },
 	{"jno",             0,              PARAM_REL,          0,                  0               },
@@ -711,37 +715,37 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
 	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
 	{"???\0"
-		"???\0"
-		"???\0"
-		"popcnt",           MODRM|VAR_NAME4,        PARAM_REG,              PARAM_RM16,             0               },
+	 "???\0"
+	 "???\0"
+	 "popcnt",          MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM16,         0               },
 	{"ud2",             0,              0,                  0,                  0               },
 	{"group0FBA",       GROUP,          0,                  0,                  0               },
 	{"btc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"bsf\0"
-		"???\0"
-		"???\0"
-		"tzcnt",            MODRM|VAR_NAME4,    PARAM_REG,          PARAM_RM,           0               },
+	 "???\0"
+	 "???\0"
+	 "tzcnt",           MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM,           0               },
 	{"bsr\0"
-		"???\0"
-		"???\0"
-		"lzcnt",            MODRM|VAR_NAME4,    PARAM_REG,          PARAM_RM,           0,              DASMFLAG_STEP_OVER},
+	 "???\0"
+	 "???\0"
+	 "lzcnt",           MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM,           0,              DASMFLAG_STEP_OVER},
 	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
 	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
 	// 0xc0
 	{"xadd",            MODRM,          PARAM_RM8,          PARAM_REG,          0               },
 	{"xadd",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"cmpps\0"
-		"cmppd\0"
-		"cmpsd\0"
-		"cmpss",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "cmppd\0"
+	 "cmpsd\0"
+	 "cmpss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movnti",          MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"pinsrw",          MODRM,          PARAM_MMX,          PARAM_RM,           PARAM_UI8       },
 	{"pextrw",          MODRM,          PARAM_MMX,          PARAM_RM,           PARAM_UI8       },
 	{"shufps\0"
-		"shufpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
-	{"group0FC7",           GROUP,          0,          0,                  0               },
+	 "shufpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"group0FC7",       GROUP,          0,                  0,                  0               },
 	{"bswap",           0,              PARAM_EAX,          0,                  0               },
 	{"bswap",           0,              PARAM_ECX,          0,                  0               },
 	{"bswap",           0,              PARAM_EDX,          0,                  0               },
@@ -752,18 +756,18 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"bswap",           0,              PARAM_EDI,          0,                  0               },
 	// 0xd0
 	{"???\0"
-		"addsubpd\0"
-		"addsubps\0"
-		"???\0",            MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "addsubpd\0"
+	 "addsubps\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"psrlw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psrld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psrlq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"paddq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pmullw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"???\0"
-		"movq\0"
-		"movdq2q\0"
-		"movq2dq",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	 "movq\0"
+	 "movdq2q\0"
+	 "movq2dq",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pmovmskb",        MODRM,          PARAM_REG3264,      PARAM_MMXM,         0               },
 	{"psubusb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psubusw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -781,13 +785,13 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"pmulhuw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pmulhw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"???\0"
-		"cvttpd2dq\0"
-		"cvtpd2dq\0"
-		"cvtdq2pd",     MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "cvttpd2dq\0"
+	 "cvtpd2dq\0"
+	 "cvtdq2pd",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"movntq\0"
-		"movntdq\0"
-		"???\0"
-		"???\0",            MODRM|VAR_NAME4,    PARAM_M64,          PARAM_MMX,          0               },
+	 "movntdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_M64,          PARAM_MMX,          0               },
 	{"psubsb",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psubsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pminsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -798,9 +802,9 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"pxor",            MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	// 0xf0
 	{"???\0"
-		"???\0"
-		"lddqu\0"
-		"???",              MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "???\0"
+	 "lddqu\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"psllw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pslld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psllq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -808,9 +812,9 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"pmaddwd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psadbw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"maskmovq\0"
-		"maskmovdqu\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	 "maskmovdqu\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psubb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psubw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"psubd",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -825,792 +829,792 @@ static const I386_OPCODE i386_opcode_table0F38[256] =
 {
 	// 0x00
 	{"pshufb\0"
-		"pshufb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pshufb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phaddw\0"
-		"phaddw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phaddw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phaddd\0"
-		"phadd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phadd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phaddsw\0"
-		"phaddsw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phaddsw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"pmaddubsw\0"
-		"pmaddubsw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmaddubsw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phsubw\0"
-		"phsubw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phsubw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phsubd\0"
-		"phsubd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phsubd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"phsubsw\0"
-		"phsubsw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "phsubsw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"psignb\0"
-		"psignb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "psignb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"psignw\0"
-		"psignw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "psignw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"psignd\0"
-		"psignd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "psignd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"pmulhrsw\0"
-		"pmulhrsw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pmulhrsw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x10
 	{"???\0"
-		"pblendvb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pblendvb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0      },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"blendvps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
+	 "blendvps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0      },
 	{"???\0"
-		"blendvpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0          },
-	{"???",             0,              0,          0,              0               },
+	 "blendvpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_XMM0      },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"ptest\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "ptest\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"pabsb\0"
-		"pabsb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pabsb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"pabsw\0"
-		"pabsw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pabsw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"pabsd\0"
-		"pabsd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
+	 "pabsd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x20
 	{"???\0"
-		"pmovsxbw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	 "pmovsxbw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
 	{"???\0"
-		"pmovsxbd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	 "pmovsxbd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM32,        0               },
 	{"???\0"
-		"pmovsxbq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM16,            0               },
+	 "pmovsxbq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM16,        0               },
 	{"???\0"
-		"pmovsxwd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	 "pmovsxwd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
 	{"???\0"
-		"pmovsxwq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	 "pmovsxwq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM32,        0               },
 	{"???\0"
-		"pmovsxdq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pmovsxdq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"pmuldq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmuldq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pcmpeqq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pcmpeqq\0"
+	 "???\0"
+	 "???",              MODRM|VAR_NAME4,PARAM_XMM,         PARAM_XMMM,         0               },
 	{"???\0"
-		"movntdqa\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "movntdqa\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"packusdw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "packusdw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x30
 	{"???\0"
-		"pmovzxbw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	 "pmovzxbw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
 	{"???\0"
-		"pmovzxbd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	 "pmovzxbd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM32,        0               },
 	{"???\0"
-		"pmovzxbq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM16,            0               },
+	 "pmovzxbq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM16,        0               },
 	{"???\0"
-		"pmovzxwd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
+	 "pmovzxwd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
 	{"???\0"
-		"pmovzxwq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM32,            0               },
+	 "pmovzxwq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM32,        0               },
 	{"???\0"
-		"pmovzxdq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMM64,            0               },
-	{"???",             0,              0,          0,              0               },
+	 "pmovzxdq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMM64,        0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"pcmpgtq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pcmpgtq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pminsb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pminsb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pminsd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pminsd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pminuw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pminuw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pminud\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pminud\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pmaxsb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmaxsb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pmaxsd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmaxsd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pmaxuw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmaxuw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"pmaxud\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmaxud\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0x40
 	{"???\0"
-		"pmulld\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "pmulld\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"phminposuw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "phminposuw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x50
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x60
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x70
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x80
 	{"???\0"
-		"invept\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
+	 "invept\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG32,        PARAM_XMMM,         0               },
 	{"???\0"
-		"invvpid\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
+	 "invvpid\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG32,        PARAM_XMMM,         0               },
 	{"???\0"
-		"invpcid\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_XMMM,         0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "invpcid\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG32,        PARAM_XMMM,         0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x90
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xa0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xb0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xc0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xd0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"aesimc\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "aesimc\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"aesenc\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "aesenc\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"aesenclast\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "aesenclast\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"aesdec\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "aesdec\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	{"???\0"
-		"aesdeclast\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         0               },
+	 "aesdeclast\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
 	// 0xe0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xf0
 	{"movbe\0"
-		"???\0"
-		"crc32\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_REG32,            PARAM_RMPTR,            0               }, // not quite correct
+	 "???\0"
+	 "crc32\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG32,        PARAM_RMPTR,        0               }, // not quite correct
 	{"movbe\0"
-		"???\0"
-		"crc32\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_RMPTR,            PARAM_REG32,            0               }, // not quite correct
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "???\0"
+	 "crc32\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_RMPTR,        PARAM_REG32,        0               }, // not quite correct
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 };
 
 static const I386_OPCODE i386_opcode_table0F3A[256] =
 {
 	// 0x00
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"roundps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "roundps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"roundpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "roundpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"roundss\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "roundss\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"roundsd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "roundsd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"blendps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "blendps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"blendpd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "blendpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"pblendw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "pblendw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"palignr\0"
-		"palignr\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "palignr\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	// 0x10
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"pextrb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_RM8,          PARAM_XMM,          PARAM_UI8           },
+	 "pextrb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_RM8,          PARAM_XMM,          PARAM_UI8       },
 	{"???\0"
-		"pextrw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_RM16,         PARAM_XMM,          PARAM_UI8           },
+	 "pextrw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_RM16,         PARAM_XMM,          PARAM_UI8       },
 	{"???\0"
-		"pextrd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_RM8,          PARAM_XMM,          PARAM_UI8           },
+	 "pextrd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_RM8,          PARAM_XMM,          PARAM_UI8       },
 	{"???\0"
-		"extractps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_RM32,         PARAM_XMM,          PARAM_UI8           },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "extractps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_RM32,         PARAM_XMM,          PARAM_UI8       },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x20
 	{"???\0"
-		"pinsrb\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM8,          PARAM_UI8           },
+	 "pinsrb\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RM8,          PARAM_UI8       },
 	{"???\0"
-		"insertps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM8,          PARAM_UI8           },
+	 "insertps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RM8,          PARAM_UI8       },
 	{"???\0"
-		"pinsrd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_RM32,         PARAM_UI8           },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pinsrd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_RM32,         PARAM_UI8       },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x30
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x40
 	{"???\0"
-		"dpps\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "dpps\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"dppd\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "dppd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"mpsadbw\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
-	{"???",             0,              0,          0,              0               },
+	 "mpsadbw\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"pclmulqdq\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pclmulqdq\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x50
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x60
 	{"???\0"
-		"pcmestrm\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "pcmestrm\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"pcmestri\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "pcmestri\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"pcmistrm\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "pcmistrm\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	{"???\0"
-		"pcmistri\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	 "pcmistri\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x70
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x80
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0x90
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xa0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xb0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xc0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xd0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	{"???\0"
-		"aeskeygenassist\0"
-		"???\0"
-		"???",              MODRM|VAR_NAME4,    PARAM_XMM,          PARAM_XMMM,         PARAM_UI8           },
+	 "aeskeygenassist\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
 	// 0xe0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 	// 0xf0
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
-	{"???",             0,              0,          0,              0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
 };
 
 static const I386_OPCODE group80_table[8] =
@@ -1808,41 +1812,41 @@ static const I386_OPCODE group0F0D_table[8] =
 static const I386_OPCODE group0F12_table[4] =
 {
 	{ "movlps\0"
-		"movlpd\0"
-		"movddup\0"
-		"movsldup",     VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	 "movlpd\0"
+	 "movddup\0"
+	 "movsldup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
 	{ "movlps\0"
-		"movlpd\0"
-		"movddup\0"
-		"movsldup",     VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
-	{ "movlps\0"
-		"movlpd\0"
-		"movddup\0"
-		"movsldup",     VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
-	{ "movhlps\0"
-		"???\0"
-		"movddup\0"
-		"movsldup",     VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               }
+	 "movlpd\0"
+	 "movddup\0"
+	 "movsldup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movlps\0"
+	 "movlpd\0"
+	 "movddup\0"
+	 "movsldup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movhlps\0"
+	 "???\0"
+	 "movddup\0"
+	 "movsldup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               }
 };
 
 static const I386_OPCODE group0F16_table[4] =
 {
-	{ "movhps\0"
-		"movhpd\0"
-		"???\0"
-		"movshdup",     VAR_NAME4,PARAM_XMM,         PARAM_XMMM,          0               },
-	{ "movhps\0"
-		"movhpd\0"
-		"???\0"
-		"movshdup",     VAR_NAME4,PARAM_XMM,         PARAM_XMMM,          0               },
-	{ "movhps\0"
-		"movhpd\0"
-		"???\0"
-		"movshdup",     VAR_NAME4,PARAM_XMM,         PARAM_XMMM,          0               },
-	{ "movlhps\0"
-		"movhpd\0"
-		"???\0"
-		"movshdup",     VAR_NAME4,PARAM_XMM,         PARAM_XMMM,          0               }
+	{"movhps\0"
+	 "movhpd\0"
+	 "???\0"
+	 "movshdup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movhps\0"
+	 "movhpd\0"
+	 "???\0"
+	 "movshdup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movhps\0"
+	 "movhpd\0"
+	 "???\0"
+	 "movshdup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movlhps\0"
+	 "movhpd\0"
+	 "???\0"
+	 "movshdup",        VAR_NAME4,      PARAM_XMM,          PARAM_XMMM,         0               }
 };
 
 static const I386_OPCODE group0F18_table[8] =
@@ -1905,7 +1909,6 @@ static const I386_OPCODE group0FAE_table[8] =
 	{"sfence",          0,              0,                  0,                  0               }
 };
 
-
 static const I386_OPCODE group0FBA_table[8] =
 {
 	{"???",             0,              0,                  0,                  0               },
@@ -1921,16 +1924,685 @@ static const I386_OPCODE group0FBA_table[8] =
 static const I386_OPCODE group0FC7_table[8] =
 {
 	{"???",             0,              0,                  0,                  0               },
-	{"cmpxchg8b",           MODRM,              PARAM_M64PTR,               0,                  0               },
+	{"cmpxchg8b",       MODRM,          PARAM_M64PTR,       0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"vmptrld\0"
-		"vmclear\0"
-		"???\0"
-		"vmxon",            MODRM|VAR_NAME4,        PARAM_M64PTR,               0,                  0               },
-	{"vmptrtst",            MODRM,              PARAM_M64PTR,               0,                  0               }
+	 "vmclear\0"
+	 "???\0"
+	 "vmxon",           MODRM|VAR_NAME4,PARAM_M64PTR,       0,                  0               },
+	{"vmptrtst",        MODRM,          PARAM_M64PTR,       0,                  0               }
+};
+
+static const I386_OPCODE necv_opcode_table1[256] =
+{
+	// 0x00
+	{"add",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"add",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"add",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"add",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"add",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"add",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    es",      0,              0,                  0,                  0               },
+	{"pop     es",      0,              0,                  0,                  0               },
+	{"or",              MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"or",              MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"or",              MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"or",              MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"or",              0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"or",              0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    cs",      0,              0,                  0,                  0               },
+	{"two_byte",        TWO_BYTE,       0,                  0,                  0               },
+	// 0x10
+	{"adc",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"adc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"adc",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"adc",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"adc",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"adc",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    ss",      0,              0,                  0,                  0               },
+	{"pop     ss",      0,              0,                  0,                  0               },
+	{"sbb",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"sbb",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"sbb",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"sbb",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"sbb",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"sbb",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"push    ds",      0,              0,                  0,                  0               },
+	{"pop     ds",      0,              0,                  0,                  0               },
+	// 0x20
+	{"and",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"and",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"and",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"and",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"and",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"and",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_es",          SEG_ES,         0,                  0,                  0               },
+	{"daa",             0,              0,                  0,                  0               },
+	{"sub",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"sub",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"sub",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"sub",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"sub",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"sub",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_cs",          SEG_CS,         0,                  0,                  0               },
+	{"das",             0,              0,                  0,                  0               },
+	// 0x30
+	{"xor",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"xor",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"xor",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"xor",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"xor",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"xor",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_ss",          SEG_SS,         0,                  0,                  0               },
+	{"aaa",             0,              0,                  0,                  0               },
+	{"cmp",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"cmp",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"cmp",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"cmp",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmp",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"cmp",             0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"seg_ds",          SEG_DS,         0,                  0,                  0               },
+	{"aas",             0,              0,                  0,                  0               },
+	// 0x40
+	{"inc",             ISREX,          PARAM_EAX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ECX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EDX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EBX,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ESP,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EBP,          0,                  0               },
+	{"inc",             ISREX,          PARAM_ESI,          0,                  0               },
+	{"inc",             ISREX,          PARAM_EDI,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EAX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ECX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EDX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EBX,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ESP,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EBP,          0,                  0               },
+	{"dec",             ISREX,          PARAM_ESI,          0,                  0               },
+	{"dec",             ISREX,          PARAM_EDI,          0,                  0               },
+	// 0x50
+	{"push",            ALWAYS64,       PARAM_EAX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ECX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EDX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EBX,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ESP,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EBP,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_ESI,          0,                  0               },
+	{"push",            ALWAYS64,       PARAM_EDI,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EAX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ECX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EDX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EBX,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ESP,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EBP,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_ESI,          0,                  0               },
+	{"pop",             ALWAYS64,       PARAM_EDI,          0,                  0               },
+	// 0x60
+	{"pusha\0pushad\0<invalid>",VAR_NAME,0,                 0,                  0               },
+	{"popa\0popad\0<invalid>",  VAR_NAME,0,                 0,                  0               },
+	{"bound",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"brkn",            0,              PARAM_UI8,          0,                  0,              DASMFLAG_STEP_OVER}, /* V25S/V35S only */
+	{"repnc",           PREFIX,         0,                  0,                  0               }, /* V20/V30 */
+	{"repc",            PREFIX,         0,                  0,                  0               }, /* V20/V30 */
+	{"fpo2 0",          0,              PARAM_UI8,          0,                  0               }, /* V20/V30 */
+	{"fpo2 1",          0,              PARAM_UI8,          0,                  0               }, /* V20/V30 */
+	{"push",            0,              PARAM_IMM,          0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           PARAM_IMM       },
+	{"push",            0,              PARAM_I8,           0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           PARAM_I8        },
+	{"insb",            0,              0,                  0,                  0               },
+	{"insw\0insd\0insd",VAR_NAME,       0,                  0,                  0               },
+	{"outsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"outsw\0outsd\0outsd",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	// 0x70
+	{"jo",              0,              PARAM_REL8,         0,                  0               },
+	{"jno",             0,              PARAM_REL8,         0,                  0               },
+	{"jb",              0,              PARAM_REL8,         0,                  0               },
+	{"jae",             0,              PARAM_REL8,         0,                  0               },
+	{"je",              0,              PARAM_REL8,         0,                  0               },
+	{"jne",             0,              PARAM_REL8,         0,                  0               },
+	{"jbe",             0,              PARAM_REL8,         0,                  0               },
+	{"ja",              0,              PARAM_REL8,         0,                  0               },
+	{"js",              0,              PARAM_REL8,         0,                  0               },
+	{"jns",             0,              PARAM_REL8,         0,                  0               },
+	{"jp",              0,              PARAM_REL8,         0,                  0               },
+	{"jnp",             0,              PARAM_REL8,         0,                  0               },
+	{"jl",              0,              PARAM_REL8,         0,                  0               },
+	{"jge",             0,              PARAM_REL8,         0,                  0               },
+	{"jle",             0,              PARAM_REL8,         0,                  0               },
+	{"jg",              0,              PARAM_REL8,         0,                  0               },
+	// 0x80
+	{"group80",         GROUP,          0,                  0,                  0               },
+	{"group81",         GROUP,          0,                  0,                  0               },
+	{"group80",         GROUP,          0,                  0,                  0               },
+	{"group83",         GROUP,          0,                  0,                  0               },
+	{"test",            MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"test",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"xchg",            MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"xchg",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
+	{"mov",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"mov",             MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
+	{"mov",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RM,           PARAM_SREG,         0               },
+	{"lea",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_SREG,         PARAM_RM,           0               },
+	{"pop",             MODRM,          PARAM_RM,           0,                  0               },
+	// 0x90
+	{"nop\0???\0???\0pause", VAR_NAME4, 0,                  0,                  0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ECX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EDX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EBX,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ESP,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EBP,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_ESI,          0               },
+	{"xchg",            0,              PARAM_EAX,          PARAM_EDI,          0               },
+	{"cbw\0cwde\0cdqe", VAR_NAME,       0,                  0,                  0               },
+	{"cwd\0cdq\0cqo",   VAR_NAME,       0,                  0,                  0               },
+	{"call",            ALWAYS64,       PARAM_ADDR,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"wait",            0,              0,                  0,                  0               },
+	{"pushf\0pushfd\0pushfq",VAR_NAME,  0,                  0,                  0               },
+	{"popf\0popfd\0popfq",VAR_NAME,     0,                  0,                  0               },
+	{"sahf",            0,              0,                  0,                  0               },
+	{"lahf",            0,              0,                  0,                  0               },
+	// 0xa0
+	{"mov",             0,              PARAM_AL,           PARAM_MEM_OFFS,     0               },
+	{"mov",             0,              PARAM_EAX,          PARAM_MEM_OFFS,     0               },
+	{"mov",             0,              PARAM_MEM_OFFS,     PARAM_AL,           0               },
+	{"mov",             0,              PARAM_MEM_OFFS,     PARAM_EAX,          0               },
+	{"movsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"movsw\0movsd\0movsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"cmpsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"cmpsw\0cmpsd\0cmpsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"test",            0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"test",            0,              PARAM_EAX,          PARAM_IMM,          0               },
+	{"stosb",           0,              0,                  0,                  0               },
+	{"stosw\0stosd\0stosq",VAR_NAME,    0,                  0,                  0               },
+	{"lodsb",           0,              PARAM_PREIMP,       0,                  0               },
+	{"lodsw\0lodsd\0lodsq",VAR_NAME,    PARAM_PREIMP,       0,                  0               },
+	{"scasb",           0,              0,                  0,                  0               },
+	{"scasw\0scasd\0scasq",VAR_NAME,    0,                  0,                  0               },
+	// 0xb0
+	{"mov",             0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_CL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_DL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_BL,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_AH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_CH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_DH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_BH,           PARAM_UI8,          0               },
+	{"mov",             0,              PARAM_EAX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ECX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EDX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EBX,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ESP,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EBP,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_ESI,          PARAM_IMM64,        0               },
+	{"mov",             0,              PARAM_EDI,          PARAM_IMM64,        0               },
+	// 0xc0
+	{"groupC0",         GROUP,          0,                  0,                  0               },
+	{"groupC1",         GROUP,          0,                  0,                  0               },
+	{"ret",             0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
+	{"ret",             0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
+	{"les",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lds",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"mov",             MODRM,          PARAM_RMPTR8,       PARAM_UI8,          0               },
+	{"mov",             MODRM,          PARAM_RMPTR,        PARAM_IMM,          0               },
+	{"enter",           0,              PARAM_UI16,         PARAM_UI8,          0               },
+	{"leave",           0,              0,                  0,                  0               },
+	{"retf",            0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
+	{"retf",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
+	{"int 3",           0,              0,                  0,                  0,              DASMFLAG_STEP_OVER},
+	{"int",             0,              PARAM_UI8,          0,                  0,              DASMFLAG_STEP_OVER},
+	{"into",            0,              0,                  0,                  0               },
+	{"iret",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
+	// 0xd0
+	{"groupD0",         GROUP,          0,                  0,                  0               },
+	{"groupD1",         GROUP,          0,                  0,                  0               },
+	{"groupD2",         GROUP,          0,                  0,                  0               },
+	{"groupD3",         GROUP,          0,                  0,                  0               },
+	{"aam",             0,              PARAM_UI8,          0,                  0               },
+	{"aad",             0,              PARAM_UI8,          0,                  0               },
+	{"salc",            0,              0,                  0,                  0               }, //AMD docs name it
+	{"xlat",            0,              0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	{"fpo1",            FPU,            0,                  0,                  0               },
+	// 0xe0
+	{"loopne",          0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"loopz",           0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"loop",            0,              PARAM_REL8,         0,                  0,              DASMFLAG_STEP_OVER},
+	{"jcxz\0jecxz\0jrcxz",VAR_NAME,     PARAM_REL8,         0,                  0               },
+	{"in",              0,              PARAM_AL,           PARAM_UI8,          0               },
+	{"in",              0,              PARAM_EAX,          PARAM_UI8,          0               },
+	{"out",             0,              PARAM_UI8,          PARAM_AL,           0               },
+	{"out",             0,              PARAM_UI8,          PARAM_EAX,          0               },
+	{"call",            0,              PARAM_REL,          0,                  0,              DASMFLAG_STEP_OVER},
+	{"jmp",             0,              PARAM_REL,          0,                  0               },
+	{"jmp",             0,              PARAM_ADDR,         0,                  0               },
+	{"jmp",             0,              PARAM_REL8,         0,                  0               },
+	{"in",              0,              PARAM_AL,           PARAM_DX,           0               },
+	{"in",              0,              PARAM_EAX,          PARAM_DX,           0               },
+	{"out",             0,              PARAM_DX,           PARAM_AL,           0               },
+	{"out",             0,              PARAM_DX,           PARAM_EAX,          0               },
+	// 0xf0
+	{"lock",            0,              0,                  0,                  0               },
+	{"brks",            0,              PARAM_UI8,          0,                  0,              DASMFLAG_STEP_OVER}, /* V25S/V35S only */
+	{"repne",           PREFIX,         0,                  0,                  0               },
+	{"rep",             PREFIX,         0,                  0,                  0               },
+	{"hlt",             0,              0,                  0,                  0               },
+	{"cmc",             0,              0,                  0,                  0               },
+	{"groupF6",         GROUP,          0,                  0,                  0               },
+	{"groupF7",         GROUP,          0,                  0,                  0               },
+	{"clc",             0,              0,                  0,                  0               },
+	{"stc",             0,              0,                  0,                  0               },
+	{"cli",             0,              0,                  0,                  0               },
+	{"sti",             0,              0,                  0,                  0               },
+	{"cld",             0,              0,                  0,                  0               },
+	{"std",             0,              0,                  0,                  0               },
+	{"groupFE",         GROUP,          0,                  0,                  0               },
+	{"groupFF",         GROUP,          0,                  0,                  0               }
+};
+
+static const I386_OPCODE necv_opcode_table2[256] =
+{
+	// 0x00
+	{"group0F00",       GROUP,          0,                  0,                  0               },
+	{"group0F01",       GROUP,          0,                  0,                  0               },
+	{"lar",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lsl",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"syscall",         0,              0,                  0,                  0               },
+	{"clts",            0,              0,                  0,                  0               },
+	{"sysret",          0,              0,                  0,                  0               },
+	{"invd",            0,              0,                  0,                  0               },
+	{"wbinvd",          0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"ud2",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"group0F0D",       GROUP,          0,                  0,                  0               }, //AMD only
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	// 0x10
+	{"test1",           MODRM,          PARAM_RMPTR8,       PARAM_CL,           0               }, /* V20/V30 */
+	{"test1",           MODRM,          PARAM_RMPTR16,      PARAM_CL,           0               }, /* V20/V30 */
+	{"clr1",            MODRM,          PARAM_RMPTR8,       PARAM_CL,           0               }, /* V20/V30 */
+	{"clr1",            MODRM,          PARAM_RMPTR16,      PARAM_CL,           0               }, /* V20/V30 */
+	{"set1",            MODRM,          PARAM_RMPTR8,       PARAM_CL,           0               }, /* V20/V30 */
+	{"set1",            MODRM,          PARAM_RMPTR16,      PARAM_CL,           0               }, /* V20/V30 */
+	{"not1",            MODRM,          PARAM_RMPTR8,       PARAM_CL,           0               }, /* V20/V30 */
+	{"not1",            MODRM,          PARAM_RMPTR16,      PARAM_CL,           0               }, /* V20/V30 */
+	{"test1",           MODRM,          PARAM_RMPTR8,       PARAM_I3,           0               }, /* V20/V30 */
+	{"test1",           MODRM,          PARAM_RMPTR16,      PARAM_I4,           0               }, /* V20/V30 */
+	{"clr1",            MODRM,          PARAM_RMPTR8,       PARAM_I3,           0               }, /* V20/V30 */
+	{"clr1",            MODRM,          PARAM_RMPTR16,      PARAM_I4,           0               }, /* V20/V30 */
+	{"set1",            MODRM,          PARAM_RMPTR8,       PARAM_I3,           0               }, /* V20/V30 */
+	{"set1",            MODRM,          PARAM_RMPTR16,      PARAM_I4,           0               }, /* V20/V30 */
+	{"not1",            MODRM,          PARAM_RMPTR8,       PARAM_I3,           0               }, /* V20/V30 */
+	{"not1",            MODRM,          PARAM_RMPTR16,      PARAM_I4,           0               }, /* V20/V30 */
+	// 0x20
+	{"add4s",           0,              0,                  0,                  0               }, /* V20/V30 */
+	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_DREG,         0               },
+	{"sub4s",           0,              0,                  0,                  0               }, /* V20/V30 */
+	{"mov",             MODRM,          PARAM_DREG,         PARAM_REG2_32,      0               },
+	{"mov",             MODRM,          PARAM_REG2_32,      PARAM_TREG,         0               },
+	{"movspa",          0,              0,                  0,                  0               }, /* V25/V35 only */
+	{"cmp4s",           0,              0,                  0,                  0               }, /* V20/V30 */
+	{"???",             0,              0,                  0,                  0               },
+	{"rol4",            MODRM,          PARAM_RMPTR8,       0,                  0               }, /* V20/V30 */
+	{"movaps\0"
+	 "movapd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	{"ror4",            MODRM,          PARAM_RMPTR8,       0,                  0               }, /* V20/V30 */
+	{"movntps\0"
+	 "movntpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
+	{"cvttps2pi\0"
+	 "cvttpd2pi\0"
+	 "cvttsd2si\0"
+	 "cvttss2si",       MODRM|VAR_NAME4,PARAM_REGORXMM,     PARAM_XMMM,         0               },
+	{"brkcs",           MODRM,          PARAM_REG2_16,      0,                  0,              DASMFLAG_STEP_OVER}, /* V25/V35 only */
+	{"ucomiss\0"
+	 "ucomisd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"comiss\0"
+	 "comisd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	// 0x30
+	{"wrmsr",           0,              0,                  0,                  0               },
+	{"ins",             MODRM,          PARAM_REG2_8,       PARAM_REG8,         0               }, /* V20/V30 */
+	{"rdmsr",           0,              0,                  0,                  0               },
+	{"ext",             MODRM,          PARAM_REG2_8,       PARAM_REG8,         0               }, /* V20/V30 */
+	{"sysenter",        0,              0,                  0,                  0               },
+	{"sysexit",         0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"three_byte",      THREE_BYTE,     0,                  0,                  0               },
+	{"ins",             MODRM,          PARAM_REG2_8,       PARAM_I4,           0               }, /* V20/V30 */
+	{"three_byte",      THREE_BYTE,     0,                  0,                  0               },
+	{"ext",             MODRM,          PARAM_REG2_8,       PARAM_I4,           0               }, /* V20/V30 */
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	// 0x40
+	{"cmovo",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovno",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovb",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovae",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmove",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovne",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovbe",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmova",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovs",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovns",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovpe",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovpo",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovl",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovge",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovle",          MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"cmovg",           MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	// 0x50
+	{"movmskps\0"
+	 "movmskpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_REG3264,      PARAM_XMMM,         0               },
+	{"sqrtps\0"
+	 "sqrtpd\0"
+	 "sqrtsd\0"
+	 "sqrtss",          MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"rsqrtps\0"
+	 "???\0"
+	 "???\0"
+	 "rsqrtss",         MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"rcpps\0"
+	 "???\0"
+	 "???\0"
+	 "rcpss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"andps\0"
+	 "andpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"andnps\0"
+	 "andnpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"orps\0"
+	 "orpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"xorps\0"
+	 "xorpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"addps\0"
+	 "addpd\0"
+	 "addsd\0"
+	 "addss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"mulps\0"
+	 "mulpd\0"
+	 "mulsd\0"
+	 "mulss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"cvtps2pd\0"
+	 "cvtpd2ps\0"
+	 "cvtsd2ss\0"
+	 "cvtss2sd",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"cvtdq2ps\0"
+	 "cvtps2dq\0"
+	 "???\0"
+	 "cvttps2dq",       MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"subps\0"
+	 "subpd\0"
+	 "subsd\0"
+	 "subss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"minps\0"
+	 "minpd\0"
+	 "minsd\0"
+	 "minss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"divps\0"
+	 "divpd\0"
+	 "divsd\0"
+	 "divss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"maxps\0"
+	 "maxpd\0"
+	 "maxsd\0"
+	 "maxss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	// 0x60
+	{"punpcklbw",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpcklwd",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckldq",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packsswb",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpgtd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packuswb",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhbw",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhwd",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"punpckhdq",       MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"packssdw",        MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+	 "punpcklqdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"???\0"
+	 "punpckhqdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movd",            MODRM,          PARAM_MMX,          PARAM_RM,           0               },
+	{"movq\0"
+	 "movdqa\0"
+	 "???\0"
+	 "movdqu",          MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	// 0x70
+	{"pshufw\0"
+	 "pshufd\0"
+	 "pshuflw\0"
+	 "pshufhw",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
+	{"group0F71",       GROUP,          0,                  0,                  0               },
+	{"group0F72",       GROUP,          0,                  0,                  0               },
+	{"group0F73",       GROUP,          0,                  0,                  0               },
+	{"pcmpeqb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpeqw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pcmpeqd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"emms",            0,              0,                  0,                  0               },
+	{"vmread",          MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"vmwrite",         MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"???\0"
+	 "haddpd\0"
+	 "haddps\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+	 "hsubpd\0"
+	 "hsubps\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"movd\0"
+	 "movd\0"
+	 "???\0"
+	 "movq",            MODRM|VAR_NAME4,PARAM_RM,           PARAM_MMX,          0               },
+	{"movq\0"
+	 "movdqa\0"
+	 "???\0"
+	 "movdqu",          MODRM|VAR_NAME4,PARAM_MMXM,         PARAM_MMX,          0               },
+	// 0x80
+	{"jo",              0,              PARAM_REL,          0,                  0               },
+	{"jno",             0,              PARAM_REL,          0,                  0               },
+	{"jb",              0,              PARAM_REL,          0,                  0               },
+	{"jae",             0,              PARAM_REL,          0,                  0               },
+	{"je",              0,              PARAM_REL,          0,                  0               },
+	{"jne",             0,              PARAM_REL,          0,                  0               },
+	{"jbe",             0,              PARAM_REL,          0,                  0               },
+	{"ja",              0,              PARAM_REL,          0,                  0               },
+	{"js",              0,              PARAM_REL,          0,                  0               },
+	{"jns",             0,              PARAM_REL,          0,                  0               },
+	{"jp",              0,              PARAM_REL,          0,                  0               },
+	{"jnp",             0,              PARAM_REL,          0,                  0               },
+	{"jl",              0,              PARAM_REL,          0,                  0               },
+	{"jge",             0,              PARAM_REL,          0,                  0               },
+	{"jle",             0,              PARAM_REL,          0,                  0               },
+	{"jg",              0,              PARAM_REL,          0,                  0               },
+	// 0x90
+	{"seto",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"retrbi",          0,              0,                  0,                  0               }, /* V25/V35 only */
+	{"fint",            0,              0,                  0,                  0               }, /* V25/V35 only */
+	{"setae",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"tsksw",           MODRM,          PARAM_REG2_16,      0,                  0               }, /* V25/V35 only */
+	{"movspb",          MODRM,          PARAM_REG2_16,      0,                  0               }, /* V25/V35 only */
+	{"setbe",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"seta",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"sets",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setns",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setp",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"setnp",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"btclr",           0,              PARAM_SFREG,        PARAM_I3,           PARAM_REL8      }, /* V25/V35 only */
+	{"setge",           MODRM,          PARAM_RMPTR8,       0,                  0               },
+	{"stop",            0,              0,                  0,                  0               }, /* V25/V35 only */
+	{"setg",            MODRM,          PARAM_RMPTR8,       0,                  0               },
+	// 0xa0
+	{"push    fs",      0,              0,                  0,                  0               },
+	{"pop     fs",      0,              0,                  0,                  0               },
+	{"cpuid",           0,              0,                  0,                  0               },
+	{"bt",              MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"shld",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
+	{"shld",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
+	{"???",             0,              0,                  0,                  0               },
+	{"???",             0,              0,                  0,                  0               },
+	{"push    gs",      0,              0,                  0,                  0               },
+	{"pop     gs",      0,              0,                  0,                  0               },
+	{"rsm",             0,              0,                  0,                  0               },
+	{"bts",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
+	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
+	{"group0FAE",       GROUP,          0,                  0,                  0               },
+	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	// 0xb0
+	{"cmpxchg",         MODRM,          PARAM_RM8,          PARAM_REG,          0               },
+	{"cmpxchg",         MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"lss",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"btr",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"lfs",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"lgs",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
+	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
+	{"movzx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
+	{"???\0"
+	 "???\0"
+	 "???\0"
+	 "popcnt",          MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM16,         0               },
+	{"ud2",             0,              0,                  0,                  0               },
+	{"group0FBA",       GROUP,          0,                  0,                  0               },
+	{"btc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"bsf\0"
+	 "???\0"
+	 "???\0"
+	 "tzcnt",           MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM,           0               },
+	{"bsr\0"
+	 "???\0"
+	 "???\0"
+	 "lzcnt",           MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM,           0,              DASMFLAG_STEP_OVER},
+	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR8,       0               },
+	{"movsx",           MODRM,          PARAM_REG,          PARAM_RMPTR16,      0               },
+	// 0xc0
+	{"xadd",            MODRM,          PARAM_RM8,          PARAM_REG,          0               },
+	{"xadd",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"cmpps\0"
+	 "cmppd\0"
+	 "cmpsd\0"
+	 "cmpss",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movnti",          MODRM,          PARAM_RM,           PARAM_REG,          0               },
+	{"pinsrw",          MODRM,          PARAM_MMX,          PARAM_RM,           PARAM_UI8       },
+	{"pextrw",          MODRM,          PARAM_MMX,          PARAM_RM,           PARAM_UI8       },
+	{"shufps\0"
+	 "shufpd\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
+	{"group0FC7",       GROUP,          0,                  0,                  0               },
+	{"bswap",           0,              PARAM_EAX,          0,                  0               },
+	{"bswap",           0,              PARAM_ECX,          0,                  0               },
+	{"bswap",           0,              PARAM_EDX,          0,                  0               },
+	{"bswap",           0,              PARAM_EBX,          0,                  0               },
+	{"bswap",           0,              PARAM_ESP,          0,                  0               },
+	{"bswap",           0,              PARAM_EBP,          0,                  0               },
+	{"bswap",           0,              PARAM_ESI,          0,                  0               },
+	{"bswap",           0,              PARAM_EDI,          0,                  0               },
+	// 0xd0
+	{"???\0"
+	 "addsubpd\0"
+	 "addsubps\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"psrlw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrlq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmullw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+	 "movq\0"
+	 "movdq2q\0"
+	 "movq2dq",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmovmskb",        MODRM,          PARAM_REG3264,      PARAM_MMXM,         0               },
+	{"psubusb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubusw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pminub",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pand",            MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddusb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddusw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaxub",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pandn",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	// 0xe0
+	{"brkxa",           0,              PARAM_UI8,          0,                  0               }, /* V33,53 only */
+	{"psraw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psrad",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pavgw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmulhuw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmulhw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"???\0"
+	 "cvttpd2dq\0"
+	 "cvtpd2dq\0"
+	 "cvtdq2pd",        MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
+	{"movntq\0"
+	 "movntdq\0"
+	 "???\0"
+	 "???\0",           MODRM|VAR_NAME4,PARAM_M64,          PARAM_MMX,          0               },
+	{"psubsb",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pminsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"por",             MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddsb",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaxsw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pxor",            MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	// 0xf0
+	{"retxa",           0,              PARAM_UI8,          0,                  0               }, /* V33,53 only */
+	{"psllw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pslld",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psllq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmuludq",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"pmaddwd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psadbw",          MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"maskmovq\0"
+	 "maskmovdqu\0"
+	 "???\0"
+	 "???",             MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubd",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"psubq",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddb",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddw",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"paddd",           MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
+	{"brkem",           0,              PARAM_UI8,          0,                  0               } /* V20,30,40,50 only */
 };
 
 static const GROUP_OP group_op_table[] =
@@ -1974,6 +2646,57 @@ static const char *const i386_reg[3][16] =
 static const char *const i386_reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 static const char *const i386_reg8rex[16] = {"al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil", "r8l", "r9l", "r10l", "r11l", "r12l", "r13l", "r14l", "r15l"};
 static const char *const i386_sreg[8] = {"es", "cs", "ss", "ds", "fs", "gs", "???", "???"};
+static const char *const nec_sfreg[256] =
+{
+	/* 0x00 */
+	"p0",	"pm0",	"pmc0",	"???",	"???",	"???",	"???",	"???",
+	"p1",	"pm1",	"pmc1",	"???",	"???",	"???",	"???",	"???",
+	/* 0x10 */
+	"p2",	"pm2",	"pmc2",	"???",	"???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0x20 */
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0x30 */
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	"pt",	"???",	"???",	"pmt",	"???",	"???",	"???",	"???",
+	/* 0x40 */
+	"intm",	"???",	"???",	"???",	"ems0",	"ems1",	"ems2",	"???",
+	"???",	"???",	"???",	"???",	"exic0","exic1","exic2","???",
+	/* 0x50 */
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0x60 */
+	"rxb0",	"???",	"txb0",	"???",	"???",	"srms0","stms0","???",
+	"scm0",	"scc0",	"brg0",	"scs0",	"seic0","sric0","stic0","???",
+	/* 0x70 */
+	"rxb1",	"???",	"txb1",	"???",	"???",	"srms1","stms1","???",
+	"scm1",	"scc1",	"brg1",	"scs1",	"seic1","sric1","stic1","???",
+	/* 0x80 */
+	"tm0",	"???",	"md0",	"???",	"???",	"???",	"???",	"???",
+	"tm1",	"???",	"md1",	"???",	"???",	"???",	"???",	"???",
+	/* 0x90 */
+	"tmc0",	"tmc1",	"???",	"???",	"tmms0","tmms1","tmms2","???",
+	"???",	"???",	"???",	"???",	"tmic0","tmic1","tmic2","???",
+	/* 0xa0 */
+	"dmac0","dmam0","dmac1","dmam1","???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"dic0",	"dic1",	"???",	"???",
+	/* 0xb0 */
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0xc0 */
+	"sar0l","sar0m","sar0h","???",	"dar0l","dar0m","dar0h","???",
+	"tc0l",	"tc0h",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0xd0 */
+	"sar1l","sar1m","sar1h","???",	"dar1l","dar1m","dar1h","???",
+	"tc1l",	"tc1h",	"???",	"???",	"???",	"???",	"???",	"???",
+	/* 0xe0 */
+	"stbc",	"rfm",	"???",	"???",	"???",	"???",	"???",	"???",
+	"wtc",	"???",	"flag",	"prc",	"tbic",	"???",	"???",	"irqs",
+	/* 0xf0 */
+	"???",	"???",	"???",	"???",	"???",	"???",	"???",	"???",
+	"???",	"???",	"???",	"???",	"ispr",	"???",	"???",	"idb"
+};
 
 static int address_size;
 static int operand_size;
@@ -1988,6 +2711,7 @@ static char modrm_string[256];
 static UINT8 rex, regex, sibex, rmex;
 static UINT8 pre0f;
 static UINT8 curmode;
+static UINT8 v30mode;
 
 #define MODRM_REG1  ((modrm >> 3) & 0x7)
 #define MODRM_REG2  (modrm & 0x7)
@@ -2240,6 +2964,14 @@ static char* handle_param(char* s, UINT32 param)
 			s += sprintf( s, "%s", i386_reg[0][MODRM_REG1 | regex] );
 			break;
 
+		case PARAM_REG2_8:
+			s += sprintf( s, "%s", i386_reg8[MODRM_REG2] );
+			break;
+
+		case PARAM_REG2_16:
+			s += sprintf( s, "%s", i386_reg[0][MODRM_REG2] );
+			break;
+
 		case PARAM_REG32:
 			s += sprintf( s, "%s", i386_reg[1][MODRM_REG1 | regex] );
 			break;
@@ -2371,6 +3103,11 @@ static char* handle_param(char* s, UINT32 param)
 			}
 			break;
 
+		case PARAM_I3:
+			i8 = _FETCHD();
+			s += sprintf( s, "%d", i8 & 0x07 );
+			break;
+
 		case PARAM_I4:
 			i8 = _FETCHD();
 			s += sprintf( s, "%d", i8 & 0x0f );
@@ -2484,6 +3221,11 @@ static char* handle_param(char* s, UINT32 param)
 
 		case PARAM_SREG:
 			s += sprintf( s, "%s", i386_sreg[MODRM_REG1] );
+			break;
+
+		case PARAM_SFREG:
+			i8 = _FETCHD();
+			s += sprintf( s, "%s", nec_sfreg[i8] );
 			break;
 
 		case PARAM_CREG:
@@ -2940,7 +3682,10 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				operand_prefix = 1;
 			}
 			op2 = _FETCH();
-			decode_opcode( s, &i386_opcode_table1[op2], op2 );
+			if (v30mode)
+				decode_opcode( s, &necv_opcode_table1[op2], op2 );
+			else
+				decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case ADDR_SIZE:
@@ -2954,14 +3699,20 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				address_prefix = 1;
 			}
 			op2 = _FETCH();
-			decode_opcode( s, &i386_opcode_table1[op2], op2 );
+			if (v30mode)
+				decode_opcode( s, &necv_opcode_table1[op2], op2 );
+			else
+				decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case TWO_BYTE:
 			if (&opcode_ptr[-2] >= opcode_ptr_base)
 				pre0f = opcode_ptr[-2];
 			op2 = _FETCHD();
-			decode_opcode( s, &i386_opcode_table2[op2], op1 );
+			if (v30mode)
+				decode_opcode( s, &necv_opcode_table2[op2], op1 );
+			else
+				decode_opcode( s, &i386_opcode_table2[op2], op1 );
 			return;
 
 		case THREE_BYTE:
@@ -2981,7 +3732,10 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 			rex = regex = sibex = rmex = 0;
 			segment = op->flags;
 			op2 = _FETCH();
-			decode_opcode( s, &i386_opcode_table1[op2], op2 );
+			if (v30mode)
+				decode_opcode( s, &necv_opcode_table1[op2], op2 );
+			else
+				decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case PREFIX:
@@ -2990,7 +3744,10 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				s += sprintf( s, "%-7s ", op->mnemonic );
 			if ((op2 == 0x90) && !pre0f)
 				pre0f = op1;
-			decode_opcode( s, &i386_opcode_table1[op2], op2 );
+			if (v30mode)
+				decode_opcode( s, &necv_opcode_table1[op2], op2 );
+			else
+				decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
 		case GROUP:
@@ -3068,26 +3825,36 @@ int i386_dasm_one_ex(char *buffer, UINT64 eip, const UINT8 *oprom, int mode)
 			address_size = 0;
 			operand_size = 0;
 			max_length = 8; /* maximum without redundant prefixes - not enforced by chip */
+			v30mode = 0;
 			break;
 		case 2: /* 80286 */
 			address_size = 0;
 			operand_size = 0;
 			max_length = 10;
 			break;
+		case 3: /* V30 */
+			address_size = 0;
+			operand_size = 0;
+			max_length = 8; /* maximum without redundant prefixes - not enforced by chip */
+			v30mode = 1;
+			break;
 		case 16: /* 80386+ 16-bit code segment */
 			address_size = 0;
 			operand_size = 0;
 			max_length = 15;
+			v30mode = 0;
 			break;
 		case 32: /* 80386+ 32-bit code segment */
 			address_size = 1;
 			operand_size = 1;
 			max_length = 15;
+			v30mode = 0;
 			break;
 		case 64: /* x86_64 */
 			address_size = 2;
 			operand_size = 1;
 			max_length = 15;
+			v30mode = 0;
 			break;
 	}
 	pc = eip;
@@ -3101,13 +3868,21 @@ int i386_dasm_one_ex(char *buffer, UINT64 eip, const UINT8 *oprom, int mode)
 
 	op = _FETCH();
 
-	decode_opcode( buffer, &i386_opcode_table1[op], op );
+	if (v30mode)
+		decode_opcode( buffer, &necv_opcode_table1[op], op );
+	else
+		decode_opcode( buffer, &i386_opcode_table1[op], op );
 	return (pc-eip) | dasm_flags | DASMFLAG_SUPPORTED;
 }
 
 int i386_dasm_one(char *buffer, offs_t eip, const UINT8 *oprom, int mode)
 {
 	return i386_dasm_one_ex(buffer, eip, oprom, mode);
+}
+
+CPU_DISASSEMBLE( nec_generic )
+{
+	return i386_dasm_one_ex(buffer, eip, oprom, 3);
 }
 
 CPU_DISASSEMBLE( x86_16 )

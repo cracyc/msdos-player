@@ -129,8 +129,10 @@
 #define USE_SSE2
 #define USE_SSE3
 #define USE_TSC
+#define USE_PAGING
 #define USE_FASTPAGING
 #define USE_VME
+//#define USE_CLOCK
 #define IA32_REBOOT_ON_PANIC
 
 enum {
@@ -327,6 +329,7 @@ typedef struct {
 	FPU_PTR		data; // ラストデータポインタレジスター
 } FPU_REGS_S;
 
+#if defined(USE_FPU)
 #if 0
 
 typedef struct {
@@ -434,6 +437,7 @@ typedef struct {
 } FPU_STAT_S;
 
 #endif
+#endif
 
 typedef struct {
 	CPU_REGS	cpu_regs;
@@ -449,11 +453,15 @@ typedef struct {
 
 	/* protected by cpu shut */
 	UINT8		cpu_type;
+#if 0
 	UINT8		itfbank;
 	UINT16		ram_d0;
+#endif
+#if defined(USE_CLOCK)
 	SINT32		remainclock;
 	SINT32		baseclock;
 	UINT32		clock;
+#endif
 	
 #if defined(USE_TSC)
 	UINT64		cpu_tsc;
@@ -523,11 +531,15 @@ extern I386MSR		i386msr;
 #define	CPU_ADRSMASK	i386core.s.cpu_stat.adrsmask
 #define	CPU_RESETREQ	i386core.s.cpu_stat.resetreq
 
+#ifdef USE_CLOCK
 #define	CPU_REMCLOCK	i386core.s.remainclock
 #define	CPU_BASECLOCK	i386core.s.baseclock
 #define	CPU_CLOCK	i386core.s.clock
+#endif
+#if 0
 #define	CPU_ITFBANK	i386core.s.itfbank
 #define	CPU_RAM_D000	i386core.s.ram_d0
+#endif
 
 #define CPU_TYPE	i386core.s.cpu_type
 #define CPUTYPE_V30	0x01
@@ -1088,7 +1100,11 @@ void CPUCALL set_eflags(UINT32 new_flags, UINT32 mask);
 #define	CPU_STAT_SS32		CPU_STATSAVE.cpu_stat.ss_32
 #define	CPU_STAT_RESETREQ	CPU_STATSAVE.cpu_stat.resetreq
 #define	CPU_STAT_PM		CPU_STATSAVE.cpu_stat.protected_mode
+#ifdef USE_PAGING
 #define	CPU_STAT_PAGING		CPU_STATSAVE.cpu_stat.paging
+#else
+#define CPU_STAT_PAGING		false
+#endif
 #define	CPU_STAT_VM86		CPU_STATSAVE.cpu_stat.vm86
 #define	CPU_STAT_WP		CPU_STATSAVE.cpu_stat.page_wp
 #define	CPU_STAT_CPL		CPU_CS_DESC.rpl

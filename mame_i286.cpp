@@ -184,11 +184,7 @@ typedef UINT32	offs_t;
 #undef CPU_EXECUTE
 
 #ifdef USE_DEBUGGER
-#if defined(HAS_V30)
-#include "mame/emu/cpu/nec/necdasm.c"
-#else
 #include "mame/emu/cpu/i386/i386dasm.c"
-#endif
 
 #undef CPU_DISASSEMBLE
 
@@ -554,6 +550,16 @@ inline void CPU_SET_C_FLAG(INT32 value)
 	m_CarryVal = value;
 }
 
+inline void CPU_SET_P_FLAG(UINT8 value)
+{
+	m_ParityVal = (value != 0) ? 0 : 1;
+}
+
+inline void CPU_SET_A_FLAG(UINT8 value)
+{
+	m_AuxVal = value;
+}
+
 inline void CPU_SET_Z_FLAG(INT32 value)
 {
 	m_ZeroVal = (value != 0) ? 0 : 1;
@@ -564,9 +570,24 @@ inline void CPU_SET_S_FLAG(INT32 value)
 	m_SignVal = (value != 0) ? -1 : 0;
 }
 
+inline void CPU_SET_T_FLAG(UINT8 value)
+{
+	m_TF = value;
+}
+
 inline void CPU_SET_I_FLAG(INT32 value)
 {
 	m_IF = value;
+}
+
+inline void CPU_SET_D_FLAG(UINT8 value)
+{
+	m_DirVal = (value != 0) ? -1 : 0;
+}
+
+inline void CPU_SET_O_FLAG(UINT8 value)
+{
+	m_OverVal = value;
 }
 
 #define CPU_STAT_PM			PM

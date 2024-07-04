@@ -293,6 +293,16 @@ inline void CPU_SET_C_FLAG(UINT8 value)
 	m_CF = value;
 }
 
+inline void CPU_SET_P_FLAG(UINT8 value)
+{
+	m_PF = value;
+}
+
+inline void CPU_SET_A_FLAG(UINT8 value)
+{
+	m_AF = value;
+}
+
 inline void CPU_SET_Z_FLAG(UINT8 value)
 {
 	m_ZF = value;
@@ -303,9 +313,24 @@ inline void CPU_SET_S_FLAG(UINT8 value)
 	m_SF = value;
 }
 
+inline void CPU_SET_T_FLAG(UINT8 value)
+{
+	m_TF = value;
+}
+
 inline void CPU_SET_I_FLAG(UINT8 value)
 {
 	m_IF = value;
+}
+
+inline void CPU_SET_D_FLAG(UINT8 value)
+{
+	m_DF = value;
+}
+
+inline void CPU_SET_O_FLAG(UINT8 value)
+{
+	m_OF = value;
 }
 
 inline void CPU_SET_IOP_FLAG(UINT8 value)

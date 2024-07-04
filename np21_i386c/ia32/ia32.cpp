@@ -209,7 +209,7 @@ change_pm(BOOL onoff)
 void CPUCALL
 change_pg(BOOL onoff)
 {
-
+#ifdef USE_PAGING
 	if (onoff) {
 		VERBOSE(("change_pg: Entering to Paging-Mode..."));
 	} else {
@@ -217,6 +217,12 @@ change_pg(BOOL onoff)
 	}
 
 	CPU_STAT_PAGING = onoff;
+#else
+	if (onoff) {
+		ia32_panic("Paging-Mode: not supported in this build!");
+	}
+	//VERBOSE(("Paging-Mode: not supported in this build!"));
+#endif
 }
 
 void CPUCALL

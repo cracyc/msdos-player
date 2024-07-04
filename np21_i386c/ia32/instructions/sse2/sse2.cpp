@@ -3255,6 +3255,18 @@ void SSE2_PSHUFD(void)
 {
 	EXCEPTION(UD_EXCEPTION, 0);
 }
+void SSE2_PSxxWimm(void)
+{
+	EXCEPTION(UD_EXCEPTION, 0);
+}
+void SSE2_PSxxDimm(void)
+{
+	EXCEPTION(UD_EXCEPTION, 0);
+}
+void SSE2_PSxxQimm(void)
+{
+	EXCEPTION(UD_EXCEPTION, 0);
+}
 void SSE2_PSLLDQ(void)
 {
 	EXCEPTION(UD_EXCEPTION, 0);
