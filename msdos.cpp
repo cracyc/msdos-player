@@ -212,7 +212,7 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 				my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
 			}
 			szTempShortPath[nPos] = '\0';
-			FindFirstFile(szTempShortPath ,&ffd);
+			FindFirstFileA(szTempShortPath ,&ffd);
 		} else {
 			_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempShortPath, szLongPath);
 			my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
@@ -224,6 +224,47 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	}
 	my_strlcpy(lpszLongPath, szLongPath, cchBuffer);
 	return dwLength;
+}
+
+BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
+{
+#if 0
+	return SetConsoleTitleA(lpConsoleTitle);
+#else
+	return TRUE;
+#endif
+}
+
+HWND MyImmGetDefaultIMEWnd(HWND hWnd)
+{
+	HMODULE hLibrary = LoadLibraryA("Imm32.dll");
+	HWND hResult = 0;
+	if(hLibrary) {
+		typedef HWND (WINAPI* ImmGetDefaultIMEWndFunction)(HWND);
+		ImmGetDefaultIMEWndFunction lpfnImmGetDefaultIMEWnd = reinterpret_cast<ImmGetDefaultIMEWndFunction>(::GetProcAddress(hLibrary, "ImmGetDefaultIMEWnd"));
+		if(lpfnImmGetDefaultIMEWnd) {
+			hResult = lpfnImmGetDefaultIMEWnd(hWnd);
+		}
+		FreeLibrary(hLibrary);
+	}
+	return hResult;
+}
+
+void KeyOnOff(BYTE bVk)
+{
+	HMODULE hLibrary = LoadLibraryA("User32.dll");
+	if(hLibrary) {
+		typedef UINT (WINAPI* MapVirtualKeyFunction)(UINT, UINT);
+		typedef void (WINAPI* KeybdEventFunction)(BYTE, BYTE, DWORD, ULONG_PTR);
+		MapVirtualKeyFunction lpfnMapVirtualKey = reinterpret_cast<MapVirtualKeyFunction>(::GetProcAddress(hLibrary, "MapVirtualKeyA"));
+		KeybdEventFunction lpfnKeybdEvent = reinterpret_cast<KeybdEventFunction>(::GetProcAddress(hLibrary, "keybd_event"));
+		if(lpfnMapVirtualKey && lpfnKeybdEvent) {
+			BYTE bScan = lpfnMapVirtualKey(bVk, 0);
+			lpfnKeybdEvent(bVk, bScan, 0, 0);
+			lpfnKeybdEvent(bVk, bScan, KEYEVENTF_KEYUP, 0);
+		}
+		FreeLibrary(hLibrary);
+	}
 }
 
 #if defined(__MINGW32__)
@@ -2883,12 +2924,12 @@ void exit_handler()
 DWORD WINAPI vram_thread(LPVOID)
 {
 	while(!msdos_exit) {
-		EnterCriticalSection(&vram_crit_sect);
+		enter_vram_lock();
 		if(vram_length != 0 && vram_length == vram_last_length) {
 			vram_flush();
 		}
 		vram_last_length = vram_length;
-		LeaveCriticalSection(&vram_crit_sect);
+		leave_vram_lock();
 		// this is about half the maximum keyboard repeat rate - any
 		// lower tends to be jerky, any higher misses updates
 		Sleep(15);
@@ -3312,6 +3353,62 @@ bool is_cursor_blink_off()
 	return(result != 0);
 }
 
+void hit_key(BYTE bVirtualKey)
+{
+	HMODULE hLibrary = LoadLibraryA("User32.dll");
+	if(hLibrary) {
+		typedef UINT (WINAPI* MapVirtualKeyFunction)(UINT, UINT);
+		typedef void (WINAPI* KeybdEventFunction)(BYTE, BYTE, DWORD, ULONG_PTR);
+		MapVirtualKeyFunction lpfnMapVirtualKey = reinterpret_cast<MapVirtualKeyFunction>(::GetProcAddress(hLibrary, "MapVirtualKeyA"));
+		KeybdEventFunction lpfnKeybdEvent = reinterpret_cast<KeybdEventFunction>(::GetProcAddress(hLibrary, "keybd_event"));
+		if(lpfnMapVirtualKey && lpfnKeybdEvent) {
+			BYTE bScanCode = lpfnMapVirtualKey(bVirtualKey, 0);
+			lpfnKeybdEvent(bVirtualKey, bScanCode, 0, 0);
+			lpfnKeybdEvent(bVirtualKey, bScanCode, KEYEVENTF_KEYUP, 0);
+		}
+		FreeLibrary(hLibrary);
+	}
+}
+
+BOOL get_ime_open_status()
+{
+	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
+	
+	if(hWnd != NULL) {
+		return (SendMessage(hWnd, WM_IME_CONTROL, IMC_GETOPENSTATUS, 0) != 0);
+	}
+	return FALSE;
+}
+
+void set_ime_open_status(BOOL value)
+{
+	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
+	
+	if(hWnd != NULL) {
+		SendMessage(hWnd, WM_IME_CONTROL, IMC_SETOPENSTATUS, value);
+	}
+}
+
+DWORD get_ime_conversion_mode()
+{
+	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
+	
+	if(hWnd != NULL) {
+		hit_key(0); // update conversion mode
+		return SendMessage(hWnd, WM_IME_CONTROL, IMC_GETCONVERSIONMODE, 0);
+	}
+	return 0;
+}
+
+void set_ime_conversion_mode(DWORD value)
+{
+	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
+	
+	if(hWnd != NULL) {
+		SendMessage(hWnd, WM_IME_CONTROL, IMC_SETCONVERSIONMODE, value);
+	}
+}
+
 void get_sio_port_numbers()
 {
 	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
@@ -3392,7 +3489,7 @@ int main(int argc, char *argv[], char *envp[])
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
 
 	glyph_char = active_code_page == 437;
-	use_vt = is_win10_or_later;
+	if(is_win10_or_later) use_vt = true;
 	
 	
 	if(!is_win2k_or_later) {
@@ -3889,6 +3986,9 @@ int main(int argc, char *argv[], char *envp[])
 	if(!get_console_cursor_success) {
 		ci.bVisible = TRUE;
 	}
+	if(!get_console_cursor_success) {
+		ci.bVisible = TRUE;
+	}
 	ci_old = ci_new = ci;
 	fi_new = fi;
 	font_width  = fi.dwFontSize.X;
@@ -4100,9 +4200,9 @@ void change_console_size(int width, int height)
 				set_console_font_size(font_width, font_height);
 			}
 		}
-
+	
 		GetConsoleScreenBufferInfo(hStdout, &csbi);
-
+	
 		int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 		int cur_buffer_width  = csbi.dwSize.X;
@@ -4134,7 +4234,7 @@ void change_console_size(int width, int height)
 			cursor_moved = true;
 			cursor_moved_by_crtc = false;
 		}
-
+	
 		// window can't be bigger than buffer,
 		// buffer can't be smaller than window,
 		// so make a tiny window,
@@ -4175,6 +4275,7 @@ void change_console_size(int width, int height)
 		}
 		restore_console_size = true;
 	}
+	restore_console_size = true;
 	
 	scr_width = scr_buf_size.X = width;
 	scr_height = scr_buf_size.Y = height;
@@ -4221,7 +4322,8 @@ void clear_scr_buffer(WORD attr)
 
 bool update_console_input()
 {
-	enter_key_buf_lock();
+	enter_input_lock();
+	
 	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
@@ -4522,7 +4624,7 @@ bool update_console_input()
 			}
 		}
 	}
-	leave_key_buf_lock();
+	leave_input_lock();
 	return(result);
 }
 
@@ -5347,6 +5449,9 @@ const char *msdos_get_multiple_short_path(const char *src)
 	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
 	static char env_path[ENV_SIZE];
 	char tmp[ENV_SIZE], *token;
+#ifdef _WIN64
+	char tmp_syswow64[ENV_SIZE];
+#endif
 	
 	memset(env_path, 0, sizeof(env_path));
 	strcpy(tmp, src);
@@ -5361,11 +5466,18 @@ const char *msdos_get_multiple_short_path(const char *src)
 					strcat(env_path, ";");
 				}
 				if(GetShortPathNameA(path, short_path, MAX_PATH) == 0) {
-					strcat(env_path, msdos_remove_end_separator(path));
+					path = msdos_remove_end_separator(path);
 				} else {
 					my_strupr(short_path);
-					strcat(env_path, msdos_remove_end_separator(short_path));
+					path = msdos_remove_end_separator(short_path);
 				}
+#ifdef _WIN64
+				if(_strnicmp(path + 1, ":\\Windows\\System32", 18) == 0) {
+					sprintf(tmp_syswow64, "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
+					path = tmp_syswow64;
+				}
+#endif
+				strcat(env_path, path);
 			}
 		}
 		token = my_strtok(NULL, ";");
@@ -6454,10 +6566,11 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 
 void msdos_putch_fast(UINT8 data, unsigned int_num, UINT8 reg_ah)
 {
-	enter_key_buf_lock();
+	enter_putch_lock();
 	msdos_putch_tmp(data, int_num, reg_ah);
-	leave_key_buf_lock();
+	leave_putch_lock();
 }
+
 void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -8144,9 +8257,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 			mem[ofs++] = 0x20;
 			mem[ofs++] = 0x07;
 		}
-		if(use_vram_thread) {
-			EnterCriticalSection(&vram_crit_sect);
-		}
+		enter_vram_lock();
 		for(int y = 0; y < clr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
 				SCR_BUF(y,x).Char.AsciiChar = ' ';
@@ -8157,9 +8268,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
 		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length = vram_last_length = 0;
-		if(use_vram_thread) {
-			LeaveCriticalSection(&vram_crit_sect);
-		}
+		leave_vram_lock();
 	}
 	COORD co;
 	co.X = 0;
@@ -8201,6 +8310,10 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_console_size(scr_width, scr_height, !(CPU_AL & 0x80));
 		break;
 	case 0x73: // Extended CGA Text Mode
+	case 0x64: // J-3100 DCGA (mono)
+	case 0x65: // J-3100 DCGA
+	case 0x74: // J-3100 DCGA (mono)
+	case 0x75: // J-3100 DCGA
 	case 0x02: // CGA Text Mode (gray)
 	case 0x03: // CGA Text Mode
 	case 0x07: // MDA Text Mode (mono)
@@ -8208,8 +8321,8 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(CPU_AL & 0x80));
 		break;
-	case 0x00:
-	case 0x01:
+	case 0x00: // CGA Text Mode (gray)
+	case 0x01: // CGA Text Mode
 		change_console_size(40, 25);
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(40, 25, !(CPU_AL & 0x80));
@@ -8439,12 +8552,14 @@ inline void pcbios_int_10h_09h()
 	int end = min(dest + CPU_CX * 2, pcbios_get_shadow_buffer_address(CPU_BH, 0, scr_height));
 	
 	if(mem[0x462] == CPU_BH) {
+		enter_vram_lock();
 		int vram = pcbios_get_shadow_buffer_address(CPU_BH);
 		while(dest < end) {
 			write_text_vram(dest - vram, CPU_AL, CPU_BL);
 			mem[dest++] = CPU_AL;
 			mem[dest++] = CPU_BL;
 		}
+		leave_vram_lock();
 	} else {
 		while(dest < end) {
 			mem[dest++] = CPU_AL;
@@ -8464,12 +8579,14 @@ inline void pcbios_int_10h_0ah()
 	int end = min(dest + CPU_CX * 2, pcbios_get_shadow_buffer_address(CPU_BH, 0, scr_height));
 	
 	if(mem[0x462] == CPU_BH) {
+		enter_vram_lock();
 		int vram = pcbios_get_shadow_buffer_address(CPU_BH);
 		while(dest < end) {
 			write_text_vram(dest - vram, CPU_AL, mem[dest + 1]);
 			mem[dest++] = CPU_AL;
 			dest++;
 		}
+		leave_vram_lock();
 	} else {
 		while(dest < end) {
 			mem[dest++] = CPU_AL;
@@ -8555,8 +8672,10 @@ inline void pcbios_int_10h_0eh()
 		cursor_moved = true;
 	} else {
 		int dest = pcbios_get_shadow_buffer_address(mem[0x462], co.X, co.Y);
+		enter_vram_lock();
 		int vram = pcbios_get_shadow_buffer_address(mem[0x462]);
 		write_text_vram(dest - vram, CPU_AL, mem[dest + 1]);
+		leave_vram_lock();
 		if(++co.X == scr_width) {
 			co.X = 0;
 			if(++co.Y == scr_height) {
@@ -8915,16 +9034,85 @@ inline void pcbios_int_10h_4fh()
 	}
 }
 
+inline void pcbios_int_10h_50h()
+{
+	static int mode = -1;
+	
+	if(mode == -1) {
+		if(get_output_code_page() == 932) {
+			mode = 81;
+		} else {
+			mode = 1;
+		}
+	}
+	switch(CPU_AL) {
+	case 0x00:
+		if(CPU_BX == 1 || CPU_BX == 81) {
+			mode = CPU_BX;
+			CPU_AL = 0x00;
+		} else {
+			CPU_AL = 0x01;
+		}
+		break;
+	case 0x01:
+		CPU_BX = mode;
+		CPU_AL = 0x00;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_SET_C_FLAG(1);
+		break;
+	}
+}
+
+#if 0
+inline void pcbios_int_10h_52h()
+{
+	static UINT16 addr = 0;
+	int regen1 = scr_width * scr_height * 2;
+	int regen2 = min(regen1, 0x8000);
+	
+	switch(CPU_AL) {
+	case 0x00:
+		if(CPU_BX) {
+			shadow_buffer_top_address = CPU_BX << 4;
+			shadow_buffer_end_address = shadow_buffer_top_address + regen1;
+		} else {
+			shadow_buffer_top_address = pcbios_get_shadow_buffer_address(mem[0x462]);
+			shadow_buffer_end_address = shadow_buffer_top_address + regen2;
+		}
+		addr = CPU_BX;
+		break;
+	case 0x01:
+		CPU_BX = addr;
+	default:
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_SET_C_FLAG(1);
+		break;
+	}
+}
+#endif
+
 inline void pcbios_int_10h_82h()
 {
-	static UINT8 mode = 0;
+	static UINT8 scroll_mode = 0;
+	static UINT8 cursor_mode = 0;
 	
 	switch(CPU_AL) {
 	case 0x00:
 		if(CPU_BL != 0xff) {
-			mode = CPU_BL;
+			CPU_AL = scroll_mode;
+			scroll_mode = CPU_BL;
+		} else {
+			CPU_AL = scroll_mode;
 		}
-		CPU_AL = mode;
+		break;
+	case 0x04:
+		if(CPU_BL != 0xff) {
+			CPU_AL = cursor_mode;
+			cursor_mode = CPU_BL;
+		} else {
+			CPU_AL = cursor_mode;
+		}
 		break;
 	default:
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -8947,6 +9135,34 @@ inline void pcbios_int_10h_83h()
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
 		CPU_SET_C_FLAG(1);
 		break;
+	}
+}
+
+#define IS_SJIS(hi, lo) ((0x81 <= (hi) && (hi) <= 0x9f) || (0xe0 <= (hi) && (hi) <= 0xef)) && ((0x40 <= (lo) && (lo) <= 0x7e) || (0x80 <= (lo) && (lo) <= 0xfc))
+
+inline void pcbios_int_10h_85h()
+{
+	short co_X;
+	COORD co;
+	DWORD num;
+	
+	co_X = mem[0x450];
+	co.X = 0;
+	co.Y = mem[0x451];
+	
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	co.Y += scr_top;
+	if(use_vram_thread) {
+		vram_flush();
+	}
+	ReadConsoleOutputCharacterA(hStdout, scr_char, scr_width, co, &num);
+	
+	if(co_X > 0 && IS_SJIS(scr_char[co_X - 1], scr_char[co_X])) {
+		CPU_AL = 0x02;
+	} else if(IS_SJIS(scr_char[co_X], scr_char[co_X + 1])) {
+		CPU_AL = 0x01;
+	} else {
+		CPU_AL = 0x00;
 	}
 }
 
@@ -9978,6 +10194,30 @@ bool pcbios_is_key_buffer_empty()
 	return(*(UINT16 *)(mem + 0x41a) == *(UINT16 *)(mem + 0x41c));
 }
 
+bool pcbios_is_key_buffer_full()
+{
+	// check only key buffer in work area
+	UINT16 head = *(UINT16 *)(mem + 0x41a);
+	UINT16 tail = *(UINT16 *)(mem + 0x41c);
+	UINT16 next = tail + 2;
+	if(next >= *(UINT16 *)(mem + 0x482)) {
+		next = *(UINT16 *)(mem + 0x480);
+	}
+	return(next == head);
+}
+
+int pcbios_get_key_buffer_count()
+{
+	// check only key buffer in work area
+	int head = *(UINT16 *)(mem + 0x41a);
+	int tail = *(UINT16 *)(mem + 0x41c);
+	if((tail -= head) < 0) {
+		tail += *(UINT16 *)(mem + 0x482);
+		tail -= *(UINT16 *)(mem + 0x480);
+	}
+	return((int)(tail / 2));
+}
+
 void pcbios_clear_key_buffer()
 {
 	key_buf_char->clear();
@@ -10168,10 +10408,10 @@ inline void pcbios_int_16h_01h()
 
 inline void pcbios_int_16h_02h()
 {
-	CPU_AL  = (GetAsyncKeyState(VK_INSERT ) & 0x0001) ? 0x80 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_SCROLL ) & 0x0001) ? 0x10 : 0;
+	CPU_AL  = (GetKeyState(VK_INSERT ) & 0x0001) ? 0x80 : 0;
+	CPU_AL |= (GetKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
+	CPU_AL |= (GetKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
+	CPU_AL |= (GetKeyState(VK_SCROLL ) & 0x0001) ? 0x10 : 0;
 	CPU_AL |= (GetAsyncKeyState(VK_MENU   ) & 0x8000) ? 0x08 : 0;
 	CPU_AL |= (GetAsyncKeyState(VK_CONTROL) & 0x8000) ? 0x04 : 0;
 	CPU_AL |= (GetAsyncKeyState(VK_LSHIFT ) & 0x8000) ? 0x02 : 0;
@@ -10255,14 +10495,47 @@ inline void pcbios_int_16h_12h()
 
 inline void pcbios_int_16h_13h()
 {
-	static UINT16 status = 0;
-	
+	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
 	switch(CPU_AL) {
 	case 0x00:
-		status = CPU_DX;
+		if(CPU_DX & 0x0080) {
+			DWORD dwConv = 0x0000;
+			if(CPU_DX & 0x0001) {
+				dwConv |= IME_CMODE_FULLSHAPE;
+			}
+			if((CPU_DX & 0x06) == 0x02) {
+				dwConv |= IME_CMODE_NATIVE | IME_CMODE_KATAKANA;
+			} else if((CPU_DX & 0x06) == 0x04) {
+				dwConv |= IME_CMODE_NATIVE;
+			}
+			if(CPU_DX & 0x0040) {
+				dwConv |= IME_CMODE_ROMAN;
+			}
+			set_ime_open_status(TRUE);
+			set_ime_conversion_mode(dwConv);
+		} else {
+			set_ime_open_status(FALSE);
+		}
 		break;
 	case 0x01:
-		CPU_DX = status;
+		CPU_DX = 0x0000;
+		if(get_ime_open_status()) {
+			DWORD dwConv = get_ime_conversion_mode();
+			if(dwConv & IME_CMODE_FULLSHAPE) {
+				CPU_DX |= 0x0001; // full-size rather than half-size
+			}
+			if(dwConv & IME_CMODE_NATIVE) {
+				if(dwConv & IME_CMODE_KATAKANA) {
+					CPU_DX |= 0x0002; // Katakana
+				} else {
+					CPU_DX |= 0x0004; // Hiragana
+				}
+			}
+			if(dwConv & IME_CMODE_ROMAN) {
+				CPU_DX |= 0x0040; // Romaji enabled
+			}
+			CPU_DX |= 0x0080; // Katakana to Kanji conversion enabled
+		}
 		break;
 	default:
 		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -10290,12 +10563,43 @@ inline void pcbios_int_16h_14h()
 	}
 }
 
+inline void pcbios_int_16h_50h()
+{
+	static int mode = -1;
+	
+	if(mode == -1) {
+		if(get_input_code_page() == 932) {
+			mode = 81;
+		} else {
+			mode = 1;
+		}
+	}
+	switch(CPU_AL) {
+	case 0x00:
+		if(CPU_BX == 1 || CPU_BX == 81) {
+			mode = CPU_BX;
+			CPU_AL = 0x00;
+		} else {
+			CPU_AL = 0x01;
+		}
+		break;
+	case 0x01:
+		CPU_BX = mode;
+		CPU_AL = 0x00;
+	default:
+		unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x16, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_SET_C_FLAG(1);
+		break;
+	}
+}
+
 inline void pcbios_int_16h_51h()
 {
 	// http://radioc.web.fc2.com/column/ax/kb_bios.htm
 	pcbios_int_16h_02h();
 	
-	CPU_AH = (GetAsyncKeyState(VK_KANA) & 0x8000) ? 0x02 : 0;
+	// NOTE: toggle status of VK_KANA seems to be incorrect on Windows10
+	CPU_AH = (GetKeyState(VK_KANA) & 0x0001) ? 0x02 : 0;
 }
 
 inline void pcbios_int_16h_55h()
@@ -10327,6 +10631,67 @@ inline void pcbios_int_16h_6fh()
 		CPU_SET_C_FLAG(1);
 		break;
 	}
+}
+
+inline void pcbios_int_16h_f0h()
+{
+	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
+	if(hLibrary) {
+		typedef BOOL (WINAPI* BeepFunction)(DWORD, DWORD);
+		BeepFunction lpfnBeep = reinterpret_cast<BeepFunction>(::GetProcAddress(hLibrary, "Beep"));
+		if(lpfnBeep) {
+			lpfnBeep(750, 55 * CPU_BL); // frequency is unknown
+		}
+		FreeLibrary(hLibrary);
+	}
+}
+
+inline void pcbios_int_16h_f1h()
+{
+	// NOTE: toggle status of VK_KANA seems to be incorrect on Windows10
+	UINT8 kana = (GetKeyState(VK_KANA   ) & 0x0001) ? 0x10 : 0;
+	UINT8 num  = (GetKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
+	UINT8 caps = (GetKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
+	
+	if((CPU_AL & 0x10) != kana) {
+		// Hitting KANA key will make IME opened, so it needs to be closed
+		BOOL bImeOn = get_ime_open_status();
+		hit_key(VK_KANA);
+		if(!bImeOn) {
+			Sleep(10);
+			set_ime_open_status(FALSE);
+		}
+	}
+	if((CPU_AL & 0x20) != num) {
+		hit_key(VK_NUMLOCK);
+	}
+	if((CPU_AL & 0x40) != caps) {
+		hit_key(VK_CAPITAL);
+	}
+}
+
+inline void pcbios_int_16h_f5h()
+{
+	enter_key_buf_lock();
+	if(!pcbios_is_key_buffer_full()) {
+		pcbios_set_key_buffer(CPU_BL, CPU_BH);
+		CPU_AX = pcbios_get_key_buffer_count();
+	} else {
+		CPU_AX = 0xffff;
+	}
+	leave_key_buf_lock();
+}
+
+inline void pcbios_int_16h_f6h()
+{
+	enter_key_buf_lock();
+	if(!pcbios_is_key_buffer_full()) {
+		CPU_AX = pcbios_get_key_buffer_count();
+	} else {
+		CPU_AX = 0xffff;
+	}
+	leave_key_buf_lock();
+//	CPU_BX = 0x3130; // J-3100
 }
 
 UINT16 pcbios_printer_jis2sjis(UINT16 jis)
@@ -11992,22 +12357,6 @@ void set_country_info(country_info_t *ci, int size)
 	}
 }
 
-#ifndef SUBLANG_SWAHILI
-	#define SUBLANG_SWAHILI 0x01
-#endif
-#ifndef SUBLANG_TSWANA_BOTSWANA
-	#define SUBLANG_TSWANA_BOTSWANA 0x02
-#endif
-#ifndef SUBLANG_LITHUANIAN_LITHUANIA
-	#define SUBLANG_LITHUANIAN_LITHUANIA 0x01
-#endif
-#ifndef LANG_BANGLA
-	#define LANG_BANGLA 0x45
-#endif
-#ifndef SUBLANG_BANGLA_BANGLADESH
-	#define SUBLANG_BANGLA_BANGLADESH 0x02
-#endif
-
 static const struct {
 	int code;
 	USHORT usPrimaryLanguage;
@@ -13631,6 +13980,10 @@ inline void msdos_int_21h_50h()
 
 inline void msdos_int_21h_51h()
 {
+	process_t *process = msdos_process_info_get(current_psp, false);
+	if (process) {
+		MySetConsoleTitleA(process->module_path);
+	}
 	CPU_BX = current_psp;
 	process_t *process = msdos_process_info_get(current_psp, false);
 	if (process)
@@ -16388,8 +16741,8 @@ inline void msdos_int_33h_0001h()
 	}
 	if(mouse.hidden == 0) {
 		WORD bx = CPU_BX;
-		CPU_AX = 0;
-		CPU_BX = 0x100;
+		CPU_AX = 0x0000;
+		CPU_BX = 0x0100;
 		pcbios_int_15h_c2h();
 		CPU_BX = bx;
 	}
@@ -16400,8 +16753,8 @@ inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
 	WORD bx = CPU_BX;
-	CPU_AX = 0;
-	CPU_BX = 0;
+	CPU_AX = 0x0000;
+	CPU_BX = 0x0000;
 	pcbios_int_15h_c2h();
 	CPU_BX = bx;
 }
@@ -16409,8 +16762,8 @@ inline void msdos_int_33h_0002h()
 inline void msdos_int_33h_0003h()
 {
 	if(!mouse.enabled_ps2) { // if this is called then enable the mouse, zzt requires this
-		CPU_AX = 0;
-		CPU_BX = 0x100;
+		CPU_AX = 0x0000;
+		CPU_BX = 0x0100;
 		pcbios_int_15h_c2h();
 	}
 //	if(mouse.hidden > 0) {
@@ -16504,9 +16857,9 @@ inline void msdos_int_33h_000ch()
 	mouse.call_addr.w.l = CPU_DX;
 	mouse.call_addr.w.h = CPU_ES;
 	if(mouse.call_addr.dw) {
-		CPU_BX = 0x100;
+		CPU_BX = 0x0100;
 	} else {
-		CPU_BX = 0;
+		CPU_BX = 0x0000;
 	}
 	CPU_AX = 0;
 	pcbios_int_15h_c2h();
@@ -17758,6 +18111,87 @@ inline void msdos_int_67h_deh()
 #endif
 }
 
+inline void atok_int_6fh_01h()
+{
+//	if(!get_ime_open_status()) {
+		set_ime_open_status(TRUE);
+//	}
+#if 0
+	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
+	if(!(get_ime_conversion_mode() & IME_CMODE_ROMAN)) {
+		hit_key(VK_KANA);
+	}
+#endif
+	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE | IME_CMODE_ROMAN);
+}
+
+inline void atok_int_6fh_02h()
+{
+//	if(!get_ime_open_status()) {
+		set_ime_open_status(TRUE);
+//	}
+#if 0
+	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
+	if(get_ime_conversion_mode() & IME_CMODE_ROMAN) {
+		hit_key(VK_KANA);
+	}
+#endif
+	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE);
+}
+
+inline void atok_int_6fh_03h()
+{
+//	if(!get_ime_open_status()) {
+		set_ime_open_status(TRUE);
+//	}
+	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
+}
+
+inline void atok_int_6fh_04h()
+{
+//	if(!get_ime_open_status()) {
+		set_ime_open_status(TRUE);
+//	}
+	set_ime_conversion_mode(IME_CMODE_SYMBOL);
+}
+
+inline void atok_int_6fh_05h()
+{
+//	if(!get_ime_open_status()) {
+		set_ime_open_status(TRUE);
+//	}
+	set_ime_conversion_mode(IME_CMODE_CHARCODE);
+}
+
+inline void atok_int_6fh_0bh()
+{
+//	if(get_ime_open_status()) {
+		set_ime_open_status(FALSE);
+//	}
+	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
+}
+
+inline void atok_int_6fh_66h()
+{
+	if(get_ime_open_status()) {
+		// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
+		DWORD dwConv = get_ime_conversion_mode();
+		if(dwConv & IME_CMODE_CHARCODE) {
+			CPU_AL = 0x05;
+		} else if(dwConv & IME_CMODE_SYMBOL) {
+			CPU_AL = 0x04;
+		} else if(!(dwConv & IME_CMODE_FULLSHAPE)) {
+			CPU_AL = 0x03;
+		} else if(!(dwConv & IME_CMODE_ROMAN)) {
+			CPU_AL = 0x02;
+		} else {
+			CPU_AL = 0x01;
+		}
+	} else {
+		CPU_AL = 0x00;
+	}
+}
+
 #ifdef SUPPORT_XMS
 
 void msdos_xms_init()
@@ -18381,8 +18815,9 @@ void msdos_syscall(unsigned num)
 		cursor_moved = false;
 	}
 	// this is called from dummy loop to wait until a serive that waits input is done
-	if(!use_service_thread || !in_service)
+	if(!(use_service_thread && in_service)) {
 		ctrl_break_detected = ctrl_break_pressed = ctrl_c_pressed = false;
+	}
 	
 	switch(num) {
 	case 0x00:
@@ -18471,11 +18906,14 @@ void msdos_syscall(unsigned num)
 		case 0x1e: CPU_AL = 0x00; break; // flat-panel functions are not supported
 		case 0x1f: CPU_AL = 0x00; break; // xga functions are not supported
 		case 0x4f: pcbios_int_10h_4fh(); break;
+		case 0x50: pcbios_int_10h_50h(); break;
+//		case 0x52: pcbios_int_10h_52h(); break;
 		case 0x6f: break;
 		case 0x80: CPU_SET_C_FLAG(1); break; // unknown
 		case 0x81: CPU_SET_C_FLAG(1); break; // unknown
 		case 0x82: pcbios_int_10h_82h(); break;
 		case 0x83: pcbios_int_10h_83h(); break;
+		case 0x85: pcbios_int_10h_85h(); break;
 		case 0x8b: break;
 		case 0x8c: CPU_SET_C_FLAG(1); break; // unknown
 		case 0x8d: CPU_SET_C_FLAG(1); break; // unknown
@@ -18622,11 +19060,16 @@ void msdos_syscall(unsigned num)
 		case 0x12: pcbios_int_16h_12h(); break;
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
+		case 0x50: pcbios_int_16h_50h(); break;
 		case 0x51: pcbios_int_16h_51h(); break;
 		case 0x55: pcbios_int_16h_55h(); break;
 		case 0x6f: pcbios_int_16h_6fh(); break;
 		case 0xda: break; // unknown
 		case 0xdb: break; // unknown
+		case 0xf0: pcbios_int_16h_f0h(); break;
+		case 0xf1: pcbios_int_16h_f1h(); break;
+		case 0xf5: pcbios_int_16h_f5h(); break;
+		case 0xf6: pcbios_int_16h_f6h(); break;
 		case 0xff: break; // unknown
 		default:
 			unimplemented_16h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -19096,9 +19539,47 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
+	case 0x64:
+		// dummy interrupt for end of alter page map and call
+		{
+			UINT16 handles[4], pages[4];
+			
+			// pop old mapping data in new mapping
+			for(int i = 0; i < 4; i++) {
+				pages  [3 - i] = CPU_POP();
+				handles[3 - i] = CPU_POP();
+			}
+			
+			// restore old mapping
+			for(int i = 0; i < 4; i++) {
+				UINT16 handle = handles[i];
+				UINT16 page   = pages  [i];
+				
+				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
+					ems_map_page(i, handle, page);
+				} else {
+					ems_unmap_page(i);
+				}
+			}
+			// do ret_far (pop cs/ip) in old mapping
+		}
+		break;
 	case 0x65:
-		// dummy interrupt for EMS (int 67h)
+		// dummy interrupt for ATOK5 (int 6fh) and EMS (int 67h)
 		switch(CPU_AH) {
+		// ATOK5
+		case 0x01: atok_int_6fh_01h(); break;
+		case 0x02: atok_int_6fh_02h(); break;
+		case 0x03: atok_int_6fh_03h(); break;
+		case 0x04: atok_int_6fh_04h(); break;
+		case 0x05: atok_int_6fh_05h(); break;
+		case 0x0b: atok_int_6fh_0bh(); break;
+		case 0x0f: break;
+		case 0x10: break;
+		case 0x11: break;
+		case 0x12: break;
+		case 0x66: atok_int_6fh_66h(); break;
+		// EMS
 		case 0x40: msdos_int_67h_40h(); break;
 		case 0x41: msdos_int_67h_41h(); break;
 		case 0x42: msdos_int_67h_42h(); break;
@@ -19322,31 +19803,12 @@ void msdos_syscall(unsigned num)
 			}
 		}
 		break;
+/*
 	case 0x6f:
-		// dummy interrupt for end of alter page map and call
-		{
-			UINT16 handles[4], pages[4];
-			
-			// pop old mapping data in new mapping
-			for(int i = 0; i < 4; i++) {
-				pages  [3 - i] = CPU_POP();
-				handles[3 - i] = CPU_POP();
-			}
-			
-			// restore old mapping
-			for(int i = 0; i < 4; i++) {
-				UINT16 handle = handles[i];
-				UINT16 page   = pages  [i];
-				
-				if(handle >= 1 && handle <= MAX_EMS_HANDLES && ems_handles[handle].allocated && page < ems_handles[handle].pages) {
-					ems_map_page(i, handle, page);
-				} else {
-					ems_unmap_page(i);
-				}
-			}
-			// do ret_far (pop cs/ip) in old mapping
-		}
+		// int 6fh handler is in ATOK5 device driver and it calls int 65h
+		// NOTE: some softwares get address of int 6fh handler and recognize the address is in ATOK5 device driver
 		break;
+*/
 	case 0x70:
 	case 0x71:
 	case 0x72:
@@ -19377,7 +19839,13 @@ void msdos_syscall(unsigned num)
 
 int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 {
+	// NOTE: global variables will be automatically initialized to zero in usual C++
+	// so I comment-out some memset(), but don't remove them to clarify the intention of initialization
+	
 	// init file handler
+#if 0
+	memset(file_handler, 0, sizeof(file_handler));
+#endif
 	msdos_file_handler_open(0, "STDIN", _isatty(0), 0, 0x80d3, 0);
 	msdos_file_handler_open(1, "STDOUT", _isatty(1), 1, 0x80d3, 0);
 	msdos_file_handler_open(2, "STDERR", _isatty(2), 1, 0x80d3, 0);
@@ -19399,6 +19867,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	_dup2(4, DUP_STDPRN);
 	
 	// init mouse
+#if 0
+	memset(&mouse, 0, sizeof(mouse));
+#endif
 	mouse.enabled = true;	// from DOSBox
 	mouse.hidden = 1;	// hidden in default ???
 	mouse.old_hidden = 1;	// from DOSBox
@@ -19412,8 +19883,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_xms_init();
 #endif
 	
+#if 0
+	// init process
+	memset(process, 0, sizeof(process));
+#endif
+	
 	// init dtainfo
 	msdos_dta_info_init();
+	
+#if 0
+	// init memory
+	memset(mem, 0, sizeof(mem));
+#endif
 	
 	// bios data area
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -19525,6 +20006,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 1) = i;
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 3) = IRET_TOP >> 4;
 	}
+	
+	// dummy ATOK5 device
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ATOK_SIZE >> 4);
+	ATOK_TOP = seg << 4;
+	seg += ATOK_SIZE >> 4;
 	
 	// dummy xms/ems device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
@@ -19814,6 +20300,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
 	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
+	*(UINT16 *)(mem + 4 * 0x6f + 0) = 0x0012;	// xxxx:0012 ATOK5
+	*(UINT16 *)(mem + 4 * 0x6f + 2) = ATOK_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 irq12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
 	for(int i = 0x50; i < 0x60; i++) {		// desqview wants 0x50-0x58 to point at the same address
@@ -19822,7 +20310,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 4 * 0xbf + 0) = 0x0000;	// 123R3 wants a null vector
 	*(UINT16 *)(mem + 4 * 0xbf + 2) = 0x0000;
 	
-	// dummy devices (NUL -> CON -> ... -> CONFIG$ -> EMMXXXX0)
+	// dummy devices (NUL -> CON -> ... -> $IBMADSP -> FP$ATOK6 -> EMMXXXX0)
 	static const struct {
 		UINT16 attributes;
 		const char *dev_name;
@@ -19860,13 +20348,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		last = device;
 	}
 	if(last != NULL) {
-		if(support_ems) {
-			last->next_driver.w.l = 0;
-			last->next_driver.w.h = XMS_TOP >> 4;
-		} else {
-			last->next_driver.w.l = 0xffff;
-			last->next_driver.w.h = 0xffff;
-		}
+		last->next_driver.w.l = 0x0000;
+		last->next_driver.w.h = ATOK_TOP >> 4;
 	}
 	memcpy(mem + DEVICE_TOP + DEVICE_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
@@ -19928,6 +20411,26 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 #endif
 	dos_info->ext_mem_size = (min(MAX_MEM, 0x4000000) - 0x100000) >> 10;
 	
+	// ATOK5 (int 6fh)
+	device_t *atok_device = (device_t *)(mem + ATOK_TOP);
+	if(support_ems) {
+		atok_device->next_driver.w.l = 0x0000;
+		atok_device->next_driver.w.h = XMS_TOP >> 4;
+	} else {
+		atok_device->next_driver.w.l = 0xffff;
+		atok_device->next_driver.w.h = 0xffff;
+	}
+	atok_device->attributes = 0xc000;
+	atok_device->strategy = ATOK_SIZE - sizeof(dummy_device_routine);
+	atok_device->interrupt = ATOK_SIZE - sizeof(dummy_device_routine) + 6;
+	memcpy(atok_device->dev_name, "FP$ATOK6", 8);
+	
+	mem[ATOK_TOP + 0x12] = 0xcd;	// int 65h (dummy)
+	mem[ATOK_TOP + 0x13] = 0x65;
+	mem[ATOK_TOP + 0x14] = 0xcf;	// iret
+	memcpy(mem + ATOK_TOP + 0x15, "ATOK", 4);
+	memcpy(mem + ATOK_TOP + ATOK_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
+	
 	// ems (int 67h) and xms
 	if(support_ems) {
 		device_t *xms_device = (device_t *)(mem + XMS_TOP);
@@ -19937,7 +20440,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		xms_device->strategy = XMS_SIZE - sizeof(dummy_device_routine);
 		xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
 		memcpy(xms_device->dev_name, "EMMXXXX0", 8);
-	
+		
 		mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
 		mem[XMS_TOP + 0x13] = 0x65;
 		mem[XMS_TOP + 0x14] = 0xcf;	// iret
@@ -20005,8 +20508,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x21] = 0xff;
 	mem[DUMMY_TOP + 0x22] = 0xff;
 	mem[DUMMY_TOP + 0x23] = 0xff;
-	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 6fh (dummy)
-	mem[DUMMY_TOP + 0x25] = 0x6f;
+	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 64h (dummy)
+	mem[DUMMY_TOP + 0x25] = 0x64;
 	mem[DUMMY_TOP + 0x26] = 0xcb;	// retf
 	
 	// call int 29h routine
@@ -20015,7 +20518,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
 	
 	// VCPI entry point
-	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 65h
+	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 65h (dummy)
 	mem[DUMMY_TOP + 0x2b] = 0x65;
 	mem[DUMMY_TOP + 0x2c] = 0xcb;	// retf
 	
@@ -22511,8 +23014,9 @@ void debugger_write_io_byte(UINT32 addr, UINT8 val)
 {
 #ifdef ENABLE_DEBUG_IOPORT
 	if(fp_debug_log != NULL) {
-		if(!use_service_thread || addr != 0xf7)
+		if(!(use_service_thread && addr == 0xf7)) {
 			fprintf(fp_debug_log, "outb %04X, %02X\n", addr, val);
+		}
 	}
 #endif
 	switch(addr) {

@@ -416,6 +416,7 @@ union XMM_REG {
 	UINT32 m_cpu_version;
 	UINT32 m_feature_flags;
 	UINT64 m_tsc;
+	UINT64 m_rdtsc;
 	UINT64 m_perfctr[2];
 
 	// FPU
@@ -1436,7 +1437,11 @@ UINT64 pentium_msr_read(UINT32 offset,UINT8 *valid_msr)
 	case 0x10:
 		*valid_msr = 1;
 		popmessage("RDMSR: Reading TSC");
+#ifdef SUPPORT_RDTSC
 		return m_tsc;
+#else
+		return m_tsc + (__rdtsc() - m_rdtsc);
+#endif
 	// Event Counters (TODO)
 	case 0x11:  // CESR
 		*valid_msr = 1;
@@ -1478,6 +1483,9 @@ void pentium_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 	// Time Stamp Counter
 	case 0x10:
 		m_tsc = data;
+#ifndef SUPPORT_RDTSC
+		m_rdtsc = __rdtsc();
+#endif
 		popmessage("WRMSR: Writing to TSC");
 		*valid_msr = 1;
 		break;
@@ -1525,7 +1533,11 @@ UINT64 p6_msr_read(UINT32 offset,UINT8 *valid_msr)
 	case 0x10:
 		*valid_msr = 1;
 		popmessage("RDMSR: Reading TSC");
+#ifdef SUPPORT_RDTSC
 		return m_tsc;
+#else
+		return m_tsc + (__rdtsc() - m_rdtsc);
+#endif
 	// Performance Counters (TODO)
 	case 0xc1:  // PerfCtr0
 		*valid_msr = 1;
@@ -1548,6 +1560,9 @@ void p6_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 	// Time Stamp Counter
 	case 0x10:
 		m_tsc = data;
+#ifndef SUPPORT_RDTSC
+		m_rdtsc = __rdtsc();
+#endif
 		popmessage("WRMSR: Writing to TSC");
 		*valid_msr = 1;
 		break;

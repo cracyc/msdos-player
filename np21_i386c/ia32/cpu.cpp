@@ -202,10 +202,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			} else if (CPU_INST_REPUSE != 0xf2) {
 				/* repe */
@@ -217,10 +219,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			} else {
 				/* repne */
@@ -232,10 +236,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			}
 		}
@@ -251,10 +257,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			} else if (CPU_INST_REPUSE != 0xf2) {
 				/* repe */
@@ -266,10 +274,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			} else {
 				/* repne */
@@ -281,10 +291,12 @@ exec_1step(void)
 #endif
 						break;
 					}
+#ifdef USE_CLOCK
 					if (CPU_REMCLOCK <= 0) {
 						CPU_EIP = CPU_PREV_EIP;
 						break;
 					}
+#endif
 				}
 			}
 		}

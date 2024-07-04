@@ -365,7 +365,9 @@ void CPU_EXECUTE()
 	}
 #endif
 
+#ifdef USE_CLOCK
 	CPU_REMCLOCK = CPU_BASECLOCK = 1;
+#endif
 	CPU_EXEC();
 //	if(nmi_pending) {
 //		CPU_INTERRUPT(2, 0);

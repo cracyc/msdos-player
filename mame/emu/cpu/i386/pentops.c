@@ -94,7 +94,11 @@ static void PENTIUMOP(wrmsr)()          // Opcode 0x0f 30
 
 static void PENTIUMOP(rdtsc)()          // Opcode 0x0f 31
 {
+#ifdef SUPPORT_RDTSC
 	UINT64 ts = m_tsc + (m_base_cycles - m_cycles);
+#else
+	UINT64 ts = m_tsc + (__rdtsc() - m_rdtsc);
+#endif
 	REG32(EAX) = (UINT32)(ts);
 	REG32(EDX) = (UINT32)(ts >> 32);
 
