@@ -241,7 +241,17 @@ HWND MyImmGetDefaultIMEWnd(HWND hWnd)
 	return hResult;
 }
 
-void KeyOnOff(BYTE bVk)
+BOOL KeyPressed(int vk)
+{
+	return ((GetAsyncKeyState(vk) & 0x8000) != 0);
+}
+
+BOOL KeyLocked(int vk)
+{
+	return ((GetKeyState(vk) & 0x0001) != 0);
+}
+
+void KeyOnOff(UINT vk)
 {
 	HMODULE hLibrary = LoadLibraryA("User32.dll");
 	if(hLibrary) {
@@ -250,9 +260,9 @@ void KeyOnOff(BYTE bVk)
 		MapVirtualKeyFunction lpfnMapVirtualKey = reinterpret_cast<MapVirtualKeyFunction>(::GetProcAddress(hLibrary, "MapVirtualKeyA"));
 		KeybdEventFunction lpfnKeybdEvent = reinterpret_cast<KeybdEventFunction>(::GetProcAddress(hLibrary, "keybd_event"));
 		if(lpfnMapVirtualKey && lpfnKeybdEvent) {
-			BYTE bScan = lpfnMapVirtualKey(bVk, 0);
-			lpfnKeybdEvent(bVk, bScan, 0, 0);
-			lpfnKeybdEvent(bVk, bScan, KEYEVENTF_KEYUP, 0);
+			UINT scan = lpfnMapVirtualKey(vk, 0);
+			lpfnKeybdEvent(vk, scan, 0, 0);
+			lpfnKeybdEvent(vk, scan, KEYEVENTF_KEYUP, 0);
 		}
 		FreeLibrary(hLibrary);
 	}
@@ -3108,6 +3118,27 @@ HDC get_console_window_device_context()
 	return GetDC(get_console_window_handle());
 }
 
+USHORT get_message_lang()
+{
+	if(active_code_page == 932) {
+		return LANG_JAPANESE;
+	} else if(active_code_page == 949) {
+		return LANG_KOREAN;
+	} else if(active_code_page == 850 || active_code_page == 860) {
+		switch(PRIMARYLANGID(GetUserDefaultLangID())) {
+		case LANG_FRENCH:
+			return LANG_FRENCH;
+		case LANG_GERMAN:
+			return LANG_GERMAN;
+		case LANG_SPANISH:
+			return LANG_SPANISH;
+		case LANG_PORTUGUESE:
+			return LANG_PORTUGUESE;
+		}
+	}
+	return LANG_ENGLISH;
+}
+
 UINT get_input_code_page()
 {
 	return GetConsoleCP();
@@ -4636,278 +4667,6 @@ bool update_key_buffer()
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
-
-static const struct {
-	const char *name;
-	DWORD lcid;
-	const char *std;
-	const char *dlt;
-} tz_table[] = {
-	// https://science.ksc.nasa.gov/software/winvn/userguide/3_1_4.htm
-//	0	GMT		Greenwich Mean Time		GMT0
-	{"GMT Standard Time",			0x0809, "GMT", "BST"},		// (UTC+00:00) GB London (en-gb)
-	{"GMT Standard Time",			0x1809, "GMT", "IST"},		// (UTC+00:00) IE Dublin (en-ie)
-	{"GMT Standard Time",			0x0000, "WET", "WES"},		// (UTC+00:00) PT Lisbon
-	{"Greenwich Standard Time",		0x0000, "GMT", "GST"},		// (UTC+00:00) IS Reykjavik
-//	2	FST	FDT	Fernando De Noronha Std		FST2FDT
-	{"Mid-Atlantic Standard Time",		0x0416, "FST", "FDT"},		// (UTC-02:00) BR Noronha (pt-br)
-	{"UTC-02",				0x0416, "FST", "FDT"},		// (UTC-02:00) BR Noronha (pt-br)
-//	3	BST		Brazil Standard Time		BST3
-	{"Bahia Standard Time",			0x0000, "BST", "BDT"},		// (UTC-03:00) BR Bahia
-	{"SA Eastern Standard Time",		0x0000, "BST", "BDT"},		// (UTC-03:00) BR Fortaleza
-	{"Tocantins Standard Time",		0x0000, "BST", "BDT"},		// (UTC-03:00) BR Palmas
-//	3	EST	EDT	Eastern Standard (Brazil)	EST3EDT
-	{"E. South America Standard Time",	0x0000, "EST", "EDT"},		// (UTC-03:00) BR Sao Paulo
-//	3	GST		Greenland Standard Time		GST3
-	{"Greenland Standard Time",		0x0000, "GST", "GDT"},		// (UTC-03:00) GL Godthab
-//	3:30	NST	NDT	Newfoundland Standard Time	NST3:30NDT
-	{"Newfoundland Standard Time",		0x0000, "NST", "NDT"},		// (UTC-03:30) CA St.Johns
-//	4	AST	ADT	Atlantic Standard Time		AST4ADT
-	{"Atlantic Standard Time",		0x0000, "AST", "ADT"},		// (UTC-04:00) CA Halifax
-//	4	WST	WDT	Western Standard (Brazil)	WST4WDT
-	{"Central Brazilian Standard Time",	0x0000, "WST", "WDT"},		// (UTC-04:00) BR Cuiaba
-	{"SA Western Standard Time",		0x0000, "WST", "WDT"},		// (UTC-04:00) BR Manaus
-//	5	EST	EDT	Eastern Standard Time	 	EST5EDT
-	{"Eastern Standard Time",		0x0000, "EST", "EDT"},		// (UTC-05:00) US New York
-	{"Eastern Standard Time (Mexico)",	0x0000, "EST", "EDT"},		// (UTC-05:00) MX Cancun
-	{"US Eastern Standard Time",		0x0000, "EST", "EDT"},		// (UTC-05:00) US Indianapolis
-//	5	CST	CDT	Chile Standard Time		CST5CDT
-	{"Pacific SA Standard Time",		0x0000, "CST", "CDT"},		// (UTC-04:00) CL Santiago
-//	5	AST	ADT	Acre Standard Time		AST5ADT
-	{"SA Pacific Standard Time",		0x0000, "AST", "ADT"},		// (UTC-05:00) BR Rio Branco
-//	5	CST	CDT	Cuba Standard Time		CST5CDT
-	{"Cuba Standard Time",			0x0000, "CST", "CDT"},		// (UTC-05:00) CU Havana
-//	6	CST	CDT	Central Standard Time		CST6CDT
-	{"Canada Central Standard Time",	0x0000, "CST", "CDT"},		// (UTC-06:00) CA Regina
-	{"Central Standard Time",		0x0000, "CST", "CDT"},		// (UTC-06:00) US Chicago
-	{"Central Standard Time (Mexico)",	0x0000, "CST", "CDT"},		// (UTC-06:00) MX Mexico City
-//	6	EST	EDT	Easter Island Standard		EST6EDT
-	{"Easter Island Standard Time",		0x0000, "EST", "EDT"},		// (UTC-06:00) CL Easter
-//	7	MST	MDT	Mountain Standard Time		MST7MDT
-	{"Mountain Standard Time",		0x0000, "MST", "MDT"},		// (UTC-07:00) US Denver
-	{"Mountain Standard Time (Mexico)",	0x0000, "MST", "MDT"},		// (UTC-07:00) MX Chihuahua
-	{"US Mountain Standard Time",		0x0000, "MST", "MDT"},		// (UTC-07:00) US Phoenix
-//	8	PST	PDT	Pacific Standard Time		PST8PDT
-	{"Pacific Standard Time",		0x0000, "PST", "PDT"},		// (UTC-08:00) US Los Angeles
-	{"Pacific Standard Time (Mexico)",	0x0000, "PST", "PDT"},		// (UTC-08:00) MX Tijuana
-//	9	AKS	AKD	Alaska Standard Time		AKS9AKD
-//	9	YST	YDT	Yukon Standard Time		YST9YST
-	{"Alaskan Standard Time",		0x0000, "AKS", "AKD"},		// (UTC-09:00) US Anchorage
-//	10	HST	HDT	Hawaii Standard Time		HST10HDT
-	{"Aleutian Standard Time",		0x0000, "HST", "HDT"},		// (UTC-10:00) US Aleutian
-	{"Hawaiian Standard Time",		0x0000, "HST", "HDT"},		// (UTC-10:00) US Honolulu
-//	11	SST		Samoa Standard Time		SST11
-	{"Samoa Standard Time",			0x0000, "SST", "SDT"},		// (UTC-11:00) US Samoa
-//	-12	NZS	NZD	New Zealand Standard Time	NZS-12NZD
-	{"New Zealand Standard Time",		0x0000, "NZS", "NZD"},		// (UTC+12:00) NZ Auckland
-//	-10	GST		Guam Standard Time		GST-10
-	{"West Pacific Standard Time",		0x0000, "GST", "GDT"},		// (UTC+10:00) GU Guam
-//	-10	EAS	EAD	Eastern Australian Standard	EAS-10EAD
-	{"AUS Eastern Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Sydney
-	{"E. Australia Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Brisbane
-	{"Tasmania Standard Time",		0x0000, "EAS", "EAD"},		// (UTC+10:00) AU Hobart
-//	-9:30	CAS	CAD	Central Australian Standard	CAS-9:30CAD
-	{"AUS Central Standard Time",		0x0000, "CAS", "CAD"},		// (UTC+09:30) AU Darwin
-	{"Cen. Australia Standard Time",	0x0000, "CAS", "CAD"},		// (UTC+09:30) AU Adelaide
-//	-9	JST		Japan Standard Time		JST-9
-	{"Tokyo Standard Time",			0x0000, "JST", "JDT"},		// (UTC+09:00) JP Tokyo
-//	-9	KST	KDT	Korean Standard Time		KST-9KDT
-	{"Korea Standard Time",			0x0000, "KST", "KDT"},		// (UTC+09:00) KR Seoul
-	{"North Korea Standard Time",		0x0000, "KST", "KDT"},		// (UTC+09:00) KP Pyongyang
-//	-8	HKT		Hong Kong Time			HKT-8
-	{"China Standard Time",			0x0C04, "HKT", "HKS"},		// (UTC+08:00) HK Hong Kong (zh-hk)
-//	-8	CCT		China Coast Time		CCT-8
-	{"China Standard Time",			0x0000, "CCT", "CDT"},		// (UTC+08:00) CN Shanghai
-	{"Taipei Standard Time",		0x0000, "CCT", "CDT"},		// (UTC+08:00) TW Taipei
-//	-8	SST		Singapore Standard Time		SST-8
-	{"Singapore Standard Time",		0x0000, "SST", "SDT"},		// (UTC+08:00) SG Singapore
-//	-8	WAS	WAD	Western Australian Standard	WAS-8WAD
-	{"Aus Central W. Standard Time",	0x0000, "WAS", "WAD"},		// (UTC+08:45) AU Eucla
-	{"W. Australia Standard Time",		0x0000, "WAS", "WAD"},		// (UTC+08:00) AU Perth
-//	-7:30	JT		Java Standard Time		JST-7:30
-//	-7	NST		North Sumatra Time		NST-7
-	{"SE Asia Standard Time",		0x0000, "NST", "NDT"},		// (UTC+07:00) ID Jakarta
-//	-5:30	IST		Indian Standard Time		IST-5:30
-	{"India Standard Time",			0x0000, "IST", "IDT"},		// (UTC+05:30) IN Calcutta
-//	-3:30	IST	IDT	Iran Standard Time		IST-3:30IDT
-	{"Iran Standard Time",			0x0000, "IST", "IDT"},		// (UTC+03:30) IR Tehran
-//	-3	MSK	MSD	Moscow Winter Time		MSK-3MSD
-	{"Belarus Standard Time",		0x0000, "MSK", "MSD"},		// (UTC+03:00) BY Minsk
-	{"Russian Standard Time",		0x0000, "MSK", "MSD"},		// (UTC+03:00) RU Moscow
-//	-2	EET		Eastern Europe Time		EET-2
-	{"E. Europe Standard Time",		0x0000, "EET", "EES"},		// (UTC+02:00) MD Chisinau
-	{"FLE Standard Time",			0x0000, "EET", "EES"},		// (UTC+02:00) UA Kiev
-	{"GTB Standard Time",			0x0000, "EET", "EES"},		// (UTC+02:00) RO Bucharest
-	{"Kaliningrad Standard Time",		0x0000, "EET", "EES"},		// (UTC+02:00) RU Kaliningrad
-//	-2	IST	IDT	Israel Standard Time		IST-2IDT
-	{"Israel Standard Time",		0x0000, "IST", "IDT"},		// (UTC+02:00) IL Jerusalem
-//	-1	MEZ	MES	Middle European Time		MEZ-1MES
-//	-1	SWT	SST	Swedish Winter Time		SWT-1SST
-//	-1	FWT	FST	French Winter Time		FWT-1FST
-//	-1	CET	CES	Central European Time		CET-1CES
-	{"Central Europe Standard Time",	0x0000, "CET", "CES"},		// (UTC+01:00) HU Budapest
-	{"Central European Standard Time",	0x0000, "CET", "CES"},		// (UTC+01:00) PL Warsaw
-	{"Romance Standard Time",		0x0000, "CET", "CES"},		// (UTC+01:00) FR Paris
-	{"W. Europe Standard Time",		0x0000, "CET", "CES"},		// (UTC+01:00) DE Berlin
-//	-1	WAT	 	West African Time		WAT-1
-	{"Namibia Standard Time",		0x0000, "WAT", "WAS"},		// (UTC+01:00) NA Windhoek
-	{"W. Central Africa Standard Time",	0x0000, "WAT", "WAS"},		// (UTC+01:00) NG Lagos
-//	0	UTC		Universal Coordinated Time	UTC0
-	{"UTC",					0x0000, "UTC", ""   },		// (UTC+00:00) GMT+0
-	{"UTC-02",				0x0000, "UTC", ""   },		// (UTC-02:00) GMT+2
-	{"UTC-08",				0x0000, "UTC", ""   },		// (UTC-08:00) GMT+8
-	{"UTC-09",				0x0000, "UTC", ""   },		// (UTC-09:00) GMT+9
-	{"UTC-11",				0x0000, "UTC", ""   },		// (UTC-11:00) GMT+11
-	{"UTC+12",				0x0000, "UTC", ""   },		// (UTC+12:00) GMT-12
-};
-
-// FIXME: consider to build on non-Japanese environment :-(
-// message_japanese string must be in shift-jis
-
-static const struct {
-	UINT16 code;
-	const char *message_english;
-	const char *message_japanese;
-} standard_error_table[] = {
-	{0x01,	"Invalid function", "無効なファンクションです."},
-	{0x02,	"File not found", "ファイルが見つかりません."},
-	{0x03,	"Path not found", "パスが見つかりません."},
-	{0x04,	"Too many open files", "開かれているファイルが多すぎます."},
-	{0x05,	"Access denied", "アクセスは拒否されました."},
-	{0x06,	"Invalid handle", "無効なハンドルです."},
-	{0x07,	"Memory control blocks destroyed", "メモリ制御ブロックが破棄されました."},
-	{0x08,	"Insufficient memory", "メモリが足りません."},
-	{0x09,	"Invalid memory block address", "無効なメモリブロックのアドレスです."},
-	{0x0A,	"Invalid Environment", "無効な環境です."},
-	{0x0B,	"Invalid format", "無効なフォーマットです."},
-	{0x0C,	"Invalid function parameter", "無効なファンクションパラメータです."},
-	{0x0D,	"Invalid data", "無効なデータです."},
-	{0x0F,	"Invalid drive specification", "無効なドライブの指定です."},
-	{0x10,	"Attempt to remove current directory", "現在のディレクトリを削除しようとしました."},
-	{0x11,	"Not same device", "同じデバイスではありません."},
-	{0x12,	"No more files", "ファイルはこれ以上ありません."},
-	{0x13,	"Write protect error", "書き込み保護エラーです."},
-	{0x14,	"Invalid unit", "無効なユニットです."},
-	{0x15,	"Not ready", "準備ができていません."},
-	{0x16,	"Invalid device request", "無効なデバイス要求です."},
-	{0x17,	"Data error", "データエラーです."},
-	{0x18,	"Invalid device request parameters", "無効なデバイス要求のパラメータです."},
-	{0x19,	"Seek error", "シークエラーです."},
-	{0x1A,	"Invalid media type", "無効なメディアの種類です."},
-	{0x1B,	"Sector not found", "セクタが見つかりません."},
-	{0x1C,	"Printer out of paper error", "プリンタの用紙がありません."},
-	{0x1D,	"Write fault error", "書き込みエラーです."},
-	{0x1E,	"Read fault error", "読み取りエラーです."},
-	{0x1F,	"General failure", "エラーです."},
-	{0x20,	"Sharing violation", "共有違反です."},
-	{0x21,	"Lock violation", "ロック違反です."},
-	{0x22,	"Invalid disk change", "無効なディスクの交換です."},
-	{0x23,	"FCB unavailable", "FCB は使えません."},
-	{0x24,	"System resource exhausted", "システムリソ\ースはもう使えません."},
-	{0x25,	"Code page mismatch", "コード ページが一致しません."},
-	{0x26,	"Out of input", "入力が終わりました."},
-	{0x27,	"Insufficient disk space", "ディスクの空き領域が足りません."},
-/*
-	{0x32,	"Network request not supported", NULL},
-	{0x33,	"Remote computer not listening", NULL},
-	{0x34,	"Duplicate name on network", NULL},
-	{0x35,	"Network name not found", NULL},
-	{0x36,	"Network busy", NULL},
-	{0x37,	"Network device no longer exists", NULL},
-	{0x38,	"Network BIOS command limit exceeded", NULL},
-	{0x39,	"Network adapter hardware error", NULL},
-	{0x3A,	"Incorrect response from network", NULL},
-	{0x3B,	"Unexpected network error", NULL},
-	{0x3C,	"Incompatible remote adapter", NULL},
-	{0x3D,	"Print queue full", NULL},
-	{0x3E,	"Queue not full", NULL},
-	{0x3F,	"Not enough space to print file", NULL},
-	{0x40,	"Network name was deleted", NULL},
-	{0x41,	"Network: Access denied", NULL},
-	{0x42,	"Network device type incorrect", NULL},
-	{0x43,	"Network name not found", NULL},
-	{0x44,	"Network name limit exceeded", NULL},
-	{0x45,	"Network BIOS session limit exceeded", NULL},
-	{0x46,	"Temporarily paused", NULL},
-	{0x47,	"Network request not accepted", NULL},
-	{0x48,	"Network print/disk redirection paused", NULL},
-	{0x49,	"Network software not installed", NULL},
-	{0x4A,	"Unexpected adapter close", NULL},
-*/
-	{0x50,	"File exists", "ファイルは存在します."},
-	{0x52,	"Cannot make directory entry", "ディレクトリエントリを作成できません."},
-	{0x53,	"Fail on INT 24", "INT 24 で失敗しました."},
-	{0x54,	"Too many redirections", "リダイレクトが多すぎます."},
-	{0x55,	"Duplicate redirection", "リダイレクトが重複しています."},
-	{0x56,	"Invalid password", "パスワードが違います."},
-	{0x57,	"Invalid parameter", "パラメータの指定が違います."},
-	{0x58,	"Network data fault", "ネットワークデータのエラーです."},
-	{0x59,	"Function not supported by network", "ファンクションはネットワークでサポートされていません."},
-	{0x5A,	"Required system component not installe", "必要なシステム コンポーネントが組み込まれていません."},
-#ifdef SUPPORT_MSCDEX
-	{0x64,	"Unknown error", "不明なエラーです."},
-	{0x65,	"Not ready", "準備ができていません."},
-	{0x66,	"EMS memory no longer valid", "EMS メモリはもう有効ではありません."},
-	{0x67,	"CDROM not High Sierra or ISO-9660 format", "CDROM は High Sierra または ISO-9660 フォーマットではありません."},
-	{0x68,	"Door open", "レバーが閉まっていません."
-#endif
-	{0xB0,	"Volume is not locked", "ボリュームがロックされていません."},
-	{0xB1,	"Volume is locked in drive", "ボリュームがロックされています."},
-	{0xB2,	"Volume is not removable", "ボリュームは取り外しできません."},
-	{0xB4,	"Lock count has been exceeded", "ボリュームをこれ以上ロックできません."},
-	{0xB5,	"A valid eject request failed", "取り出しに失敗しました."},
-	{(UINT16)-1,
-		"Unknown error", "不明なエラーです."},
-};
-
-static const struct {
-	UINT16 code;
-	const char *message_english;
-	const char *message_japanese;
-} param_error_table[] = {
-	{0x01,	"Too many parameters", "パラメータが多すぎます."},
-	{0x02,	"Required parameter missing", "パラメータが足りません."},
-	{0x03,	"Invalid switch", "無効なスイッチです."},
-	{0x04,	"Invalid keyword", "無効なキーワードです."},
-	{0x06,	"Parameter value not in allowed range", "パラメータの値が範囲を超えています."},
-	{0x07,	"Parameter value not allowed", "そのパラメータの値は使えません."},
-	{0x08,	"Parameter value not allowed", "そのパラメータの値は使えません."},
-	{0x09,	"Parameter format not correct", "パラメータの書式が違います."},
-	{0x0A,	"Invalid parameter", "無効なパラメータです."},
-	{0x0B,	"Invalid parameter combination", "無効なパラメータの組み合わせです."},
-	{(UINT16)-1,
-		"Unknown error", "不明なエラーです."},
-};
-
-static const struct {
-	UINT16 code;
-	const char *message_english;
-	const char *message_japanese;
-} critical_error_table[] = {
-	{0x00,	"Write protect error", "書き込み保護エラーです."},
-	{0x01,	"Invalid unit", "無効なユニットです."},
-	{0x02,	"Not ready", "準備ができていません."},
-	{0x03,	"Invalid device request", "無効なデバイス要求です."},
-	{0x04,	"Data error", "データエラーです."},
-	{0x05,	"Invalid device request parameters", "無効なデバイス要求のパラメータです."},
-	{0x06,	"Seek error", "シークエラーです."},
-	{0x07,	"Invalid media type", "無効なメディアの種類です."},
-	{0x08,	"Sector not found", "セクタが見つかりません."},
-	{0x09,	"Printer out of paper error", "プリンタの用紙がありません."},
-	{0x0A,	"Write fault error", "書き込みエラーです."},
-	{0x0B,	"Read fault error", "読み取りエラーです."},
-	{0x0C,	"General failure", "エラーです."},
-	{0x0D,	"Sharing violation", "共有違反です."},
-	{0x0E,	"Lock violation", "ロック違反です."},
-	{0x0F,	"Invalid disk change", "無効なディスクの交換です."},
-	{0x10,	"FCB unavailable", "FCB は使えません."},
-	{0x11,	"System resource exhausted", "システムリソ\ースはもう使えません."},
-	{0x12,	"Code page mismatch", "コード ページが一致しません."},
-	{0x13,	"Out of input", "入力が終わりました."},
-	{0x14,	"Insufficient disk space", "ディスクの空き領域が足りません."},
-	{(UINT16)-1,
-		"Critical error", "致命的なエラーです."},
-};
 
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
@@ -10399,14 +10158,14 @@ inline void pcbios_int_16h_01h()
 
 inline void pcbios_int_16h_02h()
 {
-	CPU_AL  = (GetKeyState(VK_INSERT ) & 0x0001) ? 0x80 : 0;
-	CPU_AL |= (GetKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
-	CPU_AL |= (GetKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
-	CPU_AL |= (GetKeyState(VK_SCROLL ) & 0x0001) ? 0x10 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_MENU   ) & 0x8000) ? 0x08 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_CONTROL) & 0x8000) ? 0x04 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_LSHIFT ) & 0x8000) ? 0x02 : 0;
-	CPU_AL |= (GetAsyncKeyState(VK_RSHIFT ) & 0x8000) ? 0x01 : 0;
+	CPU_AL  = KeyLocked (VK_INSERT ) ? 0x80 : 0;
+	CPU_AL |= KeyLocked (VK_CAPITAL) ? 0x40 : 0;
+	CPU_AL |= KeyLocked (VK_NUMLOCK) ? 0x20 : 0;
+	CPU_AL |= KeyLocked (VK_SCROLL ) ? 0x10 : 0;
+	CPU_AL |= KeyPressed(VK_MENU   ) ? 0x08 : 0;
+	CPU_AL |= KeyPressed(VK_CONTROL) ? 0x04 : 0;
+	CPU_AL |= KeyPressed(VK_LSHIFT ) ? 0x02 : 0;
+	CPU_AL |= KeyPressed(VK_RSHIFT ) ? 0x01 : 0;
 }
 
 inline void pcbios_int_16h_03h()
@@ -10474,14 +10233,14 @@ inline void pcbios_int_16h_12h()
 {
 	pcbios_int_16h_02h();
 	
-	CPU_AH  = 0;//(GetAsyncKeyState(VK_SYSREQ  ) & 0x8000) ? 0x80 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_CAPITAL ) & 0x8000) ? 0x40 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x8000) ? 0x20 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_SCROLL  ) & 0x8000) ? 0x10 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_RMENU   ) & 0x8000) ? 0x08 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_RCONTROL) & 0x8000) ? 0x04 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_LMENU   ) & 0x8000) ? 0x02 : 0;
-	CPU_AH |= (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ? 0x01 : 0;
+	CPU_AH  = 0;//KeyPressed(VK_SYSREQ  ) ? 0x80 : 0;
+	CPU_AH |= KeyPressed(VK_CAPITAL ) ? 0x40 : 0;
+	CPU_AH |= KeyPressed(VK_NUMLOCK ) ? 0x20 : 0;
+	CPU_AH |= KeyPressed(VK_SCROLL  ) ? 0x10 : 0;
+	CPU_AH |= KeyPressed(VK_RMENU   ) ? 0x08 : 0;
+	CPU_AH |= KeyPressed(VK_RCONTROL) ? 0x04 : 0;
+	CPU_AH |= KeyPressed(VK_LMENU   ) ? 0x02 : 0;
+	CPU_AH |= KeyPressed(VK_LCONTROL) ? 0x01 : 0;
 }
 
 inline void pcbios_int_16h_13h()
@@ -10590,7 +10349,7 @@ inline void pcbios_int_16h_51h()
 	pcbios_int_16h_02h();
 	
 	// NOTE: toggle status of VK_KANA seems to be incorrect on Windows10
-	CPU_AH = (GetKeyState(VK_KANA) & 0x0001) ? 0x02 : 0;
+	CPU_AH = KeyLocked(VK_KANA) ? 0x02 : 0;
 }
 
 inline void pcbios_int_16h_55h()
@@ -10631,7 +10390,14 @@ inline void pcbios_int_16h_f0h()
 		typedef BOOL (WINAPI* BeepFunction)(DWORD, DWORD);
 		BeepFunction lpfnBeep = reinterpret_cast<BeepFunction>(::GetProcAddress(hLibrary, "Beep"));
 		if(lpfnBeep) {
-			lpfnBeep(750, 55 * CPU_BL); // frequency is unknown
+			DWORD freq = 0;
+			if(pit[2].mode == 3 && !pit[2].low_write && !pit[2].high_write) {
+				freq = (DWORD)((double)PIT_FREQ / PIT_COUNT_VALUE(2) + 0.5);
+			}
+			if(freq < 37 || freq > 32767) {
+				freq = 904;
+			}
+			lpfnBeep(freq, (DWORD)(54.9254 * CPU_BL + 0.5));
 		}
 		FreeLibrary(hLibrary);
 	}
@@ -10640,9 +10406,9 @@ inline void pcbios_int_16h_f0h()
 inline void pcbios_int_16h_f1h()
 {
 	// NOTE: toggle status of VK_KANA seems to be incorrect on Windows10
-	UINT8 kana = (GetKeyState(VK_KANA   ) & 0x0001) ? 0x10 : 0;
-	UINT8 num  = (GetKeyState(VK_NUMLOCK) & 0x0001) ? 0x20 : 0;
-	UINT8 caps = (GetKeyState(VK_CAPITAL) & 0x0001) ? 0x40 : 0;
+	UINT8 kana = KeyLocked(VK_KANA   ) ? 0x10 : 0;
+	UINT8 num  = KeyLocked(VK_NUMLOCK) ? 0x20 : 0;
+	UINT8 caps = KeyLocked(VK_CAPITAL) ? 0x40 : 0;
 	
 	if((CPU_AL & 0x10) != kana) {
 		// Hitting KANA key will make IME opened, so it needs to be closed
@@ -12347,166 +12113,6 @@ void set_country_info(country_info_t *ci, int size)
 		SetLocaleInfoA(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata);
 	}
 }
-
-static const struct {
-	int code;
-	USHORT usPrimaryLanguage;
-	USHORT usSubLanguage;
-} country_table[] = {
-	{0x001, LANG_ENGLISH, SUBLANG_ENGLISH_US},				// United States
-	{0x002, LANG_FRENCH, SUBLANG_FRENCH_CANADIAN},				// Canadian-French
-	{0x004, LANG_ENGLISH, SUBLANG_ENGLISH_CAN},				// Canada (English)
-	{0x007, LANG_RUSSIAN, SUBLANG_RUSSIAN_RUSSIA},				// Russia
-	{0x014, LANG_ARABIC, SUBLANG_ARABIC_EGYPT},				// Egypt
-	{0x01B, LANG_ZULU, SUBLANG_ZULU_SOUTH_AFRICA},				// South Africa
-//	{0x01B, LANG_XHOSA, SUBLANG_XHOSA_SOUTH_AFRICA},			// South Africa
-//	{0x01B, LANG_AFRIKAANS, SUBLANG_AFRIKAANS_SOUTH_AFRICA},		// South Africa
-//	{0x01B, LANG_ENGLISH, SUBLANG_ENGLISH_SOUTH_AFRICA},			// South Africa
-//	{0x01B, LANG_SOTHO, SUBLANG_SOTHO_NORTHERN_SOUTH_AFRICA},		// South Africa
-//	{0x01B, LANG_TSWANA, SUBLANG_TSWANA_SOUTH_AFRICA},			// South Africa
-	{0x01E, LANG_GREEK, SUBLANG_GREEK_GREECE},				// Greece
-	{0x01F, LANG_DUTCH, SUBLANG_DUTCH},					// Netherlands
-//	{0x01F, LANG_FRISIAN, SUBLANG_FRISIAN_NETHERLANDS},			// Netherlands
-	{0x020, LANG_DUTCH, SUBLANG_DUTCH_BELGIAN},				// Belgium
-//	{0x020, LANG_FRENCH, SUBLANG_FRENCH_BELGIAN},				// Belgium
-	{0x021, LANG_FRENCH, SUBLANG_FRENCH},					// France
-	{0x022, LANG_SPANISH, SUBLANG_SPANISH},					// Spain
-	{0x023, LANG_BULGARIAN, SUBLANG_BULGARIAN_BULGARIA},			// Bulgaria???
-	{0x024, LANG_HUNGARIAN, SUBLANG_HUNGARIAN_HUNGARY},			// Hungary (not supported by DR DOS 5.0)
-	{0x027, LANG_ITALIAN, SUBLANG_ITALIAN},					// Italy / San Marino / Vatican City
-	{0x028, LANG_ROMANIAN, SUBLANG_ROMANIAN_ROMANIA},			// Romania
-	{0x029, LANG_GERMAN, SUBLANG_GERMAN_SWISS},				// Switzerland / Liechtenstein
-//	{0x029, LANG_FRENCH, SUBLANG_FRENCH_SWISS},				// Switzerland / Liechtenstein
-//	{0x029, LANG_ITALIAN, SUBLANG_ITALIAN_SWISS},				// Switzerland / Liechtenstein
-	{0x02A, LANG_SLOVAK, SUBLANG_SLOVAK_SLOVAKIA},				// Czechoslovakia / Tjekia / Slovakia (not supported by DR DOS 5.0)
-	{0x02B, LANG_GERMAN, SUBLANG_GERMAN_AUSTRIAN},				// Austria (DR DOS 5.0)
-	{0x02C, LANG_ENGLISH, SUBLANG_ENGLISH_UK},				// United Kingdom
-	{0x02D, LANG_DANISH, SUBLANG_DANISH_DENMARK},				// Denmark
-	{0x02E, LANG_SWEDISH, SUBLANG_SWEDISH},					// Sweden
-//	{0x02E, LANG_SAMI, SUBLANG_SAMI_NORTHERN_SWEDEN},			// Sweden
-//	{0x02E, LANG_SAMI, SUBLANG_SAMI_LULE_SWEDEN},				// Sweden
-//	{0x02E, LANG_SAMI, SUBLANG_SAMI_SOUTHERN_SWEDEN},			// Sweden
-	{0x02F, LANG_NORWEGIAN, SUBLANG_NORWEGIAN_BOKMAL},			// Norway
-//	{0x02F, LANG_NORWEGIAN, SUBLANG_NORWEGIAN_NYNORSK},			// Norway
-//	{0x02F, LANG_SAMI, SUBLANG_SAMI_NORTHERN_NORWAY},			// Norway
-//	{0x02F, LANG_SAMI, SUBLANG_SAMI_LULE_NORWAY},				// Norway
-//	{0x02F, LANG_SAMI, SUBLANG_SAMI_SOUTHERN_NORWAY},			// Norway
-	{0x030, LANG_POLISH, SUBLANG_POLISH_POLAND},				// Poland (not supported by DR DOS 5.0)
-	{0x031, LANG_GERMAN, SUBLANG_GERMAN},					// Germany
-	{0x033, LANG_SPANISH, SUBLANG_SPANISH_PERU},				// Peru
-//	{0x033, LANG_QUECHUA, SUBLANG_QUECHUA_PERU},				// Peru
-	{0x034, LANG_SPANISH, SUBLANG_SPANISH_MEXICAN},				// Mexico
-	{0x035, LANG_SPANISH, SUBLANG_NEUTRAL},					// Cuba
-	{0x036, LANG_SPANISH, SUBLANG_SPANISH_ARGENTINA},			// Argentina
-	{0x037, LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN},			// Brazil (not supported by DR DOS 5.0)
-	{0x038, LANG_SPANISH, SUBLANG_SPANISH_CHILE},				// Chile
-	{0x039, LANG_SPANISH, SUBLANG_SPANISH_COLOMBIA},			// Columbia
-	{0x03A, LANG_SPANISH, SUBLANG_SPANISH_VENEZUELA},			// Venezuela
-	{0x03C, LANG_MALAY, SUBLANG_MALAY_MALAYSIA},				// Malaysia
-	{0x03D, LANG_ENGLISH, SUBLANG_ENGLISH_AUS},				// International English / Australia
-	{0x03E, LANG_INDONESIAN, SUBLANG_INDONESIAN_INDONESIA},			// Indonesia / East Timor
-	{0x03F, LANG_ENGLISH, SUBLANG_ENGLISH_PHILIPPINES},			// Philippines
-	{0x040, LANG_ENGLISH, SUBLANG_ENGLISH_NZ},				// New Zealand
-	{0x041, LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE},			// Singapore
-//	{0x041, LANG_ENGLISH, SUBLANG_ENGLISH_SINGAPORE},			// Singapore
-	{0x042, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan???
-	{0x051, LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN},				// Japan (DR DOS 5.0, MS-DOS 5.0+)
-	{0x052, LANG_KOREAN, SUBLANG_KOREAN},					// South Korea (DR DOS 5.0)
-	{0x054, LANG_VIETNAMESE, SUBLANG_VIETNAMESE_VIETNAM},			// Vietnam
-	{0x056, LANG_CHINESE_SIMPLIFIED, SUBLANG_CHINESE_SIMPLIFIED},		// China (MS-DOS 5.0+)
-	{0x058, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (MS-DOS 5.0+)
-	{0x05A, LANG_TURKISH, SUBLANG_TURKISH_TURKEY},				// Turkey (MS-DOS 5.0+)
-	{0x05B, LANG_HINDI, SUBLANG_HINDI_INDIA},				// India
-	{0x05C, LANG_URDU, SUBLANG_URDU_PAKISTAN},				// Pakistan
-	{0x05D, LANG_PASHTO, SUBLANG_PASHTO_AFGHANISTAN},			// Afghanistan
-//	{0x05D, LANG_DARI, SUBLANG_DARI_AFGHANISTAN},				// Afghanistan
-	{0x05E, LANG_SINHALESE, SUBLANG_SINHALESE_SRI_LANKA},			// Sri Lanka
-//	{0x05E, LANG_TAMIL, SUBLANG_TAMIL_SRI_LANKA},				// Sri Lanka
-	{0x062, LANG_PERSIAN, SUBLANG_PERSIAN_IRAN},				// Iran
-	{0x070, LANG_BELARUSIAN, SUBLANG_BELARUSIAN_BELARUS},			// Belarus
-	{0x0C8, LANG_THAI, SUBLANG_THAI_THAILAND},				// Thailand
-	{0x0D4, LANG_ARABIC, SUBLANG_ARABIC_MOROCCO},				// Morocco
-	{0x0D5, LANG_ARABIC, SUBLANG_ARABIC_ALGERIA},				// Algeria
-	{0x0D8, LANG_ARABIC, SUBLANG_ARABIC_TUNISIA},				// Tunisia
-	{0x0DA, LANG_ARABIC, SUBLANG_ARABIC_LIBYA},				// Libya
-	{0x0DD, LANG_WOLOF, SUBLANG_WOLOF_SENEGAL},				// Senegal
-//	{0x0DD, LANG_PULAR, SUBLANG_PULAR_SENEGAL},				// Senegal
-	{0x0EA, LANG_HAUSA, SUBLANG_HAUSA_NIGERIA_LATIN},			// Nigeria
-//	{0x0EA, LANG_YORUBA, SUBLANG_YORUBA_NIGERIA},				// Nigeria
-//	{0x0EA, LANG_IGBO, SUBLANG_IGBO_NIGERIA},				// Nigeria
-	{0x0FB, LANG_AMHARIC, SUBLANG_AMHARIC_ETHIOPIA},			// Ethiopia
-//	{0x0FB, LANG_TIGRINYA, SUBLANG_TIGRINYA_ETHIOPIA},			// Ethiopia
-	{0x0FE, LANG_SWAHILI, SUBLANG_SWAHILI},					// Kenya
-	{0x107, LANG_ENGLISH, SUBLANG_ENGLISH_ZIMBABWE},			// Zimbabwe
-	{0x10B, LANG_TSWANA, SUBLANG_TSWANA_BOTSWANA},				// Botswana
-	{0x12A, LANG_FAEROESE, SUBLANG_FAEROESE_FAROE_ISLANDS},			// Faroe Islands
-	{0x12B, LANG_GREENLANDIC, SUBLANG_GREENLANDIC_GREENLAND},		// Greenland
-	{0x15F, LANG_PORTUGUESE, SUBLANG_PORTUGUESE},				// Portugal
-	{0x160, LANG_LUXEMBOURGISH, SUBLANG_LUXEMBOURGISH_LUXEMBOURG},		// Luxembourg
-//	{0x160, LANG_GERMAN, SUBLANG_GERMAN_LUXEMBOURG},			// Luxembourg
-//	{0x160, LANG_FRENCH, SUBLANG_FRENCH_LUXEMBOURG},			// Luxembourg
-	{0x161, LANG_IRISH, SUBLANG_IRISH_IRELAND},				// Ireland
-//	{0x161, LANG_ENGLISH, SUBLANG_ENGLISH_IRELAND},				// Ireland
-	{0x162, LANG_ICELANDIC, SUBLANG_ICELANDIC_ICELAND},			// Iceland
-	{0x163, LANG_ALBANIAN, SUBLANG_ALBANIAN_ALBANIA},			// Albania
-	{0x164, LANG_MALTESE, SUBLANG_MALTESE_MALTA},				// Malta
-	{0x166, LANG_FINNISH, SUBLANG_FINNISH_FINLAND},				// Finland
-//	{0x166, LANG_SAMI, SUBLANG_SAMI_NORTHERN_FINLAND},			// Finland
-//	{0x166, LANG_SAMI, SUBLANG_SAMI_SKOLT_FINLAND},				// Finland
-//	{0x166, LANG_SAMI, SUBLANG_SAMI_INARI_FINLAND},				// Finland
-	{0x167, LANG_BULGARIAN, SUBLANG_BULGARIAN_BULGARIA},			// Bulgaria
-	{0x172, LANG_LITHUANIAN, SUBLANG_LITHUANIAN_LITHUANIA},			// Lithuania
-	{0x173, LANG_LATVIAN, SUBLANG_LATVIAN_LATVIA},				// Latvia
-	{0x174, LANG_ESTONIAN, SUBLANG_ESTONIAN_ESTONIA},			// Estonia
-	{0x17D, LANG_SERBIAN, SUBLANG_SERBIAN_LATIN},				// Serbia / Montenegro
-	{0x180, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia???
-	{0x181, LANG_SERBIAN, SUBLANG_SERBIAN_CROATIA},				// Croatia
-	{0x182, LANG_SLOVENIAN, SUBLANG_SLOVENIAN_SLOVENIA},			// Slovenia
-	{0x183, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_LATIN},	// Bosnia-Herzegovina (Latin)
-	{0x184, LANG_BOSNIAN, SUBLANG_BOSNIAN_BOSNIA_HERZEGOVINA_CYRILLIC},	// Bosnia-Herzegovina (Cyrillic)
-	{0x185, LANG_MACEDONIAN, SUBLANG_MACEDONIAN_MACEDONIA},			// FYR Macedonia
-	{0x1A5, LANG_CZECH, SUBLANG_CZECH_CZECH_REPUBLIC},			// Czech Republic
-	{0x1A6, LANG_SLOVAK, SUBLANG_SLOVAK_SLOVAKIA},				// Slovakia
-	{0x1F5, LANG_ENGLISH, SUBLANG_ENGLISH_BELIZE},				// Belize
-	{0x1F6, LANG_SPANISH, SUBLANG_SPANISH_GUATEMALA},			// Guatemala
-	{0x1F7, LANG_SPANISH, SUBLANG_SPANISH_EL_SALVADOR},			// El Salvador
-	{0x1F8, LANG_SPANISH, SUBLANG_SPANISH_HONDURAS},			// Honduras
-	{0x1F9, LANG_SPANISH, SUBLANG_SPANISH_NICARAGUA},			// Nicraragua
-	{0x1FA, LANG_SPANISH, SUBLANG_SPANISH_COSTA_RICA},			// Costa Rica
-	{0x1FB, LANG_SPANISH, SUBLANG_SPANISH_PANAMA},				// Panama
-	{0x24F, LANG_SPANISH, SUBLANG_SPANISH_BOLIVIA},				// Bolivia
-//	{0x24F, LANG_QUECHUA, SUBLANG_QUECHUA_BOLIVIA},				// Bolivia
-	{0x251, LANG_SPANISH, SUBLANG_SPANISH_ECUADOR},				// Ecuador
-//	{0x251, LANG_QUECHUA, SUBLANG_QUECHUA_ECUADOR},				// Ecuador
-	{0x253, LANG_SPANISH, SUBLANG_SPANISH_PARAGUAY},			// Paraguay
-	{0x256, LANG_SPANISH, SUBLANG_SPANISH_URUGUAY},				// Uruguay
-	{0x2A1, LANG_MALAY, SUBLANG_MALAY_BRUNEI_DARUSSALAM},			// Brunei Darussalam
-	{0x311, LANG_ARABIC, SUBLANG_NEUTRAL},					// Arabic (Middle East/Saudi Arabia/etc.)
-	{0x324, LANG_UKRAINIAN, SUBLANG_UKRAINIAN_UKRAINE},			// Ukraine
-	{0x352, LANG_KOREAN, SUBLANG_KOREAN},					// North Korea
-	{0x354, LANG_CHINESE, SUBLANG_CHINESE_HONGKONG},			// Hong Kong
-	{0x355, LANG_CHINESE, SUBLANG_CHINESE_MACAU},				// Macao
-	{0x357, LANG_KHMER, SUBLANG_KHMER_CAMBODIA},				// Cambodia
-	{0x370, LANG_BANGLA, SUBLANG_BANGLA_BANGLADESH},			// Bangladesh
-	{0x376, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (DOS 6.22+)
-	{0x3C0, LANG_DIVEHI, SUBLANG_DIVEHI_MALDIVES},				// Maldives
-	{0x3C1, LANG_ARABIC, SUBLANG_ARABIC_LEBANON},				// Lebanon
-	{0x3C2, LANG_ARABIC, SUBLANG_ARABIC_JORDAN},				// Jordan
-	{0x3C3, LANG_ARABIC, SUBLANG_ARABIC_SYRIA},				// Syrian Arab Republic
-	{0x3C4, LANG_ARABIC, SUBLANG_ARABIC_IRAQ},				// Ireq
-	{0x3C5, LANG_ARABIC, SUBLANG_ARABIC_KUWAIT},				// Kuwait
-	{0x3C6, LANG_ARABIC, SUBLANG_ARABIC_SAUDI_ARABIA},			// Saudi Arabia
-	{0x3C7, LANG_ARABIC, SUBLANG_ARABIC_YEMEN},				// Yemen
-	{0x3C8, LANG_ARABIC, SUBLANG_ARABIC_OMAN},				// Oman
-	{0x3CB, LANG_ARABIC, SUBLANG_ARABIC_UAE},				// United Arab Emirates
-	{0x3CC, LANG_HEBREW, SUBLANG_HEBREW_ISRAEL},				// Israel (Hebrew) (DR DOS 5.0,MS-DOS 5.0+)
-	{0x3CD, LANG_ARABIC, SUBLANG_ARABIC_BAHRAIN},				// Bahrain
-	{0x3CE, LANG_ARABIC, SUBLANG_ARABIC_QATAR},				// Qatar
-	{0x3D0, LANG_MONGOLIAN, SUBLANG_MONGOLIAN_CYRILLIC_MONGOLIA},		// Mongolia
-//	{0x3D0, LANG_MONGOLIAN, SUBLANG_MONGOLIAN_PRC},				// Mongolia
-	{0x3D1, LANG_NEPALI, SUBLANG_NEPALI_NEPAL},				// Nepal
-	{-1, 0, 0},
-};
 
 inline void msdos_int_21h_38h()
 {
@@ -15305,13 +14911,24 @@ inline void msdos_int_21h_dch()
 
 inline void msdos_int_24h()
 {
+	USHORT lang = get_message_lang();
 	const char *message = NULL;
 	int key = 0;
 	
 	for(int i = 0; i < array_length(critical_error_table); i++) {
 		if(critical_error_table[i].code == (CPU_DI & 0xff) || critical_error_table[i].code == (UINT16)-1) {
-			if(active_code_page == 932) {
-				message = critical_error_table[i].message_japanese;
+			if(lang == LANG_FRENCH) {
+				message = (const char *)critical_error_table[i].message_french;
+			} else if(lang == LANG_GERMAN) {
+				message = (const char *)critical_error_table[i].message_german;
+			} else if(lang == LANG_SPANISH) {
+				message = (const char *)critical_error_table[i].message_spanish;
+			} else if(lang == LANG_PORTUGUESE) {
+				message = (const char *)critical_error_table[i].message_brazilian;
+			} else if(lang == LANG_JAPANESE) {
+				message = (const char *)critical_error_table[i].message_japanese;
+			} else if(lang == LANG_KOREAN) {
+				message = (const char *)critical_error_table[i].message_korean;
 			}
 			if(message == NULL) {
 				message = critical_error_table[i].message_english;
@@ -15327,24 +14944,108 @@ inline void msdos_int_24h()
 	fprintf(stderr, "\n%s", message);
 	if(!(CPU_AH & 0x80)) {
 		if(CPU_AH & 0x01) {
-			fprintf(stderr, " %s %c", (active_code_page == 932) ? "書き込み中 ドライブ" : "writing drive", 'A' + CPU_AL);
+			if(lang == LANG_FRENCH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_french, 'A' + CPU_AL);
+			} else if(lang == LANG_GERMAN) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_german, 'A' + CPU_AL);
+			} else if(lang == LANG_SPANISH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_spanish, 'A' + CPU_AL);
+			} else if(lang == LANG_PORTUGUESE) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_brazilian, 'A' + CPU_AL);
+			} else if(lang == LANG_JAPANESE) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_japanese, 'A' + CPU_AL);
+			} else if(lang == LANG_KOREAN) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_korean, 'A' + CPU_AL);
+			} else {
+				fprintf(stderr, " %s %c", "writing drive", 'A' + CPU_AL);
+			}
 		} else {
-			fprintf(stderr, " %s %c", (active_code_page == 932) ? "読み取り中 ドライブ" : "reading drive", 'A' + CPU_AL);
+			if(lang == LANG_FRENCH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_french, 'A' + CPU_AL);
+			} else if(lang == LANG_GERMAN) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_german, 'A' + CPU_AL);
+			} else if(lang == LANG_SPANISH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_spanish, 'A' + CPU_AL);
+			} else if(lang == LANG_PORTUGUESE) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_brazilian, 'A' + CPU_AL);
+			} else if(lang == LANG_JAPANESE) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_japanese, 'A' + CPU_AL);
+			} else if(lang == LANG_KOREAN) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_korean, 'A' + CPU_AL);
+			} else {
+				fprintf(stderr, " %s %c", "reading drive", 'A' + CPU_AL);
+			}
 		}
 	}
 	fprintf(stderr, "\n");
 	
 	{
-		fprintf(stderr, "%s",   (active_code_page == 932) ? "中止 (A)" : "Abort");
+		if(lang == LANG_FRENCH) {
+			fprintf(stderr, "%s", (const char*)abort_french);
+		} else if(lang == LANG_GERMAN) {
+			fprintf(stderr, "%s", (const char*)abort_german);
+		} else if(lang == LANG_SPANISH) {
+			fprintf(stderr, "%s", (const char*)abort_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, "%s", (const char*)abort_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			fprintf(stderr, "%s", (const char*)abort_japanese);
+		} else if(lang == LANG_KOREAN) {
+			fprintf(stderr, "%s", (const char*)abort_korean);
+		} else {
+			fprintf(stderr, "%s", "Abort");
+		}
 	}
 	if(CPU_AH & 0x10) {
-		fprintf(stderr, ", %s", (active_code_page == 932) ? "再試行 (R)" : "Retry");
+		if(lang == LANG_FRENCH) {
+			fprintf(stderr, ", %s", (const char*)retry_french);
+		} else if(lang == LANG_GERMAN) {
+			fprintf(stderr, ", %s", (const char*)retry_german);
+		} else if(lang == LANG_SPANISH) {
+			fprintf(stderr, ", %s", (const char*)retry_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)retry_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			fprintf(stderr, ", %s", (const char*)retry_japanese);
+		} else if(lang == LANG_KOREAN) {
+			fprintf(stderr, ", %s", (const char*)retry_korean);
+		} else {
+			fprintf(stderr, ", %s", "Retry");
+		}
 	}
 	if(CPU_AH & 0x20) {
-		fprintf(stderr, ", %s", (active_code_page == 932) ? "無視 (I)" : "Ignore");
+		if(lang == LANG_FRENCH) {
+			fprintf(stderr, ", %s", (const char*)ignore_french);
+		} else if(lang == LANG_GERMAN) {
+			fprintf(stderr, ", %s", (const char*)ignore_german);
+		} else if(lang == LANG_SPANISH) {
+			fprintf(stderr, ", %s", (const char*)ignore_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)ignore_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			fprintf(stderr, ", %s", (const char*)ignore_japanese);
+		} else if(lang == LANG_KOREAN) {
+			fprintf(stderr, ", %s", (const char*)ignore_korean);
+		} else {
+			fprintf(stderr, ", %s", "Ignore");
+		}
 	}
 	if(CPU_AH & 0x08) {
-		fprintf(stderr, ", %s", (active_code_page == 932) ? "失敗 (F)" : "Fail");
+		if(lang == LANG_FRENCH) {
+			fprintf(stderr, ", %s", (const char*)fail_french);
+		} else if(lang == LANG_GERMAN) {
+			fprintf(stderr, ", %s", (const char*)fail_german);
+		} else if(lang == LANG_SPANISH) {
+			fprintf(stderr, ", %s", (const char*)fail_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)fail_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			fprintf(stderr, ", %s", (const char*)fail_japanese);
+		} else if(lang == LANG_KOREAN) {
+			fprintf(stderr, ", %s", (const char*)fail_korean);
+		} else {
+			fprintf(stderr, ", %s", "Fail");
+		}
 	}
 	fprintf(stderr, "? ");
 	
@@ -15576,21 +15277,92 @@ inline void msdos_int_2eh()
 
 inline void msdos_int_2fh_05h()
 {
+	USHORT lang = get_message_lang();
+#if 0
+	if(dos_major_version < 4 && CPU_AL != 0) {
+		for(int i = 0; i < array_length(standard_error_table); i++) {
+			if(standard_error_table[i].code == CPU_AL || standard_error_table[i].code == (UINT16)-1) {
+				const char *message = NULL;
+				if(lang == LANG_FRENCH) {
+					message = (const char *)standard_error_table[i].message_french;
+				} else if(lang == LANG_GERMAN) {
+					message = (const char *)standard_error_table[i].message_german;
+				} else if(lang == LANG_SPANISH) {
+					message = (const char *)standard_error_table[i].message_spanish;
+				} else if(lang == LANG_PORTUGUESE) {
+					message = (const char *)standard_error_table[i].message_brazilian;
+				} else if(lang == LANG_JAPANESE) {
+					message = (const char *)standard_error_table[i].message_japanese;
+				} else if(lang == LANG_KOREAN) {
+					message = (const char *)standard_error_table[i].message_korean;
+				}
+				if(message == NULL) {
+					message = standard_error_table[i].message_english;
+				}
+				strcpy((char *)(mem + WORK_TOP), message);
+				
+				CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+				CPU_DI = 0x0000;
+				CPU_AL = 0x01;
+				break;
+			}
+		}
+		return;
+	}
+#endif
 	switch(CPU_AL) {
 	case 0x00:
 		// critical error handler is installed
 		CPU_AL = 0xff;
 		break;
 	case 0x01:
-	case 0x02:
 		for(int i = 0; i < array_length(standard_error_table); i++) {
 			if(standard_error_table[i].code == CPU_BX || standard_error_table[i].code == (UINT16)-1) {
 				const char *message = NULL;
-				if(active_code_page == 932) {
-					message = standard_error_table[i].message_japanese;
+				if(lang == LANG_FRENCH) {
+					message = (const char *)standard_error_table[i].message_french;
+				} else if(lang == LANG_GERMAN) {
+					message = (const char *)standard_error_table[i].message_german;
+				} else if(lang == LANG_SPANISH) {
+					message = (const char *)standard_error_table[i].message_spanish;
+				} else if(lang == LANG_PORTUGUESE) {
+					message = (const char *)standard_error_table[i].message_brazilian;
+				} else if(lang == LANG_JAPANESE) {
+					message = (const char *)standard_error_table[i].message_japanese;
+				} else if(lang == LANG_KOREAN) {
+					message = (const char *)standard_error_table[i].message_korean;
 				}
 				if(message == NULL) {
 					message = standard_error_table[i].message_english;
+				}
+				strcpy((char *)(mem + WORK_TOP), message);
+				
+				CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+				CPU_DI = 0x0000;
+				CPU_AL = 0x01;
+				break;
+			}
+		}
+		break;
+	case 0x02:
+		for(int i = 0; i < array_length(param_error_table); i++) {
+			if(param_error_table[i].code == CPU_BX || param_error_table[i].code == (UINT16)-1) {
+				const char *message = NULL;
+				if(lang == LANG_FRENCH) {
+					message = (const char *)param_error_table[i].message_french;
+				} else if(lang == LANG_GERMAN) {
+					message = (const char *)param_error_table[i].message_german;
+				} else if(lang == LANG_SPANISH) {
+					message = (const char *)param_error_table[i].message_spanish;
+				} else if(lang == LANG_PORTUGUESE) {
+					message = (const char *)param_error_table[i].message_brazilian;
+				} else if(lang == LANG_JAPANESE) {
+					message = (const char *)param_error_table[i].message_japanese;
+				} else if(lang == LANG_KOREAN) {
+					message = (const char *)param_error_table[i].message_korean;
+				}
+				if(message == NULL) {
+					message = param_error_table[i].message_english;
 				}
 				strcpy((char *)(mem + WORK_TOP), message);
 				
@@ -18786,12 +18558,16 @@ void msdos_syscall(unsigned num)
 		// dummy interrupt for call 0005h (call near)
 		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
 	} else if(num == 0x65) {
-		// dummy interrupt for EMS (int 67h)
-		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		// dummy interrupt for ATOK5 (int 6fh) and EMS (int 67h)
+		if((CPU_AH >= 0x01 && CPU_AH <= 0x12) || CPU_AH == 0x66) {
+			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x6f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		} else {
+			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		}
 	} else if(num == 0x66) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num >= 0x68 && num <= 0x6f) {
+	} else if(num == 0x64 || (num >= 0x68 && num <= 0x6e)) {
 		// dummy interrupt
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
@@ -19768,6 +19544,7 @@ void msdos_syscall(unsigned num)
 	case 0x6e:
 		// dummy interrupt for parameter error message read routine pointed by int 2fh, ax=122eh, dl=08h
 		{
+			USHORT lang = get_message_lang();
 			UINT16 code = CPU_AX;
 			if(code & 0xf0) {
 				code = (code & 7) | ((code & 0x10) >> 1);
@@ -19775,8 +19552,18 @@ void msdos_syscall(unsigned num)
 			for(int i = 0; i < array_length(param_error_table); i++) {
 				if(param_error_table[i].code == code || param_error_table[i].code == (UINT16)-1) {
 					const char *message = NULL;
-					if(active_code_page == 932) {
-						message = param_error_table[i].message_japanese;
+					if(lang == LANG_FRENCH) {
+						message = (const char *)param_error_table[i].message_french;
+					} else if(lang == LANG_GERMAN) {
+						message = (const char *)param_error_table[i].message_german;
+					} else if(lang == LANG_SPANISH) {
+						message = (const char *)param_error_table[i].message_spanish;
+					} else if(lang == LANG_PORTUGUESE) {
+						message = (const char *)param_error_table[i].message_brazilian;
+					} else if(lang == LANG_JAPANESE) {
+						message = (const char *)param_error_table[i].message_japanese;
+					} else if(lang == LANG_KOREAN) {
+						message = (const char *)param_error_table[i].message_korean;
 					}
 					if(message == NULL) {
 						message = param_error_table[i].message_english;
@@ -20791,23 +20578,23 @@ void hardware_update()
 		if(prev_tick != cur_tick) {
 			// update keyboard flags
 			UINT8 state;
-			state  = (GetAsyncKeyState(VK_INSERT  ) & 0x0001) ? 0x80 : 0;
-			state |= (GetAsyncKeyState(VK_CAPITAL ) & 0x0001) ? 0x40 : 0;
-			state |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x0001) ? 0x20 : 0;
-			state |= (GetAsyncKeyState(VK_SCROLL  ) & 0x0001) ? 0x10 : 0;
-			state |= (GetAsyncKeyState(VK_MENU    ) & 0x8000) ? 0x08 : 0;
-			state |= (GetAsyncKeyState(VK_CONTROL ) & 0x8000) ? 0x04 : 0;
-			state |= (GetAsyncKeyState(VK_LSHIFT  ) & 0x8000) ? 0x02 : 0;
-			state |= (GetAsyncKeyState(VK_RSHIFT  ) & 0x8000) ? 0x01 : 0;
+			state  = KeyLocked (VK_INSERT  ) ? 0x80 : 0;
+			state |= KeyLocked (VK_CAPITAL ) ? 0x40 : 0;
+			state |= KeyLocked (VK_NUMLOCK ) ? 0x20 : 0;
+			state |= KeyLocked (VK_SCROLL  ) ? 0x10 : 0;
+			state |= KeyPressed(VK_MENU    ) ? 0x08 : 0;
+			state |= KeyPressed(VK_CONTROL ) ? 0x04 : 0;
+			state |= KeyPressed(VK_LSHIFT  ) ? 0x02 : 0;
+			state |= KeyPressed(VK_RSHIFT  ) ? 0x01 : 0;
 			mem[0x417] = state;
-			state  = (GetAsyncKeyState(VK_INSERT  ) & 0x8000) ? 0x80 : 0;
-			state |= (GetAsyncKeyState(VK_CAPITAL ) & 0x8000) ? 0x40 : 0;
-			state |= (GetAsyncKeyState(VK_NUMLOCK ) & 0x8000) ? 0x20 : 0;
-			state |= (GetAsyncKeyState(VK_SCROLL  ) & 0x8000) ? 0x10 : 0;
-//			state |= (GetAsyncKeyState(VK_PAUSE   ) & 0x0001) ? 0x08 : 0;
-//			state |= (GetAsyncKeyState(VK_SYSREQ  ) & 0x8000) ? 0x04 : 0;
-			state |= (GetAsyncKeyState(VK_LMENU   ) & 0x8000) ? 0x02 : 0;
-			state |= (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ? 0x01 : 0;
+			state  = KeyPressed(VK_INSERT  ) ? 0x80 : 0;
+			state |= KeyPressed(VK_CAPITAL ) ? 0x40 : 0;
+			state |= KeyPressed(VK_NUMLOCK ) ? 0x20 : 0;
+			state |= KeyPressed(VK_SCROLL  ) ? 0x10 : 0;
+//			state |= KeyLocked (VK_PAUSE   ) ? 0x08 : 0;
+//			state |= KeyPressed(VK_SYSREQ  ) ? 0x04 : 0;
+			state |= KeyPressed(VK_LMENU   ) ? 0x02 : 0;
+			state |= KeyPressed(VK_LCONTROL) ? 0x01 : 0;
 			mem[0x418] = state;
 			
 			// update console input if needed
@@ -21635,9 +21422,6 @@ void printer_out(int c, UINT8 data)
 }
 
 // pit
-
-#define PIT_FREQ 1193182ULL
-#define PIT_COUNT_VALUE(n) ((pit[n].count_reg == 0) ? 0x10000 : (pit[n].mode == 3 && pit[n].count_reg == 1) ? 0x10001 : pit[n].count_reg)
 
 void pit_init()
 {

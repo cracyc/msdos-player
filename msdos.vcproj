@@ -4798,6 +4798,30 @@
 				>
 			</File>
 			<File
+				RelativePath=".\lang_fr.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_de.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_sp.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_br.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_jp.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_ko.h"
+				>
+			</File>
+			<File
 				RelativePath=".\msdos.h"
 				>
 			</File>
