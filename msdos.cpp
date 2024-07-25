@@ -226,15 +226,6 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	return dwLength;
 }
 
-BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
-{
-#if 0
-	return SetConsoleTitleA(lpConsoleTitle);
-#else
-	return TRUE;
-#endif
-}
-
 HWND MyImmGetDefaultIMEWnd(HWND hWnd)
 {
 	HMODULE hLibrary = LoadLibraryA("Imm32.dll");
@@ -13985,9 +13976,6 @@ inline void msdos_int_21h_51h()
 		MySetConsoleTitleA(process->module_path);
 	}
 	CPU_BX = current_psp;
-	process_t *process = msdos_process_info_get(current_psp, false);
-	if (process)
-		MySetConsoleTitleA(process->module_path);
 }
 
 inline void msdos_int_21h_52h()
