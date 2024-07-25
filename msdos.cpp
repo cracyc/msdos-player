@@ -3988,8 +3988,11 @@ int main(int argc, char *argv[], char *envp[])
 
 	if(use_vt) {
 		DWORD mode;
-		GetConsoleMode(hStdout, &mode);
-		SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		if(GetConsoleMode(hStdout, &mode)) {
+			SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		} else {
+			use_vt = false;
+		}
 	}
 	
 	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
