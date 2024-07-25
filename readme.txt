@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/1/2024
+								7/15/2024
 
 ----- What's This
 
@@ -810,7 +810,7 @@ INT 2EH		Pass Command To Command Interpreter For Execution
 INT 2FH		Multiplex Interrupt
 
 	0500H	DOS 3.0+ Critical Error Handler - Installation Check
-	0502H	DOS 3.0+ Critical Error Handler - Expand Error Into String
+	05xxH	DOS 3.0+ Critical Error Handler - Expand Error Into String
 	1200H	DOS 3.0+ internal - Installation Check
 	1202H	DOS 3.0+ internal - Get Interrupt Address
 	1203H	DOS 3.0+ Internal - Get DOS Data Segment

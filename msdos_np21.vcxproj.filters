@@ -187,6 +187,24 @@
     <ClInclude Include="common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lang_fr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_de.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_sp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_br.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_jp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_ko.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="msdos.h">
       <Filter>Header Files</Filter>
     </ClInclude>

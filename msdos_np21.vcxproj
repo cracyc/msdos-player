@@ -310,6 +310,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
+    <ClInclude Include="lang_fr.h" />
+    <ClInclude Include="lang_de.h" />
+    <ClInclude Include="lang_sp.h" />
+    <ClInclude Include="lang_br.h" />
+    <ClInclude Include="lang_jp.h" />
+    <ClInclude Include="lang_ko.h" />
     <ClInclude Include="msdos.h" />
     <ClInclude Include="np21_i386c\cpucore.h" />
     <ClInclude Include="np21_i386c\cpumem.h" />
