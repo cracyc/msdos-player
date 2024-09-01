@@ -1035,7 +1035,7 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 {
 	if(use_vt) {
 		COORD maxsize = {9998,9998};	
-		enter_key_buf_lock();
+		enter_input_lock();
 		update_console_input();
 		read_cursor_pos(hConsoleOutput, &lpConsoleScreenBufferInfo->dwCursorPosition);
 		MySetConsoleCursorPosition(hConsoleOutput, maxsize);
@@ -1048,7 +1048,7 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 		lpConsoleScreenBufferInfo->srWindow.Right = lpConsoleScreenBufferInfo->dwSize.X - 1;
 		lpConsoleScreenBufferInfo->srWindow.Bottom = lpConsoleScreenBufferInfo->dwSize.Y - 1;
 		lpConsoleScreenBufferInfo->wAttributes = 7;
-		leave_key_buf_lock();
+		leave_input_lock();
 	} else {
 		return GetConsoleScreenBufferInfo(hConsoleOutput, lpConsoleScreenBufferInfo);
 	}
