@@ -386,7 +386,7 @@ typedef unsigned __int32 DWORD_PTR;
 
 // type definition
 #ifndef _MSC_VER
-typedef long long __int64;
+//typedef long long __int64;
 #endif
 #ifndef UINT8
 typedef unsigned char UINT8;

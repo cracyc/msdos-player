@@ -3350,8 +3350,6 @@ int main(int argc, char *argv[], char *envp[])
 	
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
 
-	if(is_win10_or_later) use_vt = true;
-	
 	if(!is_win2k_or_later) {
 		old_error_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
 	}
