@@ -11,6 +11,7 @@
 #include "lang_fr.h"
 #include "lang_de.h"
 #include "lang_sp.h"
+#include "lang_pt.h"
 #include "lang_br.h"
 #include "lang_jp.h"
 #include "lang_ko.h"
@@ -269,9 +270,11 @@ typedef struct drive_param_s {
 			case F3_128Mb_512:
 			case F3_230Mb_512:
 			case F8_256_128:
+#ifndef _MSC_VC6
 			case F3_200Mb_512:
 			case F3_240M_512:
 			case F3_32M_512:
+#endif
 				return(1);
 			}
 		}
@@ -301,9 +304,11 @@ typedef struct drive_param_s {
 			case F3_128Mb_512:
 			case F3_230Mb_512:
 //			case F8_256_128:
+#ifndef _MSC_VC6
 			case F3_200Mb_512:
 			case F3_240M_512:
 			case F3_32M_512:
+#endif
 				return(2);
 			default:
 				return(1);
@@ -328,7 +333,7 @@ drive_param_t drive_params[26] = {0};
 	#define MAX_MEM 0x100000	/* 1MB */
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && (_MSC_VER > 1200)
 __declspec(align(4096))
 #endif
 UINT8 mem[MAX_MEM + 16]
@@ -337,7 +342,7 @@ __attribute__ ((aligned(4096)))
 #endif
 ;
 
-// ems
+// EMS
 
 #define MAX_EMS_HANDLES 16
 #define MAX_EMS_PAGES 2048	/* 32MB */
@@ -368,7 +373,7 @@ void ems_release_pages(int handle);
 void ems_map_page(int physical, int handle, int logical);
 void ems_unmap_page(int physical);
 
-// dma
+// DMA
 
 typedef struct {
 	struct {
@@ -394,9 +399,10 @@ void dma_write(int c, UINT32 addr, UINT8 data);
 UINT8 dma_read(int c, UINT32 addr);
 void dma_page_write(int c, int ch, UINT8 data);
 UINT8 dma_page_read(int c, int ch);
+void dma_req(int c, int ch, bool req);
 void dma_run(int c, int ch);
 
-// pic
+// PIC
 
 typedef struct {
 	UINT8 imr, isr, irr, prio;
@@ -416,7 +422,7 @@ void pic_req(int c, int level, int signal);
 int pic_ack();
 void pic_update();
 
-// pio
+// PIO
 
 typedef struct {
 	UINT8 data, stat, ctrl;
@@ -432,7 +438,7 @@ typedef struct {
 	SYSTEMTIME time;
 } pio_t;
 
-pio_t pio[2];
+pio_t pio[3];
 
 void pio_init();
 void pio_finish();
@@ -442,10 +448,10 @@ UINT8 pio_read(int c, UINT32 addr);
 void printer_out(int c, UINT8 data);
 void pcbios_printer_out(int c, UINT8 data);
 
-// pit
+// PIT
 
 #define PIT_ALWAYS_RUNNING
-#define PIT_FREQ 1193182ULL
+#define PIT_FREQ (UINT64)1193182
 #define PIT_COUNT_VALUE(n) ((pit[n].count_reg == 0) ? 0x10000 : (pit[n].mode == 3 && pit[n].count_reg == 1) ? 0x10001 : pit[n].count_reg)
 
 typedef struct {
@@ -478,9 +484,10 @@ int pit_run(int ch, UINT32 cur_time);
 void pit_latch_count(int ch);
 int pit_get_expired_time(int ch);
 
-UINT8 system_port = 0;
+UINT8 system_port = 0x0c;
+int refresh_count = 0;
 
-// sio
+// SIO
 
 #define SIO_BUFFER_SIZE 1024
 
@@ -534,7 +541,7 @@ void sio_update_irq(int c);
 DWORD WINAPI sio_thread(void *lpx);
 bool sio_wait_sending_complete(int c);
 
-// cmos
+// CMOS
 
 UINT8 cmos[128];
 UINT8 cmos_addr;
@@ -543,7 +550,7 @@ void cmos_init();
 void cmos_write(int addr, UINT8 val);
 UINT8 cmos_read(int addr);
 
-// kbd (a20)
+// keyboard
 
 UINT8 kbd_data;
 UINT8 kbd_status;
@@ -569,14 +576,14 @@ void beep_finish();
 void beep_release();
 void beep_update();
 
-// crtc
+// CRTC
 
 UINT8 crtc_addr = 0;
 UINT8 crtc_regs[16] = {0};
 UINT8 crtc_changed[16] = {0};
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
-// vram
+// VRAM
 static UINT32 vga_read(UINT32 addr, int size);
 static void vga_write(UINT32 addr, UINT32 data, int size);
 #endif
@@ -602,7 +609,7 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 #define WORK_SIZE	0x200
 // IO.SYS 0070:0000
 #define DEVICE_TOP	(WORK_TOP + WORK_SIZE)
-#define DEVICE_SIZE	0x100	/* 22 + 18 * 12 + 7 */
+#define DEVICE_SIZE	0x120	/* 22 + 18 * 14 + 7 */
 #define DOS_INFO_TOP	(DEVICE_TOP + DEVICE_SIZE)
 #define DOS_INFO_SIZE	0x100
 //#define EXT_BIOS_TOP	(DOS_INFO_TOP + DOS_INFO_SIZE)
@@ -623,7 +630,7 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 #define FCB_TABLE_SIZE	0x10
 #define SDA_TOP		(FCB_TABLE_TOP + FCB_TABLE_SIZE)
 #define SDA_SIZE	0xb0
-// nls tables
+// NLS tables
 #define UPPERTABLE_TOP	(SDA_TOP + SDA_SIZE)
 #define UPPERTABLE_SIZE	0x82
 #define LOWERTABLE_TOP	(UPPERTABLE_TOP + UPPERTABLE_SIZE)
@@ -653,7 +660,7 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 UINT32 UMB_TOP = EMS_TOP; // EMS is disabled
 #define UMB_END		0xf8000
 #define SHADOW_BUF_TOP	0xf8000
-// text vram size: 80x25x2 = 4000 = 0fa0h
+// text VRAM size: 80x25x2 = 4000 = 0fa0h
 // fffa0h-fffefh can be used for dummy routines
 #define DUMMY_TOP	0xfffc0
 //#define EMB_TOP	0x10fff0
@@ -667,7 +674,7 @@ UINT32 ATOK_TOP = 0;
 // ATOK_TOP + 0x000	ATOK5 driver
 // ATOK_TOP + 0x012	ATOK5 dummy routine
 // ATOK_TOP + 0x015	"ATOK"
-// ATOK_TOP + 0x019	ATOK5 driver dummy routine (at ATOK_TOP + ATOK_TOP - 7)
+// ATOK_TOP + 0x019	ATOK5 driver dummy routine (at ATOK_TOP + ATOK_SIZE - 7)
 #define ATOK_SIZE	0x20	/* 18 + 3 + 4 + 7 */
 
 UINT32 XMS_TOP = 0;
@@ -1258,14 +1265,14 @@ UINT16 mouse_push_di;
 UINT16 mouse_push_ds;
 UINT16 mouse_push_es;
 
-// hma
+// HMA
 
 #ifdef SUPPORT_HMA
 bool is_hma_used_by_xms = false;
 bool is_hma_used_by_int_2fh = false;
 #endif
 
-// xms
+// XMS
 
 #ifdef SUPPORT_XMS
 typedef struct emb_handle_s {
@@ -1303,158 +1310,159 @@ static const struct {
 	const BYTE *message_french;
 	const BYTE *message_german;
 	const BYTE *message_spanish;
+	const BYTE *message_portuguese;
 	const BYTE *message_brazilian;
 	const BYTE *message_japanese;
 	const BYTE *message_korean;
 } standard_error_table[] = {
 	{0x01,	"Invalid function",
-		standard_error_french_01, standard_error_german_01, standard_error_spanish_01, standard_error_brazilian_01, standard_error_japanese_01, standard_error_korean_01},
+		standard_error_french_01, standard_error_german_01, standard_error_spanish_01, standard_error_portuguese_01, standard_error_brazilian_01, standard_error_japanese_01, standard_error_korean_01},
 	{0x02,	"File not found",
-		standard_error_french_02, standard_error_german_02, standard_error_spanish_02, standard_error_brazilian_02, standard_error_japanese_02, standard_error_korean_02},
+		standard_error_french_02, standard_error_german_02, standard_error_spanish_02, standard_error_portuguese_02, standard_error_brazilian_02, standard_error_japanese_02, standard_error_korean_02},
 	{0x03,	"Path not found",
-		standard_error_french_03, standard_error_german_03, standard_error_spanish_03, standard_error_brazilian_03, standard_error_japanese_03, standard_error_korean_03},
+		standard_error_french_03, standard_error_german_03, standard_error_spanish_03, standard_error_portuguese_03, standard_error_brazilian_03, standard_error_japanese_03, standard_error_korean_03},
 	{0x04,	"Too many open files",
-		standard_error_french_04, standard_error_german_04, standard_error_spanish_04, standard_error_brazilian_04, standard_error_japanese_04, standard_error_korean_04},
+		standard_error_french_04, standard_error_german_04, standard_error_spanish_04, standard_error_portuguese_04, standard_error_brazilian_04, standard_error_japanese_04, standard_error_korean_04},
 	{0x05,	"Access denied",
-		standard_error_french_05, standard_error_german_05, standard_error_spanish_05, standard_error_brazilian_05, standard_error_japanese_05, standard_error_korean_05},
+		standard_error_french_05, standard_error_german_05, standard_error_spanish_05, standard_error_portuguese_05, standard_error_brazilian_05, standard_error_japanese_05, standard_error_korean_05},
 	{0x06,	"Invalid handle",
-		standard_error_french_06, standard_error_german_06, standard_error_spanish_06, standard_error_brazilian_06, standard_error_japanese_06, standard_error_korean_06},
+		standard_error_french_06, standard_error_german_06, standard_error_spanish_06, standard_error_portuguese_06, standard_error_brazilian_06, standard_error_japanese_06, standard_error_korean_06},
 	{0x07,	"Memory control blocks destroyed",
-		standard_error_french_07, standard_error_german_07, standard_error_spanish_07, standard_error_brazilian_07, standard_error_japanese_07, standard_error_korean_07},
+		standard_error_french_07, standard_error_german_07, standard_error_spanish_07, standard_error_portuguese_07, standard_error_brazilian_07, standard_error_japanese_07, standard_error_korean_07},
 	{0x08,	"Insufficient memory",
-		standard_error_french_08, standard_error_german_08, standard_error_spanish_08, standard_error_brazilian_08, standard_error_japanese_08, standard_error_korean_08},
+		standard_error_french_08, standard_error_german_08, standard_error_spanish_08, standard_error_portuguese_08, standard_error_brazilian_08, standard_error_japanese_08, standard_error_korean_08},
 	{0x09,	"Invalid memory block address",
-		standard_error_french_09, standard_error_german_09, standard_error_spanish_09, standard_error_brazilian_09, standard_error_japanese_09, standard_error_korean_09},
+		standard_error_french_09, standard_error_german_09, standard_error_spanish_09, standard_error_portuguese_09, standard_error_brazilian_09, standard_error_japanese_09, standard_error_korean_09},
 	{0x0A,	"Invalid Environment",
-		standard_error_french_0A, standard_error_german_0A, standard_error_spanish_0A, standard_error_brazilian_0A, standard_error_japanese_0A, standard_error_korean_0A},
+		standard_error_french_0A, standard_error_german_0A, standard_error_spanish_0A, standard_error_portuguese_0A, standard_error_brazilian_0A, standard_error_japanese_0A, standard_error_korean_0A},
 	{0x0B,	"Invalid format",
-		standard_error_french_0B, standard_error_german_0B, standard_error_spanish_0B, standard_error_brazilian_0B, standard_error_japanese_0B, standard_error_korean_0B},
+		standard_error_french_0B, standard_error_german_0B, standard_error_spanish_0B, standard_error_portuguese_0B, standard_error_brazilian_0B, standard_error_japanese_0B, standard_error_korean_0B},
 	{0x0C,	"Invalid function parameter",
-		standard_error_french_0C, standard_error_german_0C, standard_error_spanish_0C, standard_error_brazilian_0C, standard_error_japanese_0C, standard_error_korean_0C},
+		standard_error_french_0C, standard_error_german_0C, standard_error_spanish_0C, standard_error_portuguese_0C, standard_error_brazilian_0C, standard_error_japanese_0C, standard_error_korean_0C},
 	{0x0D,	"Invalid data",
-		standard_error_french_0D, standard_error_german_0D, standard_error_spanish_0D, standard_error_brazilian_0D, standard_error_japanese_0D, standard_error_korean_0D},
+		standard_error_french_0D, standard_error_german_0D, standard_error_spanish_0D, standard_error_portuguese_0D, standard_error_brazilian_0D, standard_error_japanese_0D, standard_error_korean_0D},
 	{0x0F,	"Invalid drive specification",
-		standard_error_french_0F, standard_error_german_0F, standard_error_spanish_0F, standard_error_brazilian_0F, standard_error_japanese_0F, standard_error_korean_0F},
+		standard_error_french_0F, standard_error_german_0F, standard_error_spanish_0F, standard_error_portuguese_0F, standard_error_brazilian_0F, standard_error_japanese_0F, standard_error_korean_0F},
 	{0x10,	"Attempt to remove current directory",
-		standard_error_french_10, standard_error_german_10, standard_error_spanish_10, standard_error_brazilian_10, standard_error_japanese_10, standard_error_korean_10},
+		standard_error_french_10, standard_error_german_10, standard_error_spanish_10, standard_error_portuguese_10, standard_error_brazilian_10, standard_error_japanese_10, standard_error_korean_10},
 	{0x11,	"Not same device",
-		standard_error_french_11, standard_error_german_11, standard_error_spanish_11, standard_error_brazilian_11, standard_error_japanese_11, standard_error_korean_11},
+		standard_error_french_11, standard_error_german_11, standard_error_spanish_11, standard_error_portuguese_11, standard_error_brazilian_11, standard_error_japanese_11, standard_error_korean_11},
 	{0x12,	"No more files",
-		standard_error_french_12, standard_error_german_12, standard_error_spanish_12, standard_error_brazilian_12, standard_error_japanese_12, standard_error_korean_12},
+		standard_error_french_12, standard_error_german_12, standard_error_spanish_12, standard_error_portuguese_12, standard_error_brazilian_12, standard_error_japanese_12, standard_error_korean_12},
 	{0x13,	"Write protect error",
-		critical_error_french_00, critical_error_german_00, critical_error_spanish_00, critical_error_brazilian_00, critical_error_japanese_00, critical_error_korean_00},
+		critical_error_french_00, critical_error_german_00, critical_error_spanish_00, critical_error_portuguese_00, critical_error_brazilian_00, critical_error_japanese_00, critical_error_korean_00},
 	{0x14,	"Invalid unit",
-		critical_error_french_01, critical_error_german_01, critical_error_spanish_01, critical_error_brazilian_01, critical_error_japanese_01, critical_error_korean_01},
+		critical_error_french_01, critical_error_german_01, critical_error_spanish_01, critical_error_portuguese_01, critical_error_brazilian_01, critical_error_japanese_01, critical_error_korean_01},
 	{0x15,	"Not ready",
-		critical_error_french_02, critical_error_german_02, critical_error_spanish_02, critical_error_brazilian_02, critical_error_japanese_02, critical_error_korean_02},
+		critical_error_french_02, critical_error_german_02, critical_error_spanish_02, critical_error_portuguese_02, critical_error_brazilian_02, critical_error_japanese_02, critical_error_korean_02},
 	{0x16,	"Invalid device request",
-		critical_error_french_03, critical_error_german_03, critical_error_spanish_03, critical_error_brazilian_03, critical_error_japanese_03, critical_error_korean_03},
+		critical_error_french_03, critical_error_german_03, critical_error_spanish_03, critical_error_portuguese_03, critical_error_brazilian_03, critical_error_japanese_03, critical_error_korean_03},
 	{0x17,	"Data error",
-		critical_error_french_04, critical_error_german_04, critical_error_spanish_04, critical_error_brazilian_04, critical_error_japanese_04, critical_error_korean_04},
+		critical_error_french_04, critical_error_german_04, critical_error_spanish_04, critical_error_portuguese_04, critical_error_brazilian_04, critical_error_japanese_04, critical_error_korean_04},
 	{0x18,	"Invalid device request parameters",
-		critical_error_french_05, critical_error_german_05, critical_error_spanish_05, critical_error_brazilian_05, critical_error_japanese_05, critical_error_korean_05},
+		critical_error_french_05, critical_error_german_05, critical_error_spanish_05, critical_error_portuguese_05, critical_error_brazilian_05, critical_error_japanese_05, critical_error_korean_05},
 	{0x19,	"Seek error",
-		critical_error_french_06, critical_error_german_06, critical_error_spanish_06, critical_error_brazilian_06, critical_error_japanese_06, critical_error_korean_06},
+		critical_error_french_06, critical_error_german_06, critical_error_spanish_06, critical_error_portuguese_06, critical_error_brazilian_06, critical_error_japanese_06, critical_error_korean_06},
 	{0x1A,	"Invalid media type",
-		critical_error_french_07, critical_error_german_07, critical_error_spanish_07, critical_error_brazilian_07, critical_error_japanese_07, critical_error_korean_07},
+		critical_error_french_07, critical_error_german_07, critical_error_spanish_07, critical_error_portuguese_07, critical_error_brazilian_07, critical_error_japanese_07, critical_error_korean_07},
 	{0x1B,	"Sector not found",
-		critical_error_french_08, critical_error_german_08, critical_error_spanish_08, critical_error_brazilian_08, critical_error_japanese_08, critical_error_korean_08},
+		critical_error_french_08, critical_error_german_08, critical_error_spanish_08, critical_error_portuguese_08, critical_error_brazilian_08, critical_error_japanese_08, critical_error_korean_08},
 	{0x1C,	"Printer out of paper error",
-		critical_error_french_09, critical_error_german_09, critical_error_spanish_09, critical_error_brazilian_09, critical_error_japanese_09, critical_error_korean_09},
+		critical_error_french_09, critical_error_german_09, critical_error_spanish_09, critical_error_portuguese_09, critical_error_brazilian_09, critical_error_japanese_09, critical_error_korean_09},
 	{0x1D,	"Write fault error",
-		critical_error_french_0A, critical_error_german_0A, critical_error_spanish_0A, critical_error_brazilian_0A, critical_error_japanese_0A, critical_error_korean_0A},
+		critical_error_french_0A, critical_error_german_0A, critical_error_spanish_0A, critical_error_portuguese_0A, critical_error_brazilian_0A, critical_error_japanese_0A, critical_error_korean_0A},
 	{0x1E,	"Read fault error",
-		critical_error_french_0B, critical_error_german_0B, critical_error_spanish_0B, critical_error_brazilian_0B, critical_error_japanese_0B, critical_error_korean_0B},
+		critical_error_french_0B, critical_error_german_0B, critical_error_spanish_0B, critical_error_portuguese_0B, critical_error_brazilian_0B, critical_error_japanese_0B, critical_error_korean_0B},
 	{0x1F,	"General failure",
-		critical_error_french_0C, critical_error_german_0C, critical_error_spanish_0C, critical_error_brazilian_0C, critical_error_japanese_0C, critical_error_korean_0C},
+		critical_error_french_0C, critical_error_german_0C, critical_error_spanish_0C, critical_error_portuguese_0C, critical_error_brazilian_0C, critical_error_japanese_0C, critical_error_korean_0C},
 	{0x20,	"Sharing violation",
-		critical_error_french_0D, critical_error_german_0D, critical_error_spanish_0D, critical_error_brazilian_0D, critical_error_japanese_0D, critical_error_korean_0D},
+		critical_error_french_0D, critical_error_german_0D, critical_error_spanish_0D, critical_error_portuguese_0D, critical_error_brazilian_0D, critical_error_japanese_0D, critical_error_korean_0D},
 	{0x21,	"Lock violation",
-		critical_error_french_0E, critical_error_german_0E, critical_error_spanish_0E, critical_error_brazilian_0E, critical_error_japanese_0E, critical_error_korean_0E},
+		critical_error_french_0E, critical_error_german_0E, critical_error_spanish_0E, critical_error_portuguese_0E, critical_error_brazilian_0E, critical_error_japanese_0E, critical_error_korean_0E},
 	{0x22,	"Invalid disk change",
-		critical_error_french_0F, critical_error_german_0F, critical_error_spanish_0F, critical_error_brazilian_0F, critical_error_japanese_0F, critical_error_korean_0F},
+		critical_error_french_0F, critical_error_german_0F, critical_error_spanish_0F, critical_error_portuguese_0F, critical_error_brazilian_0F, critical_error_japanese_0F, critical_error_korean_0F},
 	{0x23,	"FCB unavailable",
-		critical_error_french_10, critical_error_german_10, critical_error_spanish_10, critical_error_brazilian_10, critical_error_japanese_10, critical_error_korean_10},
+		critical_error_french_10, critical_error_german_10, critical_error_spanish_10, critical_error_portuguese_10, critical_error_brazilian_10, critical_error_japanese_10, critical_error_korean_10},
 	{0x24,	"System resource exhausted",
-		critical_error_french_11, critical_error_german_11, critical_error_spanish_11, critical_error_brazilian_11, critical_error_japanese_11, critical_error_korean_11},
+		critical_error_french_11, critical_error_german_11, critical_error_spanish_11, critical_error_portuguese_11, critical_error_brazilian_11, critical_error_japanese_11, critical_error_korean_11},
 	{0x25,	"Code page mismatch",
-		critical_error_french_12, critical_error_german_12, critical_error_spanish_12, critical_error_brazilian_12, critical_error_japanese_12, critical_error_korean_12},
+		critical_error_french_12, critical_error_german_12, critical_error_spanish_12, critical_error_portuguese_12, critical_error_brazilian_12, critical_error_japanese_12, critical_error_korean_12},
 	{0x26,	"Out of input",
-		critical_error_french_13, critical_error_german_13, critical_error_spanish_13, critical_error_brazilian_13, critical_error_japanese_13, critical_error_korean_13},
+		critical_error_french_13, critical_error_german_13, critical_error_spanish_13, critical_error_portuguese_13, critical_error_brazilian_13, critical_error_japanese_13, critical_error_korean_13},
 	{0x27,	"Insufficient disk space",
-		critical_error_french_14, critical_error_german_14, critical_error_spanish_14, critical_error_brazilian_14, critical_error_japanese_14, critical_error_korean_14},
+		critical_error_french_14, critical_error_german_14, critical_error_spanish_14, critical_error_portuguese_14, critical_error_brazilian_14, critical_error_japanese_14, critical_error_korean_14},
 /*
-	{0x32,	"Network request not supported", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x33,	"Remote computer not listening", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x34,	"Duplicate name on network", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x35,	"Network name not found", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x36,	"Network busy", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x37,	"Network device no longer exists", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x38,	"Network BIOS command limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x39,	"Network adapter hardware error", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3A,	"Incorrect response from network", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3B,	"Unexpected network error", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3C,	"Incompatible remote adapter", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3D,	"Print queue full", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3E,	"Queue not full", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x3F,	"Not enough space to print file", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x40,	"Network name was deleted", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x41,	"Network: Access denied", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x42,	"Network device type incorrect", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x43,	"Network name not found", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x44,	"Network name limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x45,	"Network BIOS session limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x46,	"Temporarily paused", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x47,	"Network request not accepted", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x48,	"Network print/disk redirection paused", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x49,	"Network software not installed", NULL, NULL, NULL, NULL, NULL, NULL},
-	{0x4A,	"Unexpected adapter close", NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x32,	"Network request not supported", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x33,	"Remote computer not listening", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x34,	"Duplicate name on network", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x35,	"Network name not found", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x36,	"Network busy", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x37,	"Network device no longer exists", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x38,	"Network BIOS command limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x39,	"Network adapter hardware error", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3A,	"Incorrect response from network", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3B,	"Unexpected network error", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3C,	"Incompatible remote adapter", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3D,	"Print queue full", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3E,	"Queue not full", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x3F,	"Not enough space to print file", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x40,	"Network name was deleted", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x41,	"Network: Access denied", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x42,	"Network device type incorrect", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x43,	"Network name not found", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x44,	"Network name limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x45,	"Network BIOS session limit exceeded", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x46,	"Temporarily paused", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x47,	"Network request not accepted", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x48,	"Network print/disk redirection paused", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x49,	"Network software not installed", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+	{0x4A,	"Unexpected adapter close", NULL, NULL, NULL, NULL, NULL, NULL, NULL},
 */
 	{0x50,	"File exists",
-		standard_error_french_50, standard_error_german_50, standard_error_spanish_50, standard_error_brazilian_50, standard_error_japanese_50, standard_error_korean_50},
+		standard_error_french_50, standard_error_german_50, standard_error_spanish_50, standard_error_portuguese_50, standard_error_brazilian_50, standard_error_japanese_50, standard_error_korean_50},
 	{0x52,	"Cannot make directory entry",
-		standard_error_french_52, standard_error_german_52, standard_error_spanish_52, standard_error_brazilian_52, standard_error_japanese_52, standard_error_korean_52},
+		standard_error_french_52, standard_error_german_52, standard_error_spanish_52, standard_error_portuguese_52, standard_error_brazilian_52, standard_error_japanese_52, standard_error_korean_52},
 	{0x53,	"Fail on INT 24",
-		standard_error_french_53, standard_error_german_53, standard_error_spanish_53, standard_error_brazilian_53, standard_error_japanese_53, standard_error_korean_53},
+		standard_error_french_53, standard_error_german_53, standard_error_spanish_53, standard_error_portuguese_53, standard_error_brazilian_53, standard_error_japanese_53, standard_error_korean_53},
 	{0x54,	"Too many redirections",
-		standard_error_french_54, standard_error_german_54, standard_error_spanish_54, standard_error_brazilian_54, standard_error_japanese_54, standard_error_korean_54},
+		standard_error_french_54, standard_error_german_54, standard_error_spanish_54, standard_error_portuguese_54, standard_error_brazilian_54, standard_error_japanese_54, standard_error_korean_54},
 	{0x55,	"Duplicate redirection",
-		standard_error_french_55, standard_error_german_55, standard_error_spanish_55, standard_error_brazilian_55, standard_error_japanese_55, standard_error_korean_55},
+		standard_error_french_55, standard_error_german_55, standard_error_spanish_55, standard_error_portuguese_55, standard_error_brazilian_55, standard_error_japanese_55, standard_error_korean_55},
 	{0x56,	"Invalid password",
-		standard_error_french_56, standard_error_german_56, standard_error_spanish_56, standard_error_brazilian_56, standard_error_japanese_56, standard_error_korean_56},
+		standard_error_french_56, standard_error_german_56, standard_error_spanish_56, standard_error_portuguese_56, standard_error_brazilian_56, standard_error_japanese_56, standard_error_korean_56},
 	{0x57,	"Invalid parameter",
-		standard_error_french_57, standard_error_german_57, standard_error_spanish_57, standard_error_brazilian_57, standard_error_japanese_57, standard_error_korean_57},
+		standard_error_french_57, standard_error_german_57, standard_error_spanish_57, standard_error_portuguese_57, standard_error_brazilian_57, standard_error_japanese_57, standard_error_korean_57},
 	{0x58,	"Network data fault",
-		standard_error_french_58, standard_error_german_58, standard_error_spanish_58, standard_error_brazilian_58, standard_error_japanese_58, standard_error_korean_58},
+		standard_error_french_58, standard_error_german_58, standard_error_spanish_58, standard_error_portuguese_58, standard_error_brazilian_58, standard_error_japanese_58, standard_error_korean_58},
 	{0x59,	"Function not supported by network",
-		standard_error_french_59, standard_error_german_59, standard_error_spanish_59, standard_error_brazilian_59, standard_error_japanese_59, standard_error_korean_59},
+		standard_error_french_59, standard_error_german_59, standard_error_spanish_59, standard_error_portuguese_59, standard_error_brazilian_59, standard_error_japanese_59, standard_error_korean_59},
 	{0x5A,	"Required system component not installe",
-		standard_error_french_5A, standard_error_german_5A, standard_error_spanish_5A, standard_error_brazilian_5A, standard_error_japanese_5A, standard_error_korean_5A},
+		standard_error_french_5A, standard_error_german_5A, standard_error_spanish_5A, standard_error_portuguese_5A, standard_error_brazilian_5A, standard_error_japanese_5A, standard_error_korean_5A},
 //#ifdef SUPPORT_MSCDEX
 	{0x64,	"Unknown error",
-		standard_error_french_64, standard_error_german_64, standard_error_spanish_64, standard_error_brazilian_64, standard_error_japanese_64, standard_error_korean_64},
+		standard_error_french_64, standard_error_german_64, standard_error_spanish_64, standard_error_portuguese_64, standard_error_brazilian_64, standard_error_japanese_64, standard_error_korean_64},
 	{0x65,	"Not ready",
-		standard_error_french_65, standard_error_german_65, standard_error_spanish_65, standard_error_brazilian_65, standard_error_japanese_65, standard_error_korean_65},
+		standard_error_french_65, standard_error_german_65, standard_error_spanish_65, standard_error_portuguese_65, standard_error_brazilian_65, standard_error_japanese_65, standard_error_korean_65},
 	{0x66,	"EMS memory no longer valid",
-		standard_error_french_66, standard_error_german_66, standard_error_spanish_66, standard_error_brazilian_66, standard_error_japanese_66, standard_error_korean_66},
+		standard_error_french_66, standard_error_german_66, standard_error_spanish_66, standard_error_portuguese_66, standard_error_brazilian_66, standard_error_japanese_66, standard_error_korean_66},
 	{0x67,	"CDROM not High Sierra or ISO-9660 format",
-		standard_error_french_67, standard_error_german_67, standard_error_spanish_67, standard_error_brazilian_67, standard_error_japanese_67, standard_error_korean_67},
+		standard_error_french_67, standard_error_german_67, standard_error_spanish_67, standard_error_portuguese_67, standard_error_brazilian_67, standard_error_japanese_67, standard_error_korean_67},
 	{0x68,	"Door open",
-		standard_error_french_68, standard_error_german_68, standard_error_spanish_68, standard_error_brazilian_68, standard_error_japanese_68, standard_error_korean_68},
+		standard_error_french_68, standard_error_german_68, standard_error_spanish_68, standard_error_portuguese_68, standard_error_brazilian_68, standard_error_japanese_68, standard_error_korean_68},
 //#endif
 	{0xB0,	"Volume is not locked",
-		standard_error_french_B0, standard_error_german_B0, standard_error_spanish_B0, standard_error_brazilian_B0, standard_error_japanese_B0, standard_error_korean_B0},
+		standard_error_french_B0, standard_error_german_B0, standard_error_spanish_B0, standard_error_portuguese_B0, standard_error_brazilian_B0, standard_error_japanese_B0, standard_error_korean_B0},
 	{0xB1,	"Volume is locked in drive",
-		standard_error_french_B1, standard_error_german_B1, standard_error_spanish_B1, standard_error_brazilian_B1, standard_error_japanese_B1, standard_error_korean_B1},
+		standard_error_french_B1, standard_error_german_B1, standard_error_spanish_B1, standard_error_portuguese_B1, standard_error_brazilian_B1, standard_error_japanese_B1, standard_error_korean_B1},
 	{0xB2,	"Volume is not removable",
-		standard_error_french_B2, standard_error_german_B2, standard_error_spanish_B2, standard_error_brazilian_B2, standard_error_japanese_B2, standard_error_korean_B2},
+		standard_error_french_B2, standard_error_german_B2, standard_error_spanish_B2, standard_error_portuguese_B2, standard_error_brazilian_B2, standard_error_japanese_B2, standard_error_korean_B2},
 	{0xB4,	"Lock count has been exceeded",
-		standard_error_french_B4, standard_error_german_B4, standard_error_spanish_B4, standard_error_brazilian_B4, standard_error_japanese_B4, standard_error_korean_B4},
+		standard_error_french_B4, standard_error_german_B4, standard_error_spanish_B4, standard_error_portuguese_B4, standard_error_brazilian_B4, standard_error_japanese_B4, standard_error_korean_B4},
 	{0xB5,	"A valid eject request failed",
-		standard_error_french_B5, standard_error_german_B5, standard_error_spanish_B5, standard_error_brazilian_B5, standard_error_japanese_B5, standard_error_korean_B5},
+		standard_error_french_B5, standard_error_german_B5, standard_error_spanish_B5, standard_error_portuguese_B5, standard_error_brazilian_B5, standard_error_japanese_B5, standard_error_korean_B5},
 	{(UINT16)-1,
 		"Unknown error",
-		unknown_error_french, unknown_error_german, unknown_error_spanish, unknown_error_brazilian, unknown_error_japanese, unknown_error_korean},
+		unknown_error_french, unknown_error_german, unknown_error_spanish, unknown_error_portuguese, unknown_error_brazilian, unknown_error_japanese, unknown_error_korean},
 };
 
 static const struct {
@@ -1463,55 +1471,56 @@ static const struct {
 	const BYTE *message_french;
 	const BYTE *message_german;
 	const BYTE *message_spanish;
+	const BYTE *message_portuguese;
 	const BYTE *message_brazilian;
 	const BYTE *message_japanese;
 	const BYTE *message_korean;
 } critical_error_table[] = {
 	{0x00,	"Write protect error",
-		critical_error_french_00, critical_error_german_00, critical_error_spanish_00, critical_error_brazilian_00, critical_error_japanese_00, critical_error_korean_00},
+		critical_error_french_00, critical_error_german_00, critical_error_spanish_00, critical_error_portuguese_00, critical_error_brazilian_00, critical_error_japanese_00, critical_error_korean_00},
 	{0x01,	"Invalid unit",
-		critical_error_french_00, critical_error_german_01, critical_error_spanish_01, critical_error_brazilian_01, critical_error_japanese_01, critical_error_korean_01},
+		critical_error_french_01, critical_error_german_01, critical_error_spanish_01, critical_error_portuguese_01, critical_error_brazilian_01, critical_error_japanese_01, critical_error_korean_01},
 	{0x02,	"Not ready",
-		critical_error_french_00, critical_error_german_02, critical_error_spanish_02, critical_error_brazilian_02, critical_error_japanese_02, critical_error_korean_02},
+		critical_error_french_02, critical_error_german_02, critical_error_spanish_02, critical_error_portuguese_02, critical_error_brazilian_02, critical_error_japanese_02, critical_error_korean_02},
 	{0x03,	"Invalid device request",
-		critical_error_french_00, critical_error_german_03, critical_error_spanish_03, critical_error_brazilian_03, critical_error_japanese_03, critical_error_korean_03},
+		critical_error_french_03, critical_error_german_03, critical_error_spanish_03, critical_error_portuguese_03, critical_error_brazilian_03, critical_error_japanese_03, critical_error_korean_03},
 	{0x04,	"Data error",
-		critical_error_french_00, critical_error_german_04, critical_error_spanish_04, critical_error_brazilian_04, critical_error_japanese_04, critical_error_korean_04},
+		critical_error_french_04, critical_error_german_04, critical_error_spanish_04, critical_error_portuguese_04, critical_error_brazilian_04, critical_error_japanese_04, critical_error_korean_04},
 	{0x05,	"Invalid device request parameters",
-		critical_error_french_00, critical_error_german_05, critical_error_spanish_05, critical_error_brazilian_05, critical_error_japanese_05, critical_error_korean_05},
+		critical_error_french_05, critical_error_german_05, critical_error_spanish_05, critical_error_portuguese_05, critical_error_brazilian_05, critical_error_japanese_05, critical_error_korean_05},
 	{0x06,	"Seek error",
-		critical_error_french_00, critical_error_german_06, critical_error_spanish_06, critical_error_brazilian_06, critical_error_japanese_06, critical_error_korean_06},
+		critical_error_french_06, critical_error_german_06, critical_error_spanish_06, critical_error_portuguese_06, critical_error_brazilian_06, critical_error_japanese_06, critical_error_korean_06},
 	{0x07,	"Invalid media type",
-		critical_error_french_00, critical_error_german_07, critical_error_spanish_07, critical_error_brazilian_07, critical_error_japanese_07, critical_error_korean_07},
+		critical_error_french_07, critical_error_german_07, critical_error_spanish_07, critical_error_portuguese_07, critical_error_brazilian_07, critical_error_japanese_07, critical_error_korean_07},
 	{0x08,	"Sector not found",
-		critical_error_french_00, critical_error_german_08, critical_error_spanish_08, critical_error_brazilian_08, critical_error_japanese_08, critical_error_korean_08},
+		critical_error_french_08, critical_error_german_08, critical_error_spanish_08, critical_error_portuguese_08, critical_error_brazilian_08, critical_error_japanese_08, critical_error_korean_08},
 	{0x09,	"Printer out of paper error",
-		critical_error_french_00, critical_error_german_09, critical_error_spanish_09, critical_error_brazilian_09, critical_error_japanese_09, critical_error_korean_09},
+		critical_error_french_09, critical_error_german_09, critical_error_spanish_09, critical_error_portuguese_09, critical_error_brazilian_09, critical_error_japanese_09, critical_error_korean_09},
 	{0x0A,	"Write fault error",
-		critical_error_french_00, critical_error_german_0A, critical_error_spanish_0A, critical_error_brazilian_0A, critical_error_japanese_0A, critical_error_korean_0A},
+		critical_error_french_0A, critical_error_german_0A, critical_error_spanish_0A, critical_error_portuguese_0A, critical_error_brazilian_0A, critical_error_japanese_0A, critical_error_korean_0A},
 	{0x0B,	"Read fault error",
-		critical_error_french_00, critical_error_german_0B, critical_error_spanish_0B, critical_error_brazilian_0B, critical_error_japanese_0B, critical_error_korean_0B},
+		critical_error_french_0B, critical_error_german_0B, critical_error_spanish_0B, critical_error_portuguese_0B, critical_error_brazilian_0B, critical_error_japanese_0B, critical_error_korean_0B},
 	{0x0C,	"General failure",
-		critical_error_french_00, critical_error_german_0C, critical_error_spanish_0C, critical_error_brazilian_0C, critical_error_japanese_0C, critical_error_korean_0C},
+		critical_error_french_0C, critical_error_german_0C, critical_error_spanish_0C, critical_error_portuguese_0C, critical_error_brazilian_0C, critical_error_japanese_0C, critical_error_korean_0C},
 	{0x0D,	"Sharing violation",
-		critical_error_french_00, critical_error_german_0D, critical_error_spanish_0D, critical_error_brazilian_0D, critical_error_japanese_0D, critical_error_korean_0D},
+		critical_error_french_0D, critical_error_german_0D, critical_error_spanish_0D, critical_error_portuguese_0D, critical_error_brazilian_0D, critical_error_japanese_0D, critical_error_korean_0D},
 	{0x0E,	"Lock violation",
-		critical_error_french_00, critical_error_german_0E, critical_error_spanish_0E, critical_error_brazilian_0E, critical_error_japanese_0E, critical_error_korean_0E},
+		critical_error_french_0E, critical_error_german_0E, critical_error_spanish_0E, critical_error_portuguese_0E, critical_error_brazilian_0E, critical_error_japanese_0E, critical_error_korean_0E},
 	{0x0F,	"Invalid disk change",
-		critical_error_french_00, critical_error_german_0F, critical_error_spanish_0F, critical_error_brazilian_0F, critical_error_japanese_0F, critical_error_korean_0F},
+		critical_error_french_0F, critical_error_german_0F, critical_error_spanish_0F, critical_error_portuguese_0F, critical_error_brazilian_0F, critical_error_japanese_0F, critical_error_korean_0F},
 	{0x10,	"FCB unavailable",
-		critical_error_french_00, critical_error_german_10, critical_error_spanish_10, critical_error_brazilian_10, critical_error_japanese_10, critical_error_korean_10},
+		critical_error_french_10, critical_error_german_10, critical_error_spanish_10, critical_error_portuguese_10, critical_error_brazilian_10, critical_error_japanese_10, critical_error_korean_10},
 	{0x11,	"System resource exhausted",
-		critical_error_french_00, critical_error_german_11, critical_error_spanish_11, critical_error_brazilian_11, critical_error_japanese_11, critical_error_korean_11},
+		critical_error_french_11, critical_error_german_11, critical_error_spanish_11, critical_error_portuguese_11, critical_error_brazilian_11, critical_error_japanese_11, critical_error_korean_11},
 	{0x12,	"Code page mismatch",
-		critical_error_french_00, critical_error_german_12, critical_error_spanish_12, critical_error_brazilian_12, critical_error_japanese_12, critical_error_korean_12},
+		critical_error_french_12, critical_error_german_12, critical_error_spanish_12, critical_error_portuguese_12, critical_error_brazilian_12, critical_error_japanese_12, critical_error_korean_12},
 	{0x13,	"Out of input",
-		critical_error_french_00, critical_error_german_13, critical_error_spanish_13, critical_error_brazilian_13, critical_error_japanese_13, critical_error_korean_13},
+		critical_error_french_13, critical_error_german_13, critical_error_spanish_13, critical_error_portuguese_13, critical_error_brazilian_13, critical_error_japanese_13, critical_error_korean_13},
 	{0x14,	"Insufficient disk space",
-		critical_error_french_00, critical_error_german_14, critical_error_spanish_14, critical_error_brazilian_14, critical_error_japanese_14, critical_error_korean_04},
+		critical_error_french_14, critical_error_german_14, critical_error_spanish_14, critical_error_portuguese_14, critical_error_brazilian_14, critical_error_japanese_14, critical_error_korean_04},
 	{(UINT16)-1,
 		"Critical error",
-		critical_error_french, critical_error_german, critical_error_spanish, critical_error_brazilian, critical_error_japanese, critical_error_korean},
+		critical_error_french, critical_error_german, critical_error_spanish, critical_error_portuguese, critical_error_brazilian, critical_error_japanese, critical_error_korean},
 };
 
 static const struct {
@@ -1520,33 +1529,34 @@ static const struct {
 	const BYTE *message_french;
 	const BYTE *message_german;
 	const BYTE *message_spanish;
+	const BYTE *message_portuguese;
 	const BYTE *message_brazilian;
 	const BYTE *message_japanese;
 	const BYTE *message_korean;
 } param_error_table[] = {
 	{0x01,	"Too many parameters",
-		param_error_french_01, param_error_german_01, param_error_spanish_01, param_error_brazilian_01, param_error_japanese_01, param_error_korean_01},
+		param_error_french_01, param_error_german_01, param_error_spanish_01, param_error_portuguese_01, param_error_brazilian_01, param_error_japanese_01, param_error_korean_01},
 	{0x02,	"Required parameter missing",
-		param_error_french_02, param_error_german_02, param_error_spanish_02, param_error_brazilian_02, param_error_japanese_02, param_error_korean_02},
+		param_error_french_02, param_error_german_02, param_error_spanish_02, param_error_portuguese_02, param_error_brazilian_02, param_error_japanese_02, param_error_korean_02},
 	{0x03,	"Invalid switch",
-		param_error_french_03, param_error_german_03, param_error_spanish_03, param_error_brazilian_03, param_error_japanese_03, param_error_korean_03},
+		param_error_french_03, param_error_german_03, param_error_spanish_03, param_error_portuguese_03, param_error_brazilian_03, param_error_japanese_03, param_error_korean_03},
 	{0x04,	"Invalid keyword",
-		param_error_french_04, param_error_german_04, param_error_spanish_04, param_error_brazilian_04, param_error_japanese_04, param_error_korean_04},
+		param_error_french_04, param_error_german_04, param_error_spanish_04, param_error_portuguese_04, param_error_brazilian_04, param_error_japanese_04, param_error_korean_04},
 	{0x06,	"Parameter value not in allowed range",
-		param_error_french_06, param_error_german_06, param_error_spanish_06, param_error_brazilian_06, param_error_japanese_06, param_error_korean_06},
+		param_error_french_06, param_error_german_06, param_error_spanish_06, param_error_portuguese_06, param_error_brazilian_06, param_error_japanese_06, param_error_korean_06},
 	{0x07,	"Parameter value not allowed",
-		param_error_french_07, param_error_german_07, param_error_spanish_07, param_error_brazilian_07, param_error_japanese_07, param_error_korean_07},
+		param_error_french_07, param_error_german_07, param_error_spanish_07, param_error_portuguese_07, param_error_brazilian_07, param_error_japanese_07, param_error_korean_07},
 	{0x08,	"Parameter value not allowed",
-		param_error_french_08, param_error_german_08, param_error_spanish_08, param_error_brazilian_08, param_error_japanese_08, param_error_korean_08},
+		param_error_french_08, param_error_german_08, param_error_spanish_08, param_error_portuguese_08, param_error_brazilian_08, param_error_japanese_08, param_error_korean_08},
 	{0x09,	"Parameter format not correct",
-		param_error_french_09, param_error_german_09, param_error_spanish_09, param_error_brazilian_09, param_error_japanese_09, param_error_korean_09},
+		param_error_french_09, param_error_german_09, param_error_spanish_09, param_error_portuguese_09, param_error_brazilian_09, param_error_japanese_09, param_error_korean_09},
 	{0x0A,	"Invalid parameter",
-		param_error_french_0A, param_error_german_0A, param_error_spanish_0A, param_error_brazilian_0A, param_error_japanese_0A, param_error_korean_0A},
+		param_error_french_0A, param_error_german_0A, param_error_spanish_0A, param_error_portuguese_0A, param_error_brazilian_0A, param_error_japanese_0A, param_error_korean_0A},
 	{0x0B,	"Invalid parameter combination",
-		param_error_french_0B, param_error_german_0B, param_error_spanish_0B, param_error_brazilian_0B, param_error_japanese_0B, param_error_korean_0B},
+		param_error_french_0B, param_error_german_0B, param_error_spanish_0B, param_error_portuguese_0B, param_error_brazilian_0B, param_error_japanese_0B, param_error_korean_0B},
 	{(UINT16)-1,
 		"Unknown error",
-		unknown_error_french, unknown_error_german, unknown_error_spanish, unknown_error_brazilian, unknown_error_japanese, unknown_error_korean},
+		unknown_error_french, unknown_error_german, unknown_error_spanish, unknown_error_portuguese, unknown_error_brazilian, unknown_error_japanese, unknown_error_korean},
 };
 
 static const struct {
@@ -1734,12 +1744,12 @@ static const struct {
 	{0x040, LANG_ENGLISH, SUBLANG_ENGLISH_NZ},				// New Zealand
 	{0x041, LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE},			// Singapore
 //	{0x041, LANG_ENGLISH, SUBLANG_ENGLISH_SINGAPORE},			// Singapore
-	{0x042, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan???
+	{0x042, LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL},			// Taiwan???
 	{0x051, LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN},				// Japan (DR DOS 5.0, MS-DOS 5.0+)
 	{0x052, LANG_KOREAN, SUBLANG_KOREAN},					// South Korea (DR DOS 5.0)
 	{0x054, LANG_VIETNAMESE, SUBLANG_VIETNAMESE_VIETNAM},			// Vietnam
-	{0x056, LANG_CHINESE_SIMPLIFIED, SUBLANG_CHINESE_SIMPLIFIED},		// China (MS-DOS 5.0+)
-	{0x058, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (MS-DOS 5.0+)
+	{0x056, LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED},			// China (MS-DOS 5.0+)
+	{0x058, LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL},			// Taiwan (MS-DOS 5.0+)
 	{0x05A, LANG_TURKISH, SUBLANG_TURKISH_TURKEY},				// Turkey (MS-DOS 5.0+)
 	{0x05B, LANG_HINDI, SUBLANG_HINDI_INDIA},				// India
 	{0x05C, LANG_URDU, SUBLANG_URDU_PAKISTAN},				// Pakistan
@@ -1761,7 +1771,7 @@ static const struct {
 //	{0x0EA, LANG_IGBO, SUBLANG_IGBO_NIGERIA},				// Nigeria
 	{0x0FB, LANG_AMHARIC, SUBLANG_AMHARIC_ETHIOPIA},			// Ethiopia
 //	{0x0FB, LANG_TIGRINYA, SUBLANG_TIGRINYA_ETHIOPIA},			// Ethiopia
-	{0x0FE, LANG_SWAHILI, SUBLANG_SWAHILI},					// Kenya
+	{0x0FE, LANG_SWAHILI, SUBLANG_SWAHILI_KENYA},				// Kenya
 	{0x107, LANG_ENGLISH, SUBLANG_ENGLISH_ZIMBABWE},			// Zimbabwe
 	{0x10B, LANG_TSWANA, SUBLANG_TSWANA_BOTSWANA},				// Botswana
 	{0x12A, LANG_FAEROESE, SUBLANG_FAEROESE_FAROE_ISLANDS},			// Faroe Islands
@@ -1780,7 +1790,7 @@ static const struct {
 //	{0x166, LANG_SAMI, SUBLANG_SAMI_SKOLT_FINLAND},				// Finland
 //	{0x166, LANG_SAMI, SUBLANG_SAMI_INARI_FINLAND},				// Finland
 	{0x167, LANG_BULGARIAN, SUBLANG_BULGARIAN_BULGARIA},			// Bulgaria
-	{0x172, LANG_LITHUANIAN, SUBLANG_LITHUANIAN_LITHUANIA},			// Lithuania
+	{0x172, LANG_LITHUANIAN, SUBLANG_LITHUANIAN},				// Lithuania
 	{0x173, LANG_LATVIAN, SUBLANG_LATVIAN_LATVIA},				// Latvia
 	{0x174, LANG_ESTONIAN, SUBLANG_ESTONIAN_ESTONIA},			// Estonia
 	{0x17D, LANG_SERBIAN, SUBLANG_SERBIAN_LATIN},				// Serbia / Montenegro
@@ -1812,8 +1822,8 @@ static const struct {
 	{0x354, LANG_CHINESE, SUBLANG_CHINESE_HONGKONG},			// Hong Kong
 	{0x355, LANG_CHINESE, SUBLANG_CHINESE_MACAU},				// Macao
 	{0x357, LANG_KHMER, SUBLANG_KHMER_CAMBODIA},				// Cambodia
-	{0x370, LANG_BANGLA, SUBLANG_BANGLA_BANGLADESH},			// Bangladesh
-	{0x376, LANG_CHINESE_TRADITIONAL, SUBLANG_CHINESE_TRADITIONAL},		// Taiwan (DOS 6.22+)
+	{0x370, LANG_BENGALI, SUBLANG_BENGALI_BANGLADESH},			// Bangladesh
+	{0x376, LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL},			// Taiwan (DOS 6.22+)
 	{0x3C0, LANG_DIVEHI, SUBLANG_DIVEHI_MALDIVES},				// Maldives
 	{0x3C1, LANG_ARABIC, SUBLANG_ARABIC_LEBANON},				// Lebanon
 	{0x3C2, LANG_ARABIC, SUBLANG_ARABIC_JORDAN},				// Jordan

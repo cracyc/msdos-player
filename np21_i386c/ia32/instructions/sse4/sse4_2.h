@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 NONAKA Kimihiro
+ * Copyright (c) 2024 Gocaine Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,44 +23,27 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef	IA32_CPU_INSTRUCTION_MISC_H__
-#define	IA32_CPU_INSTRUCTION_MISC_H__
+#ifndef	IA32_CPU_INSTRUCTION_SSE4_SSE4_2_H__
+#define	IA32_CPU_INSTRUCTION_SSE4_SSE4_2_H__
 
 //#ifdef __cplusplus
 //extern "C" {
 //#endif
 
-void LEA_GwM(void);
-void LEA_GdM(void);
-void _NOP(void);
-void UD2(void);
-void XLAT(void);
-void _CPUID(void);
-
-void SALC(void);	/* undoc 8086 */
-void LOADALL286(void);	/* undoc 286 */
-void LOADALL(void);	/* undoc 386 */
-
-void OpSize(void);
-void AddrSize(void);
-void _2byte_ESC16(void);
-void _2byte_ESC32(void);
-void _3byte_38ESC(void);
-void _3byte_38ESC_16(void);
-void _3byte_3AESC(void);
-void Prefix_ES(void);
-void Prefix_CS(void);
-void Prefix_SS(void);
-void Prefix_DS(void);
-void Prefix_FS(void);
-void Prefix_GS(void);
-
-//void _2byte_Prefix660F_32(void);
-//void _2byte_PrefixF20F_32(void);
-//void _2byte_PrefixF30F_32(void);
+void SSE4_2_PCMPGTQ(void);
+void SSE4_2_PCMPESTRM(void);
+void SSE4_2_PCMPESTRI(void);
+void SSE4_2_PCMPISTRM(void);
+void SSE4_2_PCMPISTRI(void);
+void SSE4_2_CRC32_Gy_Eb(void);
+void SSE4_2_CRC32_Gy_Ev(void);
+void SSE4_2_CRC32_Gy_Eb_16(void);
+void SSE4_2_CRC32_Gy_Ev_16(void);
+void SSE4_2_POPCNT_16(void);
+void SSE4_2_POPCNT_32(void);
 
 //#ifdef __cplusplus
 //}
 //#endif
 
-#endif	/* IA32_CPU_INSTRUCTION_MISC_H__ */
+#endif	/* IA32_CPU_INSTRUCTION_SSE4_SSE4_2_H__ */

@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/15/2024
+								10/18/2024
 
 ----- What's This
 
@@ -32,13 +32,19 @@ For example, compile a sample.c with LSI C-86 and execute the compiled binary:
 	> msdos lcc sample.c
 	> msdos sample.exe
 
+COMMAND.COM is needed to execute a batch file.
+
+	> msdos vz.bat readme.doc
+
+In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
+
 
 ----- Options
 
 Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
-      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-h]
       (command) [options]
 
 	-b	stay busy during keyboard polling
@@ -57,6 +63,7 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-x	enable XMS and LIM EMS
 	-a	disable ANSI.SYS
 	-l	draw box lines with ank characters
+	-h	allow making cursor invisible
 
 ISH.COM contains any invalid instructions and it cause an error.
 Please specify the option '-i' to ignore the invalid instructions.
@@ -370,11 +377,10 @@ If you try CP/M-80 emulator using 8080 emulation mode, use these binaries.
 IA32 binaries include Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
 These binaries will emulate the protected mode more correctly.
 
-The VC++ project file "msdos.vcproj/vcxproj" also contains the configurations
+VC++ project files msdos.dsp/vcproj/vcxproj also contains the configurations
 for 80186, Pentium/PRO/MMX/2/3, and Cyrix MediaGX.
-You can build all binaries for several cpu models by running build9_all.bat
-or build15_all.bat.
-(You need VC++ 2008 with Service Pack 1 or VC++ 2017)
+You can build all binaries for several cpu models by running build6/9/15.bat.
+(VC++ 6.0 with SP6. VC++ 2008 with SP1, or VC++ 2017 are required)
 
 
 ----- Internal Debugger
@@ -852,6 +858,15 @@ INT 2FH		Multiplex Interrupt
 	160AH	Windows - Identify Windows Version And Type (*6)
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
+	1689H	Windows 3+ - Kernel Idle Call
+	1700H	MS Windows "WINOLDAP" - Identify WinOldAp Version
+	1701H	MS Windows "WINOLDAP" - Open Clipboard
+	1702H	MS Windows "WINOLDAP" - Empty Clipboard
+	1703H	MS Windows "WINOLDAP" - Set Clipboard Data
+	1704H	MS Windows "WINOLDAP" - Get Clipboard Data Size
+	1705H	MS Windows "WINOLDAP" - Get Clipboard Data
+	1708H	MS Windows "WINOLDAP" - Close Clipboard
+	1709H	MS Windows "WINOLDAP" - Compact Clipboard
 	1A00H	ANSI.SYS - Installation Check
 	1A01H	ANSI.SYS - Set/Get Display Information
 	4000H	Windows 3+ - Get Virtual Device Driver (VDD) Capabilities
@@ -1064,7 +1079,35 @@ While waiting until the child process is terminated, the virtual CPU is
 suspended and outputs of "type foo.txt" never be sent to the child process.
 
 
---- License
+----- Starting COMMAND.COM / C As Child Process
+
+Parent process may try to start "COMMAND.COM /C (program)" as child process,
+but COMMAND.COM may be missing.
+
+If the program is COM or EXE execution file and COMMAND.COM is missing,
+specified program is started directly.
+
+If the program is DOS internal command A-Z:/CHDIR/PATH/SET, it will be
+executed by MS-DOS Player internal routine.
+This is because changing current drive/directory or environment variables
+in the child COMMAND.COM process does not affect to the parent process.
+
+If the program is DOS internal command TYPE/TRUENAME/VER and COMMAND.COM is
+missing, it will be executed by MS-DOS Player internal routine.
+This is because we want to display contents of text files thru INT 29h,
+and want to display short full path name, and MS-DOS version.
+And in the first place, TRUENAME is not supported on cmd.exe of Windows NT.
+
+If the program is other DOS internal command and COMMAND.COM is missing,
+it will be executed by Win32 system() API.
+In this case, outputting characters to console is not thru INT 29h.
+
+Otherwise, COMMAND.COM will be started as child process.
+
+NOTE: In the case COMMAND.COM is not started, pipe connection does not work.
+
+
+----- License
 
 The copyright belongs to the author, but you can use the source codes under
 the GNU GENERAL PUBLIC LICENSE Version 2.
@@ -1089,6 +1132,10 @@ INT 33H AX=0020H (Enable Mouse Driver),
 INT 67H AX=DE01H (Get Protected Mode Interface),
 INT 67H AX=DE0CH (Switch To Protected Mode),
 and some DOS info block improvements are based on DOSBox.
+
+INT 16H, AX=1300H (Set Double-Byte Character Set Shift Control)
+INT 16H, AX=1301H (Get Double-Byte Character Set Shift Control)
+and some FEP control improvements are based on DOSVAXJ3.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player

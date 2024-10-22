@@ -10,6 +10,28 @@
 
 void exit_handler();
 
+#ifdef _MSC_VC6
+void fatalerror(const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	vfprintf(stderr, format, ap);
+	va_end(ap);
+	exit_handler();
+	exit(1);
+}
+void error(const char *format, ...)
+{
+	va_list ap;
+	va_start(ap, format);
+	fprintf(stderr, "error: ");
+	vfprintf(stderr, format, ap);
+	va_end(ap);
+}
+void nolog(const char *format, ...)
+{
+}
+#else
 #define fatalerror(...) { \
 	fprintf(stderr, __VA_ARGS__); \
 	exit_handler(); \
@@ -17,6 +39,7 @@ void exit_handler();
 }
 #define error(...) fprintf(stderr, "error: " __VA_ARGS__)
 #define nolog(...)
+#endif
 
 //#define ENABLE_DEBUG_LOG
 #ifdef ENABLE_DEBUG_LOG
@@ -157,6 +180,14 @@ inline char *my_strtok(char *tok, const char *del)
 {
 	return (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del));
 }
+inline char* my_strtok_s(char *tok, const char *del, char** context)
+{
+#ifdef _MSC_VC6
+	return strtok(tok, del);
+#else
+	return strtok_s(tok, del, context);
+#endif
+}
 inline char *my_strupr(char *str)
 {
 	return (char *)_mbsupr((unsigned char *)(str));
@@ -165,9 +196,28 @@ inline char *my_strupr(char *str)
 #define my_strchr(str, chr) strchr((str), (chr))
 #define my_strrchr(str, chr) strrchr((str), (chr))
 #define my_strtok(tok, del) strtok((tok), (del))
+#define my_strtok_s(tok, del, context) strtok_s((tok), (del), (context))
 #define my_strupr(str) _strupr((str))
 #endif
 #define array_length(array) (sizeof(array) / sizeof(array[0]))
+
+UINT MyGetDriveType(int drv)
+{
+	if(drv >= 0 && drv < 26) {
+		char volume[] = "A:\\";
+		char local[] = "A:";
+		char remote[1024];
+		DWORD length = sizeof(remote);
+		
+		volume[0] = local[0] = 'A' + drv;
+		
+		if(WNetGetConnectionA(local, remote, &length) == ERROR_NOT_CONNECTED) {
+			return GetDriveTypeA(volume);
+		}
+		return DRIVE_REMOTE;
+	}
+	return DRIVE_NO_ROOT_DIR;
+}
 
 DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuffer)
 {
@@ -186,7 +236,7 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 		}
 	}
 	
-	// Windows NT4 does not support GetLongPathNameA
+	// Windows NT 4 does not support GetLongPathNameA
 	// http://www.expertmg.co.jp/html/cti/vctips/file.htm
 	
 	WIN32_FIND_DATAA ffd;
@@ -198,7 +248,7 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	
 	my_strlcpy(szTempShortPath, lpszShortPath, sizeof(szTempShortPath));
 	
-	if(FindFirstFileA(szTempShortPath, &ffd ) == INVALID_HANDLE_VALUE) {
+	if(FindFirstFileA(szTempShortPath, &ffd) == INVALID_HANDLE_VALUE) {
 		return 0;
 	}
 	do {
@@ -276,6 +326,14 @@ void KeyOnOff(UINT vk)
 	}
 }
 
+bool check_file_extension(const char *file_path, const char *ext)
+{
+	int nam_len = (int)strlen(file_path);
+	int ext_len = (int)strlen(ext);
+	
+	return (nam_len >= ext_len && _strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
+}
+
 #if defined(__MINGW32__)
 extern "C" int _CRT_glob = 0;
 #endif
@@ -307,6 +365,10 @@ static UINT32 vram_length_char = 0, vram_length_attr = 0;
 static UINT32 vram_last_length_char = 0, vram_last_length_attr = 0;
 static COORD vram_coord_char, vram_coord_attr;
 
+static int is_kanji = 0;
+static int is_esc = 0;
+static unsigned int src_int_num = 0;
+
 char temp_file_path[MAX_PATH];
 bool temp_file_created = false;
 
@@ -323,6 +385,7 @@ bool sio_dsr_flow_ctrl = false;
 bool sio_cts_flow_ctrl = false;
 bool ansi_sys = true;
 bool box_line = false;
+bool hide_cursor = false;
 
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
@@ -330,6 +393,36 @@ bool box_line = false;
 }
 UINT32 update_ops = 0;
 UINT32 idle_ops = 0;
+
+#ifdef _MSC_VC6
+inline void __cpuid(int cpu_info[4], int function_id)
+{
+	unsigned int _eax = 0, _ebx = 0, _ecx = 0, _edx = 0;
+	_asm {
+		mov eax, function_id;
+		cpuid;
+		mov _eax, eax;
+		mov _ebx, ebx;
+		mov _ecx, ecx;
+		mov _edx, edx;
+	}
+	cpu_info[0] = _eax;
+	cpu_info[1] = _ebx;
+	cpu_info[2] = _ecx;
+	cpu_info[3] = _edx;
+}
+inline unsigned __int64 __rdtsc()
+{
+	unsigned __int64 val = 0;
+	_asm {
+		rdtsc;
+		mov DWORD PTR val, eax;
+		mov DWORD PTR [val + 4], edx;
+	}
+	return val;
+}
+#define _mm_pause() { __asm {_emit 0xf3}; __asm {_emit 0x90} }
+#endif
 
 inline BOOL is_sse2_ready()
 {
@@ -447,6 +540,10 @@ void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32)
 		cpu_trace_ptr = (cpu_trace_ptr + 1) & (MAX_CPU_TRACE - 1);
 	}
 }
+#endif
+
+#ifdef LITTLEENDIAN
+#undef LITTLEENDIAN
 #endif
 
 #if defined(HAS_IA32)
@@ -1090,14 +1187,6 @@ void debugger_init()
 	memset(&int_break_point, 0, sizeof(int_break_point_t));
 }
 
-bool check_file_extension(const char *file_path, const char *ext)
-{
-	int nam_len = (int)strlen(file_path);
-	int ext_len = (int)strlen(ext);
-	
-	return (nam_len >= ext_len && strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
-}
-
 void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
@@ -1495,7 +1584,9 @@ void debugger_main()
 					params[num++] = token;
 				}
 			}
-			if(stricmp(params[0], "D") == 0) {
+			if(num == 0) {
+				// do nothing
+			} else if(_stricmp(params[0], "D") == 0) {
 				if(num <= 3) {
 					bool pmode = CPU_STAT_PM && !CPU_STAT_VM86;
 					if(num >= 2) {
@@ -1556,7 +1647,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "E") == 0 || stricmp(params[0], "EB") == 0) {
+			} else if(_stricmp(params[0], "E") == 0 || _stricmp(params[0], "EB") == 0) {
 				if(num >= 3) {
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
@@ -1566,7 +1657,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "EW") == 0) {
+			} else if(_stricmp(params[0], "EW") == 0) {
 				if(num >= 3) {
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
@@ -1576,7 +1667,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "ED") == 0) {
+			} else if(_stricmp(params[0], "ED") == 0) {
 				if(num >= 3) {
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
@@ -1586,7 +1677,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "EA") == 0) {
+			} else if(_stricmp(params[0], "EA") == 0) {
 				if(num >= 3) {
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
@@ -1602,83 +1693,83 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "I") == 0 || stricmp(params[0], "IB") == 0) {
+			} else if(_stricmp(params[0], "I") == 0 || _stricmp(params[0], "IB") == 0) {
 				if(num == 2) {
 					telnet_printf("%02X\n", debugger_read_io_byte(debugger_get_val(params[1])) & 0xff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "IW") == 0) {
+			} else if(_stricmp(params[0], "IW") == 0) {
 				if(num == 2) {
 					telnet_printf("%04X\n", debugger_read_io_word(debugger_get_val(params[1])) & 0xffff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "ID") == 0) {
+			} else if(_stricmp(params[0], "ID") == 0) {
 				if(num == 2) {
 					telnet_printf("%08X\n", debugger_read_io_dword(debugger_get_val(params[1])));
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "O") == 0 || stricmp(params[0], "OB") == 0) {
+			} else if(_stricmp(params[0], "O") == 0 || _stricmp(params[0], "OB") == 0) {
 				if(num == 3) {
 					debugger_write_io_byte(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "OW") == 0) {
+			} else if(_stricmp(params[0], "OW") == 0) {
 				if(num == 3) {
 					debugger_write_io_word(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xffff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "OD") == 0) {
+			} else if(_stricmp(params[0], "OD") == 0) {
 				if(num == 3) {
 					debugger_write_io_dword(debugger_get_val(params[1]), debugger_get_val(params[2]));
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "R") == 0) {
+			} else if(_stricmp(params[0], "R") == 0) {
 				if(num == 1) {
 					debugger_regs_info(buffer);
 					telnet_printf("%s", buffer);
 				} else if(num == 3) {
 #if defined(HAS_I386)
-					if(stricmp(params[1], "EAX") == 0) {
+					if(_stricmp(params[1], "EAX") == 0) {
 						CPU_EAX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "EBX") == 0) {
+					} else if(_stricmp(params[1], "EBX") == 0) {
 						CPU_EBX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "ECX") == 0) {
+					} else if(_stricmp(params[1], "ECX") == 0) {
 						CPU_ECX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "EDX") == 0) {
+					} else if(_stricmp(params[1], "EDX") == 0) {
 						CPU_EDX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "ESP") == 0) {
+					} else if(_stricmp(params[1], "ESP") == 0) {
 						CPU_ESP = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "EBP") == 0) {
+					} else if(_stricmp(params[1], "EBP") == 0) {
 						CPU_EBP = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "ESI") == 0) {
+					} else if(_stricmp(params[1], "ESI") == 0) {
 						CPU_ESI = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "EDI") == 0) {
+					} else if(_stricmp(params[1], "EDI") == 0) {
 						CPU_EDI = debugger_get_val(params[2]);
 					} else
 #endif
-					if(stricmp(params[1], "AX") == 0) {
+					if(_stricmp(params[1], "AX") == 0) {
 						CPU_AX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "BX") == 0) {
+					} else if(_stricmp(params[1], "BX") == 0) {
 						CPU_BX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "CX") == 0) {
+					} else if(_stricmp(params[1], "CX") == 0) {
 						CPU_CX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "DX") == 0) {
+					} else if(_stricmp(params[1], "DX") == 0) {
 						CPU_DX = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "SP") == 0) {
+					} else if(_stricmp(params[1], "SP") == 0) {
 						CPU_SP = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "BP") == 0) {
+					} else if(_stricmp(params[1], "BP") == 0) {
 						CPU_BP = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "SI") == 0) {
+					} else if(_stricmp(params[1], "SI") == 0) {
 						CPU_SI = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "DI") == 0) {
+					} else if(_stricmp(params[1], "DI") == 0) {
 						CPU_DI = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "IP") == 0 || stricmp(params[1], "EIP") == 0) {
+					} else if(_stricmp(params[1], "IP") == 0 || _stricmp(params[1], "EIP") == 0) {
 #if defined(HAS_I386)
 						if(CPU_INST_OP32) {
 							CPU_SET_EIP(debugger_get_val(params[2]));
@@ -1688,39 +1779,39 @@ void debugger_main()
 #else
 						CPU_SET_PC((CPU_CS_BASE + (debugger_get_val(params[2]) & 0xffff)) & ADDR_MASK);
 #endif
-					} else if(stricmp(params[1], "AL") == 0) {
+					} else if(_stricmp(params[1], "AL") == 0) {
 						CPU_AL = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "AH") == 0) {
+					} else if(_stricmp(params[1], "AH") == 0) {
 						CPU_AH = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "BL") == 0) {
+					} else if(_stricmp(params[1], "BL") == 0) {
 						CPU_BL = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "BH") == 0) {
+					} else if(_stricmp(params[1], "BH") == 0) {
 						CPU_BH = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "CL") == 0) {
+					} else if(_stricmp(params[1], "CL") == 0) {
 						CPU_CL = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "CH") == 0) {
+					} else if(_stricmp(params[1], "CH") == 0) {
 						CPU_CH = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "DL") == 0) {
+					} else if(_stricmp(params[1], "DL") == 0) {
 						CPU_DL = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "DH") == 0) {
+					} else if(_stricmp(params[1], "DH") == 0) {
 						CPU_DH = debugger_get_val(params[2]);
-					} else if(stricmp(params[1], "CF") == 0) {
+					} else if(_stricmp(params[1], "CF") == 0) {
 						CPU_SET_C_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "PF") == 0) {
+					} else if(_stricmp(params[1], "PF") == 0) {
 						CPU_SET_P_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "AF") == 0) {
+					} else if(_stricmp(params[1], "AF") == 0) {
 						CPU_SET_A_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "ZF") == 0) {
+					} else if(_stricmp(params[1], "ZF") == 0) {
 						CPU_SET_Z_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "SF") == 0) {
+					} else if(_stricmp(params[1], "SF") == 0) {
 						CPU_SET_S_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "TF") == 0) {
+					} else if(_stricmp(params[1], "TF") == 0) {
 						CPU_SET_T_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "IF") == 0) {
+					} else if(_stricmp(params[1], "IF") == 0) {
 						CPU_SET_I_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "DF") == 0) {
+					} else if(_stricmp(params[1], "DF") == 0) {
 						CPU_SET_D_FLAG(debugger_get_val(params[2]) != 0);
-					} else if(stricmp(params[1], "OF") == 0) {
+					} else if(_stricmp(params[1], "OF") == 0) {
 						CPU_SET_O_FLAG(debugger_get_val(params[2]) != 0);
 					} else {
 						telnet_printf("unknown register %s\n", params[1]);
@@ -1728,7 +1819,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "S") == 0) {
+			} else if(_stricmp(params[0], "S") == 0) {
 				if(num >= 4) {
 					UINT32 cur_seg = debugger_get_seg(params[1], data_seg);
 					UINT32 cur_ofs = debugger_get_ofs(params[1]);
@@ -1758,7 +1849,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "U") == 0) {
+			} else if(_stricmp(params[0], "U") == 0) {
 				if(num <= 3) {
 					if(num >= 2) {
 						dasm_seg = debugger_get_seg(params[1], dasm_seg);
@@ -1802,7 +1893,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "UT") == 0) {
+			} else if(_stricmp(params[0], "UT") == 0) {
 				if(num <= 3) {
 					int steps = 128;
 					if(num >= 2) {
@@ -1825,7 +1916,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "H") == 0) {
+			} else if(_stricmp(params[0], "H") == 0) {
 				if(num == 3) {
 					UINT32 l = debugger_get_val(params[1]);
 					UINT32 r = debugger_get_val(params[2]);
@@ -1833,10 +1924,10 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "N") == 0) {
+			} else if(_stricmp(params[0], "N") == 0) {
 				if(num >= 2 && params[1][0] == '\"') {
 					my_strcpy_s(buffer, sizeof(buffer), prev_command);
-					if((token = strtok_s(buffer, "\"", &context)) != NULL && (token = strtok_s(NULL, "\"", &context)) != NULL) {
+					if((token = my_strtok_s(buffer, "\"", &context)) != NULL && (token = my_strtok_s(NULL, "\"", &context)) != NULL) {
 						my_strcpy_s(file_path, MAX_PATH, token);
 					} else {
 						telnet_printf("invalid parameter\n");
@@ -1846,7 +1937,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "L") == 0) {
+			} else if(_stricmp(params[0], "L") == 0) {
 				if(check_file_extension(file_path, ".hex")) {
 					if((fp = fopen(file_path, "r")) != NULL) {
 						UINT32 start_seg = data_seg;
@@ -1909,7 +2000,7 @@ void debugger_main()
 						telnet_printf("can't open %s\n", file_path);
 					}
 				}
-			} else if(stricmp(params[0], "W") == 0) {
+			} else if(_stricmp(params[0], "W") == 0) {
 				if(num == 3) {
 					UINT32 start_seg = debugger_get_seg(params[1], data_seg);
 					UINT32 start_ofs = debugger_get_ofs(params[1]);
@@ -1949,7 +2040,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "BP") == 0 || stricmp(params[0], "RBP") == 0 || stricmp(params[0], "WBP") == 0) {
+			} else if(_stricmp(params[0], "BP") == 0 || _stricmp(params[0], "RBP") == 0 || _stricmp(params[0], "WBP") == 0) {
 				break_point_t *break_point_ptr;
 				#define GET_BREAK_POINT_PTR() { \
 					if(params[0][0] == 'R' || params[0][0] == 'r') { \
@@ -1989,7 +2080,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "IBP") == 0 || stricmp(params[0], "OBP") == 0) {
+			} else if(_stricmp(params[0], "IBP") == 0 || _stricmp(params[0], "OBP") == 0) {
 				break_point_t *break_point_ptr;
 				GET_BREAK_POINT_PTR();
 				if(num == 2) {
@@ -2008,10 +2099,10 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "BC") == 0 || stricmp(params[0], "RBC") == 0 || stricmp(params[0], "WBC") == 0 || stricmp(params[0], "IBC") == 0 || stricmp(params[0], "OBC") == 0) {
+			} else if(_stricmp(params[0], "BC") == 0 || _stricmp(params[0], "RBC") == 0 || _stricmp(params[0], "WBC") == 0 || _stricmp(params[0], "IBC") == 0 || _stricmp(params[0], "OBC") == 0) {
 				break_point_t *break_point_ptr;
 				GET_BREAK_POINT_PTR();
-				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+				if(num == 2 && (_stricmp(params[1], "*") == 0 || _stricmp(params[1], "ALL") == 0)) {
 					memset(break_point_ptr, 0, sizeof(break_point_t));
 				} else if(num >= 2) {
 					for(int i = 1; i < num; i++) {
@@ -2028,12 +2119,12 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "BD") == 0 || stricmp(params[0], "RBD") == 0 || stricmp(params[0], "WBD") == 0 || stricmp(params[0], "IBD") == 0 || stricmp(params[0], "OBD") == 0 ||
-			          stricmp(params[0], "BE") == 0 || stricmp(params[0], "RBE") == 0 || stricmp(params[0], "WBE") == 0 || stricmp(params[0], "IBE") == 0 || stricmp(params[0], "OBE") == 0) {
+			} else if(_stricmp(params[0], "BD") == 0 || _stricmp(params[0], "RBD") == 0 || _stricmp(params[0], "WBD") == 0 || _stricmp(params[0], "IBD") == 0 || _stricmp(params[0], "OBD") == 0 ||
+			          _stricmp(params[0], "BE") == 0 || _stricmp(params[0], "RBE") == 0 || _stricmp(params[0], "WBE") == 0 || _stricmp(params[0], "IBE") == 0 || _stricmp(params[0], "OBE") == 0) {
 				break_point_t *break_point_ptr;
 				GET_BREAK_POINT_PTR();
 				bool enabled = (params[0][strlen(params[0]) - 1] == 'E' || params[0][strlen(params[0]) - 1] == 'e');
-				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+				if(num == 2 && (_stricmp(params[1], "*") == 0 || _stricmp(params[1], "ALL") == 0)) {
 					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 						if(break_point_ptr->table[i].status != 0) {
 							break_point_ptr->table[i].status = enabled ? 1 : -1;
@@ -2053,7 +2144,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "BL") == 0 || stricmp(params[0], "RBL") == 0 || stricmp(params[0], "WBL") == 0) {
+			} else if(_stricmp(params[0], "BL") == 0 || _stricmp(params[0], "RBL") == 0 || _stricmp(params[0], "WBL") == 0) {
 				break_point_t *break_point_ptr;
 				GET_BREAK_POINT_PTR();
 				if(num == 1) {
@@ -2070,7 +2161,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "IBL") == 0 || stricmp(params[0], "OBL") == 0) {
+			} else if(_stricmp(params[0], "IBL") == 0 || _stricmp(params[0], "OBL") == 0) {
 				break_point_t *break_point_ptr;
 				GET_BREAK_POINT_PTR();
 				if(num == 1) {
@@ -2082,7 +2173,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "INTBP") == 0) {
+			} else if(_stricmp(params[0], "INTBP") == 0) {
 				if(num >= 2 && num <= 4) {
 					int int_num = debugger_get_val(params[1]);
 					UINT8 ah = 0, ah_registered = 0;
@@ -2116,8 +2207,8 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "INTBC") == 0) {
-				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+			} else if(_stricmp(params[0], "INTBC") == 0) {
+				if(num == 2 && (_stricmp(params[1], "*") == 0 || _stricmp(params[1], "ALL") == 0)) {
 					memset(&int_break_point, 0, sizeof(int_break_point_t));
 				} else if(num >= 2) {
 					for(int i = 1; i < num; i++) {
@@ -2136,9 +2227,9 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "INTBD") == 0 || stricmp(params[0], "INTBE") == 0) {
+			} else if(_stricmp(params[0], "INTBD") == 0 || _stricmp(params[0], "INTBE") == 0) {
 				bool enabled = (params[0][strlen(params[0]) - 1] == 'E' || params[0][strlen(params[0]) - 1] == 'e');
-				if(num == 2 && (stricmp(params[1], "*") == 0 || stricmp(params[1], "ALL") == 0)) {
+				if(num == 2 && (_stricmp(params[1], "*") == 0 || _stricmp(params[1], "ALL") == 0)) {
 					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 						if(int_break_point.table[i].status != 0) {
 							int_break_point.table[i].status = enabled ? 1 : -1;
@@ -2158,7 +2249,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "INTBL") == 0) {
+			} else if(_stricmp(params[0], "INTBL") == 0) {
 				if(num == 1) {
 					for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 						if(int_break_point.table[i].status) {
@@ -2175,12 +2266,12 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "G") == 0 || stricmp(params[0], "P") == 0) {
+			} else if(_stricmp(params[0], "G") == 0 || _stricmp(params[0], "P") == 0) {
 				if(num == 1 || num == 2) {
 					break_point_t break_point_stored;
 					bool break_points_stored = false;
 					
-					if(stricmp(params[0], "P") == 0) {
+					if(_stricmp(params[0], "P") == 0) {
 						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
 						memset(&break_point, 0, sizeof(break_point_t));
 						break_points_stored = true;
@@ -2239,7 +2330,7 @@ void debugger_main()
 					telnet_printf("%s", buffer);
 					
 					if(break_point.hit) {
-						if(stricmp(params[0], "G") == 0 && num == 1) {
+						if(_stricmp(params[0], "G") == 0 && num == 1) {
 							telnet_set_color(TELNET_RED | TELNET_INTENSITY);
 							telnet_printf("breaked at %08X(%04X:%04X): break point is hit\n", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP);
 						}
@@ -2287,7 +2378,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "T") == 0) {
+			} else if(_stricmp(params[0], "T") == 0) {
 				if(num == 1 || num == 2) {
 					int steps = 1;
 					if(num >= 2) {
@@ -2381,12 +2472,12 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "Q") == 0) {
+			} else if(_stricmp(params[0], "Q") == 0) {
 				break;
-			} else if(stricmp(params[0], "X") == 0) {
+			} else if(_stricmp(params[0], "X") == 0) {
 				debugger_process_info(buffer);
 				telnet_printf("%s", buffer);
-			} else if(stricmp(params[0], ">") == 0) {
+			} else if(_stricmp(params[0], ">") == 0) {
 				if(num == 2) {
 					if(fp_debugger != NULL) {
 						fclose(fp_debugger);
@@ -2396,7 +2487,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "<") == 0) {
+			} else if(_stricmp(params[0], "<") == 0) {
 				if(num == 2) {
 					if(fi_debugger != NULL) {
 						fclose(fi_debugger);
@@ -2406,7 +2497,7 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
-			} else if(stricmp(params[0], "?") == 0) {
+			} else if(_stricmp(params[0], "?") == 0) {
 				telnet_printf("D [<start> [<end>]] - dump memory\n");
 				telnet_printf("E[{B,W,D}] <address> <list> - edit memory (byte,word,dword)\n");
 				telnet_printf("EA <address> \"<value>\" - edit memory (ascii)\n");
@@ -2757,7 +2848,7 @@ bool is_started_from_console()
 	}
 	if(GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
 		// If cursor position is (0,0) then we may be launched in a separate console
-		// Notice: a 4NT console window without scrollback and run with `cls && msdos.exe` can trigger this as well
+		// Notice: a Windows NT 4 console window without scrollback and run with `cls && msdos.exe` can trigger this as well
 		return !(csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0);
 	}
 	return false;
@@ -2850,6 +2941,11 @@ HDC get_console_window_device_context()
 	return GetDC(get_console_window_handle());
 }
 
+#ifdef LANG_BRAZILIAN
+#undef LANG_BRAZILIAN
+#endif
+#define LANG_BRAZILIAN MAKELANGID(LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN)
+
 USHORT get_message_lang()
 {
 	if(active_code_page == 932) {
@@ -2857,7 +2953,8 @@ USHORT get_message_lang()
 	} else if(active_code_page == 949) {
 		return LANG_KOREAN;
 	} else if(active_code_page == 850 || active_code_page == 860) {
-		switch(PRIMARYLANGID(GetUserDefaultLangID())) {
+		LANGID langID = GetUserDefaultLangID();
+		switch(PRIMARYLANGID(langID)) {
 		case LANG_FRENCH:
 			return LANG_FRENCH;
 		case LANG_GERMAN:
@@ -2865,6 +2962,9 @@ USHORT get_message_lang()
 		case LANG_SPANISH:
 			return LANG_SPANISH;
 		case LANG_PORTUGUESE:
+			if(SUBLANGID(langID) == SUBLANG_PORTUGUESE_BRAZILIAN) {
+				return LANG_BRAZILIAN;
+			}
 			return LANG_PORTUGUESE;
 		}
 	}
@@ -3134,6 +3234,7 @@ void set_ime_open_status(BOOL value)
 	}
 }
 
+#if 0
 DWORD get_ime_conversion_mode()
 {
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
@@ -3153,12 +3254,27 @@ void set_ime_conversion_mode(DWORD value)
 		SendMessage(hWnd, WM_IME_CONTROL, IMC_SETCONVERSIONMODE, value);
 	}
 }
+#endif
 
 void get_sio_port_numbers()
 {
 	SP_DEVINFO_DATA DeviceInfoData = {sizeof(SP_DEVINFO_DATA)};
 	HDEVINFO hDevInfo = 0;
 	HKEY hKey = 0;
+#ifdef _MSC_VC6
+	GUID GUID_DEVINTERFACE_COMPORT;
+	GUID_DEVINTERFACE_COMPORT.Data1 = 0x86e0d1e0L;
+	GUID_DEVINTERFACE_COMPORT.Data2 = 0x8089;
+	GUID_DEVINTERFACE_COMPORT.Data3 = 0x11d0;
+	GUID_DEVINTERFACE_COMPORT.Data4[0] = 0x9c;
+	GUID_DEVINTERFACE_COMPORT.Data4[1] = 0xe4;
+	GUID_DEVINTERFACE_COMPORT.Data4[2] = 0x08;
+	GUID_DEVINTERFACE_COMPORT.Data4[3] = 0x00;
+	GUID_DEVINTERFACE_COMPORT.Data4[4] = 0x3e;
+	GUID_DEVINTERFACE_COMPORT.Data4[5] = 0x30;
+	GUID_DEVINTERFACE_COMPORT.Data4[6] = 0x1f;
+	GUID_DEVINTERFACE_COMPORT.Data4[7] = 0x73;
+#endif
 	if((hDevInfo = SetupDiGetClassDevsA(&GUID_DEVINTERFACE_COMPORT, NULL, NULL, (DIGCF_PRESENT | DIGCF_DEVICEINTERFACE))) != 0) {
 		for(int i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData); i++) {
 			if((hKey = SetupDiOpenDevRegKey(hDevInfo, &DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE)) != INVALID_HANDLE_VALUE) {
@@ -3229,6 +3345,7 @@ int main(int argc, char *argv[], char *envp[])
 	char new_exec_file[MAX_PATH];
 	bool convert_cmd_file = false;
 	unsigned int code_page = 0;
+	bool set_code_page = false;
 	unsigned int old_error_mode = 0;
 	
 	char path[MAX_PATH], full[MAX_PATH], *name = NULL;
@@ -3241,7 +3358,7 @@ int main(int argc, char *argv[], char *envp[])
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	GetFullPathNameA(path, MAX_PATH, full, &name);
 	
-	if(name != NULL && stricmp(name, "msdos.exe") != 0) {
+	if(name != NULL && _stricmp(name, "msdos.exe") != 0) {
 		// check if command file is embedded to this execution file
 		// if this execution file name is msdos.exe, don't check
 		FILE* fp = fopen(full, "rb");
@@ -3271,6 +3388,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 			ansi_sys = ((buffer[1] & 0x04) != 0);
 			box_line = ((buffer[1] & 0x08) != 0);
+			hide_cursor = ((buffer[1] & 0x10) != 0);
 			if((buffer[2] != 0 || buffer[3] != 0) && (buffer[4] != 0 || buffer[5] != 0)) {
 				buf_width  = buffer[2] | (buffer[3] << 8);
 				buf_height = buffer[4] | (buffer[5] << 8);
@@ -3284,8 +3402,7 @@ int main(int argc, char *argv[], char *envp[])
 				win_minor_version = buffer[9];
 			}
 			if((code_page = buffer[10] | (buffer[11] << 8)) != 0) {
-				set_input_code_page(code_page);
-				set_output_code_page(code_page);
+				set_code_page = true;
 			}
 			int name_len = buffer[12];
 			int file_len = buffer[13] | (buffer[14] << 8) | (buffer[15] << 16) | (buffer[16] << 24);
@@ -3353,6 +3470,7 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-p", 2) == 0) {
 			if(IS_NUMERIC(argv[i][2])) {
 				code_page = atoi(&argv[i][2]);
+				set_code_page = true;
 			} else {
 				code_page = get_input_code_page();
 			}
@@ -3432,6 +3550,9 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-l", 2) == 0) {
 			box_line = true;
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-h", 2) == 0) {
+			hide_cursor = true;
+			arg_offset++;
 		} else {
 			break;
 		}
@@ -3453,7 +3574,7 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr,
 			"Usage:\n\n"
 			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
-			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l]\n"
+			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-h]\n"
 			"      (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
@@ -3482,6 +3603,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 			"\t-a\tdisable ANSI.SYS\n"
 			"\t-l\tdraw box lines with ank characters\n"
+			"\t-h\tallow making cursor invisible\n"
 		);
 		
 		if(!started_from_console) {
@@ -3500,11 +3622,11 @@ int main(int argc, char *argv[], char *envp[])
 	}
 	if(convert_cmd_file) {
 		retval = EXIT_FAILURE;
-		if(name != NULL/* && stricmp(name, "msdos.exe") == 0*/) {
+		if(name != NULL/* && _stricmp(name, "msdos.exe") == 0*/) {
 			FILE *fp = NULL, *fs = NULL, *fo = NULL;
-			int len = (int)strlen(argv[arg_offset + 1]), data;
+			int data;
 			
-			if(!(len > 4 && (stricmp(argv[arg_offset + 1] + len - 4, ".COM") == 0 || stricmp(argv[arg_offset + 1] + len - 4, ".EXE") == 0))) {
+			if(!(check_file_extension(argv[arg_offset + 1], ".COM") || check_file_extension(argv[arg_offset + 1], ".EXE"))) {
 				fprintf(stderr, "Specify command file with extenstion (.COM or .EXE)\n");
 			} else if((fp = fopen(full, "rb")) == NULL) {
 				fprintf(stderr, "Can't open '%s'\n", name);
@@ -3522,7 +3644,7 @@ int main(int argc, char *argv[], char *envp[])
 				} else if((fo = fopen(new_exec_file, "wb")) == NULL) {
 					fprintf(stderr, "Can't open '%s'\n", new_exec_file);
 				} else {
-					// read pe header of msdos.exe
+					// read PE header of msdos.exe
 					UINT8 header[0x400];
 					fseek(fp, 0, SEEK_SET);
 					fread(header, sizeof(header), 1, fp);
@@ -3596,6 +3718,9 @@ int main(int argc, char *argv[], char *envp[])
 					}
 					if(box_line) {
 						flags2 |= 0x08;
+					}
+					if(hide_cursor) {
+						flags2 |= 0x10;
 					}
 					fputc(flags, fo);
 					fputc(flags2, fo);
@@ -3708,6 +3833,10 @@ int main(int argc, char *argv[], char *envp[])
 		main_thread_id = GetCurrentThreadId();
 	}
 	
+	if(set_code_page) {
+		set_input_code_page(code_page);
+		set_output_code_page(code_page);
+	}
 	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	get_console_cursor_success = (GetConsoleCursorInfo(hStdout, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
@@ -3930,7 +4059,7 @@ void change_console_size(int width, int height)
 	int cur_buffer_width  = csbi.dwSize.X;
 	int cur_buffer_height = csbi.dwSize.Y;
 	
-	// workaround win10 conhost v2 bug that crash when cursor is out of range
+	// workaround Windows 10 conhost v2 bug that crash when cursor is out of range
 	if(is_win10_or_later) {
 		co.X = 0;
 		co.Y = 0;
@@ -4117,7 +4246,7 @@ bool update_console_input()
 					}
 				}
 				if(ir[i].EventType & KEY_EVENT) {
-					// update keyboard flags in bios data area
+					// update keyboard flags in BIOS data area
 					if(ir[i].Event.KeyEvent.dwControlKeyState & CAPSLOCK_ON) {
 						mem[0x417] |= 0x40;
 					} else {
@@ -4259,7 +4388,7 @@ bool update_console_input()
 							} else if(scn == 0x57 || scn == 0x58) {
 								scn += 0x85 - 0x57;
 							}
-							// ignore shift, ctrl, alt, win and menu keys
+							// ignore Shift, Ctrl, Alt, Win and Menu keys
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d && scn == scn_old)) {
 								if(key_buf_char != NULL && key_buf_scan != NULL) {
 									enter_key_buf_lock();
@@ -4443,7 +4572,7 @@ void msdos_sda_update(int psp_seg)
 	sda->current_drive = _getdrive();
 }
 
-// dta info
+// DTA info
 
 void msdos_dta_info_init()
 {
@@ -4548,7 +4677,7 @@ void msdos_cds_update(int drv, const char *path)
 	my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 }
 
-// nls information tables
+// NLS information tables
 
 // uppercase table (func 6502h)
 void msdos_upper_table_update()
@@ -5103,8 +5232,16 @@ const char *msdos_short_full_dir(const char *path)
 const char *msdos_local_file_path(const char *path, int lfn)
 {
 	static char trimmed[MAX_PATH];
+	char tmp_path[MAX_PATH];
 	
-	strcpy(trimmed, msdos_trimmed_path(path, lfn));
+	strncpy(tmp_path, path, MAX_PATH);
+	tmp_path[MAX_PATH - 1] = '\0';
+	
+	// fix lack of null terminator (çÇã¥î≈ VZ Editor)
+	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
+		tmp_path[8] = '\0';
+	}
+	strcpy(trimmed, msdos_trimmed_path(tmp_path, lfn));
 #if 0
 	// I have forgotten the reason of this routine... :-(
 	if(_access(trimmed, 0) != 0) {
@@ -5118,6 +5255,35 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	}
 #endif
 	return(trimmed);
+}
+
+const char *msdos_file_name(const char *path)
+{
+	static char tmp[MAX_PATH];
+	const char *sep = strrchr(path, '\\');
+	
+	if(sep) {
+		strcpy(tmp, sep + 1);
+	} else {
+		strcpy(tmp, path);
+	}
+	return(tmp);
+}
+
+bool msdos_is_internal_command(const char *command)
+{
+	const char *table[] = {
+		"DIR", /*"CALL",*/ "CHCP", "RENAME", "REN", "ERASE", "DEL", "TYPE", "REM", "COPY", "PAUSE", "DATE", "TIME", "VER", "VOL", "CD", "CHDIR", "MD", "MKDIR", "RD", "RMDIR", "BREAK", "VERIFY", "SET", "PROMPT", "PATH", "EXIT", /*"CTTY",*/ "ECHO", /*"LOCK", "UNLOCK", "GOTO", "SHIFT", "IF", "FOR",*/ "CLS", "TRUENAME", /*"LOADHIGH", "LH", "LFNFOR"*/
+	};
+	for(int i = 0; i < array_length(table); i++) {
+		if(_stricmp(command, table[i]) == 0) {
+			return(true);
+		}
+	}
+	if(((command[0] >= 'a' && command[0] <= 'z') || (command[0] >= 'A' && command[0] <= 'Z')) && command[1] == ':' && command[2] == '\0') {
+		return(true);
+	}
+	return false;
 }
 
 bool msdos_is_device_path(const char *path)
@@ -5153,7 +5319,10 @@ bool msdos_is_device_path(const char *path)
 			   _stricmp(name, "CONFIG$" ) == 0 ||
 			   _stricmp(name, "EMMXXXX0") == 0 ||
 //			   _stricmp(name, "SCSIMGR$") == 0 ||
-			   _stricmp(name, "$IBMAIAS") == 0) {
+			   _stricmp(name, "$IBMAFNT") == 0 ||
+			   _stricmp(name, "$IBMADSP") == 0 ||
+			   _stricmp(name, "$IBMAIAS") == 0 ||
+			   _stricmp(name, "FP$ATOK6") == 0) {
 				return(true);
 			}
 		}
@@ -5268,29 +5437,17 @@ bool msdos_is_valid_drive(int drv)
 
 bool msdos_is_removable_drive(int drv)
 {
-	char volume[] = "A:\\";
-	
-	volume[0] = 'A' + drv;
-	
-	return(GetDriveTypeA(volume) == DRIVE_REMOVABLE);
+	return(MyGetDriveType(drv) == DRIVE_REMOVABLE);
 }
 
 bool msdos_is_cdrom_drive(int drv)
 {
-	char volume[] = "A:\\";
-	
-	volume[0] = 'A' + drv;
-	
-	return(GetDriveTypeA(volume) == DRIVE_CDROM);
+	return(MyGetDriveType(drv) == DRIVE_CDROM);
 }
 
 bool msdos_is_remote_drive(int drv)
 {
-	char volume[] = "A:\\";
-	
-	volume[0] = 'A' + drv;
-	
-	return(GetDriveTypeA(volume) == DRIVE_REMOTE);
+	return(MyGetDriveType(drv) == DRIVE_REMOTE);
 }
 
 bool msdos_is_subst_drive(int drv)
@@ -5550,11 +5707,18 @@ UINT16 msdos_device_info(const char *path)
 	} else if(msdos_is_device_path(path)) {
 		if(strstr(path, "EMMXXXX0") != NULL && support_ems) {
 			return(0xc0c0);
-		} else if(strstr(path, "MSCD001") != NULL) {
-			return(0xc880);
-		} else {
-			return(0x8084);
 		}
+//		if(strstr(path, "MSCD001") != NULL) {
+//			return(0xc880);
+//		}
+		if(strstr(path, "$IBMAFNT") != NULL ||
+		   strstr(path, "$IBMADSP") != NULL ||
+		   strstr(path, "$IBMAIAS") != NULL ||
+		   strstr(path, "FP$ATOK6") != NULL) {
+//			return(0xc080);
+			return(0x0080);
+		}
+		return(0x8084);
 	} else {
 		return(msdos_drive_number(path));
 	}
@@ -5787,6 +5951,7 @@ int msdos_read(int fd, void *buffer, unsigned int count)
 int msdos_kbhit()
 {
 	msdos_stdio_reopen();
+	int val = 0;
 	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(0, current_psp);
@@ -5806,7 +5971,11 @@ int msdos_kbhit()
 		leave_key_buf_lock();
 		if(!empty) return(1);
 	}
-	return(_kbhit());
+	try {
+		val = _kbhit();
+	} catch(...) {
+	}
+	return(val);
 }
 
 int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
@@ -5838,7 +6007,7 @@ retry:
 	}
 	
 	// input from console
-	int key_char, key_scan;
+	int key_char = 0, key_scan = 0;
 	if(key_recv != 0) {
 		key_char = (key_code >> 0) & 0xff;
 		key_scan = (key_code >> 8) & 0xff;
@@ -5964,6 +6133,7 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(1, current_psp);
+	bool skip_int29h = false;
 	
 	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdout is redirected to file
@@ -5975,14 +6145,33 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
 		// int 29h is not hooked, no need to call int 29h
-		msdos_putch_fast(data, int_num, reg_ah);
+		skip_int29h = true;
 	} else if(use_service_thread && in_service && main_thread_id != GetCurrentThreadId()) {
 		// XXX: in usually we should not reach here
 		// this is called from service thread to echo the input
 		// we can not call int 29h because it causes a critial issue to control cpu running in main thread :-(
-		msdos_putch_fast(data, int_num, reg_ah);
+		skip_int29h = true;
 	} else if(in_service_29h) {
 		// disallow reentering call int 29h routine to prevent an infinite loop :-(
+		skip_int29h = true;
+	} else if(ansi_sys) {
+		// ANSI.SYS does not seem to call int 29h for bell code
+		if(is_kanji) {
+			// kanji character
+		} else if(is_esc) {
+			// escape sequense
+		} else {
+			if(msdos_lead_byte_check(data)) {
+				// lead byte of kanji character
+			} else if(data == 0x1b) {
+				// start escape sequence
+			} else if(data == 0x07) {
+				// bell
+				skip_int29h = true;
+			}
+		}
+	}
+	if(skip_int29h) {
 		msdos_putch_fast(data, int_num, reg_ah);
 	} else {
 		// this is called from main thread, so we can call int 29h :-)
@@ -5996,6 +6185,7 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 			// call int 29h routine is at fffc:0027
 			CPU_CALL_FAR(DUMMY_TOP >> 4, 0x0027);
 			CPU_AL = data;
+			src_int_num = int_num;
 			
 			// run cpu until call int 29h routine is done
 			while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
@@ -6025,8 +6215,8 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	SMALL_RECT rect;
 	COORD co;
 	static int p = 0;
-	static int is_kanji = 0;
-	static int is_esc = 0;
+//	static int is_kanji = 0;
+//	static int is_esc = 0;
 	static int stored_x;
 	static int stored_y;
 	static WORD stored_a;
@@ -6346,6 +6536,23 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	cursor_moved = true;
 }
 
+void msdos_printf(FILE *fp, const char *format, ...)
+{
+	char buffer[ENV_SIZE];
+	va_list ap;
+	va_start(ap, format);
+	vsprintf(buffer, format, ap);
+	va_end(ap);
+	
+	for(int i = 0; i < (int)strlen(buffer); i++) {
+		if(fp != NULL) {
+			fputc(buffer[i], fp);
+		} else {
+			msdos_putch(buffer[i], 0x21, 0x09);
+		}
+	}
+}
+
 int msdos_aux_in()
 {
 	msdos_stdio_reopen();
@@ -6466,7 +6673,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs)
 			msdos_mcb_check(mcb);
 		}
 		if(mcb->mz != 'Z') {
-			// check if the next is dummy mcb to link to umb
+			// check if the next is dummy MCB to link to UMB
 			if((malloc_strategy & 0x0f) >= 2 && (mcb->paragraphs >= paragraphs) && !mcb->psp) {
 				found_seg = mcb_seg;
 			}
@@ -6493,7 +6700,7 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs)
 	return(-1);
 }
 
-int msdos_mem_realloc(int seg, int paragraphs, int *max_paragraphs)
+int msdos_mem_realloc(int seg, int paragraphs, int *max_paragraphs, bool recover_size = true)
 {
 	int mcb_seg = seg - 1;
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
@@ -6505,21 +6712,25 @@ int msdos_mem_realloc(int seg, int paragraphs, int *max_paragraphs)
 		if(max_paragraphs) {
 			*max_paragraphs = mcb->paragraphs;
 		}
-		msdos_mem_split(seg, current_paragraphs);
+		if(recover_size) {
+			msdos_mem_split(seg, current_paragraphs);
+		}
 		return(-1);
 	}
 	msdos_mem_split(seg, paragraphs);
 	return(0);
 }
 
-void msdos_mem_free(int seg)
+void msdos_mem_free(int seg, bool merge = true)
 {
 	int mcb_seg = seg - 1;
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	msdos_mcb_check(mcb);
 	
+	if(merge) {
+		msdos_mem_merge(seg);
+	}
 	mcb->psp = 0;
-	msdos_mem_merge(seg);
 }
 
 int msdos_mem_get_free(int mcb_seg)
@@ -6662,7 +6873,7 @@ void msdos_hma_mem_merge(int offset)
 
 int msdos_hma_mem_alloc(int size, UINT16 owner)
 {
-	int offset = 0x10; // first mcb in HMA
+	int offset = 0x10; // first MCB in HMA
 	
 	while(1) {
 		hma_mcb_t *mcb = (hma_mcb_t *)(mem + 0xffff0 + offset);
@@ -6713,7 +6924,7 @@ void msdos_hma_mem_free(int offset)
 
 int msdos_hma_mem_get_free(int *available_offset)
 {
-	int offset = 0x10; // first mcb in HMA
+	int offset = 0x10; // first MCB in HMA
 	int size = 0;
 	
 	while(1) {
@@ -6823,13 +7034,19 @@ void msdos_env_set(int env_seg, const char *name, const char *value)
 		char tmp[1024];
 		
 		if(_stricmp(name, n) == 0) {
-			sprintf(tmp, "%s=%s", n, value);
+			if(value[0] != '\0') {
+				sprintf(tmp, "%s=%s", n, value);
+			} else {
+				tmp[0] = '\0'; // delete
+			}
 			done = 1;
 		} else {
 			sprintf(tmp, "%s=%s", n, v);
 		}
-		memcpy(dst, tmp, strlen(tmp));
-		dst += strlen(tmp) + 1;
+		if(tmp[0] != '\0') {
+			memcpy(dst, tmp, strlen(tmp));
+			dst += strlen(tmp) + 1;
+		}
 		src += len + 1;
 	}
 	if(!done) {
@@ -6855,7 +7072,7 @@ const char *msdos_comspec_value(int env_seg)
 	static char tmp[MAX_PATH];
 	const char *env = msdos_env_get(env_seg, "COMSPEC");
 	
-	if(env != NULL && stricmp(env, "C:\\COMMAND.COM") != 0) {
+	if(env != NULL && _stricmp(env, "C:\\COMMAND.COM") != 0) {
 		strcpy(tmp, env);
 	} else {
 		strcpy(tmp, "C:\\COMMAND.COM");
@@ -6868,12 +7085,170 @@ const char *msdos_comspec_path(int env_seg)
 	static char tmp[MAX_PATH];
 	const char *env = msdos_env_get(env_seg, "COMSPEC");
 	
-	if(env != NULL && stricmp(env, "C:\\COMMAND.COM") != 0) {
+	if(env != NULL && _stricmp(env, "C:\\COMMAND.COM") != 0) {
 		strcpy(tmp, env);
 	} else {
 		strcpy(tmp, comspec_path);
 	}
 	return(tmp);
+}
+
+bool msdos_search_command_file(const char *command, int env_seg, char *dest_path)
+{
+	char path[MAX_PATH];
+	char env_path[ENV_SIZE];
+	
+	if(check_file_extension(command, ".COM") || check_file_extension(command, ".EXE") || check_file_extension(command, ".BAT")) {
+		strcpy(path, command);
+		if(_access(path, 0) != 0 && strchr(command, ':') == NULL && strchr(command, '\\') == NULL) {
+			// search path in parent environments
+			const char *env = msdos_env_get(env_seg, "PATH");
+			if(env != NULL) {
+				strcpy(env_path, env);
+				char *token = my_strtok(env_path, ";");
+				
+				while(token != NULL) {
+					if(strlen(token) != 0) {
+						strcpy(path, msdos_combine_path(token, command));
+						if(_access(path, 0) == 0) {
+							break;
+						}
+					}
+					token = my_strtok(NULL, ";");
+				}
+			}
+		}
+	} else if(strchr(command, '.') == NULL) {
+		sprintf(path, "%s.COM", command);
+		if(_access(path, 0) != 0) {
+			sprintf(path, "%s.EXE", command);
+			if(_access(path, 0) != 0) {
+				sprintf(path, "%s.BAT", command);
+				if(_access(path, 0) != 0 && strchr(command, ':') == NULL && strchr(command, '\\') == NULL) {
+					// search path in parent environments
+					const char *env = msdos_env_get(env_seg, "PATH");
+					if(env != NULL) {
+						strcpy(env_path, env);
+						char *token = my_strtok(env_path, ";");
+						
+						while(token != NULL) {
+							if(strlen(token) != 0) {
+								sprintf(path, "%s.COM", msdos_combine_path(token, command));
+								if(_access(path, 0) == 0) {
+									break;
+								}
+								sprintf(path, "%s.EXE", msdos_combine_path(token, command));
+								if(_access(path, 0) == 0) {
+									break;
+								}
+								sprintf(path, "%s.BAT", msdos_combine_path(token, command));
+								if(_access(path, 0) == 0) {
+									break;
+								}
+							}
+							token = my_strtok(NULL, ";");
+						}
+					}
+				}
+			}
+		}
+	} else {
+		return(false);
+	}
+	if(_access(path, 0) == 0) {
+		strcpy(dest_path, path);
+		return(true);
+	}
+	return(false);
+}
+
+// error message
+
+const char *msdos_standard_error_message(UINT16 code)
+{
+	USHORT lang = get_message_lang();
+	
+	for(int i = 0; i < array_length(standard_error_table); i++) {
+		if(standard_error_table[i].code == code || standard_error_table[i].code == (UINT16)-1) {
+			const char *message = NULL;
+			if(lang == LANG_FRENCH) {
+				return (const char *)standard_error_table[i].message_french;
+			} else if(lang == LANG_GERMAN) {
+				return (const char *)standard_error_table[i].message_german;
+			} else if(lang == LANG_SPANISH) {
+				return (const char *)standard_error_table[i].message_spanish;
+			} else if(lang == LANG_PORTUGUESE) {
+				return (const char *)standard_error_table[i].message_portuguese;
+			} else if(lang == LANG_BRAZILIAN) {
+				return (const char *)standard_error_table[i].message_brazilian;
+			} else if(lang == LANG_JAPANESE) {
+				return (const char *)standard_error_table[i].message_japanese;
+			} else if(lang == LANG_KOREAN) {
+				return (const char *)standard_error_table[i].message_korean;
+			}
+			return standard_error_table[i].message_english;
+		}
+	}
+	// we should not reach here :-(
+	return NULL;
+}
+
+const char *msdos_critical_error_message(UINT16 code)
+{
+	USHORT lang = get_message_lang();
+	
+	for(int i = 0; i < array_length(critical_error_table); i++) {
+		if(critical_error_table[i].code == code || critical_error_table[i].code == (UINT16)-1) {
+			const char *message = NULL;
+			if(lang == LANG_FRENCH) {
+				return (const char *)critical_error_table[i].message_french;
+			} else if(lang == LANG_GERMAN) {
+				return (const char *)critical_error_table[i].message_german;
+			} else if(lang == LANG_SPANISH) {
+				return (const char *)critical_error_table[i].message_spanish;
+			} else if(lang == LANG_PORTUGUESE) {
+				return (const char *)critical_error_table[i].message_portuguese;
+			} else if(lang == LANG_BRAZILIAN) {
+				return (const char *)critical_error_table[i].message_brazilian;
+			} else if(lang == LANG_JAPANESE) {
+				return (const char *)critical_error_table[i].message_japanese;
+			} else if(lang == LANG_KOREAN) {
+				return (const char *)critical_error_table[i].message_korean;
+			}
+			return critical_error_table[i].message_english;
+		}
+	}
+	// we should not reach here :-(
+	return NULL;
+}
+
+const char *msdos_param_error_message(UINT16 code)
+{
+	USHORT lang = get_message_lang();
+	
+	for(int i = 0; i < array_length(param_error_table); i++) {
+		if(param_error_table[i].code == code || param_error_table[i].code == (UINT16)-1) {
+			const char *message = NULL;
+			if(lang == LANG_FRENCH) {
+				return (const char *)param_error_table[i].message_french;
+			} else if(lang == LANG_GERMAN) {
+				return (const char *)param_error_table[i].message_german;
+			} else if(lang == LANG_SPANISH) {
+				return (const char *)param_error_table[i].message_spanish;
+			} else if(lang == LANG_PORTUGUESE) {
+				return (const char *)param_error_table[i].message_portuguese;
+			} else if(lang == LANG_BRAZILIAN) {
+				return (const char *)param_error_table[i].message_brazilian;
+			} else if(lang == LANG_JAPANESE) {
+				return (const char *)param_error_table[i].message_japanese;
+			} else if(lang == LANG_KOREAN) {
+				return (const char *)param_error_table[i].message_korean;
+			}
+			return param_error_table[i].message_english;
+		}
+	}
+	// we should not reach here :-(
+	return NULL;
 }
 
 // process
@@ -6947,8 +7322,9 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	int fd = -1;
 	int sio_port = 0;
 	int lpt_port = 0;
-	int dos_command = 0;
-	char command[MAX_PATH], path[MAX_PATH], opt[MAX_PATH], *name = NULL, name_tmp[MAX_PATH];
+	char path[MAX_PATH], opt[MAX_PATH];
+	char tmp[MAX_PATH];
+	bool changed = false;
 	char pipe_stdin_path[MAX_PATH] = {0};
 	char pipe_stdout_path[MAX_PATH] = {0};
 	char pipe_stderr_path[MAX_PATH] = {0};
@@ -6960,243 +7336,619 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	
 	psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
 	
-	if(strlen(cmd) >= 5 && _stricmp(&cmd[strlen(cmd) - 4], ".BAT") == 0) {
-		// this is a batch file, run command.com
-		char tmp[MAX_PATH];
-		if(opt_len != 0) {
-			sprintf(tmp, "/C %s %s", cmd, opt);
+	// search command file
+	if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
+		// redirect C:\COMMAND.COM to comspec_path
+		strcpy(path, msdos_comspec_path(parent_psp->env_seg));
+	} else if(!msdos_search_command_file(cmd, parent_psp->env_seg, path)) {
+		if(_stricmp(cmd, "COMMAND.COM") == 0 || _stricmp(cmd, "COMMAND") == 0) {
+			// COMMAND.COM not found in the path, so open comspec_path
+			strcpy(path, msdos_comspec_path(parent_psp->env_seg));
 		} else {
-			sprintf(tmp, "/C %s", cmd);
-		}
-		strcpy(opt, tmp);
-		opt_len = (int)strlen(opt);
-		mem[opt_ofs] = opt_len;
-		sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-		strcpy(command, msdos_comspec_path(parent_psp->env_seg));
-		strcpy(name_tmp, "COMMAND.COM");
-	} else {
-		if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
-			// redirect C:\COMMAND.COM to comspec_path
-			strcpy(command, msdos_comspec_path(parent_psp->env_seg));
-		} else {
-			strcpy(command, cmd);
-		}
-		if(GetFullPathNameA(command, MAX_PATH, path, &name) == 0) {
 			return(-1);
 		}
-		memset(name_tmp, 0, sizeof(name_tmp));
-		strcpy(name_tmp, name);
-		
-		// check command.com
-		if((_stricmp(name, "COMMAND.COM") == 0 || _stricmp(name, "COMMAND") == 0) && _access(msdos_comspec_path(parent_psp->env_seg), 0) != 0) {
-			// we can not load command.com, so run program directly if "command /c (program)" is specified
-			if(opt_len == 0) {
-//				process_t *current_process = msdos_process_info_get(current_psp);
-				process_t *current_process = NULL;
-				for(int i = 0; i < MAX_PROCESS; i++) {
-					if(process[i].psp == current_psp) {
-						current_process = &process[i];
-						break;
-					}
-				}
-				if(current_process != NULL) {
-					param->cmd_line.dw = current_process->dta.dw;
-					opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
-					opt_len = mem[opt_ofs];
-					memset(opt, 0, sizeof(opt));
-					memcpy(opt, mem + opt_ofs + 1, opt_len);
+	}
+	if(check_file_extension(path, ".BAT")) {
+		// this is a batch file, so run COMMAND.COM
+		if(opt[0] != '\0') {
+			sprintf(tmp, "/C %s %s", path, opt);
+		} else {
+			sprintf(tmp, "/C %s", path);
+		}
+		// size of command line buffer in PSP is 128 bytes, and it contains 2 bytes for string length and terminator
+		if(strlen(tmp) > 126) {
+			if(check_file_extension(cmd, ".BAT")) {
+				strcpy(path, cmd);
+			} else {
+				sprintf(path, "%s.BAT", cmd);
+			}
+			if(opt[0] != '\0') {
+				sprintf(tmp, "/C %s %s", path, opt);
+			} else {
+				sprintf(tmp, "/C %s", path);
+			}
+		}
+		strcpy(opt, tmp);
+		strcpy(path, msdos_comspec_path(parent_psp->env_seg));
+		changed = true;
+	} else if(_stricmp(msdos_file_name(path), "COMMAND.COM") == 0 && al == 0) {
+#if 0
+		// NOTE:
+		// This was added to support starting a program from FILMTN and FM in 10/17/2015,
+		// but I am not sure if this is correct and still needed :-(
+		if(opt[0] == '\0') {
+			// if command line is empty, use command line in parent's DTA
+//			process_t *current_process = msdos_process_info_get(current_psp);
+			process_t *current_process = NULL;
+			for(int i = 0; i < MAX_PROCESS; i++) {
+				if(process[i].psp == current_psp) {
+					current_process = &process[i];
+					break;
 				}
 			}
-			for(int i = 0; i < opt_len; i++) {
-				if(opt[i] == ' ') {
+			if(current_process != NULL) {
+				opt_ofs = (current_process->dta.w.h << 4) + current_process->dta.w.l;
+				opt_len = mem[opt_ofs];
+				if(opt_len > 0 && opt_len <= 126) {
+					if(mem[opt_ofs + 1 + opt_len] == 0x0d || mem[opt_ofs + 1 + opt_len] == 0x0a) {
+						memset(opt, 0, sizeof(opt));
+						memcpy(opt, mem + opt_ofs + 1, opt_len);
+					}
+				}
+			}
+		}
+#endif
+		char path_tmp[MAX_PATH], opt_tmp[MAX_PATH];
+		bool restore = true;
+		char command_line[MAX_PATH] = {0};
+		char command[MAX_PATH] = {0};
+		
+		strcpy(path_tmp, path);
+		strcpy(opt_tmp, opt);
+		
+		// search /C option, and get program and remaining command line
+		if((opt_len = (int)strlen(opt)) > 0 && (strstr(opt, "/C ") != NULL || strstr(opt, "/c ") != NULL)) {
+			for(int i = 0; i < opt_len - 3; i++) {
+				if(_strnicmp(opt + i, "/C ", 3) != 0) {
 					continue;
 				}
-				if(opt[i] == '/' && (opt[i + 1] == 'c' || opt[i + 1] == 'C') && opt[i + 2] == ' ') {
-					for(int j = i + 3; j < opt_len; j++) {
-						if(opt[j] == ' ') {
-							continue;
-						}
-						char *token = my_strtok(opt + j, " ");
-						
-						strcpy(command, token);
-						char tmp[MAX_PATH];
-						strcpy(tmp, token + strlen(token) + 1);
-						strcpy(opt, "");
-						for(int i = 0; i < strlen(tmp); i++) {
-							if(tmp[i] != ' ') {
-								strcpy(opt, tmp + i);
-								break;
-							}
-						}
-						strcpy(tmp, opt);
-						
-						if(al == 0x00) {
-							#define GET_FILE_PATH() { \
-								if(token[0] != '>' && token[0] != '<') { \
-									token++; \
-								} \
-								token++; \
-								while(*token == ' ') { \
-									token++; \
-								} \
-								char *ptr = token; \
-								while(*ptr != ' ' && *ptr != '\r' && *ptr != '\0') { \
-									ptr++; \
-								} \
-								*ptr = '\0'; \
-							}
-							if((token = strstr(opt, "0<")) != NULL || (token = strstr(opt, "<")) != NULL) {
-								GET_FILE_PATH();
-								strcpy(pipe_stdin_path, token);
-								strcpy(opt, tmp);
-							}
-							if((token = strstr(opt, "1>")) != NULL || (token = strstr(opt, ">")) != NULL) {
-								GET_FILE_PATH();
-								strcpy(pipe_stdout_path, token);
-								strcpy(opt, tmp);
-							}
-							if((token = strstr(opt, "2>")) != NULL) {
-								GET_FILE_PATH();
-								strcpy(pipe_stderr_path, token);
-								strcpy(opt, tmp);
-							}
-							#undef GET_FILE_PATH
-							
-							if((token = strstr(opt, "0<")) != NULL) {
-								*token = '\0';
-							}
-							if((token = strstr(opt, "1>")) != NULL) {
-								*token = '\0';
-							}
-							if((token = strstr(opt, "2>")) != NULL) {
-								*token = '\0';
-							}
-							if((token = strstr(opt, "<")) != NULL) {
-								*token = '\0';
-							}
-							if((token = strstr(opt, ">")) != NULL) {
-								*token = '\0';
-							}
-						}
-						for(int i = (int)strlen(opt) - 1; i >= 0 && opt[i] == ' '; i--) {
-							opt[i] = '\0';
-						}
-						opt_len = (int)strlen(opt);
-						mem[opt_ofs] = opt_len;
-						sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-						dos_command = 1;
-						break;
+				for(int j = i + 3; j < opt_len; j++) {
+					if(opt[j] == ' ') {
+						continue;
 					}
+					strcpy(command_line, opt + j);
+					
+					// split to command and options
+					tmp[0] = '\0';
+					for(int k = j; k < opt_len; k++) {
+						if(opt[k] == ' ' || opt[k] == '/' || opt[k] == '<' || opt[k] == '>' || opt[k] == '|') {
+							strcpy(tmp, opt + k);
+							break;
+						}
+						// for example CD.. and DIR\ should be splitted to command and option
+						if((opt[k] == '.' || opt[k] == '\\') && (opt[k + 1] == '.' || opt[k + 1] == '\\' || opt[k + 1] == ' ' || opt[k + 1] == '\0')) {
+							strcpy(tmp, opt + k);
+							break;
+						}
+						sprintf(command + (k - j), "%c", opt[k]);
+					}
+					opt[0] = '\0';
+					for(int k = 0; k < strlen(tmp); k++) {
+						if(tmp[k] != ' ') {
+							// need space at the beginning of option string
+							sprintf(opt, " %s", tmp + k);
+							break;
+						}
+					}
+					strcpy(tmp, opt);
+					
+					#define GET_FILE_PATH() { \
+						if(token[0] != '>' && token[0] != '<') { \
+							token++; \
+						} \
+						token++; \
+						while(*token == ' ') { \
+							token++; \
+						} \
+						char *ptr = token; \
+						while(*ptr != ' ' && *ptr != '\r' && *ptr != '\0') { \
+							ptr++; \
+						} \
+						*ptr = '\0'; \
+					}
+					char *token;
+					
+					if((token = strstr(opt, "0<")) != NULL || (token = strstr(opt, "<")) != NULL) {
+						GET_FILE_PATH();
+						strcpy(pipe_stdin_path, token);
+						strcpy(opt, tmp);
+					}
+					if((token = strstr(opt, "1>")) != NULL || (token = strstr(opt, ">")) != NULL) {
+						GET_FILE_PATH();
+						strcpy(pipe_stdout_path, token);
+						strcpy(opt, tmp);
+					}
+					if((token = strstr(opt, "2>")) != NULL) {
+						GET_FILE_PATH();
+						strcpy(pipe_stderr_path, token);
+						strcpy(opt, tmp);
+					}
+					#undef GET_FILE_PATH
+					
+					if((token = strstr(opt, "0<")) != NULL) {
+						*token = '\0';
+					}
+					if((token = strstr(opt, "1>")) != NULL) {
+						*token = '\0';
+					}
+					if((token = strstr(opt, "2>")) != NULL) {
+						*token = '\0';
+					}
+					if((token = strstr(opt, "<")) != NULL) {
+						*token = '\0';
+					}
+					if((token = strstr(opt, ">")) != NULL) {
+						*token = '\0';
+					}
+					if((token = strstr(opt, "|")) != NULL) {
+						*token = '\0';
+					}
+					for(int i = (int)strlen(opt) - 1; i >= 0 && opt[i] == ' '; i--) {
+						opt[i] = '\0';
+					}
+					break;
 				}
 				break;
 			}
 		}
+		if(command[0] != '\0') {
+			if(msdos_search_command_file(command, parent_psp->env_seg, path)) {
+				if(check_file_extension(path, ".COM") || check_file_extension(path, ".EXE")) {
+					// found target program that is not batch file
+					if(_access(path_tmp, 0) != 0) {
+						changed = true;
+					}
+				}
+			} else if(msdos_is_internal_command(command) && !first_process) {
+				// this is DOS internal command
+				#define OPEN_STDOUT() { \
+					if(fstdout == NULL) { \
+						if(pipe_stdout_path[0] != '\0' && !msdos_is_device_path(pipe_stdout_path)) { \
+							fstdout = fopen(pipe_stdout_path, "w"); \
+						} \
+					} \
+				}
+				#define CLOSE_STDOUT() { \
+					if(fstdout != NULL) { \
+						fclose(fstdout); \
+						fstdout = NULL; \
+					} \
+				}
+				#define OPEN_STDERR() { \
+					if(fstderr == NULL) { \
+						if(pipe_stderr_path[0] != '\0' && !msdos_is_device_path(pipe_stderr_path)) { \
+							fstderr = fopen(pipe_stderr_path, "w"); \
+						} \
+					} \
+				}
+				#define CLOSE_STDERR() { \
+					if(fstderr != NULL) { \
+						fclose(fstderr); \
+						fstderr = NULL; \
+					} \
+				}
+				FILE *fstdout = NULL;
+				FILE *fstderr = NULL;
+				
+				// remove space at the beginning of option string
+				while(opt[0] == ' ') {
+					strcpy(tmp, opt + 1);
+					strcpy(opt, tmp);
+				}
+				
+				// changing drive and current directory in child process seems not to affect to DOS environment
+				if(((command[0] >= 'a' && command[0] <= 'z') || (command[0] >= 'A' && command[0] <= 'Z')) && command[1] == ':' && command[2] == '\0') {
+					int drv = command[0] - ((command[0] >= 'a' && command[0] <= 'z') ? 'a' : 'A');
+					if(_chdrive(drv + 1) == 0) {
+						msdos_cds_update(drv);
+						msdos_sda_update(current_psp);
+						retval = 0x00;
+					} else {
+						retval = 0x0f;
+						OPEN_STDERR();
+						msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+						CLOSE_STDERR();
+					}
+					return(0);
+				}
+				if(_stricmp(command, "CHDIR") == 0 || _stricmp(command, "CD") == 0) {
+					if(_stricmp(opt, "/?") == 0) {
+						USHORT lang = get_message_lang();
+						OPEN_STDOUT();
+						if(lang == LANG_FRENCH) {
+							msdos_printf(fstdout, (const char*)help_chdir_french);
+						} else if(lang == LANG_GERMAN) {
+							msdos_printf(fstdout, (const char*)help_chdir_german);
+						} else if(lang == LANG_SPANISH) {
+							msdos_printf(fstdout, (const char*)help_chdir_spanish);
+						} else if(lang == LANG_PORTUGUESE) {
+							msdos_printf(fstdout, (const char*)help_chdir_portuguese);
+						} else if(lang == LANG_BRAZILIAN) {
+							msdos_printf(fstdout, (const char*)help_chdir_brazilian);
+						} else if(lang == LANG_JAPANESE) {
+							msdos_printf(fstdout, (const char*)help_chdir_japanese);
+						} else if(lang == LANG_KOREAN) {
+							msdos_printf(fstdout, (const char*)help_chdir_korean);
+						} else {
+							msdos_printf(fstdout,
+							"Displays the name of or changes the current directory.\r\n"
+							"\r\n"
+							"CHDIR [drive:][path]\r\n"
+							"CHDIR[..]\r\n"
+							"CD [drive:][path]\r\n"
+							"CD[..]\r\n"
+							"\r\n"
+							"  ..   Specifies that you want to change to the parent directory.\r\n"
+							"\r\n"
+							"Type CD drive: to display the current directory in the specified drive.\r\n"
+							"Type CD without parameters to display the current drive and directory.\r\n"
+							);
+						}
+						CLOSE_STDOUT();
+						retval = 0x00;
+					} else if(opt[0] == '\0') {
+						if(_getcwd(path, MAX_PATH) != NULL) {
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "%s\n", path);
+							CLOSE_STDOUT();
+							retval = 0x00;
+						} else {
+							retval = 0x0f;
+							OPEN_STDERR();
+							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+							CLOSE_STDERR();
+						}
+					} else if(((opt[0] >= 'a' && opt[0] <= 'z') || (opt[0] >= 'A' && opt[0] <= 'Z')) && opt[1] == ':' && opt[2] == '\0') {
+						int drv = opt[0] - ((opt[0] >= 'a' && opt[0] <= 'z') ? 'a' : 'A');
+						if(_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "%s\n", path);
+							CLOSE_STDOUT();
+							retval = 0x00;
+						} else {
+							retval = 0x0f;
+							OPEN_STDERR();
+							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+							CLOSE_STDERR();
+						}
+					} else {
+						if(_chdir(opt) == 0) {
+							int drv = _getdrive() - 1;
+							if(opt[1] == ':') {
+								if(opt[0] >= 'A' && opt[0] <= 'Z') {
+									drv = opt[0] - 'A';
+								} else if(opt[0] >= 'a' && opt[0] <= 'z') {
+									drv = opt[0] - 'a';
+								}
+							}
+							msdos_cds_update(drv);
+							retval = 0x00;
+						} else {
+							retval = 0x03;
+							OPEN_STDERR();
+							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+							CLOSE_STDERR();
+						}
+					}
+					return(0);
+				}
+				// want to refer the environments in parent process
+				if(_stricmp(command, "PATH") == 0) {
+					if(_stricmp(opt, "/?") == 0) {
+						USHORT lang = get_message_lang();
+						OPEN_STDOUT();
+						if(lang == LANG_FRENCH) {
+							msdos_printf(fstdout, (const char*)help_path_french);
+						} else if(lang == LANG_GERMAN) {
+							msdos_printf(fstdout, (const char*)help_path_german);
+						} else if(lang == LANG_SPANISH) {
+							msdos_printf(fstdout, (const char*)help_path_spanish);
+						} else if(lang == LANG_PORTUGUESE) {
+							msdos_printf(fstdout, (const char*)help_path_portuguese);
+						} else if(lang == LANG_BRAZILIAN) {
+							msdos_printf(fstdout, (const char*)help_path_brazilian);
+						} else if(lang == LANG_JAPANESE) {
+							msdos_printf(fstdout, (const char*)help_path_japanese);
+						} else if(lang == LANG_KOREAN) {
+							msdos_printf(fstdout, (const char*)help_path_korean);
+						} else {
+							msdos_printf(fstdout,
+							"Displays or sets a search path for executable files.\r\n"
+							"\r\n"
+							"PATH [[drive:]path[;...]]\r\n"
+							"PATH ;\r\n"
+							"\r\n"
+							"Type PATH ; to clear all search-path settings and direct MS-DOS to search\r\n"
+							"only in the current directory.\r\n"
+							"Type PATH without parameters to display the current path.\r\n"
+							);
+						}
+						CLOSE_STDOUT();
+					} else if(opt[0] == '\0') {
+						const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
+						if(env != NULL) {
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "PATH=%s\n", env);
+							CLOSE_STDOUT();
+						}
+					} else if(_stricmp(opt, ";") == 0) {
+						msdos_env_set(parent_psp->env_seg, "PATH", "");
+					} else {
+						char val[ENV_SIZE];
+						int s = 0, d = 0;
+						while(s < strlen(opt)) {
+							if(_strnicmp(&opt[s], "%PATH%", 6) == 0) {
+								const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
+								if(env != NULL) {
+									strcpy(&val[d], env);
+									d += (int)strlen(env);
+								}
+								s += 6;
+							} else if(d > 0 && val[d - 1] == ';' && opt[s] == ';') {
+								s++; // skip ;;
+							} else {
+								val[d++] = opt[s++];
+							}
+							val[d] = '\0';
+						}
+						const char *short_path = msdos_get_multiple_short_path(val);
+						if(short_path != NULL) {
+							msdos_env_set(parent_psp->env_seg, "PATH", short_path);
+						}
+					}
+					retval = 0x00;
+					return(0);
+				}
+				if(_stricmp(command, "SET") == 0) {
+					if(_stricmp(opt, "/?") == 0) {
+						USHORT lang = get_message_lang();
+						OPEN_STDOUT();
+						if(lang == LANG_FRENCH) {
+							msdos_printf(fstdout, (const char*)help_set_french);
+						} else if(lang == LANG_GERMAN) {
+							msdos_printf(fstdout, (const char*)help_set_german);
+						} else if(lang == LANG_SPANISH) {
+							msdos_printf(fstdout, (const char*)help_set_spanish);
+						} else if(lang == LANG_PORTUGUESE) {
+							msdos_printf(fstdout, (const char*)help_set_portuguese);
+						} else if(lang == LANG_BRAZILIAN) {
+							msdos_printf(fstdout, (const char*)help_set_brazilian);
+						} else if(lang == LANG_JAPANESE) {
+							msdos_printf(fstdout, (const char*)help_set_japanese);
+						} else if(lang == LANG_KOREAN) {
+							msdos_printf(fstdout, (const char*)help_set_korean);
+						} else {
+							msdos_printf(fstdout,
+							"Displays, sets, or removes MS-DOS environment variables.\r\n"
+							"\r\n"
+							"SET [variable=[string]]\r\n"
+							"\r\n"
+							"  variable  Specifies the environment-variable name.\r\n"
+							"  string    Specifies a series of characters to assign to the variable.\r\n"
+							"\r\n"
+							"Type SET without parameters to display the current environment variables.\r\n"
+							);
+						}
+						CLOSE_STDOUT();
+					} else if(opt[0] == '\0') {
+						char env[ENV_SIZE];
+						char *src = env;
+						memcpy(src, mem + (parent_psp->env_seg << 4), ENV_SIZE);
+						src[ENV_SIZE - 1] = '\0';
+						OPEN_STDOUT();
+						while(1) {
+							if(src[0] == 0 || strchr(src, '=') == NULL) {
+								break;
+							}
+							int len = (int)strlen(src);
+							char *nam = my_strtok(src, "=");
+							char *val = src + strlen(nam) + 1;
+							msdos_printf(fstdout, "%s=%s\n", nam, val);
+							src += len + 1;
+						}
+						CLOSE_STDOUT();
+					} else if(strchr(opt, '=') == NULL) {
+						// NOTE: this is Windows NT specific
+						const char *env = msdos_env_get(parent_psp->env_seg, opt);
+						if(env != NULL) {
+							my_strupr(opt);
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "%s=%s\n", opt, env);
+							CLOSE_STDOUT();
+						}
+					} else {
+						char *nam = my_strtok(opt, "=");
+						char *val = opt + strlen(nam) + 1;
+						my_strupr(nam);
+						msdos_env_set(parent_psp->env_seg, nam, val);
+					}
+					retval = 0x00;
+					return(0);
+				}
+				if(_access(path_tmp, 0) != 0) {
+					// want to display the short full path name
+					if(_stricmp(command, "TRUENAME") == 0) {
+						if(_stricmp(opt, "/?") == 0) {
+							USHORT lang = get_message_lang();
+							OPEN_STDOUT();
+							if(lang == LANG_FRENCH) {
+								msdos_printf(fstdout, (const char*)help_reserved_french);
+							} else if(lang == LANG_GERMAN) {
+								msdos_printf(fstdout, (const char*)help_reserved_german);
+							} else if(lang == LANG_SPANISH) {
+								msdos_printf(fstdout, (const char*)help_reserved_spanish);
+							} else if(lang == LANG_PORTUGUESE) {
+								msdos_printf(fstdout, (const char*)help_reserved_portuguese);
+							} else if(lang == LANG_BRAZILIAN) {
+								msdos_printf(fstdout, (const char*)help_reserved_brazilian);
+							} else if(lang == LANG_JAPANESE) {
+								msdos_printf(fstdout, (const char*)help_reserved_japanese);
+							} else if(lang == LANG_KOREAN) {
+								msdos_printf(fstdout, (const char*)help_reserved_korean);
+							} else {
+								msdos_printf(fstdout,
+								"Reserved command name\r\n"
+								);
+							}
+							CLOSE_STDOUT();
+							retval = 0x00;
+						} else if(opt[0] == '\0') {
+							if(_getcwd(path, MAX_PATH) != NULL) {
+								OPEN_STDOUT();
+								msdos_printf(fstdout, "%s\n", msdos_short_full_path(path));
+								CLOSE_STDOUT();
+								retval = 0x00;
+							} else {
+								retval = 0x0f;
+								OPEN_STDERR();
+								msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+								CLOSE_STDERR();
+							}
+						} else {
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "%s\n", msdos_short_full_path(opt));
+							CLOSE_STDOUT();
+							retval = 0x00;
+						}
+						return(0);
+					}
+					// want to display a text file via INT 29h
+					if(_stricmp(command, "TYPE") == 0) {
+						if(_stricmp(opt, "/?") == 0) {
+							USHORT lang = get_message_lang();
+							OPEN_STDOUT();
+							if(lang == LANG_FRENCH) {
+								msdos_printf(fstdout, (const char*)help_type_french);
+							} else if(lang == LANG_GERMAN) {
+								msdos_printf(fstdout, (const char*)help_type_german);
+							} else if(lang == LANG_SPANISH) {
+								msdos_printf(fstdout, (const char*)help_type_spanish);
+							} else if(lang == LANG_PORTUGUESE) {
+								msdos_printf(fstdout, (const char*)help_type_portuguese);
+							} else if(lang == LANG_BRAZILIAN) {
+								msdos_printf(fstdout, (const char*)help_type_brazilian);
+							} else if(lang == LANG_JAPANESE) {
+								msdos_printf(fstdout, (const char*)help_type_japanese);
+							} else if(lang == LANG_KOREAN) {
+								msdos_printf(fstdout, (const char*)help_type_korean);
+							} else {
+								msdos_printf(fstdout,
+								"Displays the contents of text files.\r\n"
+								"\r\n"
+								"TYPE [drive:][path]filename\r\n"
+								);
+							}
+							CLOSE_STDOUT();
+							retval = 0x00;
+						} else if(opt[0] == '\0') {
+							retval = 0x01;
+							OPEN_STDERR();
+							msdos_printf(fstderr, "%s\n", msdos_param_error_message(0x02));
+							CLOSE_STDERR();
+						} else {
+							FILE *fp = fopen(opt, "rb");
+							int val;
+							if(fp != NULL) {
+								OPEN_STDOUT();
+								while((val = fgetc(fp)) != EOF) {
+									msdos_printf(fstdout, "%c", val);
+								}
+								CLOSE_STDOUT();
+								fclose(fp);
+								retval = 0x00;
+							} else {
+								retval = 0x02;
+								OPEN_STDERR();
+								msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+								CLOSE_STDERR();
+							}
+						}
+						return(0);
+					}
+					// want to display the DOS version
+					if(_stricmp(command, "VER") == 0) {
+						if(_stricmp(opt, "/?") == 0) {
+							USHORT lang = get_message_lang();
+							OPEN_STDOUT();
+							if(lang == LANG_FRENCH) {
+								msdos_printf(fstdout, (const char*)help_ver_french);
+							} else if(lang == LANG_GERMAN) {
+								msdos_printf(fstdout, (const char*)help_ver_german);
+							} else if(lang == LANG_SPANISH) {
+								msdos_printf(fstdout, (const char*)help_ver_spanish);
+							} else if(lang == LANG_PORTUGUESE) {
+								msdos_printf(fstdout, (const char*)help_ver_portuguese);
+							} else if(lang == LANG_BRAZILIAN) {
+								msdos_printf(fstdout, (const char*)help_ver_brazilian);
+							} else if(lang == LANG_JAPANESE) {
+								msdos_printf(fstdout, (const char*)help_ver_japanese);
+							} else if(lang == LANG_KOREAN) {
+								msdos_printf(fstdout, (const char*)help_ver_korean);
+							} else {
+								msdos_printf(fstdout,
+								"Displays the MS-DOS Version.\r\n"
+								"\r\n"
+								"VER\r\n"
+								);
+							}
+							CLOSE_STDOUT();
+						} else {
+							OPEN_STDOUT();
+							msdos_printf(fstdout, "MS-DOS Version %d.%2d\n", dos_major_version, dos_minor_version);
+							CLOSE_STDOUT();
+						}
+						retval = 0x00;
+						return(0);
+					}
+					// execute as 32bit command
+					retval = system(command_line);
+					return(0);
+				}
+				#undef OPEN_STDOUT
+				#undef CLOSE_STDOUT
+				#undef OPEN_STDERR
+				#undef CLOSE_STDERR
+			}
+		}
+		// restore to run COMMAND.COM normally
+		if(!changed) {
+			strcpy(path, path_tmp);
+			strcpy(opt, opt_tmp);
+			pipe_stdin_path[0] = pipe_stdout_path[0] = pipe_stderr_path[0] = '\0';
+		}
+	}
+	if(strlen(opt) > 126) {
+		// too long command line that cannot be set to PSP
+		return(-1);
 	}
 	
 	// load command file
-	strcpy(path, command);
-	if((fd = _open(path, _O_RDONLY | _O_BINARY)) == -1) {
-		sprintf(path, "%s.COM", command);
-		if((fd = _open(path, _O_RDONLY | _O_BINARY)) == -1) {
-			sprintf(path, "%s.EXE", command);
-			if((fd = _open(path, _O_RDONLY | _O_BINARY)) == -1) {
-				sprintf(path, "%s.BAT", command);
-				if(_access(path, 0) == 0) {
-					// this is a batch file, run command.com
-					char tmp[MAX_PATH];
-					if(opt_len != 0) {
-						sprintf(tmp, "/C %s %s", path, opt);
-					} else {
-						sprintf(tmp, "/C %s", path);
-					}
-					strcpy(opt, tmp);
-					opt_len = (int)strlen(opt);
-					mem[opt_ofs] = opt_len;
-					sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-					strcpy(path, msdos_comspec_path(parent_psp->env_seg));
-					strcpy(name_tmp, "COMMAND.COM");
-					fd = _open(path, _O_RDONLY | _O_BINARY);
-				} else {
-					// search path in parent environments
-					const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
-					if(env != NULL) {
-						char env_path[4096];
-						strcpy(env_path, env);
-						char *token = my_strtok(env_path, ";");
-						
-						while(token != NULL) {
-							if(strlen(token) != 0) {
-								sprintf(path, "%s", msdos_combine_path(token, command));
-								if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-									break;
-								}
-								sprintf(path, "%s.COM", msdos_combine_path(token, command));
-								if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-									break;
-								}
-								sprintf(path, "%s.EXE", msdos_combine_path(token, command));
-								if((fd = _open(path, _O_RDONLY | _O_BINARY)) != -1) {
-									break;
-								}
-								sprintf(path, "%s.BAT", msdos_combine_path(token, command));
-								if(_access(path, 0) == 0) {
-									// this is a batch file, run command.com
-									char tmp[MAX_PATH];
-									if(opt_len != 0) {
-										sprintf(tmp, "/C %s %s", path, opt);
-									} else {
-										sprintf(tmp, "/C %s", path);
-									}
-									strcpy(opt, tmp);
-									opt_len = (int)strlen(opt);
-									mem[opt_ofs] = opt_len;
-									sprintf((char *)(mem + opt_ofs + 1), "%s\x0d", opt);
-									strcpy(path, msdos_comspec_path(parent_psp->env_seg));
-									strcpy(name_tmp, "COMMAND.COM");
-									fd = _open(path, _O_RDONLY | _O_BINARY);
-									break;
-								}
-							}
-							token = my_strtok(NULL, ";");
-						}
-					}
-				}
-			}
-		}
+	if(_access(path, 0) == 0) {
+		fd = _open(path, _O_RDONLY | _O_BINARY);
 	}
 #ifdef ENABLE_DEBUG_OPEN_FILE
 	if(fp_debug_log != NULL) {
-		fprintf(fp_debug_log, "process_exec\tfd=%d\tr\t%s\n", fd, cmd);
+		fprintf(fp_debug_log, "process_exec\tfd=%d\tr\t%s\n", fd, path);
 	}
 #endif
 	if(fd == -1) {
-		// we can not find command.com in the path, so open comspec_path
-		if(_stricmp(command, "COMMAND.COM") == 0 || _stricmp(command, "COMMAND") == 0) {
-			strcpy(command, msdos_comspec_path(parent_psp->env_seg));
-			strcpy(path, command);
-			fd = _open(path, _O_RDONLY | _O_BINARY);
-		}
-	}
-	if(fd == -1) {
-		if(!first_process && al == 0 && dos_command) {
-			// may be dos command
-			char tmp[MAX_PATH];
-			if(opt_len != 0) {
-				sprintf(tmp, "%s %s", command, opt);
-			} else {
-				sprintf(tmp, "%s", command);
-			}
-			retval = system(tmp);
-			return(0);
-		} else {
-			return(-1);
-		}
+		return(-1);
 	}
 	memset(file_buffer, 0, sizeof(file_buffer));
 	_read(fd, file_buffer, sizeof(file_buffer));
 	_close(fd);
 	
-	// check if this is win32 program
+	// check if this is Win32 program
 	if(!first_process && al == 0) {
 		UINT16 sign_dos = *(UINT16 *)(file_buffer + 0x00);
 		UINT32 e_lfanew = *(UINT32 *)(file_buffer + 0x3c);
@@ -7205,7 +7957,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			UINT16 machine = *(UINT16 *)(file_buffer + e_lfanew + 0x04);
 			if(sign_nt == IMAGE_NT_SIGNATURE && (machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_AMD64)) {
 				char tmp[MAX_PATH];
-				if(opt_len != 0) {
+				if(opt[0] != '\0') {
 					sprintf(tmp, "\"%s\" %s", path, opt);
 				} else {
 					sprintf(tmp, "\"%s\"", path);
@@ -7309,30 +8061,62 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		msdos_mem_link_umb();
 	}
 	
-	// create psp
+	// create PSP
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = CPU_EIP;
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = CPU_CS;
 	psp_t *psp = msdos_psp_create(psp_seg, start_seg - (PSP_SIZE >> 4) + paragraphs, current_psp, env_seg);
-	memcpy(psp->fcb1, mem + (param->fcb1.w.h << 4) + param->fcb1.w.l, sizeof(psp->fcb1));
-	memcpy(psp->fcb2, mem + (param->fcb2.w.h << 4) + param->fcb2.w.l, sizeof(psp->fcb2));
-	memcpy(psp->buffer, mem + (param->cmd_line.w.h << 4) + param->cmd_line.w.l, sizeof(psp->buffer));
+	
+	if(changed) {
+		opt_len = (int)strlen(opt);
+		memset(psp->buffer, 0, sizeof(psp->buffer));
+		psp->buffer[0] = opt_len;
+		memcpy(&psp->buffer[1], opt, opt_len);
+		psp->buffer[opt_len + 1] = 0x0d;
+		
+		char argv[2][MAX_PATH];
+		int argc = 0;
+		fcb_t fcb[2];
+		char *token = my_strtok(opt, " ");
+		for(; token && argc < 2;) {
+			if(strlen(token) != 0) {
+				strcpy(argv[argc++], token);
+			}
+			token = my_strtok(NULL, " ");
+		}
+		for(int i = 0; i < 2; i++) {
+			if(i < argc) {
+				msdos_init_fcb_in_psp(&fcb[i], argv[i]);
+			} else {
+				msdos_init_fcb_in_psp(&fcb[i], NULL);
+			}
+		}
+		memcpy(psp->fcb1, &fcb[0], sizeof(psp->fcb1));
+		memcpy(psp->fcb2, &fcb[1], sizeof(psp->fcb2));
+	} else {
+		memcpy(psp->fcb1, mem + (param->fcb1.w.h << 4) + param->fcb1.w.l, sizeof(psp->fcb1));
+		memcpy(psp->fcb2, mem + (param->fcb2.w.h << 4) + param->fcb2.w.l, sizeof(psp->fcb2));
+		memcpy(psp->buffer, mem + (param->cmd_line.w.h << 4) + param->cmd_line.w.l, sizeof(psp->buffer));
+	}
 	
 	mcb_t *mcb_env = (mcb_t *)(mem + ((env_seg - 1) << 4));
 	mcb_t *mcb_psp = (mcb_t *)(mem + ((psp_seg - 1) << 4));
 	mcb_psp->psp = mcb_env->psp = psp_seg;
 	
+	memset(tmp, 0, sizeof(tmp));
+	strcpy(tmp, msdos_file_name(path));
+	
 	for(int i = 0; i < 8; i++) {
-		if(name_tmp[i] == '.') {
+		if(tmp[i] == '.') {
 			mcb_psp->prog_name[i] = '\0';
 			break;
-		} else if(i < 7 && msdos_lead_byte_check(name_tmp[i])) {
-			mcb_psp->prog_name[i] = name_tmp[i];
+		} else if(i < 7 && msdos_lead_byte_check(tmp[i])) {
+			mcb_psp->prog_name[i] = tmp[i];
 			i++;
-			mcb_psp->prog_name[i] = name_tmp[i];
-		} else if(name_tmp[i] >= 'a' && name_tmp[i] <= 'z') {
-			mcb_psp->prog_name[i] = name_tmp[i] - 'a' + 'A';
+			mcb_psp->prog_name[i] = tmp[i];
+		} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
+			mcb_psp->prog_name[i] = tmp[i] - 'a' + 'A';
 		} else {
-			mcb_psp->prog_name[i] = name_tmp[i];
+			mcb_psp->prog_name[i] = tmp[i];
 		}
 	}
 	
@@ -7547,7 +8331,7 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 	return(drive_param->valid);
 }
 
-// pc bios
+// PC BIOS
 
 void prepare_service_loop()
 {
@@ -8849,31 +9633,31 @@ inline void pcbios_int_13h_08h()
 		case F5_320_1024:
 		case F5_180_512:
 		case F5_160_512:
-			CPU_BL = 0x01; // 320K/360K disk
+			CPU_BX = 0x01; // 320K/360K disk
 			break;
 		case F5_1Pt2_512:
 		case F3_1Pt2_512:
 		case F3_1Pt23_1024:
 		case F5_1Pt23_1024:
-			CPU_BL = 0x02; // 1.2M disk
+			CPU_BX = 0x02; // 1.2M disk
 			break;
 		case F3_720_512:
 		case F3_640_512:
 		case F5_640_512:
 		case F5_720_512:
-			CPU_BL = 0x03; // 720K disk
+			CPU_BX = 0x03; // 720K disk
 			break;
 		case F3_1Pt44_512:
-			CPU_BL = 0x04; // 1.44M disk
+			CPU_BX = 0x04; // 1.44M disk
 			break;
 		case F3_2Pt88_512:
-			CPU_BL = 0x06; // 2.88M disk
+			CPU_BX = 0x06; // 2.88M disk
 			break;
 		case RemovableMedia:
-			CPU_BL = 0x10; // ATAPI Removable Media Device
+			CPU_BX = 0x10; // ATAPI Removable Media Device
 			break;
 		default:
-			CPU_BL = 0x00; // unknown
+			CPU_BX = 0x00; // unknown
 			break;
 		}
 		if(CPU_DL & 0x80) {
@@ -8892,6 +9676,12 @@ inline void pcbios_int_13h_08h()
 			}
 		}
 		CPU_DH = drive_param->head_num();
+		CPU_DL = 0;
+		for(int i = 0; i < 2; i++) {
+			if(msdos_is_valid_drive(i) && msdos_is_removable_drive(i)) {
+				CPU_DL++;
+			}
+		}
 		int cyl = (geo->Cylinders.QuadPart > 0x3ff) ? 0x3ff : geo->Cylinders.QuadPart;
 		int sec = (geo->SectorsPerTrack > 0x3f) ? 0x3f : geo->SectorsPerTrack;
 		CPU_CH = cyl & 0xff;
@@ -8923,13 +9713,39 @@ inline void pcbios_int_13h_15h()
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
 	if(pcbios_update_drive_param(drive_num, 1)) {
+		drive_param_t *drive_param = &drive_params[drive_num];
+		DISK_GEOMETRY *geo = &drive_param->geometry;
+		
 		if(CPU_DL & 0x80) {
-			CPU_AH = 0x02; // floppy (or other removable drive) with change-line support
-		} else {
 			CPU_AH = 0x03; // hard disk
+		} else {
+			switch(geo->MediaType) {
+			case F5_360_512:
+			case F5_320_512:
+			case F5_320_1024:
+			case F5_180_512:
+			case F5_160_512:
+				CPU_AH = 0x01; // 2D
+				break;
+			default:
+				CPU_AH = 0x02; // 2DD/2HD (or other removable drive) with change-line support
+				break;
+			}
+		}
+		UINT64 length = geo->BytesPerSector;
+		length *= geo->SectorsPerTrack;
+		length *= geo->TracksPerCylinder;
+		length *= geo->Cylinders.QuadPart;
+		length /= 512;
+		if((length >> 32) != 0) {
+			CPU_CX = CPU_DX = 0xffff;
+		} else {
+			CPU_DX = length & 0xffff;
+			CPU_CX = length >> 16;
 		}
 	} else {
 		CPU_AH = 0x00; // no such drive
+		CPU_CX = CPU_DX = 0x0000;
 	}
 }
 
@@ -9412,12 +10228,12 @@ inline void pcbios_int_15h_c2h()
 			} else {
 				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 			}
-			pic[1].imr |= 0x10; // disable irq12
+			pic[1].imr |= 0x10; // disable IRQ 12
 			mouse.enabled_ps2 = false;
 			CPU_AH = 0x00; // successful
 		} else if(CPU_BH == 0x01) {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
-			pic[1].imr &= ~0x10; // enable irq12
+			pic[1].imr &= ~0x10; // enable IRQ 12
 			mouse.enabled_ps2 = true;
 			CPU_AH = 0x00; // successful
 		} else {
@@ -9434,7 +10250,7 @@ inline void pcbios_int_15h_c2h()
 		} else {
 			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
 		}
-		pic[1].imr |= 0x10; // disable irq12
+		pic[1].imr |= 0x10; // disable IRQ 12
 		mouse.enabled_ps2 = false;
 		sampling_rate = 5;
 		resolution = 2;
@@ -9927,43 +10743,49 @@ inline void pcbios_int_16h_13h()
 	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
 	switch(CPU_AL) {
 	case 0x00:
-		if(CPU_DX & 0x0080) {
+		if(CPU_DL & 0x81) {
+			set_ime_open_status(TRUE);
+#if 0
 			DWORD dwConv = 0x0000;
-			if(CPU_DX & 0x0001) {
+			if(CPU_DL & 0x01) {
 				dwConv |= IME_CMODE_FULLSHAPE;
 			}
-			if((CPU_DX & 0x06) == 0x02) {
+			if((CPU_DL & 0x06) == 0x02) {
 				dwConv |= IME_CMODE_NATIVE | IME_CMODE_KATAKANA;
-			} else if((CPU_DX & 0x06) == 0x04) {
+			} else if((CPU_DL & 0x06) == 0x04) {
 				dwConv |= IME_CMODE_NATIVE;
 			}
-			if(CPU_DX & 0x0040) {
+			if(CPU_DL & 0x40) {
 				dwConv |= IME_CMODE_ROMAN;
 			}
-			set_ime_open_status(TRUE);
 			set_ime_conversion_mode(dwConv);
+#endif
 		} else {
 			set_ime_open_status(FALSE);
 		}
 		break;
 	case 0x01:
-		CPU_DX = 0x0000;
+		CPU_DL = 0x00;
 		if(get_ime_open_status()) {
+#if 0
 			DWORD dwConv = get_ime_conversion_mode();
 			if(dwConv & IME_CMODE_FULLSHAPE) {
-				CPU_DX |= 0x0001; // full-size rather than half-size
+				CPU_DL |= 0x01; // full-size rather than half-size
 			}
 			if(dwConv & IME_CMODE_NATIVE) {
 				if(dwConv & IME_CMODE_KATAKANA) {
-					CPU_DX |= 0x0002; // Katakana
+					CPU_DL |= 0x02; // Katakana
 				} else {
-					CPU_DX |= 0x0004; // Hiragana
+					CPU_DL |= 0x04; // Hiragana
 				}
 			}
 			if(dwConv & IME_CMODE_ROMAN) {
-				CPU_DX |= 0x0040; // Romaji enabled
+				CPU_DX |= 0x40; // Romaji enabled
 			}
-			CPU_DX |= 0x0080; // Katakana to Kanji conversion enabled
+			CPU_DL |= 0x80; // Katakana to Kanji conversion enabled
+#else
+			CPU_DL = 0x81;
+#endif
 		}
 		break;
 	default:
@@ -10064,22 +10886,14 @@ inline void pcbios_int_16h_6fh()
 
 inline void pcbios_int_16h_f0h()
 {
-	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
-	if(hLibrary) {
-		typedef BOOL (WINAPI* BeepFunction)(DWORD, DWORD);
-		BeepFunction lpfnBeep = reinterpret_cast<BeepFunction>(::GetProcAddress(hLibrary, "Beep"));
-		if(lpfnBeep) {
-			DWORD freq = 0;
-			if(pit[2].mode == 3 && !pit[2].low_write && !pit[2].high_write) {
-				freq = (DWORD)((double)PIT_FREQ / PIT_COUNT_VALUE(2) + 0.5);
-			}
-			if(freq < 37 || freq > 32767) {
-				freq = 904;
-			}
-			lpfnBeep(freq, (DWORD)(54.9254 * CPU_BL + 0.5));
-		}
-		FreeLibrary(hLibrary);
+	DWORD freq = 0;
+	if(pit[2].mode == 3 && !pit[2].low_write && !pit[2].high_write) {
+		freq = (DWORD)((double)PIT_FREQ / PIT_COUNT_VALUE(2) + 0.5);
 	}
+	if(freq < 37 || freq > 32767) {
+		freq = 904;
+	}
+	Beep(freq, (DWORD)(54.9254 * CPU_BL + 0.5));
 }
 
 inline void pcbios_int_16h_f1h()
@@ -11519,7 +12333,7 @@ inline void msdos_int_21h_31h()
 	try {
 		msdos_mem_realloc(current_psp, CPU_DX, NULL);
 	} catch(...) {
-		// recover the broken mcb
+		// recover the broken MCB
 		int mcb_seg = current_psp - 1;
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		
@@ -12191,7 +13005,7 @@ inline void msdos_int_21h_43h(int lfn)
 			DWORD error = 0;
 			WIN32_FILE_ATTRIBUTE_DATA tFileInfo;
 			HMODULE hLibrary = NULL;
-			typedef DWORD (WINAPI* GetCompressedFileSizeFunction)(_In_ LPCSTR, _Out_opt_ LPDWORD);
+			typedef DWORD (WINAPI* GetCompressedFileSizeFunction)(LPCSTR, LPDWORD);
 			GetCompressedFileSizeFunction lpfnGetCompressedFileSizeA = NULL;
 			
 			HANDLE hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -12336,7 +13150,7 @@ inline void msdos_int_21h_44h()
 	static UINT16 iteration_count = 0;
 	
 	process_t *process;
-	int fd, drv;
+	int fd = 0, drv = 0;
 	
 	switch(CPU_AL) {
 	case 0x00:
@@ -12992,7 +13806,7 @@ inline void msdos_int_21h_48h()
 	int seg, umb_linked;
 	
 	if((malloc_strategy & 0xf0) == 0x00) {
-		// unlink umb not to allocate memory in umb
+		// unlink UMB not to allocate memory in UMB
 		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
 			msdos_mem_unlink_umb();
 		}
@@ -13033,7 +13847,8 @@ inline void msdos_int_21h_49h()
 	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 	
 	if(mcb->mz == 'M' || mcb->mz == 'Z') {
-		msdos_mem_free(CPU_ES);
+		msdos_mem_free(CPU_ES, false);
+		CPU_AX = CPU_ES - 1; // undocumented
 	} else {
 		CPU_AX = 0x09; // illegal memory block address
 		CPU_SET_C_FLAG(1);
@@ -13047,12 +13862,18 @@ inline void msdos_int_21h_4ah()
 	int max_paragraphs;
 	
 	if(mcb->mz == 'M' || mcb->mz == 'Z') {
-		if(!msdos_mem_realloc(CPU_ES, CPU_BX, &max_paragraphs)) {
+		if(!msdos_mem_realloc(CPU_ES, CPU_BX, &max_paragraphs, false)) {
+			// change the owner of this memory block to current process
+			mcb->psp = current_psp;
 			// from DOSBox
 			CPU_AX = CPU_ES;
 		} else {
+			if(limit_max_memory && max_paragraphs > 0x7fff) {
+				msdos_mem_split(CPU_ES, 0x7fff);
+				max_paragraphs = 0x7fff;
+			}
 			CPU_AX = 0x08;
-			CPU_BX = max_paragraphs > 0x7fff && limit_max_memory ? 0x7fff : max_paragraphs;
+			CPU_BX = max_paragraphs;
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -14245,13 +15066,17 @@ inline void msdos_int_21h_714eh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
 	find_lfn_t *find = (find_lfn_t *)(mem + CPU_ES_BASE + CPU_DI);
-	char *path = (char *)(mem + CPU_DS_BASE + CPU_DX);
+	const char *path = (char *)(mem + CPU_DS_BASE + CPU_DX);
+	const char *tmp = "*";
 	WIN32_FIND_DATAA fd;
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, LFN_DTA_LADDR);
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
 		FindClose(dtainfo->find_handle);
 		dtainfo->find_handle = INVALID_HANDLE_VALUE;
+	}
+	if(strlen(path) == 0) {
+		path = tmp;
 	}
 	strcpy(process->volume_label, msdos_volume_label(path));
 	dtainfo->allowable_mask = CPU_CL;
@@ -14397,11 +15222,19 @@ inline void msdos_int_21h_71a6h()
 	int fd = msdos_psp_get_file_table(CPU_BX, current_psp);
 	
 	UINT8 *buffer = (UINT8 *)(mem + CPU_DS_BASE + CPU_DX);
+#ifdef _MSC_VC6
+	struct _stat status;
+#else
 	struct _stat64 status;
+#endif
 	DWORD serial_number = 0;
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
+#ifdef _MSC_VC6
+		if(_fstat(fd, &status) == 0) {
+#else
 		if(_fstat64(fd, &status) == 0) {
+#endif
 			if(file_handler[fd].path[1] == ':') {
 				// NOTE: we need to consider the network file path "\\host\share\"
 				char volume[] = "A:\\";
@@ -14591,36 +15424,15 @@ inline void msdos_int_21h_dch()
 inline void msdos_int_24h()
 {
 	USHORT lang = get_message_lang();
-	const char *message = NULL;
+	const char *message = msdos_critical_error_message(CPU_DI & 0xff);
 	int key = 0;
 	
-	for(int i = 0; i < array_length(critical_error_table); i++) {
-		if(critical_error_table[i].code == (CPU_DI & 0xff) || critical_error_table[i].code == (UINT16)-1) {
-			if(lang == LANG_FRENCH) {
-				message = (const char *)critical_error_table[i].message_french;
-			} else if(lang == LANG_GERMAN) {
-				message = (const char *)critical_error_table[i].message_german;
-			} else if(lang == LANG_SPANISH) {
-				message = (const char *)critical_error_table[i].message_spanish;
-			} else if(lang == LANG_PORTUGUESE) {
-				message = (const char *)critical_error_table[i].message_brazilian;
-			} else if(lang == LANG_JAPANESE) {
-				message = (const char *)critical_error_table[i].message_japanese;
-			} else if(lang == LANG_KOREAN) {
-				message = (const char *)critical_error_table[i].message_korean;
-			}
-			if(message == NULL) {
-				message = critical_error_table[i].message_english;
-			}
-			*(UINT8 *)(mem + WORK_TOP) = (UINT8)strlen(message);
-			strcpy((char *)(mem + WORK_TOP + 1), message);
-			
-			CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
-			CPU_DI = 0x0000;
-			break;
-		}
-	}
+	*(UINT8 *)(mem + WORK_TOP) = (UINT8)strlen(message);
+	strcpy((char *)(mem + WORK_TOP + 1), message);
+	CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+	CPU_DI = 0x0000;
 	fprintf(stderr, "\n%s", message);
+	
 	if(!(CPU_AH & 0x80)) {
 		if(CPU_AH & 0x01) {
 			if(lang == LANG_FRENCH) {
@@ -14630,6 +15442,8 @@ inline void msdos_int_24h()
 			} else if(lang == LANG_SPANISH) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_spanish, 'A' + CPU_AL);
 			} else if(lang == LANG_PORTUGUESE) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_portuguese, 'A' + CPU_AL);
+			} else if(lang == LANG_BRAZILIAN) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_brazilian, 'A' + CPU_AL);
 			} else if(lang == LANG_JAPANESE) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_japanese, 'A' + CPU_AL);
@@ -14646,6 +15460,8 @@ inline void msdos_int_24h()
 			} else if(lang == LANG_SPANISH) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_spanish, 'A' + CPU_AL);
 			} else if(lang == LANG_PORTUGUESE) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_portuguese, 'A' + CPU_AL);
+			} else if(lang == LANG_BRAZILIAN) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_brazilian, 'A' + CPU_AL);
 			} else if(lang == LANG_JAPANESE) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_japanese, 'A' + CPU_AL);
@@ -14666,6 +15482,8 @@ inline void msdos_int_24h()
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, "%s", (const char*)abort_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, "%s", (const char*)abort_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
 			fprintf(stderr, "%s", (const char*)abort_brazilian);
 		} else if(lang == LANG_JAPANESE) {
 			fprintf(stderr, "%s", (const char*)abort_japanese);
@@ -14683,6 +15501,8 @@ inline void msdos_int_24h()
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)retry_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)retry_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
 			fprintf(stderr, ", %s", (const char*)retry_brazilian);
 		} else if(lang == LANG_JAPANESE) {
 			fprintf(stderr, ", %s", (const char*)retry_japanese);
@@ -14700,6 +15520,8 @@ inline void msdos_int_24h()
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)ignore_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)ignore_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
 			fprintf(stderr, ", %s", (const char*)ignore_brazilian);
 		} else if(lang == LANG_JAPANESE) {
 			fprintf(stderr, ", %s", (const char*)ignore_japanese);
@@ -14717,6 +15539,8 @@ inline void msdos_int_24h()
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)fail_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
+			fprintf(stderr, ", %s", (const char*)fail_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
 			fprintf(stderr, ", %s", (const char*)fail_brazilian);
 		} else if(lang == LANG_JAPANESE) {
 			fprintf(stderr, ", %s", (const char*)fail_japanese);
@@ -14872,7 +15696,7 @@ inline void msdos_int_27h()
 	try {
 		msdos_mem_realloc(CPU_CS, paragraphs, NULL);
 	} catch(...) {
-		// recover the broken mcb
+		// recover the broken MCB
 		int mcb_seg = CPU_CS - 1;
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		
@@ -14896,7 +15720,13 @@ inline void msdos_int_27h()
 
 inline void msdos_int_29h()
 {
-	msdos_putch_fast(CPU_AL, 0x29, CPU_AH);
+	if(src_int_num != 0) {
+		unsigned int int_num = src_int_num;
+		src_int_num = 0;
+		msdos_putch_fast(CPU_AL, int_num, CPU_AH);
+	} else {
+		msdos_putch_fast(CPU_AL, 0x29, CPU_AH);
+	}
 }
 
 inline void msdos_int_2eh()
@@ -14957,35 +15787,14 @@ inline void msdos_int_2eh()
 inline void msdos_int_2fh_05h()
 {
 	USHORT lang = get_message_lang();
+	const char *message = NULL;
 #if 0
 	if(dos_major_version < 4 && CPU_AL != 0) {
-		for(int i = 0; i < array_length(standard_error_table); i++) {
-			if(standard_error_table[i].code == CPU_AL || standard_error_table[i].code == (UINT16)-1) {
-				const char *message = NULL;
-				if(lang == LANG_FRENCH) {
-					message = (const char *)standard_error_table[i].message_french;
-				} else if(lang == LANG_GERMAN) {
-					message = (const char *)standard_error_table[i].message_german;
-				} else if(lang == LANG_SPANISH) {
-					message = (const char *)standard_error_table[i].message_spanish;
-				} else if(lang == LANG_PORTUGUESE) {
-					message = (const char *)standard_error_table[i].message_brazilian;
-				} else if(lang == LANG_JAPANESE) {
-					message = (const char *)standard_error_table[i].message_japanese;
-				} else if(lang == LANG_KOREAN) {
-					message = (const char *)standard_error_table[i].message_korean;
-				}
-				if(message == NULL) {
-					message = standard_error_table[i].message_english;
-				}
-				strcpy((char *)(mem + WORK_TOP), message);
-				
-				CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
-				CPU_DI = 0x0000;
-				CPU_AL = 0x01;
-				break;
-			}
-		}
+		message = msdos_standard_error_message(CPU_AL);
+		strcpy((char *)(mem + WORK_TOP), message);
+		CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+		CPU_DI = 0x0000;
+		CPU_AL = 0x01;
 		return;
 	}
 #endif
@@ -14995,62 +15804,18 @@ inline void msdos_int_2fh_05h()
 		CPU_AL = 0xff;
 		break;
 	case 0x01:
-		for(int i = 0; i < array_length(standard_error_table); i++) {
-			if(standard_error_table[i].code == CPU_BX || standard_error_table[i].code == (UINT16)-1) {
-				const char *message = NULL;
-				if(lang == LANG_FRENCH) {
-					message = (const char *)standard_error_table[i].message_french;
-				} else if(lang == LANG_GERMAN) {
-					message = (const char *)standard_error_table[i].message_german;
-				} else if(lang == LANG_SPANISH) {
-					message = (const char *)standard_error_table[i].message_spanish;
-				} else if(lang == LANG_PORTUGUESE) {
-					message = (const char *)standard_error_table[i].message_brazilian;
-				} else if(lang == LANG_JAPANESE) {
-					message = (const char *)standard_error_table[i].message_japanese;
-				} else if(lang == LANG_KOREAN) {
-					message = (const char *)standard_error_table[i].message_korean;
-				}
-				if(message == NULL) {
-					message = standard_error_table[i].message_english;
-				}
-				strcpy((char *)(mem + WORK_TOP), message);
-				
-				CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
-				CPU_DI = 0x0000;
-				CPU_AL = 0x01;
-				break;
-			}
-		}
+		message = msdos_standard_error_message(CPU_BX);
+		strcpy((char *)(mem + WORK_TOP), message);
+		CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+		CPU_DI = 0x0000;
+		CPU_AL = 0x01;
 		break;
 	case 0x02:
-		for(int i = 0; i < array_length(param_error_table); i++) {
-			if(param_error_table[i].code == CPU_BX || param_error_table[i].code == (UINT16)-1) {
-				const char *message = NULL;
-				if(lang == LANG_FRENCH) {
-					message = (const char *)param_error_table[i].message_french;
-				} else if(lang == LANG_GERMAN) {
-					message = (const char *)param_error_table[i].message_german;
-				} else if(lang == LANG_SPANISH) {
-					message = (const char *)param_error_table[i].message_spanish;
-				} else if(lang == LANG_PORTUGUESE) {
-					message = (const char *)param_error_table[i].message_brazilian;
-				} else if(lang == LANG_JAPANESE) {
-					message = (const char *)param_error_table[i].message_japanese;
-				} else if(lang == LANG_KOREAN) {
-					message = (const char *)param_error_table[i].message_korean;
-				}
-				if(message == NULL) {
-					message = param_error_table[i].message_english;
-				}
-				strcpy((char *)(mem + WORK_TOP), message);
-				
-				CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
-				CPU_DI = 0x0000;
-				CPU_AL = 0x01;
-				break;
-			}
-		}
+		message = msdos_param_error_message(CPU_BX);
+		strcpy((char *)(mem + WORK_TOP), message);
+		CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+		CPU_DI = 0x0000;
+		CPU_AL = 0x01;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -15540,11 +16305,11 @@ inline void msdos_int_2fh_16h()
 	case 0x85:
 	case 0x86:
 	case 0x87:
-	case 0x89:
 	case 0x8a:
 		// function not supported, do not clear AX
 		break;
 	case 0x80:
+	case 0x89:
 		Sleep(10);
 		REQUEST_HARDWRE_UPDATE();
 		CPU_AL = 0x00;
@@ -15565,6 +16330,121 @@ inline void msdos_int_2fh_16h()
 		default:
 			CPU_AX = 0x0000; // successful
 			break;
+		}
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_AX = 0x01;
+		CPU_SET_C_FLAG(1);
+		break;
+	}
+}
+
+inline void msdos_int_2fh_17h()
+{
+	static bool opened = false;
+	bool func04h = (CPU_AL == 0x04);
+	bool func04h_failed = true;
+	HGLOBAL hMem = NULL;
+	LPVOID lpLock = NULL;
+	
+	switch(CPU_AL) {
+	case 0x00:
+		CPU_AX = 0x0101; // same as DOSVAXJ3
+		break;
+	case 0x01:
+		CPU_AX = 0x0000;
+		if(!opened && OpenClipboard(NULL)) {
+			CPU_AX = 0x0001;
+			opened = true;
+			CloseClipboard();
+		}
+		break;
+	case 0x02:
+		CPU_AX = 0x0000;
+		if(OpenClipboard(NULL)) {
+			if(EmptyClipboard()) {
+				CPU_AX = 0x0001;
+			}
+			CloseClipboard();
+		}
+		break;
+	case 0x03:
+		CPU_AX = 0x0000;
+		if((CPU_DX == 1 || CPU_DX == 7) && OpenClipboard(NULL)) {
+			UINT uFormat = (CPU_DX == 1) ? CF_TEXT : CF_OEMTEXT;
+			size_t size = strlen((const char *)(mem + CPU_ES_BASE + CPU_BX)) + 1;
+			if(CPU_SI || CPU_CX) {
+				size = min(size, (CPU_SI << 16) | CPU_CX);
+			}
+			UINT8 *term = mem + CPU_ES_BASE + CPU_BX + size - 1;
+			if(*term++ != 0) {
+				size++; // +1 is for null-termination
+			}
+			if((hMem = GlobalAlloc(GMEM_FIXED | GMEM_ZEROINIT, size)) != NULL){
+				if((lpLock = GlobalLock(hMem)) != NULL) {
+					UINT8 value = *term;
+					*term = 0; // make the text null-terminated
+					memcpy(lpLock, mem + CPU_ES_BASE + CPU_BX, size);
+					*term = value;
+					GlobalUnlock(hMem);
+					EmptyClipboard();
+					if(SetClipboardData(uFormat, hMem)) {
+						CPU_AX = 0x0001;
+					}
+				} else {
+					GlobalFree(hMem);
+				}
+			}
+			CloseClipboard();
+		}
+		break;
+	case 0x04:
+	case 0x05:
+		CPU_AX = 0x0000;
+		if((CPU_DX == 1 || CPU_DX == 7) && OpenClipboard(NULL)) {
+			UINT uFormat = (CPU_DX == 1) ? CF_TEXT : CF_OEMTEXT;
+			if(IsClipboardFormatAvailable(uFormat)) {
+				if((hMem = GetClipboardData(uFormat)) != NULL) {
+					if((lpLock = GlobalLock(hMem)) != NULL) {
+//						size_t size = GlobalSize(hMem);
+						size_t size = strlen((const char *)lpLock) + 1;
+						if(func04h) {
+							// get size
+							CPU_DX = (size >> 16) & 0xffff;
+							CPU_AX = (size >>  0) & 0xffff;
+							func04h_failed = false;
+						} else {
+							// get data
+							memcpy(mem + CPU_ES_BASE + CPU_BX, lpLock, size);
+							CPU_AX = 0x0001;
+						}
+						GlobalUnlock(hMem);
+					}
+				}
+			}
+			CloseClipboard();
+		}
+		if(func04h && func04h_failed) {
+			CPU_AX = CPU_DX = 0x0000;
+		}
+		break;
+	case 0x08:
+		if(opened) {
+			CPU_AX = 0x0001;
+			opened = false;
+		} else {
+			CPU_AX = 0x0000;
+		}
+		break;
+	case 0x09:
+		{
+			DWORD size = msdos_mem_get_free(first_mcb) * 16;
+			if(size < ((CPU_SI << 16) | CPU_CX)) {
+				size = 0;
+			}
+			CPU_DX = (size >> 16) & 0xffff;
+			CPU_AX = (size >>  0) & 0xffff;
 		}
 		break;
 	default:
@@ -15754,7 +16634,7 @@ inline void msdos_int_2fh_4ah()
 	case 0x01: // DOS 5.0+ - Query Free HMA Space
 		if(!is_hma_used_by_xms && !is_hma_used_by_int_2fh) {
 			if(!msdos_is_hma_mcb_valid((hma_mcb_t *)(mem + 0xffff0 + 0x10))) {
-				// restore first free mcb in high memory area
+				// restore first free MCB in HMA
 				msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 			}
 			int offset = 0xffff;
@@ -15773,7 +16653,7 @@ inline void msdos_int_2fh_4ah()
 	case 0x02: // DOS 5.0+ - Allocate HMA Space
 		if(!is_hma_used_by_xms && !is_hma_used_by_int_2fh) {
 			if(!msdos_is_hma_mcb_valid((hma_mcb_t *)(mem + 0xffff0 + 0x10))) {
-				// restore first free mcb in high memory area
+				// restore first free MCB in HMA
 				msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 			}
 			int size = CPU_BX, offset;
@@ -15800,7 +16680,7 @@ inline void msdos_int_2fh_4ah()
 		if(CPU_DL == 0x00) {
 			if(!is_hma_used_by_xms) {
 				if(!msdos_is_hma_mcb_valid((hma_mcb_t *)(mem + 0xffff0 + 0x10))) {
-					// restore first free mcb in high memory area
+					// restore first free MCB in HMA
 					msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 					is_hma_used_by_int_2fh = false;
 				}
@@ -15838,7 +16718,7 @@ inline void msdos_int_2fh_4ah()
 		} else if(CPU_DL == 0x02) {
 			if(!is_hma_used_by_xms) {
 				if(!msdos_is_hma_mcb_valid((hma_mcb_t *)(mem + 0xffff0 + 0x10))) {
-					// restore first free mcb in high memory area
+					// restore first free MCB in HMA
 					msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 					is_hma_used_by_int_2fh = false;
 				} else {
@@ -15857,7 +16737,7 @@ inline void msdos_int_2fh_4ah()
 	case 0x04: // Windows95 - Get Start of HMA Memory Chain
 		if(!is_hma_used_by_xms) {
 			if(!msdos_is_hma_mcb_valid((hma_mcb_t *)(mem + 0xffff0 + 0x10))) {
-				// restore first free mcb in high memory area
+				// restore first free MCB in HMA
 				msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 				is_hma_used_by_int_2fh = false;
 			}
@@ -16657,7 +17537,7 @@ inline void msdos_int_67h_46h()
 
 inline void msdos_int_67h_47h()
 {
-	// NOTE: the map data should be stored in the specified ems page, not process data
+	// NOTE: the map data should be stored in the specified EMS page, not process data
 	process_t *process = msdos_process_info_get(current_psp);
 	
 	if(!support_ems) {
@@ -16679,7 +17559,7 @@ inline void msdos_int_67h_47h()
 
 inline void msdos_int_67h_48h()
 {
-	// NOTE: the map data should be restored from the specified ems page, not process data
+	// NOTE: the map data should be restored from the specified EMS page, not process data
 	process_t *process = msdos_process_info_get(current_psp);
 	
 	if(!support_ems) {
@@ -16935,9 +17815,9 @@ inline void msdos_int_67h_54h()
 	} else if(CPU_AL == 0x00) {
 		for(int i = 1; i <= MAX_EMS_HANDLES; i++) {
 			if(ems_handles[i].allocated) {
-				memcpy(mem + CPU_ES_BASE + CPU_DI + 10 * i + 2, ems_handles[i].name, 10);
+				memcpy(mem + CPU_ES_BASE + CPU_DI + 10 * i + 2, ems_handles[i].name, 8);
 			} else {
-				memset(mem + CPU_ES_BASE + CPU_DI + 10 * i + 2, 0, 10);
+				memset(mem + CPU_ES_BASE + CPU_DI + 10 * i + 2, 0, 8);
 			}
 			*(UINT16 *)(mem + CPU_ES_BASE + CPU_DI + 10 * i + 0) = i;
 		}
@@ -17188,7 +18068,7 @@ inline void msdos_int_67h_57h()
 			bool mapped;
 		} tmp_pages[4];
 		
-		// unmap pages to copy memory data to ems buffer
+		// unmap pages to copy memory data to EMS buffer
 		for(int i = 0; i < 4; i++) {
 			tmp_pages[i].handle = ems_pages[i].handle;
 			tmp_pages[i].page   = ems_pages[i].page;
@@ -17517,7 +18397,7 @@ inline void msdos_int_67h_deh()
 		} else {
 			// just cheat and switch to real mode instead of v86 mode
 			// otherwise a GDT and IDT would need to be set up
-			// hopefully most vcpi programs are okay with that
+			// hopefully most VCPI programs are okay with that
 			UINT32 new_cr0 = CPU_CR0 & 0x7ffffffe;
 			CPU_SET_CR0(new_cr0);
 
@@ -17552,68 +18432,44 @@ inline void msdos_int_67h_deh()
 
 inline void atok_int_6fh_01h()
 {
-//	if(!get_ime_open_status()) {
-		set_ime_open_status(TRUE);
-//	}
-#if 0
-	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
-	if(!(get_ime_conversion_mode() & IME_CMODE_ROMAN)) {
-		hit_key(VK_KANA);
-	}
-#endif
-	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE | IME_CMODE_ROMAN);
+	set_ime_open_status(TRUE);
+//	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE | IME_CMODE_ROMAN);
 }
 
 inline void atok_int_6fh_02h()
 {
-//	if(!get_ime_open_status()) {
-		set_ime_open_status(TRUE);
-//	}
-#if 0
-	// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
-	if(get_ime_conversion_mode() & IME_CMODE_ROMAN) {
-		hit_key(VK_KANA);
-	}
-#endif
-	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE);
+	set_ime_open_status(TRUE);
+//	set_ime_conversion_mode(IME_CMODE_NATIVE | IME_CMODE_FULLSHAPE);
 }
 
 inline void atok_int_6fh_03h()
 {
-//	if(!get_ime_open_status()) {
-		set_ime_open_status(TRUE);
-//	}
-	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
+	set_ime_open_status(TRUE);
+//	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
 }
 
 inline void atok_int_6fh_04h()
 {
-//	if(!get_ime_open_status()) {
-		set_ime_open_status(TRUE);
-//	}
-	set_ime_conversion_mode(IME_CMODE_SYMBOL);
+	set_ime_open_status(TRUE);
+//	set_ime_conversion_mode(IME_CMODE_SYMBOL);
 }
 
 inline void atok_int_6fh_05h()
 {
-//	if(!get_ime_open_status()) {
-		set_ime_open_status(TRUE);
-//	}
-	set_ime_conversion_mode(IME_CMODE_CHARCODE);
+	set_ime_open_status(TRUE);
+//	set_ime_conversion_mode(IME_CMODE_CHARCODE);
 }
 
 inline void atok_int_6fh_0bh()
 {
-//	if(get_ime_open_status()) {
-		set_ime_open_status(FALSE);
-//	}
-	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
+	set_ime_open_status(FALSE);
+//	set_ime_conversion_mode(IME_CMODE_ALPHANUMERIC);
 }
 
 inline void atok_int_6fh_66h()
 {
 	if(get_ime_open_status()) {
-		// NOTE: Standard IME on Windows10 is buggy and IME_CMODE_ROMAN bit of ConversionMode is not correct
+#if 0
 		DWORD dwConv = get_ime_conversion_mode();
 		if(dwConv & IME_CMODE_CHARCODE) {
 			CPU_AL = 0x05;
@@ -17626,6 +18482,9 @@ inline void atok_int_6fh_66h()
 		} else {
 			CPU_AL = 0x01;
 		}
+#else
+		CPU_AL = 0x01; // mode = "Ç†òAÇqäø"
+#endif
 	} else {
 		CPU_AL = 0x00;
 	}
@@ -17818,7 +18677,7 @@ inline void msdos_call_xms_02h()
 	} else {
 		CPU_AX = 0x0001;
 		is_hma_used_by_xms = false;
-		// restore first free mcb in high memory area
+		// restore first free MCB in HMA
 		msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 #else
 	} else {
@@ -18236,17 +19095,16 @@ void msdos_syscall(unsigned num)
 	} else if(num == 0x30) {
 		// dummy interrupt for call 0005h (call near)
 		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x65) {
-		// dummy interrupt for ATOK5 (int 6fh) and EMS (int 67h)
-		if((CPU_AH >= 0x01 && CPU_AH <= 0x12) || CPU_AH == 0x66) {
-			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x6f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-		} else {
-			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-		}
-	} else if(num == 0x66) {
+	} else if(num == 0x42) {
+		// dummy interrupt for EMS (int 67h)
+		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+	} else if(num == 0x43) {
 		// dummy interrupt for XMS (call far)
 		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x64 || (num >= 0x68 && num <= 0x6e)) {
+	} else if(num == 0x4c) {
+		// dummy interrupt for ATOK5 (int 6Fh)
+		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x6f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+	} else if(num == 0x40 || (num >= 0x44 && num <= 0x49)) {
 		// dummy interrupt
 	} else {
 		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
@@ -18571,7 +19429,7 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x30:
-		// dummy interrupt for case map routine pointed in the country info
+		// dummy interrupt for call 5
 //		if(!(CPU_CL >= 0x00 && CPU_CL <= 0x24)) {
 //			CPU_AL = 0x00;
 //			break;
@@ -18860,6 +19718,7 @@ void msdos_syscall(unsigned num)
 		case 0x14: msdos_int_2fh_14h(); break;
 		case 0x15: msdos_int_2fh_15h(); break;
 		case 0x16: msdos_int_2fh_16h(); break;
+		case 0x17: msdos_int_2fh_17h(); break;
 		case 0x19: msdos_int_2fh_19h(); break;
 		case 0x1a: msdos_int_2fh_1ah(); break;
 		case 0x40: msdos_int_2fh_40h(); break;
@@ -18911,6 +19770,11 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
+/*
+	case 0x30:
+		// dummy interrupt for call 5
+		break;
+*/
 	case 0x33:
 		switch(CPU_AH) {
 		case 0x00:
@@ -18982,7 +19846,7 @@ void msdos_syscall(unsigned num)
 			break;
 		}
 		break;
-	case 0x64:
+	case 0x40:
 		// dummy interrupt for end of alter page map and call
 		{
 			UINT16 handles[4], pages[4];
@@ -19007,22 +19871,14 @@ void msdos_syscall(unsigned num)
 			// do ret_far (pop cs/ip) in old mapping
 		}
 		break;
-	case 0x65:
-		// dummy interrupt for ATOK5 (int 6fh) and EMS (int 67h)
+/*
+	case 0x41:
+		// int 41h is used for Windows debugging kernel
+		break;
+*/
+	case 0x42:
+		// dummy interrupt for EMS (int 67h)
 		switch(CPU_AH) {
-		// ATOK5
-		case 0x01: atok_int_6fh_01h(); break;
-		case 0x02: atok_int_6fh_02h(); break;
-		case 0x03: atok_int_6fh_03h(); break;
-		case 0x04: atok_int_6fh_04h(); break;
-		case 0x05: atok_int_6fh_05h(); break;
-		case 0x0b: atok_int_6fh_0bh(); break;
-		case 0x0f: break;
-		case 0x10: break;
-		case 0x11: break;
-		case 0x12: break;
-		case 0x66: atok_int_6fh_66h(); break;
-		// EMS
 		case 0x40: msdos_int_67h_40h(); break;
 		case 0x41: msdos_int_67h_41h(); break;
 		case 0x42: msdos_int_67h_42h(); break;
@@ -19063,7 +19919,7 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 #ifdef SUPPORT_XMS
-	case 0x66:
+	case 0x43:
 		// dummy interrupt for XMS (call far)
 		try {
 			switch(CPU_AH) {
@@ -19104,14 +19960,8 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 #endif
-/*
-	case 0x67:
-		// int 67h handler is in EMS device driver (EMMXXXX0) and it calls int 65h
-		// NOTE: some softwares get address of int 67h handler and recognize the address is in EMS device driver
-		break;
-*/
-	case 0x69:
-		// irq12 (mouse)
+	case 0x44:
+		// IRQ 12 (mouse)
 		mouse_push_ax = CPU_AX;
 		mouse_push_bx = CPU_BX;
 		mouse_push_cx = CPU_CX;
@@ -19134,8 +19984,8 @@ void msdos_syscall(unsigned num)
 			mem[DUMMY_TOP + 0x04] = mouse.call_addr.w.l >> 8;
 			mem[DUMMY_TOP + 0x05] = mouse.call_addr.w.h & 0xff;
 			mem[DUMMY_TOP + 0x06] = mouse.call_addr.w.h >> 8;
-			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-			mem[DUMMY_TOP + 0x08] = 0x6b;
+			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 46h (dummy)
+			mem[DUMMY_TOP + 0x08] = 0x46;
 			break;
 		}
 		for(int i = 0; i < 8; i++) {
@@ -19152,8 +20002,8 @@ void msdos_syscall(unsigned num)
 				mem[DUMMY_TOP + 0x04] = mouse.call_addr_alt[i].w.l >> 8;
 				mem[DUMMY_TOP + 0x05] = mouse.call_addr_alt[i].w.h & 0xff;
 				mem[DUMMY_TOP + 0x06] = mouse.call_addr_alt[i].w.h >> 8;
-				mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-				mem[DUMMY_TOP + 0x08] = 0x6b;
+				mem[DUMMY_TOP + 0x07] = 0xcd;	// int 46h (dummy)
+				mem[DUMMY_TOP + 0x08] = 0x46;
 				break;
 			}
 		}
@@ -19170,8 +20020,8 @@ void msdos_syscall(unsigned num)
 			mem[DUMMY_TOP + 0x04] = mouse.call_addr_ps2.w.l >> 8;
 			mem[DUMMY_TOP + 0x05] = mouse.call_addr_ps2.w.h & 0xff;
 			mem[DUMMY_TOP + 0x06] = mouse.call_addr_ps2.w.h >> 8;
-			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
-			mem[DUMMY_TOP + 0x08] = 0x6a;
+			mem[DUMMY_TOP + 0x07] = 0xcd;	// int 45h (dummy)
+			mem[DUMMY_TOP + 0x08] = 0x45;
 			break;
 		}
 		// invalid call addr :-(
@@ -19180,17 +20030,17 @@ void msdos_syscall(unsigned num)
 		mem[DUMMY_TOP + 0x04] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x05] = 0x90;	// nop
 		mem[DUMMY_TOP + 0x06] = 0x90;	// nop
-		mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-		mem[DUMMY_TOP + 0x08] = 0x6b;
+		mem[DUMMY_TOP + 0x07] = 0xcd;	// int 46h (dummy)
+		mem[DUMMY_TOP + 0x08] = 0x46;
 		break;
-	case 0x6a:
-		// end of ps/2 mouse bios
+	case 0x45:
+		// end of PS/2 mouse BIOS
 		CPU_POP();
 		CPU_POP();
 		CPU_POP();
 		CPU_POP();
-	case 0x6b:
-		// end of irq12 (mouse)
+	case 0x46:
+		// end of IRQ 12 (mouse)
 		CPU_AX = mouse_push_ax;
 		CPU_BX = mouse_push_bx;
 		CPU_CX = mouse_push_cx;
@@ -19206,7 +20056,7 @@ void msdos_syscall(unsigned num)
 		}
 		pic_update();
 		break;
-	case 0x6c:
+	case 0x47:
 		// dummy interrupt for case map routine pointed in the country info
 		if(CPU_AL >= 0x80) {
 			char tmp[2] = {0};
@@ -19215,12 +20065,12 @@ void msdos_syscall(unsigned num)
 			CPU_AL = tmp[0];
 		}
 		break;
-	case 0x6d:
+	case 0x48:
 		// dummy interrupt for font read routine pointed by int 15h, ax=5000h
 		CPU_AL = 0x86; // not supported
 		CPU_SET_C_FLAG(1);
 		break;
-	case 0x6e:
+	case 0x49:
 		// dummy interrupt for parameter error message read routine pointed by int 2fh, ax=122eh, dl=08h
 		{
 			USHORT lang = get_message_lang();
@@ -19228,38 +20078,44 @@ void msdos_syscall(unsigned num)
 			if(code & 0xf0) {
 				code = (code & 7) | ((code & 0x10) >> 1);
 			}
-			for(int i = 0; i < array_length(param_error_table); i++) {
-				if(param_error_table[i].code == code || param_error_table[i].code == (UINT16)-1) {
-					const char *message = NULL;
-					if(lang == LANG_FRENCH) {
-						message = (const char *)param_error_table[i].message_french;
-					} else if(lang == LANG_GERMAN) {
-						message = (const char *)param_error_table[i].message_german;
-					} else if(lang == LANG_SPANISH) {
-						message = (const char *)param_error_table[i].message_spanish;
-					} else if(lang == LANG_PORTUGUESE) {
-						message = (const char *)param_error_table[i].message_brazilian;
-					} else if(lang == LANG_JAPANESE) {
-						message = (const char *)param_error_table[i].message_japanese;
-					} else if(lang == LANG_KOREAN) {
-						message = (const char *)param_error_table[i].message_korean;
-					}
-					if(message == NULL) {
-						message = param_error_table[i].message_english;
-					}
-					*(UINT8 *)(mem + WORK_TOP) = (UINT8)strlen(message);
-					strcpy((char *)(mem + WORK_TOP + 1), message);
-					
-					CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
-					CPU_DI = 0x0000;
-					break;
-				}
-			}
+			const char *message = msdos_param_error_message(code);
+			*(UINT8 *)(mem + WORK_TOP) = (UINT8)strlen(message);
+			strcpy((char *)(mem + WORK_TOP + 1), message);
+			CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
+			CPU_DI = 0x0000;
 		}
 		break;
 /*
+	case 0x4a:
+		// int 4Ah is used for user alarm
+		break;
+	case 0x4b:
+		// int 4Bh is used for IBM SCSI interface and the Virtual DMA
+		break;
+*/
+	case 0x4c:
+		// dummy interrupt for ATOK5 (int 6Fh)
+		switch(CPU_AH) {
+		case 0x01: atok_int_6fh_01h(); break;
+		case 0x02: atok_int_6fh_02h(); break;
+		case 0x03: atok_int_6fh_03h(); break;
+		case 0x04: atok_int_6fh_04h(); break;
+		case 0x05: atok_int_6fh_05h(); break;
+		case 0x0b: atok_int_6fh_0bh(); break;
+		case 0x0f: break;
+		case 0x10: break;
+		case 0x11: break;
+		case 0x12: break;
+		case 0x66: atok_int_6fh_66h(); break;
+		}
+		break;
+/*
+	case 0x67:
+		// int 67h handler is in EMS device driver (EMMXXXX0) and it calls int 42h
+		// NOTE: some softwares get address of int 67h handler and recognize the address is in EMS device driver
+		break;
 	case 0x6f:
-		// int 6fh handler is in ATOK5 device driver and it calls int 65h
+		// int 6Fh handler is in ATOK5 device driver and it calls int 4Ch
 		// NOTE: some softwares get address of int 6fh handler and recognize the address is in ATOK5 device driver
 		break;
 */
@@ -19333,7 +20189,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mouse.mickey.y = 16;
 	
 #ifdef SUPPORT_XMS
-	// init xms
+	// init XMS
 	msdos_xms_init();
 #endif
 	
@@ -19342,7 +20198,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memset(process, 0, sizeof(process));
 #endif
 	
-	// init dtainfo
+	// init DTA info
 	msdos_dta_info_init();
 	
 #if 0
@@ -19350,7 +20206,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	memset(mem, 0, sizeof(mem));
 #endif
 	
-	// bios data area
+	// BIOS data area
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	GetConsoleScreenBufferInfo(hStdout, &csbi);
@@ -19420,9 +20276,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 	// put ROM configuration table for INT 15h, AH=C0h (Get Configuration) in reserved area
 	*(UINT16 *)(mem + 0x4ac + 0) = 0x0a; // number of bytes following
-	*(UINT8  *)(mem + 0x4ac + 2) = 0xfc; // model: pc/at
-	*(UINT8  *)(mem + 0x4ac + 3) = 0x00; // submodel: pc/at
-	*(UINT8  *)(mem + 0x4ac + 5) = 0x60; // 2nd pic, rtc
+	*(UINT8  *)(mem + 0x4ac + 2) = 0xfc; // model: PC/AT
+	*(UINT8  *)(mem + 0x4ac + 3) = 0x00; // submodel: PC/AT
+	*(UINT8  *)(mem + 0x4ac + 5) = 0x60; // 2nd PIC, RTC
 	*(UINT32 *)(mem + 0x4ac + 6) = 0x40; // int 16/ah=09h
 #ifdef EXT_BIOS_TOP
 	*(UINT16 *)(mem + EXT_BIOS_TOP) = 1;
@@ -19439,12 +20295,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 	}
 	
-	// init mcb
+	// init MCB
 	int seg = MEMORY_TOP >> 4;
 	
 	// iret table
 	// note: int 2eh vector should address the routine in command.com,
-	// and some softwares invite (int 2eh vector segment) - 1 must address the mcb of command.com.
+	// and some softwares invite (int 2eh vector segment) - 1 must address the MCB of command.com.
 	// so move iret table into allocated memory block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 5 * 128) >> 4);
@@ -19452,7 +20308,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	seg += (IRET_SIZE + 5 * 128) >> 4;
 	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
 	
-	// note: SO1 checks int 21h vector and if it aims iret (cfh)
+	// note: SO1 checks int 21h vector and if it aims iret (CFh)
 	// it is recognized SO1 is not running on MS-DOS environment
 	for(int i = 0; i < 128; i++) {
 		// jmp far (IRET_TOP >> 4):(interrupt number)
@@ -19466,7 +20322,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	ATOK_TOP = seg << 4;
 	seg += ATOK_SIZE >> 4;
 	
-	// dummy xms/ems device
+	// dummy XMS/EMS device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, XMS_SIZE >> 4);
 	XMS_TOP = seg << 4;
 	seg += XMS_SIZE >> 4;
@@ -19499,17 +20355,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 	}
 	
-	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
-			strcpy(comspec_path, short_path);
-		}
-	}
-	if((path = getenv("MSDOS_COMSPEC")) != NULL && _access(path, 0) == 0) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
-			strcpy(comspec_path, short_path);
-		}
-	}
-	
 	if((path = getenv("MSDOS_PATH")) != NULL) {
 		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
 			strcpy(env_msdos_path, short_path);
@@ -19522,6 +20367,17 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				strcat(env_path, ";");
 			}
 			strcat(env_path, short_path);
+		}
+	}
+	
+	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(comspec_path, short_path);
+		}
+	}
+	if((path = getenv("MSDOS_COMSPEC")) != NULL && _access(path, 0) == 0) {
+		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			strcpy(comspec_path, short_path);
 		}
 	}
 	
@@ -19710,31 +20566,31 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	}
 	seg += (ENV_SIZE >> 4);
 	
-	// psp
+	// PSP
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, PSP_SIZE >> 4);
 	current_psp = seg;
 	psp_t *psp = msdos_psp_create(seg, seg + (PSP_SIZE >> 4), -1, env_seg);
 	psp->parent_psp = current_psp;
 	seg += (PSP_SIZE >> 4);
 	
-	// first free mcb in conventional memory
+	// first free MCB in conventional memory
 	msdos_mcb_create(seg, 'M', 0, (MEMORY_END >> 4) - seg - 2);
 	first_mcb = seg;
 	
-	// dummy mcb to link to umb
+	// dummy MCB to link to UMB
 #if 0
-	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC"); // link umb
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC"); // link UMB
 #else
-	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC"); // unlink umb
+	msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC"); // unlink UMB
 #endif
 	
-	// first mcb in upper memory block
+	// first MCB in upper memory block
 	msdos_mcb_create(UMB_TOP >> 4, 'M', PSP_SYSTEM, 0);
-	// desqview expects there to be more than one mcb in the umb and the last to be the largest
+	// DESQview expects there to be more than one MCB in the UMB and the last to be the largest
 	msdos_mcb_create((UMB_TOP >> 4) + 1, 'Z', 0, (UMB_END >> 4) - (UMB_TOP >> 4) - 2);
 	
 #ifdef SUPPORT_HMA
-	// first free mcb in high memory area
+	// first free MCB in HMA
 	msdos_hma_mcb_create(0x10, 0, 0xffe0, 0);
 #endif
 	
@@ -19748,23 +20604,24 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 4 * i + 0) = (i <= 0x3f || (i >= 0x70 && i <= 0x77)) ? (IRET_SIZE + 5 * i) : i;
 		*(UINT16 *)(mem + 4 * i + 2) = (IRET_TOP >> 4);
 	}
-	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffc:0018 irq0 (system timer)
+	*(UINT16 *)(mem + 4 * 0x08 + 0) = 0x0018;	// fffc:0018 IRQ 0 (system timer)
 	*(UINT16 *)(mem + 4 * 0x08 + 2) = DUMMY_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x22 + 0) = 0x0000;	// ffff:0000 boot
 	*(UINT16 *)(mem + 4 * 0x22 + 2) = 0xffff;
-	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 ems
+	*(UINT16 *)(mem + 4 * 0x67 + 0) = 0x0012;	// xxxx:0012 EMS
 	*(UINT16 *)(mem + 4 * 0x67 + 2) = XMS_TOP >> 4;
 	*(UINT16 *)(mem + 4 * 0x6f + 0) = 0x0012;	// xxxx:0012 ATOK5
 	*(UINT16 *)(mem + 4 * 0x6f + 2) = ATOK_TOP >> 4;
-	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 irq12 (mouse)
+	*(UINT16 *)(mem + 4 * 0x74 + 0) = 0x0000;	// fffc:0000 IRQ 12 (mouse)
 	*(UINT16 *)(mem + 4 * 0x74 + 2) = DUMMY_TOP >> 4;
-	for(int i = 0x50; i < 0x60; i++) {		// desqview wants 0x50-0x58 to point at the same address
-		*(UINT16 *)(mem + 4 * i + 0) = 0x0050;	// dos4gw wants two vectors pointing to the same address
+	for(int i = 0x50; i < 0x60; i++) {		// DESQview wants 0x50-0x58 to point at the same address
+		*(UINT16 *)(mem + 4 * i + 0) = 0x0050;	// DOS/4GW wants two vectors pointing to the same address
 	}
 	*(UINT16 *)(mem + 4 * 0xbf + 0) = 0x0000;	// 123R3 wants a null vector
 	*(UINT16 *)(mem + 4 * 0xbf + 2) = 0x0000;
+	*(UINT16 *)(mem + 4 * 0xdd + 0) = 0x00dc;	// not to be recognized as NEC PC-9801 series
 	
-	// dummy devices (NUL -> CON -> ... -> $IBMADSP -> FP$ATOK6 -> EMMXXXX0)
+	// dummy devices (NUL -> CON -> ... -> $IBMAIAS -> FP$ATOK6 -> EMMXXXX0)
 	static const struct {
 		UINT16 attributes;
 		const char *dev_name;
@@ -19781,7 +20638,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		{0x8000, "COM3    "},
 		{0x8000, "COM4    "},
 //		{0xc000, "CONFIG$ "},
-		{0xc000, "$IBMADSP"}, // for windows3.1 setup.exe
+		{0xc000, "$IBMAFNT"},
+		{0xc000, "$IBMADSP"}, // for Windows 3.1 setup.exe
+		{0xc000, "$IBMAIAS"},
 	};
 	static const UINT8 dummy_device_routine[] = {
 		// from NUL device of Windows 98 SE
@@ -19879,13 +20738,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	atok_device->interrupt = ATOK_SIZE - sizeof(dummy_device_routine) + 6;
 	memcpy(atok_device->dev_name, "FP$ATOK6", 8);
 	
-	mem[ATOK_TOP + 0x12] = 0xcd;	// int 65h (dummy)
-	mem[ATOK_TOP + 0x13] = 0x65;
+	mem[ATOK_TOP + 0x12] = 0xcd;	// int 4Ch (dummy)
+	mem[ATOK_TOP + 0x13] = 0x4c;
 	mem[ATOK_TOP + 0x14] = 0xcf;	// iret
 	memcpy(mem + ATOK_TOP + 0x15, "ATOK", 4);
 	memcpy(mem + ATOK_TOP + ATOK_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
-	// ems (int 67h) and xms
+	// EMS (int 67h) and XMS
 	if(support_ems) {
 		device_t *xms_device = (device_t *)(mem + XMS_TOP);
 		xms_device->next_driver.w.l = 0xffff;
@@ -19895,49 +20754,49 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		xms_device->interrupt = XMS_SIZE - sizeof(dummy_device_routine) + 6;
 		memcpy(xms_device->dev_name, "EMMXXXX0", 8);
 		
-		mem[XMS_TOP + 0x12] = 0xcd;	// int 65h (dummy)
-		mem[XMS_TOP + 0x13] = 0x65;
+		mem[XMS_TOP + 0x12] = 0xcd;	// int 42h (dummy)
+		mem[XMS_TOP + 0x13] = 0x42;
 		mem[XMS_TOP + 0x14] = 0xcf;	// iret
 	} else {
 		mem[XMS_TOP + 0x12] = 0xcf;	// iret 
 	}
 #ifdef SUPPORT_XMS
 	if(support_xms) {
-		mem[XMS_TOP + 0x15] = 0xcd;	// int 66h (dummy)
-		mem[XMS_TOP + 0x16] = 0x66;
+		mem[XMS_TOP + 0x15] = 0xcd;	// int 43h (dummy)
+		mem[XMS_TOP + 0x16] = 0x43;
 		mem[XMS_TOP + 0x17] = 0xcb;	// retf
 	} else
 #endif
 	mem[XMS_TOP + 0x15] = 0xcb;	// retf
 	memcpy(mem + XMS_TOP + XMS_SIZE - sizeof(dummy_device_routine), dummy_device_routine, sizeof(dummy_device_routine));
 	
-	// irq12 routine (mouse)
-	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 69h (dummy)
-	mem[DUMMY_TOP + 0x01] = 0x69;
+	// IRQ 12 routine (mouse)
+	mem[DUMMY_TOP + 0x00] = 0xcd;	// int 44h (dummy)
+	mem[DUMMY_TOP + 0x01] = 0x44;
 	mem[DUMMY_TOP + 0x02] = 0x9a;	// call far mouse
 	mem[DUMMY_TOP + 0x03] = 0xff;
 	mem[DUMMY_TOP + 0x04] = 0xff;
 	mem[DUMMY_TOP + 0x05] = 0xff;
 	mem[DUMMY_TOP + 0x06] = 0xff;
-//	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6ah (dummy)
-//	mem[DUMMY_TOP + 0x08] = 0x6a;
-	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 6bh (dummy)
-	mem[DUMMY_TOP + 0x08] = 0x6b;
+//	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 45h (dummy)
+//	mem[DUMMY_TOP + 0x08] = 0x45;
+	mem[DUMMY_TOP + 0x07] = 0xcd;	// int 46h (dummy)
+	mem[DUMMY_TOP + 0x08] = 0x46;
 	mem[DUMMY_TOP + 0x09] = 0xcf;	// iret
 	
 	// case map routine
-	mem[DUMMY_TOP + 0x0a] = 0xcd;	// int 6ch (dummy)
-	mem[DUMMY_TOP + 0x0b] = 0x6c;
+	mem[DUMMY_TOP + 0x0a] = 0xcd;	// int 47h (dummy)
+	mem[DUMMY_TOP + 0x0b] = 0x47;
 	mem[DUMMY_TOP + 0x0c] = 0xcb;	// retf
 	
 	// font read routine
-	mem[DUMMY_TOP + 0x0d] = 0xcd;	// int 6dh (dummy)
-	mem[DUMMY_TOP + 0x0e] = 0x6d;
+	mem[DUMMY_TOP + 0x0d] = 0xcd;	// int 48h (dummy)
+	mem[DUMMY_TOP + 0x0e] = 0x48;
 	mem[DUMMY_TOP + 0x0f] = 0xcb;	// retf
 	
 	// error message read routine
-	mem[DUMMY_TOP + 0x10] = 0xcd;	// int 6eh (dummy)
-	mem[DUMMY_TOP + 0x11] = 0x6e;
+	mem[DUMMY_TOP + 0x10] = 0xcd;	// int 49h (dummy)
+	mem[DUMMY_TOP + 0x11] = 0x49;
 	mem[DUMMY_TOP + 0x12] = 0xcb;	// retf
 	
 	// dummy loop to wait BIOS/DOS service is done
@@ -19947,7 +20806,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x16] = 0xfc;
 	mem[DUMMY_TOP + 0x17] = 0xcb;	// retf
 	
-	// irq0 routine (system timer)
+	// IRQ 0 routine (system timer)
 	mem[DUMMY_TOP + 0x18] = 0xcd;	// int 1ch
 	mem[DUMMY_TOP + 0x19] = 0x1c;
 	mem[DUMMY_TOP + 0x1a] = 0xea;	// jmp far (IRET_TOP >> 4):0008
@@ -19962,8 +20821,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x21] = 0xff;
 	mem[DUMMY_TOP + 0x22] = 0xff;
 	mem[DUMMY_TOP + 0x23] = 0xff;
-	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 64h (dummy)
-	mem[DUMMY_TOP + 0x25] = 0x64;
+	mem[DUMMY_TOP + 0x24] = 0xcd;	// int 40h (dummy)
+	mem[DUMMY_TOP + 0x25] = 0x40;
 	mem[DUMMY_TOP + 0x26] = 0xcb;	// retf
 	
 	// call int 29h routine
@@ -19972,8 +20831,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
 	
 	// VCPI entry point
-	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 65h (dummy)
-	mem[DUMMY_TOP + 0x2b] = 0x65;
+	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 42h (dummy)
+	mem[DUMMY_TOP + 0x2b] = 0x42;
 	mem[DUMMY_TOP + 0x2c] = 0xcb;	// retf
 	
 	// boot routine
@@ -19987,7 +20846,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xffff0 + 0x0a] = '/';
 	mem[0xffff0 + 0x0b] = '9';
 	mem[0xffff0 + 0x0c] = '2';
-	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (pc/at)
+	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (PC/AT)
 	mem[0xffff0 + 0x0f] = 0x55;	// signature
 #else
 	mem[0xffff0 + 0x05] = '0';	// rom date (same as Windows 98 SE)
@@ -19998,14 +20857,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[0xffff0 + 0x0a] = '/';
 	mem[0xffff0 + 0x0b] = '0';
 	mem[0xffff0 + 0x0c] = '6';
-	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (pc/at)
+	mem[0xffff0 + 0x0e] = 0xfc;	// machine id (PC/AT)
 	mem[0xffff0 + 0x0f] = 0x00;
 #endif
 	
 	// param block
 	// + 0: param block (22bytes)
-	// +24: fcb1 (16bytes)
-	// +40: fcb2 (16bytes)
+	// +24: FCB1 (16bytes)
+	// +40: FCB2 (16bytes)
 	// +56: command tail (128bytes)
 	param_block_t *param = (param_block_t *)(mem + WORK_TOP);
 	param->env_seg = 0;
@@ -20050,7 +20909,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + DISK_BUF_TOP + 10) = 0x01;		// number of FATs
 	*(UINT32 *)(mem + DISK_BUF_TOP + 13) = 0xffffffff;	// pointer to DPB
 	
-	// fcb table
+	// FCB table
 	*(UINT32 *)(mem + FCB_TABLE_TOP + 0) = 0xffffffff;
 	*(UINT16 *)(mem + FCB_TABLE_TOP + 4) = 0;
 	
@@ -20081,7 +20940,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}
 	
-	// nls stuff
+	// NLS stuff
 	msdos_nls_tables_init();
 	
 	// execute command
@@ -20189,9 +21048,12 @@ void hardware_run()
 #ifdef USE_DEBUGGER
 	msdos_int_num = -1;
 #endif
+//	DWORD t = timeGetTime();
 	while(!msdos_exit) {
 		hardware_run_cpu();
 	}
+//	t = timeGetTime() - t;
+//	fprintf(stderr,"time=%d\n",t);
 #ifdef EXPORT_DEBUG_TO_FILE
 	if(fp_debug_log != NULL) {
 		fclose(fp_debug_log);
@@ -20226,19 +21088,18 @@ void hardware_update()
 	UINT32 cur_time = timeGetTime();
 	
 	if(prev_time != cur_time) {
-		// update pit and raise irq0
+		// update pit and raise IRQ 0
 #ifndef PIT_ALWAYS_RUNNING
 		if(pit_active)
 #endif
 		{
-			if(pit_run(0, cur_time)) {
-				pic_req(0, 0, 1);
-			}
-			pit_run(1, cur_time);
+			pit_run(0, cur_time);
+//			pit_run(1, cur_time);
 			pit_run(2, cur_time);
 		}
+		refresh_count = (int)(PIT_FREQ / 1000.0 / PIT_COUNT_VALUE(1) + 0.5);
 		
-		// update sio and raise irq4/3
+		// update sio and raise IRQ 4/3
 		for(int c = 0; c < 4; c++) {
 			sio_update(c);
 		}
@@ -20285,7 +21146,7 @@ void hardware_update()
 				}
 			}
 			
-			// raise irq1 if key is pressed/released or key buffer is not empty
+			// raise IRQ 1 if key is pressed/released or key buffer is not empty
 			if(!key_changed) {
 				enter_key_buf_lock();
 				if(!pcbios_is_key_buffer_empty()) {
@@ -20310,7 +21171,7 @@ void hardware_update()
 				key_changed = false;
 			}
 			
-			// raise irq12 if mouse status is changed
+			// raise IRQ 12 if mouse status is changed
 			if((mouse.status & 0x1f) && mouse.call_addr_ps2.dw && mouse.enabled_ps2) {
 				mouse.status_irq = 0; // ???
 				mouse.status_irq_alt = 0; // ???
@@ -20344,7 +21205,7 @@ void hardware_update()
 			prev_tick = cur_tick;
 		}
 		
-		// update cursor size/position by crtc
+		// update cursor size/position by CRTC
 		if(crtc_changed[10] != 0 || crtc_changed[11] != 0) {
 			int size = (int)(crtc_regs[11] & 7) - (int)(crtc_regs[10] & 7) + 1;
 			if(!((crtc_regs[10] & 0x20) != 0 || size < 0)) {
@@ -20373,7 +21234,7 @@ void hardware_update()
 		}
 		
 		// update cursor info
-		if(!is_cursor_blink_off()) {
+		if(!hide_cursor && !is_cursor_blink_off()) {
 			ci_new.bVisible = TRUE;
 		}
 		if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
@@ -20390,7 +21251,7 @@ void hardware_update()
 	}
 }
 
-// ems
+// EMS
 
 void ems_init()
 {
@@ -20498,7 +21359,7 @@ void ems_unmap_page(int physical)
 	}
 }
 
-// dma
+// DMA
 
 void dma_init()
 {
@@ -20634,6 +21495,20 @@ UINT8 dma_page_read(int c, int ch)
 	return(dma[c].ch[ch].pagereg);
 }
 
+void dma_req(int c, int ch, bool req)
+{
+	UINT8 bit = 1 << ch;
+	
+	if(req) {
+		if(!(dma[c].req & bit)) {
+			dma[c].req |= bit;
+			dma_run(c, ch);
+		}
+	} else {
+		dma[c].req &= ~bit;
+	}
+}
+
 void dma_run(int c, int ch)
 {
 	UINT8 bit = 1 << ch;
@@ -20757,47 +21632,56 @@ void dma_run(int c, int ch)
 	}
 }
 
-// pic
+void dma_run()
+{
+	for(int c = 0; c < 2; c++) {
+		for(int ch = 0; ch < 4; ch++) {
+			dma_run(c, ch);
+		}
+	}
+}
+
+// PIC
 
 void pic_init()
 {
 	memset(pic, 0, sizeof(pic));
 	
-	// from bochs bios
-	pic_write(0, 0, 0x11);	// icw1 = 11h
-	pic_write(0, 1, 0x08);	// icw2 = 08h
-	pic_write(0, 1, 0x04);	// icw3 = 04h
-	pic_write(0, 1, 0x01);	// icw4 = 01h
-	pic_write(0, 1, 0xb8);	// ocw1 = b8h
-	pic_write(1, 0, 0x11);	// icw1 = 11h
-	pic_write(1, 1, 0x70);	// icw2 = 70h
-	pic_write(1, 1, 0x02);	// icw3 = 02h
-	pic_write(1, 1, 0x01);	// icw4 = 01h
-	pic_write(1, 1, 0xff);	// ocw1 = ffh
+	// from Bochs BIOS
+	pic_write(0, 0, 0x11);	// ICW1 = 11h
+	pic_write(0, 1, 0x08);	// ICW2 = 08h
+	pic_write(0, 1, 0x04);	// ICW3 = 04h
+	pic_write(0, 1, 0x01);	// ICW4 = 01h
+	pic_write(0, 1, 0xb8);	// OCW1 = B8h
+	pic_write(1, 0, 0x11);	// ICW1 = 11h
+	pic_write(1, 1, 0x70);	// ICW2 = 70h
+	pic_write(1, 1, 0x02);	// ICW3 = 02h
+	pic_write(1, 1, 0x01);	// ICW4 = 01h
+	pic_write(1, 1, 0xff);	// OCW1 = FFh
 }
 
 void pic_write(int c, UINT32 addr, UINT8 data)
 {
 	if(addr & 1) {
 		if(pic[c].icw2_r) {
-			// icw2
+			// ICW2
 			pic[c].icw2 = data;
 			pic[c].icw2_r = 0;
 		} else if(pic[c].icw3_r) {
-			// icw3
+			// ICW3
 			pic[c].icw3 = data;
 			pic[c].icw3_r = 0;
 		} else if(pic[c].icw4_r) {
-			// icw4
+			// ICW4
 			pic[c].icw4 = data;
 			pic[c].icw4_r = 0;
 		} else {
-			// ocw1
+			// OCW1
 			pic[c].imr = data;
 		}
 	} else {
 		if(data & 0x10) {
-			// icw1
+			// ICW1
 			pic[c].icw1 = data;
 			pic[c].icw2_r = 1;
 			pic[c].icw3_r = (data & 2) ? 0 : 1;
@@ -20811,7 +21695,7 @@ void pic_write(int c, UINT32 addr, UINT8 data)
 			}
 			pic[c].ocw3 = 0;
 		} else if(data & 8) {
-			// ocw3
+			// OCW3
 			if(!(data & 2)) {
 				data = (data & ~1) | (pic[c].ocw3 & 1);
 			}
@@ -20820,7 +21704,7 @@ void pic_write(int c, UINT32 addr, UINT8 data)
 			}
 			pic[c].ocw3 = data;
 		} else {
-			// ocw2
+			// OCW2
 			int level = 0;
 			if(data & 0x40) {
 				level = data & 7;
@@ -20943,7 +21827,7 @@ void pic_update()
 	CPU_IRQ_LINE(FALSE);
 }
 
-// pio
+// PIO
 
 void pio_init()
 {
@@ -20951,7 +21835,7 @@ void pio_init()
 	
 	memset(pio, 0, sizeof(pio));
 	
-	for(int c = 0; c < 2; c++) {
+	for(int c = 0; c < 3; c++) {
 		pio[c].stat = 0xdf;
 		pio[c].ctrl = 0x0c;
 //		pio[c].conv_mode = conv_mode;
@@ -20965,7 +21849,7 @@ void pio_finish()
 
 void pio_release()
 {
-	for(int c = 0; c < 2; c++) {
+	for(int c = 0; c < 3; c++) {
 		if(pio[c].fp != NULL) {
 			if(pio[c].jis_mode) {
 				fputc(0x1c, pio[c].fp);
@@ -21081,23 +21965,34 @@ void printer_out(int c, UINT8 data)
 	}
 }
 
-// pit
+// PIT
 
 void pit_init()
 {
 	memset(pit, 0, sizeof(pit));
 	for(int ch = 0; ch < 3; ch++) {
-		pit[ch].count = 0x10000;
-		pit[ch].ctrl_reg = 0x34;
+		pit[ch].count_reg = 0;
+		pit[ch].ctrl_reg = 0x36;
 		pit[ch].mode = 3;
+		pit[ch].count = 0x10000;
 	}
-	// from DOSBox
-	pit[2].count_reg = 1320;
 	
-	// from bochs bios
-	pit_write(3, 0x34);
+	pit_write(3, 0x36); // mode 3
+	pit_write(0, 0x00); // count = 65536 (18.2Hz)
 	pit_write(0, 0x00);
-	pit_write(0, 0x00);
+#if 0
+//	pit_write(3, 0x74); // mode 2
+//	pit_write(1, 0x12); // count = 18 (15us)
+//	pit_write(1, 0x00);
+#else
+	pit[1].count_reg = 18;
+	pit[1].ctrl_reg = 0x34;
+	pit[1].mode = 2;
+	pit[1].count = PIT_COUNT_VALUE(1);
+#endif
+	pit_write(3, 0xb6); // mode 3
+	pit_write(2, 0x28); // count = 1320 (904Hz)
+	pit_write(2, 0x05);
 }
 
 void pit_write(int ch, UINT8 val)
@@ -21221,6 +22116,11 @@ int pit_run(int ch, UINT32 cur_time)
 			pit[ch].prev_time = cur_time;
 			pit[ch].expired_time = pit[ch].prev_time + pit_get_expired_time(ch);
 		}
+		if(ch == 0) {
+			pic_req(0, 0, 1);
+		} else if(ch == 2) {
+			system_port |= 0x20;
+		}
 		return(1);
 	}
 	return(0);
@@ -21268,13 +22168,13 @@ void pit_latch_count(int ch)
 
 int pit_get_expired_time(int ch)
 {
-	pit[ch].accum += 1024ULL * 1000ULL * (UINT64)pit[ch].count / PIT_FREQ;
+	pit[ch].accum += (UINT64)1024 * (UINT64)1000 * (UINT64)pit[ch].count / PIT_FREQ;
 	UINT64 val = pit[ch].accum >> 10;
 	pit[ch].accum -= val << 10;
 	return((val != 0) ? val : 1);
 }
 
-// sio
+// SIO
 
 void sio_init()
 {
@@ -21288,13 +22188,13 @@ void sio_init()
 		
 		sio[c].divisor.w = 12;		// 115200Hz / 9600Baud
 		sio[c].line_ctrl = 0x03;	// 8bit, stop 1bit, non parity
-		sio[c].modem_ctrl = 0x03;	// rts=on, dtr=on
+		sio[c].modem_ctrl = 0x03;	// RTS = on, DTR = on
 		sio[c].set_rts = sio[c].prev_set_rts = true;
 		sio[c].set_dtr = sio[c].prev_set_dtr = true;
-		sio[c].modem_stat = 0x30;	// cts=on, dsr=on
+		sio[c].modem_stat = 0x30;	// CTS = on, DSR = on
 		sio[c].prev_modem_stat = 0x30;
 		sio[c].line_stat_buf = 0x60;	// send/recv buffers are empty
-		sio[c].irq_identify = 0x01;	// no pending irq
+		sio[c].irq_identify = 0x01;	// no pending IRQ
 		
 		InitializeCriticalSection(&sio_mt[c].csSendData);
 		InitializeCriticalSection(&sio_mt[c].csRecvData);
@@ -21436,7 +22336,7 @@ void sio_write(int c, UINT32 addr, UINT8 data)
 			LeaveCriticalSection(&sio_mt[c].csModemCtrl);
 			
 			if(data_changed & 0x03) {
-				// wait until dtr/rts signals are set
+				// wait until DTR/RTS signals are set
 				DWORD timeout = timeGetTime() + 1000;
 				while((sio[c].prev_set_dtr != sio[c].set_dtr || sio[c].prev_set_rts != sio[c].set_rts) && timeGetTime() < timeout) {
 					Sleep(10);
@@ -21598,7 +22498,7 @@ void sio_update_irq(int c)
 		LeaveCriticalSection(&sio_mt[c].csLineStat);
 	}
 	
-	// COM1 and COM3 shares IRQ4, COM2 and COM4 shares IRQ3
+	// COM1 and COM3 shares IRQ 4, COM2 and COM4 shares IRQ 3
 	if(level != -1) {
 		sio[c].irq_identify = level << 1;
 		pic_req(0, (c == 0 || c == 2) ? 4 : 3, 1);
@@ -21961,7 +22861,7 @@ bool sio_wait_sending_complete(int c)
 	return(empty);
 }
 
-// cmos
+// CMOS
 
 void cmos_init()
 {
@@ -22014,7 +22914,7 @@ UINT8 cmos_read(int addr)
 	return(cmos[addr & 0x7f]);
 }
 
-// kbd (a20)
+// keyboard (A20)
 
 void kbd_init()
 {
@@ -22245,11 +23145,11 @@ void beep_update()
 	}
 }
 
-// vga
+// VGA
 
 UINT8 mda_read_status()
 {
-	// 50hz
+	// 50Hz
 	UINT32 time = timeGetTime() % 20;
 	
 	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
@@ -22257,7 +23157,7 @@ UINT8 mda_read_status()
 
 UINT8 vga_read_status()
 {
-	// 60hz
+	// 60Hz
 	static const int period[3] = {16, 17, 17};
 	static int index = 0;
 	UINT32 time = timeGetTime() % period[index];
@@ -22266,7 +23166,7 @@ UINT8 vga_read_status()
 	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
 }
 
-// i/o bus
+// I/O bus
 
 // this is ugly patch for SW1US.EXE, it sometimes mistakely read/write 01h-10h for serial I/O
 //#define SW1US_PATCH
@@ -22314,7 +23214,14 @@ UINT8 debugger_read_io_byte(UINT32 addr)
 		val = kbd_read_data();
 		break;
 	case 0x61:
+		if(refresh_count > 0) {
+			system_port ^= 0x10;
+			refresh_count--;
+		} else {
+			REQUEST_HARDWRE_UPDATE();
+		}
 		val = system_port;
+		system_port &= ~0x20;
 		break;
 	case 0x64:
 		val = kbd_read_status();
@@ -22476,9 +23383,10 @@ void debugger_write_io_byte(UINT32 addr, UINT8 val)
 		kbd_write_data(val);
 		break;
 	case 0x61:
-		if(system_port != val) {
+		if((system_port & 0x0f) != (val & 0x0f)) {
 			bool changed = (((system_port & 3) == 3) != ((val & 3) == 3));
-			system_port = val;
+			system_port &= 0xf0;
+			system_port |= val & 0x0f;
 			if(changed) beep_update();
 		}
 		break;

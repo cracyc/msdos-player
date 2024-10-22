@@ -78,21 +78,25 @@
     <OutDir>.\Debug\</OutDir>
     <IntDir>.\Debug\</IntDir>
     <LinkIncremental>true</LinkIncremental>
+    <TargetName>msdos</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>.\Debug\</OutDir>
     <IntDir>.\Debug\</IntDir>
     <LinkIncremental>true</LinkIncremental>
+    <TargetName>msdos</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\Release\</OutDir>
     <IntDir>.\Release\</IntDir>
     <LinkIncremental>false</LinkIncremental>
+    <TargetName>msdos</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>.\Release\</OutDir>
     <IntDir>.\Release\</IntDir>
     <LinkIncremental>false</LinkIncremental>
+    <TargetName>msdos</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Midl>
@@ -214,6 +218,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention />
       <TargetMachine>MachineX86</TargetMachine>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -257,6 +263,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention />
       <TargetMachine>MachineX64</TargetMachine>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -307,12 +315,17 @@
     <ClCompile Include="np21_i386c\ia32\instructions\sse\sse.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\sse2\sse2.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\sse3\sse3.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4\sse4_1.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4\sse4_2.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4a\sse4a.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\ssse3\ssse3.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
     <ClInclude Include="lang_fr.h" />
     <ClInclude Include="lang_de.h" />
     <ClInclude Include="lang_sp.h" />
+    <ClInclude Include="lang_pt.h" />
     <ClInclude Include="lang_br.h" />
     <ClInclude Include="lang_jp.h" />
     <ClInclude Include="lang_ko.h" />
@@ -342,6 +355,10 @@
     <ClInclude Include="np21_i386c\ia32\instructions\sse\sse.h" />
     <ClInclude Include="np21_i386c\ia32\instructions\sse2\sse2.h" />
     <ClInclude Include="np21_i386c\ia32\instructions\sse3\sse3.h" />
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_1.h" />
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_2.h" />
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4a\sse4a.h" />
+    <ClInclude Include="np21_i386c\ia32\instructions\ssse3\sses3.h" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="vista.manifest" />

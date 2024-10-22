@@ -432,7 +432,10 @@ static void i80286_interrupt_descriptor(UINT16 number, int hwint, int error)
 	UINT8 r;
 	UINT32 addr;
 
-	if(!PM) return PREFIX86(_interrupt)(number);
+	if(!PM) {
+		PREFIX86(_interrupt)(number);
+		return;
+	}
 
 #ifdef USE_DEBUGGER
 	if(now_debugging) {

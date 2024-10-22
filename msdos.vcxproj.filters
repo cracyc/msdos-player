@@ -28,6 +28,9 @@
     <ClInclude Include="lang_sp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lang_pt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="lang_br.h">
       <Filter>Header Files</Filter>
     </ClInclude>

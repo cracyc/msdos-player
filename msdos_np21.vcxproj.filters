@@ -60,6 +60,15 @@
     <Filter Include="Header Files\np21w i386c Header Files\ia32\sse3">
       <UniqueIdentifier>{691669a0-0874-4da8-bd6a-fc3963ef3b95}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4">
+      <UniqueIdentifier>{2bab00df-dc5e-4951-8235-dafb46916374}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4a">
+      <UniqueIdentifier>{0189ac92-1680-4eac-b821-e2923c2b082a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\ssse3">
+      <UniqueIdentifier>{44e89e17-742e-4537-80fb-de3269f0ed7e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="msdos.cpp">
@@ -182,6 +191,18 @@
     <ClCompile Include="np21_i386c\ia32\instructions\sse3\sse3.cpp">
       <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse3</Filter>
     </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4\sse4_1.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse4</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4\sse4_2.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse4</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\sse4a\sse4a.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\sse4a</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\ssse3\ssse3.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\ssse3</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h">
@@ -194,6 +215,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lang_sp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_pt.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lang_br.h">
@@ -282,6 +306,18 @@
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\sse3\sse3.h">
       <Filter>Header Files\np21w i386c Header Files\ia32\sse3</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\sse4a\sse4a.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_i386c\ia32\instructions\ssse3\sses3.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

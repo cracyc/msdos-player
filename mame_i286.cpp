@@ -19,10 +19,27 @@
 #endif
 #define U64(v) UINT64(v)
 
+#ifdef _MSC_VC6
+void logerror(const char *format, ...)
+{
+//	va_list ap;
+//	va_start(ap, format);
+//	vfprintf(stderr, format, ap);
+//	va_end(ap);
+}
+void popmessage(const char *format, ...)
+{
+//	va_list ap;
+//	va_start(ap, format);
+//	vfprintf(stderr, format, ap);
+//	va_end(ap);
+}
+#else
 //#define logerror(...) fprintf(stderr, __VA_ARGS__)
 #define logerror(...)
 //#define popmessage(...) fprintf(stderr, __VA_ARGS__)
 #define popmessage(...)
+#endif
 
 /*****************************************************************************/
 /* src/emu/devcpu.h */
@@ -173,6 +190,10 @@ typedef UINT32	offs_t;
 /* Highly useful macro for compile-time knowledge of an array size */
 #define ARRAY_LENGTH(x)     (sizeof(x) / sizeof(x[0]))
 
+#ifdef _MSC_VC6
+UINT32 activecpu_get_pc();
+#endif
+
 #if defined(HAS_I286)
 #include "mame/emu/cpu/i86/i286.c"
 #else
@@ -182,6 +203,13 @@ typedef UINT32	offs_t;
 #undef CPU_INIT
 #undef CPU_RESET
 #undef CPU_EXECUTE
+
+#ifdef _MSC_VC6
+UINT32 activecpu_get_pc()
+{
+	return m_pc;
+}
+#endif
 
 #ifdef USE_DEBUGGER
 #include "mame/emu/cpu/i386/i386dasm.c"
@@ -590,7 +618,6 @@ inline void CPU_SET_O_FLAG(UINT8 value)
 	m_OverVal = value;
 }
 
-#define CPU_STAT_PM			PM
 
 #define CPU_EFLAG			CompressFlags()
 #define CPU_SET_EFLAG(x)		ExpandFlags(x)
@@ -598,10 +625,13 @@ inline void CPU_SET_O_FLAG(UINT8 value)
 #define CPU_ADRSMASK			AMASK
 
 #if defined(HAS_I286)
-	#define CPU_A20_LINE(x)		i80286_set_a20_line(x)
+#define CPU_A20_LINE(x)			i80286_set_a20_line(x)
+#define CPU_STAT_PM			PM
 #else
-	#define CPU_A20_LINE(x)
+#define CPU_A20_LINE(x)
+#define CPU_STAT_PM			0
 #endif
+#define CPU_STAT_VM86			0
 
 inline void CPU_IRQ_LINE(int state)
 {

@@ -1674,7 +1674,8 @@ static void PREFIX86(_mov_wsreg)()    /* Opcode 0x8c */
 #ifndef I8086
 	if (ModRM & 0x20) { /* HJB 12/13/98 1xx is invalid */
 		m_pc = m_prevpc;
-		return PREFIX86(_invalid)();
+		PREFIX86(_invalid)();
+		return;
 	}
 
 	PutRMWord(ModRM,m_sregs[(ModRM & 0x38) >> 3]);
@@ -2975,7 +2976,8 @@ static void PREFIX86(_ffpre)()    /* Opcode 0xff */
 		break;
 	default:
 		tmp = GetRMWord(ModRM);  // 286 doesn't matter but 8086?
-		return PREFIX(_invalid)();
+		PREFIX(_invalid)();
+		return;
 	}
 }
 
