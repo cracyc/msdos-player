@@ -2871,8 +2871,10 @@ static void I386OP(decode_opcode)()
 {
 	m_opcode = FETCH();
 
-	if(m_lock && !m_lock_table[0][m_opcode])
-		return I386OP(invalid)();
+	if(m_lock && !m_lock_table[0][m_opcode]) {
+		I386OP(invalid)();
+		return;
+	}
 
 	if( m_operand_size )
 		m_opcode_table1_32[m_opcode]();
@@ -2885,8 +2887,10 @@ static void I386OP(decode_two_byte)()
 {
 	m_opcode = FETCH();
 
-	if(m_lock && !m_lock_table[1][m_opcode])
-		return I386OP(invalid)();
+	if(m_lock && !m_lock_table[1][m_opcode]) {
+		I386OP(invalid)();
+		return;
+	}
 
 	if( m_operand_size )
 		m_opcode_table2_32[m_opcode]();

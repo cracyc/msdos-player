@@ -263,6 +263,8 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
 				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
@@ -355,6 +357,8 @@
 				SuppressStartupBanner="true"
 				ProgramDatabaseFile=".\Release/msdos.pdb"
 				SubSystem="1"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
 				LinkTimeCodeGeneration="1"
 				RandomizedBaseAddress="1"
 				DataExecutionPrevention="0"
@@ -1209,6 +1213,98 @@
 								</FileConfiguration>
 							</File>
 						</Filter>
+						<Filter
+							Name="sse4"
+							>
+							<File
+								RelativePath="np21_i386c\ia32\instructions\sse4\sse4_1.cpp"
+								>
+								<FileConfiguration
+									Name="Debug|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+								<FileConfiguration
+									Name="Release|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+							</File>
+							<File
+								RelativePath="np21_i386c\ia32\instructions\sse4\sse4_2.cpp"
+								>
+								<FileConfiguration
+									Name="Debug|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+								<FileConfiguration
+									Name="Release|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+							</File>
+						</Filter>
+						<Filter
+							Name="sse4a"
+							>
+							<File
+								RelativePath="np21_i386c\ia32\instructions\sse4a\sse4a.cpp"
+								>
+								<FileConfiguration
+									Name="Debug|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+								<FileConfiguration
+									Name="Release|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+							</File>
+						</Filter>
+						<Filter
+							Name="ssse3"
+							>
+							<File
+								RelativePath="np21_i386c\ia32\instructions\ssse3\ssse3.cpp"
+								>
+								<FileConfiguration
+									Name="Debug|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+								<FileConfiguration
+									Name="Release|Win32"
+									>
+									<Tool
+										Name="VCCLCompilerTool"
+										PreprocessorDefinitions=""
+									/>
+								</FileConfiguration>
+							</File>
+						</Filter>
 					</Filter>
 				</Filter>
 			</Filter>
@@ -1231,6 +1327,10 @@
 			</File>
 			<File
 				RelativePath=".\lang_sp.h"
+				>
+			</File>
+			<File
+				RelativePath=".\lang_pt.h"
 				>
 			</File>
 			<File
@@ -1376,6 +1476,34 @@
 						>
 						<File
 							RelativePath="np21_i386c\ia32\instructions\sse3\sse3.h"
+							>
+						</File>
+					</Filter>
+					<Filter
+						Name="sse4"
+						>
+						<File
+							RelativePath="np21_i386c\ia32\instructions\sse4\sse4_1.h"
+							>
+						</File>
+						<File
+							RelativePath="np21_i386c\ia32\instructions\sse4\sse4_2.h"
+							>
+						</File>
+					</Filter>
+					<Filter
+						Name="sse4a"
+						>
+						<File
+							RelativePath="np21_i386c\ia32\instructions\sse4a\sse4a.h"
+							>
+						</File>
+					</Filter>
+					<Filter
+						Name="ssse3"
+						>
+						<File
+							RelativePath="np21_i386c\ia32\instructions\ssse3\ssse3.h"
 							>
 						</File>
 					</Filter>

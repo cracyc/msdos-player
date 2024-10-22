@@ -1,5 +1,10 @@
 echo off
 
+rem rmdir /s /q binary
+mkdir binary
+
+setlocal
+
 if exist "%ProgramFiles(x86)%" goto is_x64
 set path="%ProgramFiles%\Microsoft Visual Studio\2017\WDExpress\MSBuild\15.0\Bin";%PATH%
 goto start
@@ -8,10 +13,8 @@ goto start
 set path="%ProgramFiles(x86)%\Microsoft Visual Studio\2017\WDExpress\MSBuild\15.0\Bin";%PATH%
 
 :start
-rem rmdir /s /q binary
-mkdir binary
-
 rmdir /s /q Release
+rmdir /s /q x64
 
 msbuild.exe msdos.vcxproj /t:clean;rebuild /p:Configuration=Release_i86;Platform="Win32"
 mkdir binary\i86_x86
@@ -118,6 +121,7 @@ mkdir binary\pentium4_x64
 copy Release\msdos.exe binary\pentium4_x64\.
 
 rmdir /s /q Release
+rmdir /s /q x64
 
 msbuild.exe msdos_np21.vcxproj /t:clean;rebuild /p:Configuration=Release;Platform="Win32"
 mkdir binary\ia32_x86
@@ -127,6 +131,10 @@ msbuild.exe msdos_np21.vcxproj /t:clean;rebuild /p:Configuration=Release;Platfor
 mkdir binary\ia32_x64
 copy Release\msdos.exe binary\ia32_x64\.
 
+endlocal
+
+rmdir /s /q Release
+rmdir /s /q x64
+
 pause
 echo on
-exit /b

@@ -19,10 +19,27 @@
 #endif
 #define U64(v) UINT64(v)
 
+#ifdef _MSC_VC6
+void logerror(const char *format, ...)
+{
+//	va_list ap;
+//	va_start(ap, format);
+//	vfprintf(stderr, format, ap);
+//	va_end(ap);
+}
+void popmessage(const char *format, ...)
+{
+//	va_list ap;
+//	va_start(ap, format);
+//	vfprintf(stderr, format, ap);
+//	va_end(ap);
+}
+#else
 //#define logerror(...) fprintf(stderr, __VA_ARGS__)
 #define logerror(...)
 //#define popmessage(...) fprintf(stderr, __VA_ARGS__)
 #define popmessage(...)
+#endif
 
 /*****************************************************************************/
 /* src/emu/devcpu.h */

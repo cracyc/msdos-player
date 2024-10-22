@@ -144,17 +144,15 @@ ia32(void)
 		exec_allstep();
 	}else 
 */
+#ifdef USE_CLOCK
 	if (!CPU_TRAP) {
-#ifdef USE_CLOCK
 		do {
-#endif
 			exec_1step();
+#ifdef USE_DMA
 			dmax86();
-#ifdef USE_CLOCK
-		} while (CPU_REMCLOCK > 0);
 #endif
+		} while (CPU_REMCLOCK > 0);
 	}else{
-#ifdef USE_CLOCK
 		do {
 #endif
 			exec_1step();
@@ -162,11 +160,13 @@ ia32(void)
 				CPU_DR6 |= CPU_DR6_BS;
 				INTERRUPT(1, INTR_TYPE_EXCEPTION);
 			}
+#ifdef USE_DMA
 			dmax86();
+#endif
 #ifdef USE_CLOCK
 		} while (CPU_REMCLOCK > 0);
-#endif
 	}
+#endif
 #ifdef __cplusplus
 	} catch (int e) {
 		switch (e) {
@@ -189,6 +189,7 @@ ia32(void)
 #endif
 }
 
+#if 0
 void
 ia32_step(void)
 {
@@ -220,9 +221,11 @@ ia32_step(void)
 			CPU_DR6 |= CPU_DR6_BS;
 			INTERRUPT(1, INTR_TYPE_EXCEPTION);
 		}
+#ifdef USE_DMA
 		//if (dmac.working) {
 			dmax86();
 		//}
+#endif
 #ifdef USE_CLOCK
 	} while (CPU_REMCLOCK > 0);
 #endif
@@ -247,6 +250,7 @@ ia32_step(void)
 	}
 #endif
 }
+#endif
 //#pragma optimize("", on)
 
 void CPUCALL

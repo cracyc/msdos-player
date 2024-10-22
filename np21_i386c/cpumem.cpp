@@ -350,11 +350,11 @@ UINT32 IOINPCALL iocore_inp32(UINT port)
 	return read_io_dword(port);
 }
 
+#ifdef USE_DMA
 void dmax86(void)
 {
-#ifdef SINGLE_MODE_DMA
-	if(device_dma != NULL) device_dma->do_dma();
-#endif
+	dma_run();
 }
+#endif
 
 #endif

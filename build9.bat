@@ -1,5 +1,10 @@
 echo off
 
+rem rmdir /s /q binary
+mkdir binary
+
+setlocal
+
 if exist "%ProgramFiles(x86)%" goto is_x64
 set path="%ProgramFiles%\Microsoft Visual Studio 9.0\Common7\IDE";%PATH%
 set path="%ProgramFiles%\Windows Kits\8.1\bin\x86";%PATH%
@@ -10,8 +15,8 @@ set path="%ProgramFiles(x86)%\Microsoft Visual Studio 9.0\Common7\IDE";%PATH%
 set path="%ProgramFiles(x86)%\Windows Kits\8.1\bin\x86";%PATH%
 
 :start
-rem rmdir /s /q binary
-mkdir binary
+rmdir /s /q Release
+rmdir /s /q x64
 
 devenv.com msdos.vcproj /Rebuild "Release_i86|Win32"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
@@ -152,6 +157,11 @@ devenv.com msdos_np21.vcproj /Rebuild "Release|x64"
 mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\ia32_x64
 copy Release\msdos.exe binary\ia32_x64\.
+
+endlocal
+
+rmdir /s /q Release
+rmdir /s /q x64
 
 pause
 echo on

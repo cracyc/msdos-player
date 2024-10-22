@@ -80,7 +80,7 @@ enum
 enum
 {
 	MODRM = 1,
-	GROUP,
+	GRPOP,
 	FPU,
 	OP_SIZE,
 	ADDR_SIZE,
@@ -260,10 +260,10 @@ static const I386_OPCODE i386_opcode_table1[256] =
 	{"jle",             0,              PARAM_REL8,         0,                  0               },
 	{"jg",              0,              PARAM_REL8,         0,                  0               },
 	// 0x80
-	{"group80",         GROUP,          0,                  0,                  0               },
-	{"group81",         GROUP,          0,                  0,                  0               },
-	{"group80",         GROUP,          0,                  0,                  0               },
-	{"group83",         GROUP,          0,                  0,                  0               },
+	{"group80",         GRPOP,          0,                  0,                  0               },
+	{"group81",         GRPOP,          0,                  0,                  0               },
+	{"group80",         GRPOP,          0,                  0,                  0               },
+	{"group83",         GRPOP,          0,                  0,                  0               },
 	{"test",            MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
 	{"test",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"xchg",            MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
@@ -328,8 +328,8 @@ static const I386_OPCODE i386_opcode_table1[256] =
 	{"mov",             0,              PARAM_ESI,          PARAM_IMM64,        0               },
 	{"mov",             0,              PARAM_EDI,          PARAM_IMM64,        0               },
 	// 0xc0
-	{"groupC0",         GROUP,          0,                  0,                  0               },
-	{"groupC1",         GROUP,          0,                  0,                  0               },
+	{"groupC0",         GRPOP,          0,                  0,                  0               },
+	{"groupC1",         GRPOP,          0,                  0,                  0               },
 	{"ret",             0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
 	{"ret",             0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
 	{"les",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
@@ -345,10 +345,10 @@ static const I386_OPCODE i386_opcode_table1[256] =
 	{"into",            0,              0,                  0,                  0               },
 	{"iret",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
 	// 0xd0
-	{"groupD0",         GROUP,          0,                  0,                  0               },
-	{"groupD1",         GROUP,          0,                  0,                  0               },
-	{"groupD2",         GROUP,          0,                  0,                  0               },
-	{"groupD3",         GROUP,          0,                  0,                  0               },
+	{"groupD0",         GRPOP,          0,                  0,                  0               },
+	{"groupD1",         GRPOP,          0,                  0,                  0               },
+	{"groupD2",         GRPOP,          0,                  0,                  0               },
+	{"groupD3",         GRPOP,          0,                  0,                  0               },
 	{"aam",             0,              PARAM_UI8,          0,                  0               },
 	{"aad",             0,              PARAM_UI8,          0,                  0               },
 	{"salc",            0,              0,                  0,                  0               }, //AMD docs name it
@@ -385,16 +385,16 @@ static const I386_OPCODE i386_opcode_table1[256] =
 	{"rep",             PREFIX,         0,                  0,                  0               },
 	{"hlt",             0,              0,                  0,                  0               },
 	{"cmc",             0,              0,                  0,                  0               },
-	{"groupF6",         GROUP,          0,                  0,                  0               },
-	{"groupF7",         GROUP,          0,                  0,                  0               },
+	{"groupF6",         GRPOP,          0,                  0,                  0               },
+	{"groupF7",         GRPOP,          0,                  0,                  0               },
 	{"clc",             0,              0,                  0,                  0               },
 	{"stc",             0,              0,                  0,                  0               },
 	{"cli",             0,              0,                  0,                  0               },
 	{"sti",             0,              0,                  0,                  0               },
 	{"cld",             0,              0,                  0,                  0               },
 	{"std",             0,              0,                  0,                  0               },
-	{"groupFE",         GROUP,          0,                  0,                  0               },
-	{"groupFF",         GROUP,          0,                  0,                  0               }
+	{"groupFE",         GRPOP,          0,                  0,                  0               },
+	{"groupFF",         GRPOP,          0,                  0,                  0               }
 };
 
 static const I386_OPCODE x64_opcode_alt[] =
@@ -405,8 +405,8 @@ static const I386_OPCODE x64_opcode_alt[] =
 static const I386_OPCODE i386_opcode_table2[256] =
 {
 	// 0x00
-	{"group0F00",       GROUP,          0,                  0,                  0               },
-	{"group0F01",       GROUP,          0,                  0,                  0               },
+	{"group0F00",       GRPOP,          0,                  0,                  0               },
+	{"group0F01",       GRPOP,          0,                  0,                  0               },
 	{"lar",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	{"lsl",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	{"???",             0,              0,                  0,                  0               },
@@ -418,7 +418,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"???",             0,              0,                  0,                  0               },
 	{"ud2",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
-	{"group0F0D",       GROUP,          0,                  0,                  0               }, //AMD only
+	{"group0F0D",       GRPOP,          0,                  0,                  0               }, //AMD only
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	// 0x10
@@ -430,7 +430,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	 "movupd\0"
 	 "movsd\0"
 	 "movss",           MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
-	{"group0F12",       GROUP|GROUP_MOD,0,                  0,                  0               },
+	{"group0F12",       GRPOP|GROUP_MOD,0,                  0,                  0               },
 	{"movlps\0"
 	 "movlpd\0"
 	 "???\0"
@@ -443,12 +443,12 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	 "unpckhpd\0"
 	 "???\0"
 	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         0               },
-	{ "group0F16",      GROUP|GROUP_MOD,0,                  0,                  0               },
+	{ "group0F16",      GRPOP|GROUP_MOD,0,                  0,                  0               },
 	{"movhps\0"
 	 "movhpd\0"
 	 "???\0"
 	 "???",             MODRM|VAR_NAME4,PARAM_XMMM,         PARAM_XMM,          0               },
-	{"group0F18",       GROUP,          0,                  0,                  0               },
+	{"group0F18",       GRPOP,          0,                  0,                  0               },
 	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
 	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
 	{"nop_hint",        0,              PARAM_RMPTR8,       0,                  0               },
@@ -627,9 +627,9 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	 "pshufd\0"
 	 "pshuflw\0"
 	 "pshufhw",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
-	{"group0F71",       GROUP,          0,                  0,                  0               },
-	{"group0F72",       GROUP,          0,                  0,                  0               },
-	{"group0F73",       GROUP,          0,                  0,                  0               },
+	{"group0F71",       GRPOP,          0,                  0,                  0               },
+	{"group0F72",       GRPOP,          0,                  0,                  0               },
+	{"group0F73",       GRPOP,          0,                  0,                  0               },
 	{"pcmpeqb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pcmpeqw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pcmpeqd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -703,7 +703,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	{"bts",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
 	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
-	{"group0FAE",       GROUP,          0,                  0,                  0               },
+	{"group0FAE",       GRPOP,          0,                  0,                  0               },
 	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	// 0xb0
 	{"cmpxchg",         MODRM,          PARAM_RM8,          PARAM_REG,          0               },
@@ -719,7 +719,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	 "???\0"
 	 "popcnt",          MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM16,         0               },
 	{"ud2",             0,              0,                  0,                  0               },
-	{"group0FBA",       GROUP,          0,                  0,                  0               },
+	{"group0FBA",       GRPOP,          0,                  0,                  0               },
 	{"btc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"bsf\0"
 	 "???\0"
@@ -745,7 +745,7 @@ static const I386_OPCODE i386_opcode_table2[256] =
 	 "shufpd\0"
 	 "???\0"
 	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
-	{"group0FC7",       GROUP,          0,                  0,                  0               },
+	{"group0FC7",       GRPOP,          0,                  0,                  0               },
 	{"bswap",           0,              PARAM_EAX,          0,                  0               },
 	{"bswap",           0,              PARAM_ECX,          0,                  0               },
 	{"bswap",           0,              PARAM_EDX,          0,                  0               },
@@ -2075,10 +2075,10 @@ static const I386_OPCODE necv_opcode_table1[256] =
 	{"jle",             0,              PARAM_REL8,         0,                  0               },
 	{"jg",              0,              PARAM_REL8,         0,                  0               },
 	// 0x80
-	{"group80",         GROUP,          0,                  0,                  0               },
-	{"group81",         GROUP,          0,                  0,                  0               },
-	{"group80",         GROUP,          0,                  0,                  0               },
-	{"group83",         GROUP,          0,                  0,                  0               },
+	{"group80",         GRPOP,          0,                  0,                  0               },
+	{"group81",         GRPOP,          0,                  0,                  0               },
+	{"group80",         GRPOP,          0,                  0,                  0               },
+	{"group83",         GRPOP,          0,                  0,                  0               },
 	{"test",            MODRM,          PARAM_RM8,          PARAM_REG8,         0               },
 	{"test",            MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"xchg",            MODRM,          PARAM_REG8,         PARAM_RM8,          0               },
@@ -2143,8 +2143,8 @@ static const I386_OPCODE necv_opcode_table1[256] =
 	{"mov",             0,              PARAM_ESI,          PARAM_IMM64,        0               },
 	{"mov",             0,              PARAM_EDI,          PARAM_IMM64,        0               },
 	// 0xc0
-	{"groupC0",         GROUP,          0,                  0,                  0               },
-	{"groupC1",         GROUP,          0,                  0,                  0               },
+	{"groupC0",         GRPOP,          0,                  0,                  0               },
+	{"groupC1",         GRPOP,          0,                  0,                  0               },
 	{"ret",             0,              PARAM_UI16,         0,                  0,              DASMFLAG_STEP_OUT},
 	{"ret",             0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
 	{"les",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
@@ -2160,10 +2160,10 @@ static const I386_OPCODE necv_opcode_table1[256] =
 	{"into",            0,              0,                  0,                  0               },
 	{"iret",            0,              0,                  0,                  0,              DASMFLAG_STEP_OUT},
 	// 0xd0
-	{"groupD0",         GROUP,          0,                  0,                  0               },
-	{"groupD1",         GROUP,          0,                  0,                  0               },
-	{"groupD2",         GROUP,          0,                  0,                  0               },
-	{"groupD3",         GROUP,          0,                  0,                  0               },
+	{"groupD0",         GRPOP,          0,                  0,                  0               },
+	{"groupD1",         GRPOP,          0,                  0,                  0               },
+	{"groupD2",         GRPOP,          0,                  0,                  0               },
+	{"groupD3",         GRPOP,          0,                  0,                  0               },
 	{"aam",             0,              PARAM_UI8,          0,                  0               },
 	{"aad",             0,              PARAM_UI8,          0,                  0               },
 	{"salc",            0,              0,                  0,                  0               }, //AMD docs name it
@@ -2200,23 +2200,23 @@ static const I386_OPCODE necv_opcode_table1[256] =
 	{"rep",             PREFIX,         0,                  0,                  0               },
 	{"hlt",             0,              0,                  0,                  0               },
 	{"cmc",             0,              0,                  0,                  0               },
-	{"groupF6",         GROUP,          0,                  0,                  0               },
-	{"groupF7",         GROUP,          0,                  0,                  0               },
+	{"groupF6",         GRPOP,          0,                  0,                  0               },
+	{"groupF7",         GRPOP,          0,                  0,                  0               },
 	{"clc",             0,              0,                  0,                  0               },
 	{"stc",             0,              0,                  0,                  0               },
 	{"cli",             0,              0,                  0,                  0               },
 	{"sti",             0,              0,                  0,                  0               },
 	{"cld",             0,              0,                  0,                  0               },
 	{"std",             0,              0,                  0,                  0               },
-	{"groupFE",         GROUP,          0,                  0,                  0               },
-	{"groupFF",         GROUP,          0,                  0,                  0               }
+	{"groupFE",         GRPOP,          0,                  0,                  0               },
+	{"groupFF",         GRPOP,          0,                  0,                  0               }
 };
 
 static const I386_OPCODE necv_opcode_table2[256] =
 {
 	// 0x00
-	{"group0F00",       GROUP,          0,                  0,                  0               },
-	{"group0F01",       GROUP,          0,                  0,                  0               },
+	{"group0F00",       GRPOP,          0,                  0,                  0               },
+	{"group0F01",       GRPOP,          0,                  0,                  0               },
 	{"lar",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	{"lsl",             MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	{"???",             0,              0,                  0,                  0               },
@@ -2228,7 +2228,7 @@ static const I386_OPCODE necv_opcode_table2[256] =
 	{"???",             0,              0,                  0,                  0               },
 	{"ud2",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
-	{"group0F0D",       GROUP,          0,                  0,                  0               }, //AMD only
+	{"group0F0D",       GRPOP,          0,                  0,                  0               }, //AMD only
 	{"???",             0,              0,                  0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	// 0x10
@@ -2410,9 +2410,9 @@ static const I386_OPCODE necv_opcode_table2[256] =
 	 "pshufd\0"
 	 "pshuflw\0"
 	 "pshufhw",         MODRM|VAR_NAME4,PARAM_MMX,          PARAM_MMXM,         PARAM_UI8       },
-	{"group0F71",       GROUP,          0,                  0,                  0               },
-	{"group0F72",       GROUP,          0,                  0,                  0               },
-	{"group0F73",       GROUP,          0,                  0,                  0               },
+	{"group0F71",       GRPOP,          0,                  0,                  0               },
+	{"group0F72",       GRPOP,          0,                  0,                  0               },
+	{"group0F73",       GRPOP,          0,                  0,                  0               },
 	{"pcmpeqb",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pcmpeqw",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
 	{"pcmpeqd",         MODRM,          PARAM_MMX,          PARAM_MMXM,         0               },
@@ -2486,7 +2486,7 @@ static const I386_OPCODE necv_opcode_table2[256] =
 	{"bts",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_UI8       },
 	{"shrd",            MODRM,          PARAM_RM,           PARAM_REG,          PARAM_CL        },
-	{"group0FAE",       GROUP,          0,                  0,                  0               },
+	{"group0FAE",       GRPOP,          0,                  0,                  0               },
 	{"imul",            MODRM,          PARAM_REG,          PARAM_RM,           0               },
 	// 0xb0
 	{"cmpxchg",         MODRM,          PARAM_RM8,          PARAM_REG,          0               },
@@ -2502,7 +2502,7 @@ static const I386_OPCODE necv_opcode_table2[256] =
 	 "???\0"
 	 "popcnt",          MODRM|VAR_NAME4,PARAM_REG,          PARAM_RM16,         0               },
 	{"ud2",             0,              0,                  0,                  0               },
-	{"group0FBA",       GROUP,          0,                  0,                  0               },
+	{"group0FBA",       GRPOP,          0,                  0,                  0               },
 	{"btc",             MODRM,          PARAM_RM,           PARAM_REG,          0               },
 	{"bsf\0"
 	 "???\0"
@@ -2528,7 +2528,7 @@ static const I386_OPCODE necv_opcode_table2[256] =
 	 "shufpd\0"
 	 "???\0"
 	 "???",             MODRM|VAR_NAME4,PARAM_XMM,          PARAM_XMMM,         PARAM_UI8       },
-	{"group0FC7",       GROUP,          0,                  0,                  0               },
+	{"group0FC7",       GRPOP,          0,                  0,                  0               },
 	{"bswap",           0,              PARAM_EAX,          0,                  0               },
 	{"bswap",           0,              PARAM_ECX,          0,                  0               },
 	{"bswap",           0,              PARAM_EDX,          0,                  0               },
@@ -3750,7 +3750,7 @@ static void decode_opcode(char *s, const I386_OPCODE *op, UINT8 op1)
 				decode_opcode( s, &i386_opcode_table1[op2], op2 );
 			return;
 
-		case GROUP:
+		case GRPOP:
 			handle_modrm( modrm_string );
 			for( i=0; i < ARRAY_LENGTH(group_op_table); i++ ) {
 				if( strcmp(op->mnemonic, group_op_table[i].mnemonic) == 0 ) {

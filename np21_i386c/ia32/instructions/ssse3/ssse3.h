@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2003 NONAKA Kimihiro
+ * Copyright (c) 2024 Gocaine Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,44 +23,48 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef	IA32_CPU_INSTRUCTION_MISC_H__
-#define	IA32_CPU_INSTRUCTION_MISC_H__
+#ifndef	IA32_CPU_INSTRUCTION_SSSE3_SSSE3_H__
+#define	IA32_CPU_INSTRUCTION_SSSE3_SSSE3_H__
 
 //#ifdef __cplusplus
 //extern "C" {
 //#endif
 
-void LEA_GwM(void);
-void LEA_GdM(void);
-void _NOP(void);
-void UD2(void);
-void XLAT(void);
-void _CPUID(void);
-
-void SALC(void);	/* undoc 8086 */
-void LOADALL286(void);	/* undoc 286 */
-void LOADALL(void);	/* undoc 386 */
-
-void OpSize(void);
-void AddrSize(void);
-void _2byte_ESC16(void);
-void _2byte_ESC32(void);
-void _3byte_38ESC(void);
-void _3byte_38ESC_16(void);
-void _3byte_3AESC(void);
-void Prefix_ES(void);
-void Prefix_CS(void);
-void Prefix_SS(void);
-void Prefix_DS(void);
-void Prefix_FS(void);
-void Prefix_GS(void);
-
-//void _2byte_Prefix660F_32(void);
-//void _2byte_PrefixF20F_32(void);
-//void _2byte_PrefixF30F_32(void);
+void SSSE3_PSHUFB(void);
+void SSSE3_PSHUFB_MM(void);
+void SSSE3_PHADDW(void);
+void SSSE3_PHADDW_MM(void);
+void SSSE3_PHADDD(void);
+void SSSE3_PHADDD_MM(void);
+void SSSE3_PHADDSW(void);
+void SSSE3_PHADDSW_MM(void);
+void SSSE3_PMADDUBSW(void);
+void SSSE3_PMADDUBSW_MM(void);
+void SSSE3_PHSUBW(void);
+void SSSE3_PHSUBW_MM(void);
+void SSSE3_PHSUBD(void);
+void SSSE3_PHSUBD_MM(void);
+void SSSE3_PHSUBSW(void);
+void SSSE3_PHSUBSW_MM(void);
+void SSSE3_PSIGNB(void);
+void SSSE3_PSIGNB_MM(void);
+void SSSE3_PSIGNW(void);
+void SSSE3_PSIGNW_MM(void);
+void SSSE3_PSIGND(void);
+void SSSE3_PSIGND_MM(void);
+void SSSE3_PMULHRSW(void);
+void SSSE3_PMULHRSW_MM(void);
+void SSSE3_PABSB(void);
+void SSSE3_PABSB_MM(void);
+void SSSE3_PABSW(void);
+void SSSE3_PABSW_MM(void);
+void SSSE3_PABSD(void);
+void SSSE3_PABSD_MM(void);
+void SSSE3_PALIGNR(void);
+void SSSE3_PALIGNR_MM(void);
 
 //#ifdef __cplusplus
 //}
 //#endif
 
-#endif	/* IA32_CPU_INSTRUCTION_MISC_H__ */
+#endif	/* IA32_CPU_INSTRUCTION_SSSE3_SSSE3_H__ */

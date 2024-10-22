@@ -602,7 +602,7 @@ static void PREFIXV30(_0fpre)()	/* Opcode 0x0f */
 		{
 			(void)(*GetEA[ModRM])();
 			tmp = ReadByte(m_ea);
-			logerror("ModRM=%04x  Byte=%04x\n", EA, tmp);
+			logerror("ModRM=%04x  Byte=%04x\n", m_ea, tmp);
 		}
 
 		/* more to come
@@ -653,7 +653,7 @@ static void PREFIXV30(_0fpre)()	/* Opcode 0x0f */
 		{
 			(void)(*GetEA[ModRM])();
 			tmp = ReadByte(m_ea);
-			logerror("ModRM=%04x  Byte=%04x\n", EA, tmp);
+			logerror("ModRM=%04x  Byte=%04x\n", m_ea, tmp);
 		}
 		/* 2do: the rest is silence....yet
         /*
