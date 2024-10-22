@@ -18604,6 +18604,17 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x06:
+#ifdef SUPPORT_VDD
+	{
+		void vdd_req(char func);
+		UINT8 *opcode = mem + CPU_CS_BASE + CPU_EIP;
+		if((opcode[0] == 0xc4) && (opcode[1] == 0xc4) && (opcode[2] == 0x58))
+		{
+			vdd_req(opcode[3]);
+			return;
+		}
+	}
+#endif
 		// NOTE: ish.com has illegal instruction...
 		if(!ignore_illegal_insn) {
 			try {
@@ -22613,10 +22624,20 @@ UINT8 vga_read_status()
 
 // this is ugly patch for SW1US.EXE, it sometimes mistakely read/write 01h-10h for serial I/O
 //#define SW1US_PATCH
+#ifdef SUPPORT_VDD
+BOOL vdd_io_read(int port, int size, WORD *val);
+BOOL vdd_io_write(int port, int size, WORD val);
+#else
+#define vdd_io_read(a, b, c) 0
+#define vdd_io_write(a, b, c) 0
+#endif
 
 UINT8 read_io_byte(UINT32 addr)
-#ifdef USE_DEBUGGER
 {
+	WORD val = 0xff;
+	if(vdd_io_read(addr, 1, &val))
+		return val;
+#ifdef USE_DEBUGGER
 	if(now_debugging) {
 		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 			if(in_break_point.table[i].status == 1) {
@@ -22631,9 +22652,9 @@ UINT8 read_io_byte(UINT32 addr)
 	return(debugger_read_io_byte(addr));
 }
 UINT8 debugger_read_io_byte(UINT32 addr)
-#endif
 {
-	UINT8 val = 0xff;
+	WORD val = 0xff;
+#endif
 	
 	switch(addr) {
 #ifdef SW1US_PATCH
@@ -22746,31 +22767,39 @@ UINT8 debugger_read_io_byte(UINT32 addr)
 
 UINT16 read_io_word(UINT32 addr)
 {
+	WORD val = 0xffff;
+	if(vdd_io_read(addr, 2, &val))
+		return val;
 	return(read_io_byte(addr) | (read_io_byte(addr + 1) << 8));
 }
 
 #ifdef USE_DEBUGGER
 UINT16 debugger_read_io_word(UINT32 addr)
 {
+	WORD val = 0xffff;
+	if(vdd_io_read(addr, 2, &val))
+		return val;
 	return(debugger_read_io_byte(addr) | (debugger_read_io_byte(addr + 1) << 8));
 }
 #endif
 
 UINT32 read_io_dword(UINT32 addr)
 {
-	return(read_io_byte(addr) | (read_io_byte(addr + 1) << 8) | (read_io_byte(addr + 2) << 16) | (read_io_byte(addr + 3) << 24));
+	return(read_io_word(addr) | (read_io_word(addr + 2) << 16));
 }
 
 #ifdef USE_DEBUGGER
 UINT32 debugger_read_io_dword(UINT32 addr)
 {
-	return(debugger_read_io_byte(addr) | (debugger_read_io_byte(addr + 1) << 8) | (debugger_read_io_byte(addr + 2) << 16) | (debugger_read_io_byte(addr + 3) << 24));
+	return(debugger_read_io_word(addr) | (debugger_read_io_word(addr + 2) << 16));
 }
 #endif
 
 void write_io_byte(UINT32 addr, UINT8 val)
-#ifdef USE_DEBUGGER
 {
+	if(vdd_io_write(addr, 1, val))
+		return;
+#ifdef USE_DEBUGGER
 	if(now_debugging) {
 		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 			if(out_break_point.table[i].status == 1) {
@@ -22785,8 +22814,8 @@ void write_io_byte(UINT32 addr, UINT8 val)
 	debugger_write_io_byte(addr, val);
 }
 void debugger_write_io_byte(UINT32 addr, UINT8 val)
-#endif
 {
+#endif
 #ifdef ENABLE_DEBUG_IOPORT
 	if(fp_debug_log != NULL) {
 		if(!(use_service_thread && addr == 0xf7)) {
@@ -22913,32 +22942,620 @@ void debugger_write_io_byte(UINT32 addr, UINT8 val)
 
 void write_io_word(UINT32 addr, UINT16 val)
 {
-	write_io_byte(addr + 0, (val >> 0) & 0xff);
-	write_io_byte(addr + 1, (val >> 8) & 0xff);
+	if(!vdd_io_write(addr, 2, val))
+	{
+		write_io_byte(addr + 0, (val >> 0) & 0xff);
+		write_io_byte(addr + 1, (val >> 8) & 0xff);
+	}
 }
 
 #ifdef USE_DEBUGGER
 void debugger_write_io_word(UINT32 addr, UINT16 val)
 {
-	debugger_write_io_byte(addr + 0, (val >> 0) & 0xff);
-	debugger_write_io_byte(addr + 1, (val >> 8) & 0xff);
+	if(!vdd_io_write(addr, 2, val))
+	{
+		debugger_write_io_byte(addr + 0, (val >> 0) & 0xff);
+		debugger_write_io_byte(addr + 1, (val >> 8) & 0xff);
+	}
 }
 #endif
 
 void write_io_dword(UINT32 addr, UINT32 val)
 {
-	write_io_byte(addr + 0, (val >>  0) & 0xff);
-	write_io_byte(addr + 1, (val >>  8) & 0xff);
-	write_io_byte(addr + 2, (val >> 16) & 0xff);
-	write_io_byte(addr + 3, (val >> 24) & 0xff);
+	write_io_word(addr + 0, (val >>  0) & 0xffff);
+	write_io_word(addr + 2, (val >>  16) & 0xffff);
 }
 
 #ifdef USE_DEBUGGER
 void debugger_write_io_dword(UINT32 addr, UINT32 val)
 {
-	debugger_write_io_byte(addr + 0, (val >>  0) & 0xff);
-	debugger_write_io_byte(addr + 1, (val >>  8) & 0xff);
-	debugger_write_io_byte(addr + 2, (val >> 16) & 0xff);
-	debugger_write_io_byte(addr + 3, (val >> 24) & 0xff);
+	debugger_write_io_word(addr + 0, (val >>  0) & 0xffff);
+	debugger_write_io_word(addr + 2, (val >> 16) & 0xffff);
+}
+#endif
+
+#ifdef SUPPORT_VDD
+typedef struct
+{
+    HMODULE hvdd;
+    FARPROC dispatch;
+} vdd_module_t;
+
+static vdd_module_t vdd_modules[5] = {0};
+
+void vdd_req(char func)
+{
+    /*
+     * RegisterModule
+     * DS:SI DLL
+     * ES:DI init func name
+     * DS:BX dispatch routine name
+     */
+    if (func == 0x00)
+    {
+        LPCSTR dll = (LPCSTR)(mem + CPU_ESI + CPU_DS_BASE);
+        LPCSTR init = (LPCSTR)(mem + CPU_EDI + CPU_ES_BASE);
+        LPCSTR dispatch = (LPCSTR)(mem + CPU_EBX + CPU_DS_BASE);
+        CPU_EIP += 4;
+        HMODULE hVdd = LoadLibraryA(dll);
+        if (!hVdd)
+        {
+            CPU_SET_C_FLAG(1);
+            CPU_AX = GetLastError();
+            return;
+        }
+        FARPROC pfnInit = GetProcAddress(hVdd, init);
+        FARPROC pfnDispatch = GetProcAddress(hVdd, dispatch);
+        int i;
+        for (i = 0; i < 5; i++)
+        {
+            if (!vdd_modules[i].hvdd)
+            {
+                vdd_modules[i].hvdd = hVdd;
+                vdd_modules[i].dispatch = pfnDispatch;
+		break;
+            }
+        }
+        if (i == 5)
+        {
+            FreeLibrary(hVdd);
+            CPU_SET_C_FLAG(1);
+            CPU_AX = 4;
+            return;
+        }            
+        CPU_SET_C_FLAG(0);
+        CPU_AX = i;
+        if (pfnInit)
+        {
+            pfnInit();
+        }
+    }
+    /* UnregisterModule */
+    else if (func == 0x01)
+    {
+        WORD handle = CPU_AX;
+        CPU_EIP += 4;
+        if ((handle > 5) || !vdd_modules[handle].hvdd)
+            return; // ntvdm exits here
+        FreeLibrary(vdd_modules[handle].hvdd);
+        vdd_modules[handle].hvdd = 0;
+    }
+    /* DispatchCall */
+    else if (func == 0x02)
+    {
+        WORD handle = CPU_AX;
+        CPU_EIP += 4;
+        if ((handle > 5) || !vdd_modules[handle].hvdd)
+            return; // ntvdm exits here
+        vdd_modules[handle].dispatch();
+    }
+}
+
+extern "C"
+{
+
+__declspec(dllexport) BYTE WINAPI getAL()
+{
+    return CPU_AL;
+}
+
+__declspec(dllexport) BYTE WINAPI getAH()
+{
+    return CPU_AH;
+}
+
+__declspec(dllexport) WORD WINAPI getAX()
+{
+    return CPU_AX;
+}
+
+__declspec(dllexport) DWORD WINAPI getEAX()
+{
+    return CPU_EAX;
+}
+
+__declspec(dllexport) BYTE WINAPI getBL()
+{
+    return CPU_BL;
+}
+
+__declspec(dllexport) BYTE WINAPI getBH()
+{
+    return CPU_BH;
+}
+
+__declspec(dllexport) WORD WINAPI getBX()
+{
+    return CPU_BX;
+}
+
+__declspec(dllexport) DWORD WINAPI getEBX()
+{
+    return CPU_EBX;
+}
+
+__declspec(dllexport) BYTE WINAPI getCL()
+{
+    return CPU_CL;
+}
+
+__declspec(dllexport) BYTE WINAPI getCH()
+{
+    return CPU_CH;
+}
+
+__declspec(dllexport) WORD WINAPI getCX()
+{
+    return CPU_CX;
+}
+
+__declspec(dllexport) DWORD WINAPI getECX()
+{
+    return CPU_ECX;
+}
+
+__declspec(dllexport) BYTE WINAPI getDL()
+{
+    return CPU_DL;
+}
+
+__declspec(dllexport) BYTE WINAPI getDH()
+{
+    return CPU_DH;
+}
+
+__declspec(dllexport) WORD WINAPI getDX()
+{
+    return CPU_DX;
+}
+
+__declspec(dllexport) DWORD WINAPI getEDX()
+{
+    return CPU_EDX;
+}
+
+__declspec(dllexport) WORD WINAPI getSP()
+{
+    return CPU_SP;
+}
+
+__declspec(dllexport) DWORD WINAPI getESP()
+{
+    return CPU_ESP;
+}
+
+__declspec(dllexport) WORD WINAPI getBP()
+{
+    return CPU_BP;
+}
+
+__declspec(dllexport) DWORD WINAPI getEBP()
+{
+    return CPU_EBP;
+}
+
+__declspec(dllexport) WORD WINAPI getSI()
+{
+    return CPU_SI;
+}
+
+__declspec(dllexport) DWORD WINAPI getESI()
+{
+    return CPU_ESI;
+}
+
+__declspec(dllexport) WORD WINAPI getDI()
+{
+    return CPU_DI;
+}
+
+__declspec(dllexport) DWORD WINAPI getEDI()
+{
+    return CPU_EDI;
+}
+
+__declspec(dllexport) void WINAPI setAL(BYTE val)
+{
+    CPU_AL = val;
+}
+
+__declspec(dllexport) void WINAPI setAH(BYTE val)
+{
+    CPU_AH = val;
+}
+
+__declspec(dllexport) void WINAPI setAX(WORD val)
+{
+    CPU_AX = val;
+}
+
+__declspec(dllexport) void WINAPI setEAX(DWORD val)
+{
+    CPU_EAX = val;
+}
+
+__declspec(dllexport) void WINAPI setBL(BYTE val)
+{
+    CPU_BL = val;
+}
+
+__declspec(dllexport) void WINAPI setBH(BYTE val)
+{
+    CPU_BH = val;
+}
+
+__declspec(dllexport) void WINAPI setBX(WORD val)
+{
+    CPU_BX = val;
+}
+
+__declspec(dllexport) void WINAPI setEBX(DWORD val)
+{
+    CPU_EBX = val;
+}
+
+__declspec(dllexport) void WINAPI setCL(BYTE val)
+{
+    CPU_CL = val;
+}
+
+__declspec(dllexport) void WINAPI setCH(BYTE val)
+{
+    CPU_CH = val;
+}
+
+__declspec(dllexport) void WINAPI setCX(DWORD val)
+{
+    CPU_CX = val;
+}
+
+__declspec(dllexport) void WINAPI setECX(BYTE val)
+{
+    CPU_ECX = val;
+}
+
+__declspec(dllexport) void WINAPI setDL(BYTE val)
+{
+    CPU_DL = val;
+}
+
+__declspec(dllexport) void WINAPI setDH(BYTE val)
+{
+    CPU_DH = val;
+}
+
+__declspec(dllexport) void WINAPI setDX(WORD val)
+{
+    CPU_DX = val;
+}
+
+__declspec(dllexport) void WINAPI setEDX(DWORD val)
+{
+    CPU_EDX = val;
+}
+
+__declspec(dllexport) void WINAPI setSP(WORD val)
+{
+    CPU_SP = val;
+}
+
+__declspec(dllexport) void WINAPI setESP(DWORD val)
+{
+    CPU_ESP = val;
+}
+
+__declspec(dllexport) void WINAPI setBP(WORD val)
+{
+    CPU_BP = val;
+}
+
+__declspec(dllexport) void WINAPI setEBP(DWORD val)
+{
+    CPU_EBP = val;
+}
+
+__declspec(dllexport) void WINAPI setSI(WORD val)
+{
+    CPU_SI = val;
+}
+
+__declspec(dllexport) void WINAPI setESI(DWORD val)
+{
+    CPU_ESI = val;
+}
+
+__declspec(dllexport) void WINAPI setDI(WORD val)
+{
+    CPU_DI = val;
+}
+
+__declspec(dllexport) void WINAPI setEDI(DWORD val)
+{
+    CPU_EDI = val;
+}
+
+__declspec(dllexport) WORD WINAPI getDS()
+{
+    return CPU_DS;
+}
+
+__declspec(dllexport) WORD WINAPI getES()
+{
+    return CPU_ES;
+}
+
+__declspec(dllexport) WORD WINAPI getCS()
+{
+    return CPU_CS;
+}
+
+__declspec(dllexport) WORD WINAPI getSS()
+{
+    return CPU_SS;
+}
+
+__declspec(dllexport) WORD WINAPI getFS()
+{
+    return CPU_FS;
+}
+
+__declspec(dllexport) WORD WINAPI getGS()
+{
+    return CPU_GS;
+}
+
+__declspec(dllexport) void WINAPI setDS(WORD val)
+{
+    CPU_DS = val;
+}
+
+__declspec(dllexport) void WINAPI setES(WORD val)
+{
+    CPU_ES = val;
+}
+
+__declspec(dllexport) void WINAPI setCS(WORD val)
+{
+    CPU_CS = val;
+}
+
+__declspec(dllexport) void WINAPI setSS(WORD val)
+{
+    CPU_SS = val;
+}
+
+__declspec(dllexport) void WINAPI setFS(WORD val)
+{
+    CPU_FS = val;
+}
+
+__declspec(dllexport) void WINAPI setGS(WORD val)
+{
+    CPU_GS = val;
+}
+
+__declspec(dllexport) WORD WINAPI getIP()
+{
+    return CPU_EIP;
+}
+
+__declspec(dllexport) WORD WINAPI getEIP()
+{
+    return CPU_EIP;
+}
+
+__declspec(dllexport) void WINAPI setIP(WORD val)
+{
+    CPU_EIP = (CPU_EIP & ~0xffff) | val;
+}
+
+__declspec(dllexport) void WINAPI setEIP(DWORD val)
+{
+    CPU_EIP = val;
+}
+
+__declspec(dllexport) DWORD WINAPI getCF()
+{
+    return CPU_C_FLAG;
+}
+
+__declspec(dllexport) DWORD WINAPI getZF()
+{
+    return CPU_Z_FLAG;
+}
+
+__declspec(dllexport) DWORD WINAPI getSF()
+{
+    return CPU_S_FLAG;
+}
+
+__declspec(dllexport) DWORD WINAPI getIF()
+{
+    return CPU_I_FLAG;
+}
+
+__declspec(dllexport) void WINAPI setCF(DWORD val)
+{
+    CPU_SET_C_FLAG(val);
+}
+
+__declspec(dllexport) void WINAPI setZF(DWORD val)
+{
+    CPU_SET_Z_FLAG(val);
+}
+
+__declspec(dllexport) void WINAPI setSF(DWORD val)
+{
+    CPU_SET_S_FLAG(val);
+}
+
+__declspec(dllexport) void WINAPI setIF(DWORD val)
+{
+    CPU_SET_I_FLAG(val);
+}
+
+typedef VOID (WINAPI *PFNVDD_INB)(WORD iport, PBYTE data);
+typedef VOID (WINAPI *PFNVDD_INW)(WORD iport, PWORD data);
+typedef VOID (WINAPI *PFNVDD_INSB)(WORD iport, PBYTE data, WORD count);
+typedef VOID (WINAPI *PFNVDD_INSW)(WORD iport, PWORD data, WORD count);
+typedef VOID (WINAPI *PFNVDD_OUTB)(WORD iport, BYTE data);
+typedef VOID (WINAPI *PFNVDD_OUTW)(WORD iport, WORD data);
+typedef VOID (WINAPI *PFNVDD_OUTSB)(WORD iport, PBYTE data, WORD count);
+typedef VOID (WINAPI *PFNVDD_OUTSW)(WORD iport, PWORD data, WORD count);
+
+typedef struct _VDD_IO_HANDLERS
+{
+  PFNVDD_INB inb_handler;
+  PFNVDD_INW inw_handler;
+  PFNVDD_INSB insb_handler;
+  PFNVDD_INSW insw_handler;
+  PFNVDD_OUTB outb_handler;
+  PFNVDD_OUTW outw_handler;
+  PFNVDD_OUTSB outsb_handler;
+  PFNVDD_OUTSW outsw_handler;
+} VDD_IO_HANDLERS, *PVDD_IO_HANDLERS;
+ 
+typedef struct _VDD_IO_PORTRANGE
+{
+  WORD First;
+  WORD Last;
+} VDD_IO_PORTRANGE, *PVDD_IO_PORTRANGE;
+
+typedef struct
+{
+    HANDLE hvdd;
+    VDD_IO_HANDLERS io_funcs;
+    WORD io_range_len;
+    PVDD_IO_PORTRANGE io_range;
+} vdd_io_t;
+
+static vdd_io_t vdd_io[5] = {0};
+ 
+__declspec(dllexport) BOOL WINAPI VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
+{
+    int handle = (int)hvdd;
+    int found = -1;
+    for (int i = 0; i < 5; i++)
+    {
+        if (!vdd_io[i].hvdd)
+            found = i;
+        if (vdd_io[i].hvdd == hvdd)
+            return FALSE;
+    }
+    if (found == -1 || !IOhandler->inb_handler || !IOhandler->outb_handler)
+        return FALSE;
+
+    vdd_io[found].hvdd = hvdd;
+    memcpy(&vdd_io[found].io_funcs, IOhandler, sizeof(VDD_IO_HANDLERS));
+    vdd_io[found].io_range_len = cPortRange;
+    vdd_io[found].io_range = (PVDD_IO_PORTRANGE)HeapAlloc(GetProcessHeap(), 0, cPortRange * sizeof(VDD_IO_PORTRANGE));
+    memcpy(&vdd_io[found].io_range, pPortRange, cPortRange * sizeof(VDD_IO_PORTRANGE));
+    return TRUE;
+}
+
+__declspec(dllexport) void WINAPI VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange)
+{
+    int handle = (int)hvdd;
+    int i;
+    for (i = 0; i < 5; i++)
+    {
+        if (hvdd == vdd_io[i].hvdd)
+            break;
+    }
+    if (i >= 5)
+        return;
+
+    vdd_io[i].hvdd = NULL;
+    HeapFree(GetProcessHeap(), 0, vdd_io[i].io_range);
+    return;
+}
+
+}
+
+BOOL vdd_io_read(int port, int size, WORD *val)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        if (vdd_io[i].hvdd)
+        {
+            for (int j = 0; j < vdd_io[i].io_range_len; j++)
+            {
+                if ((vdd_io[i].io_range[j].First >= port) && (vdd_io[i].io_range[j].Last <= port))
+                {
+                    switch (size)
+                    {
+                        case 2:
+                            if (vdd_io[i].io_funcs.inw_handler)
+                                vdd_io[i].io_funcs.inw_handler(port, val);
+                            else
+                            {
+                                vdd_io[i].io_funcs.inb_handler(port, (BYTE *)val);
+                                vdd_io[i].io_funcs.inb_handler(port + 1, ((BYTE *)val) + 1);
+                            }
+                        case 1:
+                             vdd_io[i].io_funcs.inb_handler(port, (BYTE *)val);
+                    }
+                    return TRUE;
+                }
+            }
+        }
+    }
+    return FALSE;
+}
+
+BOOL vdd_io_write(int port, int size, WORD val)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        if (vdd_io[i].hvdd)
+        {
+            for (int j = 0; j < vdd_io[i].io_range_len; j++)
+            {
+                if ((vdd_io[i].io_range[j].First >= port) && (vdd_io[i].io_range[j].Last <= port))
+                {
+                    switch (size)
+                    {
+                        case 2:
+                            if (vdd_io[i].io_funcs.outw_handler)
+                                vdd_io[i].io_funcs.outw_handler(port, val);
+                            else
+                            {
+                                vdd_io[i].io_funcs.outb_handler(port, val);
+                                vdd_io[i].io_funcs.outb_handler(port + 1, val >> 8);
+                            }
+                        case 1:
+                             vdd_io[i].io_funcs.outb_handler(port, val);
+                    }
+                    return TRUE;
+                }
+            }
+        }
+    }
+    return FALSE;
+}
+
+__declspec(dllexport) BYTE *WINAPI MGetVDMPointer(DWORD addr, DWORD size, BOOL protmode)
+{
+    return mem + (DWORD)(HIWORD(addr) << 4) + LOWORD(addr);
 }
 #endif

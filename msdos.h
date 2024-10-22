@@ -587,6 +587,9 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 
 #if defined(HAS_I386)
 #define SUPPORT_VCPI
+#if defined(__I386__) || defined(_M_IX86) // VDDs could work on x86-64 but none exist
+#define SUPPORT_VDD
+#endif
 #endif
 #if defined(HAS_I286) || defined(HAS_I386)
 #define SUPPORT_XMS
