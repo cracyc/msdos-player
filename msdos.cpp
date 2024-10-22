@@ -4388,34 +4388,35 @@ void change_console_size(int width, int height)
 			cursor_moved = true;
 			cursor_moved_by_crtc = false;
 		}
-	
-	// workaround Windows 10 conhost v2 bug that crash when cursor is out of range
-	if(is_win10_or_later) {
-		co.X = 0;
-		co.Y = 0;
-		SetConsoleCursorPosition(hStdout, co);
-	}
-	
-	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1 && !use_vt) {
-		if(cur_window_width == width && cur_window_height == height) {
-			ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
-			SET_RECT(rect, 0, 0, width - 1, height - 1);
-		} else if(csbi.dwCursorPosition.Y > height - 1) {
-			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
-				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-				SetConsoleWindowInfo(hStdout, TRUE, &rect);
-			}
+
+		// workaround Windows 10 conhost v2 bug that crash when cursor is out of range
+		if(is_win10_or_later) {
+			co.X = 0;
+			co.Y = 0;
+			SetConsoleCursorPosition(hStdout, co);
 		}
 
-		// restore cursor position
-		if(is_win10_or_later) {
-			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
-			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-			SetConsoleCursorPosition(hStdout, co);
-			cursor_moved = true;
-			cursor_moved_by_crtc = false;
+		if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
+			if(cur_window_width == width && cur_window_height == height) {
+				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
+				SET_RECT(rect, 0, 0, width - 1, height - 1);
+			} else if(csbi.dwCursorPosition.Y > height - 1) {
+				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+					SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				}
+			}
+
+			// restore cursor position
+			if(is_win10_or_later) {
+				co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
+				co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
+				SetConsoleCursorPosition(hStdout, co);
+				cursor_moved = true;
+				cursor_moved_by_crtc = false;
+			}
+			restore_console_size = true;
 		}
-		restore_console_size = true;
 	}
 	restore_console_size = true;
 	
