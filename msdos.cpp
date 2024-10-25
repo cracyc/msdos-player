@@ -23921,7 +23921,7 @@ void vdd_req(char func)
             return;
         }            
         CPU_SET_C_FLAG(0);
-        CPU_AX = i;
+        CPU_AX = i + 1;
         if (pfnInit)
         {
             pfnInit();
@@ -23930,7 +23930,7 @@ void vdd_req(char func)
     /* UnregisterModule */
     else if (func == 0x01)
     {
-        WORD handle = CPU_AX;
+        WORD handle = CPU_AX - 1;
         CPU_EIP += 4;
         if ((handle > 5) || !vdd_modules[handle].hvdd)
             return; // ntvdm exits here
@@ -23940,7 +23940,7 @@ void vdd_req(char func)
     /* DispatchCall */
     else if (func == 0x02)
     {
-        WORD handle = CPU_AX;
+        WORD handle = CPU_AX - 1;
         CPU_EIP += 4;
         if ((handle > 5) || !vdd_modules[handle].hvdd)
             return; // ntvdm exits here
@@ -24387,6 +24387,11 @@ __declspec(dllexport) void WINAPI VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRang
     return;
 }
 
+__declspec(dllexport) BYTE *WINAPI MGetVDMPointer(DWORD addr, DWORD size, BOOL protmode)
+{
+    return mem + (DWORD)(HIWORD(addr) << 4) + LOWORD(addr);
+}
+
 }
 
 BOOL vdd_io_read(int port, int size, WORD *val)
@@ -24451,8 +24456,4 @@ BOOL vdd_io_write(int port, int size, WORD val)
     return FALSE;
 }
 
-__declspec(dllexport) BYTE *WINAPI MGetVDMPointer(DWORD addr, DWORD size, BOOL protmode)
-{
-    return mem + (DWORD)(HIWORD(addr) << 4) + LOWORD(addr);
-}
 #endif
