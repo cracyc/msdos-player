@@ -6530,8 +6530,10 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	} else if(is_esc) {
 		// escape sequense
 		if(use_vt) {
-			WriteConsoleA(hStdout, tmp, p, NULL, NULL);
-			p = is_esc = 0;
+			if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z')) {
+				WriteConsoleA(hStdout, tmp, p, NULL, NULL);
+				p = is_esc = 0;
+			}
 			return;
 		} else if((tmp[1] == ')' || tmp[1] == '(') && p == 3) {
 			p = is_esc = 0;
