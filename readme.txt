@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								10/18/2024
+								10/24/2024
 
 ----- What's This
 
@@ -844,7 +844,7 @@ INT 2FH		Multiplex Interrupt
 	122BH	DOS 3.3+ internal - IOCTL
 	122CH	DOS 3.3+ internal - Get Device Chain
 	122DH	DOS 3.3+ internal - Get Extended Error Code
-	122EH	DOS 4.0+ internal - Get Error Table Addresses
+	122EH	DOS 4.0+ internal - Get/Set Error Table Addresses
 	122FH	DOS 4.0+ internal - Set DOS Version Number To Return
 	1400H	NLSFUNC.COM - Installation Check
 	1401H	NLSFUNC.COM - Change Code Page
@@ -873,7 +873,6 @@ INT 2FH		Multiplex Interrupt
 	4300H	XMS - Installation Check
 	4308H	HIMEM.SYS - Get A20 Handler Number
 	4310H	XMS - Get Driver Address
-	4810H	Read Input Line From Console
 	4A01H	DOS 5.0+ - Query Free HMA Space
 	4A02H	DOS 5.0+ - Allocate HMA Space
 	4A03H	Windows95 - (De)Allocate HMA Memory Block

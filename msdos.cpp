@@ -3630,7 +3630,6 @@ int main(int argc, char *argv[], char *envp[])
 	glyph_char = active_code_page == 437;
 	if(is_win10_or_later) use_vt = true;
 	
-	
 	if(!is_win2k_or_later) {
 		old_error_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
 	}
@@ -5433,14 +5432,24 @@ const char *msdos_fcb_path(fcb_t *fcb)
 	memcpy(ext, fcb->file_name + 8, 3);
 	strcpy(ext, msdos_trimmed_path(ext));
 	
-	if(name[0] == '\0' || strcmp(name, "????????") == 0) {
+	if(name[0] == '\0') {
 		strcpy(name, "*");
+	} else {
+		for(int i = 0; i < 8; i++) {
+			if(strncmp(name + i, "????????", 8 - i) == 0) {
+				strcpy(name + i, "*");
+				break;
+			}
+		}
 	}
 	if(ext[0] == '\0') {
 		strcpy(tmp, name);
 	} else {
-		if(strcmp(ext, "???") == 0) {
-			strcpy(ext, "*");
+		for(int i = 0; i < 3; i++) {
+			if(strncmp(ext + i, "???", 3 - i) == 0) {
+				strcpy(ext + i, "*");
+				break;
+			}
 		}
 		sprintf(tmp, "%s.%s", name, ext);
 	}
@@ -5898,7 +5907,7 @@ const char *msdos_short_volume_label(const char *label)
 	return(tmp);
 }
 
-static inline UINT16 msdos_maperr(unsigned long oserrno)
+static inline UINT16 msdos_error_code(unsigned long oserrno)
 {
 	switch(oserrno) {
 	case ERROR_FILE_EXISTS:            // 80
@@ -5906,6 +5915,38 @@ static inline UINT16 msdos_maperr(unsigned long oserrno)
 		return ERROR_ACCESS_DENIED;
 	}
 	return (UINT16)oserrno;
+}
+
+int msdos_error_class(UINT16 error_code)
+{
+	switch(error_code) {
+	case  4: // Too many open files
+	case  8: // Insufficient memory
+		return 1; // Out of resource
+	case  5: // Access denied
+		return 3; // Authorization
+	case  7: // Memory control block destroyed
+		return 4; // Internal
+	case  2: // File not found
+	case  3: // Path not found
+	case 15: // Invaid drive specified
+	case 18: // No more files
+		return 8; // Not found
+	case 32: // Sharing violation
+	case 33: // Lock violation
+		return 10; // Locked
+//	case 16: // Removal of current directory attempted
+	case 19: // Attempted write on protected disk
+	case 21: // Drive not ready
+//	case 29: // Write failure
+//	case 30: // Read failure
+//	case 82: // Cannot create subdirectory
+		return 11; // Media
+	case 80: // File already exists
+		return 12; // Already exist
+	default:
+		return 13; // Unknown
+	}
 }
 
 int msdos_open(const char *path, int oflag)
@@ -5947,7 +5988,7 @@ int msdos_open(const char *path, int oflag)
 			FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, disposition,
 			FILE_ATTRIBUTE_NORMAL, NULL);
 		if(h == INVALID_HANDLE_VALUE) {
-			_doserrno = msdos_maperr(GetLastError());
+			_doserrno = msdos_error_code(GetLastError());
 			return(-1);
 		}
 	}
@@ -7058,6 +7099,26 @@ int msdos_mem_get_free(int mcb_seg)
 	return(max_paragraphs > 0x7fff && limit_max_memory ? 0x7fff : max_paragraphs);
 }
 
+void msdos_mem_recover_mcb(int mcb_seg)
+{
+	// recover the broken MCB
+	mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
+	
+	if(mcb_seg < (MEMORY_END >> 4)) {
+		mcb->mz = 'M';
+		mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
+		
+		if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
+			msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC");
+		} else {
+			msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC");
+		}
+	} else {
+		mcb->mz = 'Z';
+		mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
+	}
+}
+
 int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
 {
 	int last_seg = -1;
@@ -7065,20 +7126,30 @@ int msdos_mem_get_last_mcb(int mcb_seg, UINT16 psp)
 	while(1) {
 		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
 		msdos_mcb_check(mcb);
+		int next_seg = mcb_seg + 1 + mcb->paragraphs;
 		
 		if(mcb->psp == psp) {
 			last_seg = mcb_seg;
 		}
+		if(mcb->mz == 'M') {
+			// check if this mcb is broken
+			mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
+			if(!(next_mcb->mz == 'M' || next_mcb->mz == 'Z')) {
+				// recover the broken MCB
+				msdos_mem_recover_mcb(mcb_seg);
+			}
+		}
 		if(mcb->mz == 'Z') {
 			break;
 		}
-		mcb_seg += 1 + mcb->paragraphs;
+		mcb_seg = next_seg;
 	}
 	return(last_seg);
 }
 
 int msdos_mem_get_umb_linked()
 {
+#if 0
 	mcb_t *mcb = (mcb_t *)(mem + MEMORY_END - 16);
 	msdos_mcb_check(mcb);
 	
@@ -7086,6 +7157,9 @@ int msdos_mem_get_umb_linked()
 		return(-1);
 	}
 	return(0);
+#else
+	return (((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01);
+#endif
 }
 
 void msdos_mem_link_umb()
@@ -8292,6 +8366,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	
 	// check exe header
 	exe_header_t *header = (exe_header_t *)file_buffer;
+	int top_mcb = first_mcb;
 	int paragraphs, free_paragraphs = msdos_mem_get_free(first_mcb);
 	UINT16 cs, ss, ip, sp;
 	int start_seg = 0;
@@ -8305,29 +8380,37 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		}
 		paragraphs = (PSP_SIZE + load_size) >> 4;
 		if(paragraphs + header->min_alloc > free_paragraphs) {
+			top_mcb = UMB_TOP >> 4;
+			free_paragraphs = msdos_mem_get_free(top_mcb);
+		}
+		if(paragraphs + header->min_alloc > free_paragraphs) {
+			if(umb_linked != 0) {
+				msdos_mem_link_umb();
+			}
 			msdos_mem_free(env_seg);
 			return(-1);
 		}
-		paragraphs += header->max_alloc ? header->max_alloc : header->min_alloc;
-		if(paragraphs > free_paragraphs) {
-			paragraphs = free_paragraphs;
-		}
 		if(!header->min_alloc && !header->max_alloc) {
-			psp_seg = msdos_mem_alloc(first_mcb, free_paragraphs);
-			start_seg = psp_seg + free_paragraphs - (load_size >> 4);
-		} else if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs)) == -1) {
-			if((psp_seg = msdos_mem_alloc(UMB_TOP >> 4, paragraphs)) == -1) {
-				if(umb_linked != 0) {
-					msdos_mem_link_umb();
-				}
-				msdos_mem_free(env_seg);
-				return(-1);
+			paragraphs = free_paragraphs;
+		} else {
+			paragraphs += header->max_alloc ? header->max_alloc : header->min_alloc;
+			if(paragraphs > free_paragraphs) {
+				paragraphs = free_paragraphs;
 			}
 		}
-		// relocation
-		if(!start_seg) {
+		if((psp_seg = msdos_mem_alloc(top_mcb, paragraphs)) == -1) {
+			if(umb_linked != 0) {
+				msdos_mem_link_umb();
+			}
+			msdos_mem_free(env_seg);
+			return(-1);
+		}
+		if(!header->min_alloc && !header->max_alloc) {
+			start_seg = psp_seg + paragraphs - (load_size >> 4);
+		} else {
 			start_seg = psp_seg + (PSP_SIZE >> 4);
 		}
+		// relocation
 		for(int i = 0; i < header->relocations; i++) {
 			int ofs = *(UINT16 *)(file_buffer + header->relocation_table + i * 4 + 0);
 			int seg = *(UINT16 *)(file_buffer + header->relocation_table + i * 4 + 2);
@@ -8341,16 +8424,25 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		sp = header->init_sp - 2; // for symdeb
 	} else {
 		// memory allocation
-		paragraphs = free_paragraphs;
-		if((psp_seg = msdos_mem_alloc(first_mcb, paragraphs)) == -1) {
-			if((psp_seg = msdos_mem_alloc(UMB_TOP >> 4, paragraphs)) == -1) {
-				if(umb_linked != 0) {
-					msdos_mem_link_umb();
-				}
-				msdos_mem_free(env_seg);
-				return(-1);
-			}
+		if(free_paragraphs < 0x1000) {
+			top_mcb = UMB_TOP >> 4;
+			free_paragraphs = msdos_mem_get_free(top_mcb);
 		}
+		if(free_paragraphs < 0x1000) {
+			if(umb_linked != 0) {
+				msdos_mem_link_umb();
+			}
+			msdos_mem_free(env_seg);
+			return(-1);
+		}
+		if((psp_seg = msdos_mem_alloc(top_mcb, free_paragraphs)) == -1) {
+			if(umb_linked != 0) {
+				msdos_mem_link_umb();
+			}
+			msdos_mem_free(env_seg);
+			return(-1);
+		}
+		paragraphs = free_paragraphs;
 		start_seg = psp_seg + (PSP_SIZE >> 4);
 		memcpy(mem + (start_seg << 4), file_buffer, 0x10000 - PSP_SIZE);
 		// segments
@@ -8539,12 +8631,18 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	CPU_LOAD_SREG(CPU_ES_INDEX, current_process->parent_es);
 	
 	if(mem_free) {
-		int mcb_seg;
+		int mcb_seg, umb_linked;
+		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
+			msdos_mem_unlink_umb();
+		}
 		while((mcb_seg = msdos_mem_get_last_mcb(first_mcb, psp_seg)) != -1) {
 			msdos_mem_free(mcb_seg + 1);
 		}
 		while((mcb_seg = msdos_mem_get_last_mcb(UMB_TOP >> 4, psp_seg)) != -1) {
 			msdos_mem_free(mcb_seg + 1);
+		}
+		if(umb_linked != 0) {
+			msdos_mem_link_umb();
 		}
 		
 		for(int i = 0; i < MAX_FILES; i++) {
@@ -11940,6 +12038,13 @@ inline void msdos_int_21h_0fh()
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	} else {
 		CPU_AL = 0;
 		fcb->current_block = 0;
@@ -11954,7 +12059,18 @@ inline void msdos_int_21h_10h()
 	ext_fcb_t *ext_fcb = (ext_fcb_t *)(mem + CPU_DS_BASE + CPU_DX);
 	fcb_t *fcb = (fcb_t *)(ext_fcb + (ext_fcb->flag == 0xff ? 1 : 0));
 	
-	CPU_AL = CloseHandle(fcb->handle) ? 0 : 0xff;
+	if(!CloseHandle(fcb->handle)) {
+		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
+	} else {
+		CPU_AL = 0;
+	}
 }
 
 inline void msdos_int_21h_11h()
@@ -12030,6 +12146,13 @@ inline void msdos_int_21h_11h()
 		CPU_AL = 0x00;
 	} else {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	}
 }
 
@@ -12099,15 +12222,46 @@ inline void msdos_int_21h_12h()
 		CPU_AL = 0x00;
 	} else {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	}
 }
 
 inline void msdos_int_21h_13h()
 {
-	if(remove(msdos_fcb_path((fcb_t *)(mem + CPU_DS_BASE + CPU_DX)))) {
-		CPU_AL = 0xff;
+	WIN32_FIND_DATAA fd;
+	HANDLE hFind;
+	DWORD error = ERROR_FILE_NOT_FOUND;
+	
+	CPU_AL = 0xff;
+	
+	if((hFind = FindFirstFileA(msdos_fcb_path((fcb_t *)(mem + CPU_DS_BASE + CPU_DX)), &fd)) != INVALID_HANDLE_VALUE) {
+		do {
+			if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+				if(!remove(fd.cFileName)) {
+					CPU_AL = 0x00;
+				} else {
+					error = _doserrno;
+				}
+			}
+		} while(FindNextFileA(hFind, &fd) != 0);
+		FindClose(hFind);
 	} else {
-		CPU_AL = 0x00;
+		error = GetLastError();
+	}
+	if(CPU_AL == 0xff) {
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(error);
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	}
 }
 
@@ -12171,6 +12325,13 @@ inline void msdos_int_21h_16h()
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	} else {
 		CPU_AL = 0;
 		fcb->current_block = 0;
@@ -12184,19 +12345,59 @@ inline void msdos_int_21h_17h()
 {
 	ext_fcb_t *ext_fcb_src = (ext_fcb_t *)(mem + CPU_DS_BASE + CPU_DX);
 	fcb_t *fcb_src = (fcb_t *)(ext_fcb_src + (ext_fcb_src->flag == 0xff ? 1 : 0));
-//	const char *path_src = msdos_fcb_path(fcb_src);
-	char path_src[MAX_PATH];
-	strcpy(path_src, msdos_fcb_path(fcb_src));
-	
 	fcb_t *fcb_dst = (fcb_t *)(mem + CPU_DS_BASE + CPU_DX + 16 + (ext_fcb_src->flag == 0xff ? 7 : 0));
-//	const char *path_dst = msdos_fcb_path(fcb_dst);
-	char path_dst[MAX_PATH];
-	strcpy(path_dst, msdos_fcb_path(fcb_dst));
 	
-	if(rename(path_src, path_dst)) {
-		CPU_AL = 0xff;
+	WIN32_FIND_DATAA fd;
+	HANDLE hFind;
+	DWORD error = ERROR_FILE_NOT_FOUND;
+	
+	CPU_AL = 0xff;
+	
+	if((hFind = FindFirstFileA(msdos_fcb_path(fcb_src), &fd)) != INVALID_HANDLE_VALUE) {
+		do {
+			if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+				char path[MAX_PATH], *ext = NULL;
+				char new_name[MAX_PATH] = {0}, new_ext[MAX_PATH] = {0};
+				
+				strcpy(path, fd.cFileName);
+				
+				if((ext = strrchr(path, '.')) != NULL) {
+					*ext++ = '\0';
+					for(int i = 0; i < strlen(ext); i++) {
+						char c = (i < 3) ? fcb_dst->file_name[8 + i] : (fcb_dst->file_name[10] == '?') ? '?' : '\0';
+						new_ext[i] = (c == '?') ? ext[i] : (c == ' ') ? '\0' : c;
+					}
+				}
+				for(int i = 0; i < strlen(path); i++) {
+					char c = (i < 8) ? fcb_dst->file_name[i] : (fcb_dst->file_name[7] == '?') ? '?' : '\0';
+					new_name[i] = (c == '?') ? path[i] : (c == ' ') ? '\0' : c;
+				}
+				if(new_ext[0] != '\0') {
+					sprintf(path, "%s.%s", new_name, new_ext);
+				} else {
+					strcpy(path, new_name);
+				}
+				my_strupr(path);
+				
+				if(!rename(fd.cFileName, path)) {
+					CPU_AL = 0x00;
+				} else {
+					error = _doserrno;
+				}
+			}
+		} while(FindNextFileA(hFind, &fd) != 0);
+		FindClose(hFind);
 	} else {
-		CPU_AL = 0;
+		error = GetLastError();
+	}
+	if(CPU_AL == 0xff) {
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(error);
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	}
 }
 
@@ -12350,6 +12551,13 @@ inline void msdos_int_21h_23h()
 	
 	if(hFile == INVALID_HANDLE_VALUE) {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = msdos_error_code(GetLastError());
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	} else {
 		UINT32 size = GetFileSize(hFile, NULL);
 		UINT32 rec = size / fcb->record_size + ((size % fcb->record_size) != 0);
@@ -12573,6 +12781,13 @@ inline void msdos_int_21h_29h()
 		}
 	} else {
 		CPU_AL = 0xff;
+		// set extended error
+		sda_t *sda = (sda_t *)(mem + SDA_TOP);
+		sda->int21h_5d0ah_called = 0;
+		sda->extended_error_code = ERROR_INVALID_DRIVE;
+		sda->error_class = msdos_error_class(sda->extended_error_code);
+		sda->suggested_action = 6; // ignore
+		sda->locus_of_last_error = 2; // block device
 	}
 }
 
@@ -12649,22 +12864,7 @@ inline void msdos_int_21h_31h()
 		msdos_mem_realloc(current_psp, CPU_DX, NULL);
 	} catch(...) {
 		// recover the broken MCB
-		int mcb_seg = current_psp - 1;
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		
-		if(mcb_seg < (MEMORY_END >> 4)) {
-			mcb->mz = 'M';
-			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
-			
-			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC");
-			} else {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC");
-			}
-		} else {
-			mcb->mz = 'Z';
-			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
-		}
+		msdos_mem_recover_mcb(current_psp - 1);
 		msdos_mem_realloc(current_psp, CPU_DX, NULL);
 	}
 	msdos_process_terminate(current_psp, CPU_AL | 0x300, 0);
@@ -12949,7 +13149,7 @@ inline void msdos_int_21h_38h()
 inline void msdos_int_21h_39h(int lfn)
 {
 	if(_mkdir(msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn, 1))) {
-		CPU_AX = msdos_maperr(_doserrno);
+		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -12957,7 +13157,7 @@ inline void msdos_int_21h_39h(int lfn)
 inline void msdos_int_21h_3ah(int lfn)
 {
 	if(_rmdir(msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn, 1))) {
-		CPU_AX = msdos_maperr(_doserrno);
+		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -13010,7 +13210,7 @@ inline void msdos_int_21h_3ch()
 		msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_device_info(path), current_psp, sio_port, lpt_port);
 		msdos_psp_set_file_table(fd, fd, current_psp);
 	} else {
-		CPU_AX = msdos_maperr(_doserrno);
+		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -13037,7 +13237,7 @@ inline void msdos_int_21h_3dh()
 			msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_device_info(path), current_psp, sio_port, lpt_port);
 			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -13260,7 +13460,7 @@ inline void msdos_int_21h_41h(int lfn)
 		// In this time, the file is deleted but the handle is not closed.
 		// Here I only clear the sharing violation error though the file cannot be deleted.
 		if(_doserrno != ERROR_SHARING_VIOLATION) {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	}
@@ -13303,13 +13503,13 @@ inline void msdos_int_21h_43h(int lfn)
 		if((attr = GetFileAttributesA(path)) != -1) {
 			CPU_CX = (UINT16)msdos_file_attribute_create((UINT16)attr);
 		} else {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 		break;
 	case 0x01:
 		if(!SetFileAttributesA(path, msdos_file_attribute_create(CPU_CX))) {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 		break;
@@ -13362,7 +13562,7 @@ inline void msdos_int_21h_43h(int lfn)
 				CPU_AX = LOWORD(compressed_size);
 				CPU_DX = HIWORD(compressed_size);
 			} else {
-				CPU_AX = msdos_maperr(error);
+				CPU_AX = msdos_error_code(error);
 				CPU_SET_C_FLAG(1);
 			}
 		}
@@ -13387,12 +13587,12 @@ inline void msdos_int_21h_43h(int lfn)
 				if(!SetFileTime(hFile, CPU_BL == 0x07 ? &time : NULL,
 						       CPU_BL == 0x05 ? &time : NULL,
 						       CPU_BL == 0x03 ? &time : NULL)) {
-					CPU_AX = msdos_maperr(GetLastError());
+					CPU_AX = msdos_error_code(GetLastError());
 					CPU_SET_C_FLAG(1);
 				}
 				CloseHandle(hFile);
 			} else {
-				CPU_AX = msdos_maperr(GetLastError());
+				CPU_AX = msdos_error_code(GetLastError());
 				CPU_SET_C_FLAG(1);
 			}
 		} else {
@@ -13426,12 +13626,12 @@ inline void msdos_int_21h_43h(int lfn)
 						CPU_SI = (UINT16)(hund.QuadPart % 200);
 					}
 				} else {
-					CPU_AX = msdos_maperr(GetLastError());
+					CPU_AX = msdos_error_code(GetLastError());
 					CPU_SET_C_FLAG(1);
 				}
 				CloseHandle(hFile);
 			} else {
-				CPU_AX = msdos_maperr(GetLastError());
+				CPU_AX = msdos_error_code(GetLastError());
 				CPU_SET_C_FLAG(1);
 			}
 		} else {
@@ -14054,7 +14254,7 @@ inline void msdos_int_21h_45h()
 //			msdos_psp_set_file_table(dup_fd, fd, current_psp);
 			msdos_psp_set_file_table(dup_fd, dup_fd, current_psp);
 		} else {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -14085,7 +14285,7 @@ inline void msdos_int_21h_46h()
 //			msdos_psp_set_file_table(dup_fd, fd, current_psp);
 			msdos_psp_set_file_table(dup_fd, dup_fd, current_psp);
 		} else {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -14111,7 +14311,7 @@ inline void msdos_int_21h_47h(int lfn)
 			strcpy((char *)(mem + CPU_DS_BASE + CPU_SI), path);
 		}
 	} else {
-		CPU_AX = msdos_maperr(_doserrno);
+		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -14326,7 +14526,7 @@ inline void msdos_int_21h_4eh()
 		dtainfo->allowable_mask &= ~8;
 		CPU_AX = 0;
 	} else {
-		CPU_AX = 0x12;	// NOTE: return 0x02 if file path is invalid
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -14474,7 +14674,7 @@ inline void msdos_int_21h_56h(int lfn)
 		CPU_AX = 0x05; // access denied
 		CPU_SET_C_FLAG(1);
 	} else if(rename(src, dst)) {
-		CPU_AX = msdos_maperr(_doserrno);
+		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -14486,7 +14686,7 @@ inline void msdos_int_21h_57h()
 	HANDLE hHandle;
 	
 	if((hHandle = (HANDLE)_get_osfhandle(CPU_BX)) == INVALID_HANDLE_VALUE) {
-		CPU_AX = msdos_maperr(GetLastError());
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 		return;
 	}
@@ -14518,7 +14718,7 @@ inline void msdos_int_21h_57h()
 		DosDateTimeToFileTime(CPU_DX, CPU_CX, &local);
 		LocalFileTimeToFileTime(&local, &time);
 		if(!SetFileTime(hHandle, ctime, atime, mtime)) {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -14641,7 +14841,7 @@ inline void msdos_int_21h_5ah()
 		CPU_DX = dx;
 		CPU_LOAD_SREG(CPU_DS_INDEX, ds);
 	} else {
-		CPU_AX = msdos_maperr(GetLastError());
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -14669,7 +14869,7 @@ inline void msdos_int_21h_5bh()
 			msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
 			msdos_psp_set_file_table(fd, fd, current_psp);
 		} else {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	}
@@ -14686,7 +14886,7 @@ inline void msdos_int_21h_5ch()
 			UINT32 pos = _tell(fd);
 			_lseek(fd, (CPU_CX << 16) | CPU_DX, SEEK_SET);
 			if(_locking(fd, modes[CPU_AL], (CPU_SI << 16) | CPU_DI)) {
-				CPU_AX = msdos_maperr(_doserrno);
+				CPU_AX = msdos_error_code(_doserrno);
 				CPU_SET_C_FLAG(1);
 			}
 			_lseek(fd, pos, SEEK_SET);
@@ -14909,7 +15109,7 @@ inline void msdos_int_21h_60h(int lfn)
 	if(*path != '\0') {
 		strcpy((char *)(mem + CPU_ES_BASE + CPU_DI), path);
 	} else {
-		CPU_AX = msdos_maperr(GetLastError());
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -15159,7 +15359,7 @@ inline void msdos_int_21h_69h()
 			memset(info->file_system, 0x20, 8);
 			memcpy(info->file_system, file_system, min(strlen(file_system), 8));
 		} else {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 		break;
@@ -15213,7 +15413,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					msdos_file_handler_open(fd, path, _isatty(fd), mode, msdos_device_info(path), current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
-					CPU_AX = msdos_maperr(_doserrno);
+					CPU_AX = msdos_error_code(_doserrno);
 					CPU_SET_C_FLAG(1);
 				}
 			} else if(CPU_DL & 2) {
@@ -15240,7 +15440,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_device_info(path), current_psp, sio_port, lpt_port);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
-					CPU_AX = msdos_maperr(_doserrno);
+					CPU_AX = msdos_error_code(_doserrno);
 					CPU_SET_C_FLAG(1);
 				}
 			} else {
@@ -15265,7 +15465,7 @@ inline void msdos_int_21h_6ch(int lfn)
 					msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
 					msdos_psp_set_file_table(fd, fd, current_psp);
 				} else {
-					CPU_AX = msdos_maperr(_doserrno);
+					CPU_AX = msdos_error_code(_doserrno);
 					CPU_SET_C_FLAG(1);
 				}
 			} else {
@@ -15439,7 +15639,7 @@ inline void msdos_int_21h_714eh()
 		dtainfo->allowable_mask &= ~8;
 		CPU_AX = dtainfo - dtalist + 1;
 	} else {
-		CPU_AX = 0x12;	// NOTE: return 0x02 if file path is invalid
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -15512,7 +15712,7 @@ inline void msdos_int_21h_71a0h()
 		CPU_CX = (UINT16)max_component_len;		// 255
 		CPU_DX = (UINT16)max_component_len + 5;	// 260
 	} else {
-		CPU_AX = msdos_maperr(GetLastError());
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -15571,7 +15771,7 @@ inline void msdos_int_21h_71a6h()
 			*(UINT32 *)(buffer + 0x2c) = 0;
 			*(UINT32 *)(buffer + 0x30) = file_handler[fd].id;
 		} else {
-			CPU_AX = msdos_maperr(_doserrno);
+			CPU_AX = msdos_error_code(_doserrno);
 			CPU_SET_C_FLAG(1);
 		}
 	} else {
@@ -15585,14 +15785,14 @@ inline void msdos_int_21h_71a7h()
 	switch(CPU_BL) {
 	case 0x00:
 		if(!FileTimeToDosDateTime((FILETIME *)(mem + CPU_DS_BASE + CPU_SI), &CPU_DX, &CPU_CX)) {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 		break;
 	case 0x01:
 		// NOTE: we need to check BH that shows 10-millisecond untils past time in CX
 		if(!DosDateTimeToFileTime(CPU_DX, CPU_CX, (FILETIME *)(mem + CPU_ES_BASE + CPU_DI))) {
-			CPU_AX = msdos_maperr(GetLastError());
+			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
 		}
 		break;
@@ -15718,7 +15918,7 @@ inline void msdos_int_21h_7303h()
 		info->available_allocation_units = free_clusters;	// ???
 		info->total_allocation_units = total_clusters;		// ???
 	} else {
-		CPU_AX = msdos_maperr(GetLastError());
+		CPU_AX = msdos_error_code(GetLastError());
 		CPU_SET_C_FLAG(1);
 	}
 }
@@ -16012,22 +16212,7 @@ inline void msdos_int_27h()
 		msdos_mem_realloc(CPU_CS, paragraphs, NULL);
 	} catch(...) {
 		// recover the broken MCB
-		int mcb_seg = CPU_CS - 1;
-		mcb_t *mcb = (mcb_t *)(mem + (mcb_seg << 4));
-		
-		if(mcb_seg < (MEMORY_END >> 4)) {
-			mcb->mz = 'M';
-			mcb->paragraphs = (MEMORY_END >> 4) - mcb_seg - 2;
-			
-			if(((dos_info_t *)(mem + DOS_INFO_TOP))->umb_linked & 0x01) {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'M', PSP_SYSTEM, (UMB_TOP >> 4) - (MEMORY_END >> 4), "SC");
-			} else {
-				msdos_mcb_create((MEMORY_END >> 4) - 1, 'Z', PSP_SYSTEM, 0, "SC");
-			}
-		} else {
-			mcb->mz = 'Z';
-			mcb->paragraphs = (UMB_END >> 4) - mcb_seg - 1;
-		}
+		msdos_mem_recover_mcb(CPU_CS - 1);
 		msdos_mem_realloc(CPU_CS, paragraphs, NULL);
 	}
 	msdos_process_terminate(CPU_CS, retval | 0x300, 0);
@@ -16126,7 +16311,8 @@ inline void msdos_int_2fh_05h()
 		CPU_AL = 0x01;
 		break;
 	case 0x02:
-		message = msdos_param_error_message(CPU_BX);
+//		message = msdos_param_error_message(CPU_BX);
+		message = msdos_standard_error_message(CPU_BX);
 		strcpy((char *)(mem + WORK_TOP), message);
 		CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
 		CPU_DI = 0x0000;
@@ -16433,8 +16619,11 @@ inline void msdos_int_2fh_12h()
 		break;
 	case 0x2e:
 		if(CPU_DL == 0x00 || CPU_DL == 0x02 || CPU_DL == 0x04 || CPU_DL == 0x06) {
-			CPU_LOAD_SREG(CPU_ES_INDEX, 0x0001);
-			CPU_DI = 0x00;
+			CPU_LOAD_SREG(CPU_ES_INDEX, error_table_seg[CPU_DL >> 1]);
+			CPU_DI = error_table_ofs[CPU_DL >> 1];
+		} else if(CPU_DL == 0x01 || CPU_DL == 0x03 || CPU_DL == 0x05 || CPU_DL == 0x07) {
+			error_table_seg[CPU_DL >> 1] = CPU_ES;
+			error_table_ofs[CPU_DL >> 1] = CPU_DI;
 		} else if(CPU_DL == 0x08) {
 			// dummy parameter error message read routine is at fffc:0010
 			CPU_LOAD_SREG(CPU_ES_INDEX, DUMMY_TOP >> 4);
@@ -16923,6 +17112,7 @@ inline void msdos_int_2fh_46h()
 	}
 }
 
+#if 0
 inline void msdos_int_2fh_48h()
 {
 	switch(CPU_AL) {
@@ -16941,6 +17131,7 @@ inline void msdos_int_2fh_48h()
 		break;
 	}
 }
+#endif
 
 inline void msdos_int_2fh_4ah()
 {
@@ -19947,44 +20138,9 @@ void msdos_syscall(unsigned num)
 			sda_t *sda = (sda_t *)(mem + SDA_TOP);
 			sda->int21h_5d0ah_called = 0;
 			sda->extended_error_code = CPU_AX;
-			switch(sda->extended_error_code) {
-			case  4: // Too many open files
-			case  8: // Insufficient memory
-				sda->error_class = 1; // Out of resource
-				break;
-			case  5: // Access denied
-				sda->error_class = 3; // Authorization
-				break;
-			case  7: // Memory control block destroyed
-				sda->error_class = 4; // Internal
-				break;
-			case  2: // File not found
-			case  3: // Path not found
-			case 15: // Invaid drive specified
-			case 18: // No more files
-				sda->error_class = 8; // Not found
-				break;
-			case 32: // Sharing violation
-			case 33: // Lock violation
-				sda->error_class = 10; // Locked
-				break;
-//			case 16: // Removal of current directory attempted
-			case 19: // Attempted write on protected disk
-			case 21: // Drive not ready
-//			case 29: // Write failure
-//			case 30: // Read failure
-//			case 82: // Cannot create subdirectory
-				sda->error_class = 11; // Media
-				break;
-			case 80: // File already exists
-				sda->error_class = 12; // Already exist
-				break;
-			default:
-				sda->error_class = 13; // Unknown
-				break;
-			}
-			sda->suggested_action = 1; // Retry
-			sda->locus_of_last_error = 1; // Unknown
+			sda->error_class = msdos_error_class(sda->extended_error_code);
+			sda->suggested_action = 1; // retry
+			sda->locus_of_last_error = 1; // unknown
 		}
 		if(ctrl_break_checking && ctrl_break_detected) {
 			// raise int 23h
@@ -20050,7 +20206,7 @@ void msdos_syscall(unsigned num)
 		case 0x40: msdos_int_2fh_40h(); break;
 		case 0x43: msdos_int_2fh_43h(); break;
 		case 0x46: msdos_int_2fh_46h(); break;
-		case 0x48: msdos_int_2fh_48h(); break;
+//		case 0x48: msdos_int_2fh_48h(); break;
 		case 0x4a: msdos_int_2fh_4ah(); break;
 		case 0x4b: msdos_int_2fh_4bh(); break;
 		case 0x4d: msdos_int_2fh_4dh(); break;
@@ -20629,9 +20785,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// and some softwares invite (int 2eh vector segment) - 1 must address the MCB of command.com.
 	// so move iret table into allocated memory block
 	// http://www5c.biglobe.ne.jp/~ecb/assembler2/2_6.html
-	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 5 * 128) >> 4);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, (IRET_SIZE + 5 * 128 + 16) >> 4);
 	IRET_TOP = seg << 4;
-	seg += (IRET_SIZE + 5 * 128) >> 4;
+	seg += (IRET_SIZE + 5 * 128 + 16) >> 4;
 	memset(mem + IRET_TOP, 0xcf, IRET_SIZE); // iret
 	
 	// note: SO1 checks int 21h vector and if it aims iret (CFh)
@@ -20642,6 +20798,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 1) = i;
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 3) = IRET_TOP >> 4;
 	}
+	// dummy error table
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 0] = 0xff;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 1] = 0x04;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 2] = 0x00;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 3] = 0x00;
+	error_table_seg[0] = error_table_seg[1] = 
+	error_table_seg[2] = error_table_seg[3] = IRET_TOP >> 4;
+	error_table_ofs[0] = error_table_ofs[1] = 
+	error_table_ofs[2] = error_table_ofs[3] = IRET_SIZE + 5 * 128;
 	
 	// dummy ATOK5 device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ATOK_SIZE >> 4);
@@ -21212,10 +21377,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	if(argc > 1) {
-		sprintf(cmd_line->cmd, " %s", argv[1]);
+		if(strchr(argv[1], ' ')) {
+			sprintf(cmd_line->cmd, " \"%s\"", argv[1]);
+		} else {
+			sprintf(cmd_line->cmd, " %s", argv[1]);
+		}
 		for(int i = 2; i < argc; i++) {
 			char tmp[128];
-			sprintf(tmp, "%s %s", cmd_line->cmd, argv[i]);
+			if(strchr(argv[i], ' ')) {
+				sprintf(tmp, "%s \"%s\"", cmd_line->cmd, argv[i]);
+			} else {
+				sprintf(tmp, "%s %s", cmd_line->cmd, argv[i]);
+			}
 			strcpy(cmd_line->cmd, tmp);
 		}
 		cmd_line->len = (UINT8)strlen(cmd_line->cmd);

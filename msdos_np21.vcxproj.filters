@@ -32,6 +32,15 @@
     <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse3">
       <UniqueIdentifier>{92465594-644b-4d27-9bbb-5434f94c1531}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4">
+      <UniqueIdentifier>{2bab00df-dc5e-4951-8235-dafb46916374}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4a">
+      <UniqueIdentifier>{0189ac92-1680-4eac-b821-e2923c2b082a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\ssse3">
+      <UniqueIdentifier>{44e89e17-742e-4537-80fb-de3269f0ed7e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{d3901fd0-707b-41b0-ba65-8907146ab530}</UniqueIdentifier>
       <Extensions>h</Extensions>
@@ -60,14 +69,14 @@
     <Filter Include="Header Files\np21w i386c Header Files\ia32\sse3">
       <UniqueIdentifier>{691669a0-0874-4da8-bd6a-fc3963ef3b95}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4">
-      <UniqueIdentifier>{2bab00df-dc5e-4951-8235-dafb46916374}</UniqueIdentifier>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\sse4">
+      <UniqueIdentifier>{49854c82-97a9-4b8f-8a88-f69e7bd803bc}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\sse4a">
-      <UniqueIdentifier>{0189ac92-1680-4eac-b821-e2923c2b082a}</UniqueIdentifier>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\sse4a">
+      <UniqueIdentifier>{4b3a4eaa-d65d-4382-8aa7-115d11262d29}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\ssse3">
-      <UniqueIdentifier>{44e89e17-742e-4537-80fb-de3269f0ed7e}</UniqueIdentifier>
+    <Filter Include="Header Files\np21w i386c Header Files\ia32\ssse3">
+      <UniqueIdentifier>{5e9f3ec0-61ac-4b69-a855-c0d049797a2d}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -308,16 +317,16 @@
       <Filter>Header Files\np21w i386c Header Files\ia32\sse3</Filter>
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_1.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse4</Filter>
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\sse4\sse4_2.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse4</Filter>
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\sse4a\sse4a.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\np21w i386c Header Files\ia32\sse4a</Filter>
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\ssse3\sses3.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\np21w i386c Header Files\ia32\ssse3</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
