@@ -1136,6 +1136,9 @@ UINT16 malloc_strategy = 0;
 
 char comspec_path[MAX_PATH] = "C:\\COMMAND.COM";
 
+UINT16 error_table_seg[4];
+UINT16 error_table_ofs[4];
+
 void msdos_syscall(unsigned num);
 int msdos_init(int argc, char *argv[], char *envp[], int standard_env);
 void msdos_finish();
