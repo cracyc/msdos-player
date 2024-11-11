@@ -7691,6 +7691,65 @@ int msdos_psp_get_file_table(int fd, int psp_seg)
 	return fd;
 }
 
+int win32_exec(char *command)
+{
+	HANDLE hstdout_r;
+	HANDLE hstdout_w;
+	HANDLE hprocess;
+	STARTUPINFO si = {0};
+	SECURITY_ATTRIBUTES sa = {0};
+	PROCESS_INFORMATION pi = {0};
+	DWORD retcode = 0;
+	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+	sa.bInheritHandle = TRUE;
+	if(CreatePipe(&hstdout_r, &hstdout_w, &sa, 0)) {
+		si.cb = sizeof(STARTUPINFO);
+		si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+		si.hStdOutput = hstdout_w;
+		si.hStdError = hstdout_w;
+		si.dwFlags = STARTF_USESTDHANDLES;
+		if(CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+			HANDLE handles[2];
+			CloseHandle(pi.hThread);
+			handles[0] = pi.hProcess;
+			handles[1] = hstdout_r;
+			bool done = false;
+			do {
+				DWORD ret = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+				switch(ret) {
+					case WAIT_FAILED: // just leave, nothing can be done
+					case WAIT_OBJECT_0:
+						GetExitCodeProcess(pi.hProcess, &retcode);
+						done = true;
+						break;
+					default: 
+						while(1) {
+							DWORD bytesavail;
+							if(!PeekNamedPipe(hstdout_r, NULL, 0, NULL, &bytesavail, NULL) || !bytesavail) {
+								break;
+							}
+							for(int i = 0; i < bytesavail; i++) {
+								char byte;
+								DWORD bytes;
+								if(!ReadFile(hstdout_r, &byte, 1, &bytes, NULL) || !bytes) {
+									break;
+								}
+								msdos_putch(byte, 0x21, 0x02);
+							}
+						}
+						break;
+				}
+			} while(!done);
+		}
+		CloseHandle(pi.hProcess);
+		CloseHandle(hstdout_r);
+		CloseHandle(hstdout_w);
+	}
+	return retcode;
+}
+								
+							
+
 int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool first_process = false)
 {
 	// load command file
@@ -8330,6 +8389,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		if(sign_dos == IMAGE_DOS_SIGNATURE && e_lfanew >= 0x40 && e_lfanew < 0x400) {
 			UINT32 sign_nt = *(UINT32 *)(file_buffer + e_lfanew + 0x00);
 			UINT16 machine = *(UINT16 *)(file_buffer + e_lfanew + 0x04);
+			UINT16 subsys = *(UINT16 *)(file_buffer + e_lfanew + 0x5c);
 			if(sign_nt == IMAGE_NT_SIGNATURE && (machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_AMD64)) {
 				char tmp[MAX_PATH];
 				if(opt[0] != '\0') {
@@ -8337,7 +8397,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				} else {
 					sprintf(tmp, "\"%s\"", path);
 				}
-				retval = system(tmp);
+				if(subsys == IMAGE_SUBSYSTEM_WINDOWS_CUI) {
+					retval = win32_exec(tmp);
+				} else {
+					retval = system(tmp);
+				}
 				return(0);
 			}
 		}
