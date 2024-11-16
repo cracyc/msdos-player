@@ -12918,8 +12918,8 @@ inline void msdos_int_21h_30h()
 		CPU_BX = 0xff00;	// OEM = Microsoft
 	}
 	CPU_CX = 0x0000;
-	CPU_AL = dos_major_version;	// 7
-	CPU_AH = dos_minor_version;	// 10
+	CPU_AL = dos_major_version;	// 5
+	CPU_AH = dos_minor_version;	// 50
 }
 
 inline void msdos_int_21h_31h()
@@ -12983,9 +12983,9 @@ inline void msdos_int_21h_33h()
 		CPU_DL = (UINT8)drive;
 		break;
 	case 0x06:
-		// MS-DOS version (7.10)
-		CPU_BL = 7;
-		CPU_BH = 10;
+		// MS-DOS version (5.50)
+		CPU_BL = 5;
+		CPU_BH = 50;
 		CPU_DL = 0;
 #ifdef SUPPORT_HMA
 		CPU_DH = 0x00;
@@ -24626,7 +24626,7 @@ __declspec(dllexport) void WINAPI VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRang
     return;
 }
 
-__declspec(dllexport) BYTE *WINAPI MGetVDMPointer(DWORD addr, DWORD size, BOOL protmode)
+__declspec(dllexport) BYTE *WINAPI MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
 {
     return mem + (DWORD)(HIWORD(addr) << 4) + LOWORD(addr);
 }

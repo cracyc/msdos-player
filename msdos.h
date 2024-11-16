@@ -1118,8 +1118,8 @@ typedef struct {
 	HANDLE find_handle;
 } dtainfo_t;
 
-UINT8 dos_major_version = 7;	// Windows 98 Second Edition
-UINT8 dos_minor_version = 10;
+UINT8 dos_major_version = 5;	// Windows NT
+UINT8 dos_minor_version = 50;
 UINT8 win_major_version = 4;
 UINT8 win_minor_version = 10;
 

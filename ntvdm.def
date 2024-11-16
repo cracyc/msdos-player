@@ -83,4 +83,4 @@ EXPORTS
   setOF = msdos.exe.setOF
   VDDInstallIOHook = msdos.exe.VDDInstallIOHook
   VDDDeInstallIOHook = msdos.exe.VDDDeInstallIOHook
-  MGetVDMPointer = msdos.exe.MGetVDMPointer
+  MGetVdmPointer = msdos.exe.MGetVdmPointer
