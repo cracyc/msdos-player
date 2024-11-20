@@ -1599,12 +1599,12 @@ int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip)
 #endif
 }
 
-void debugger_regs_info(char *buffer)
+void debugger_regs_info(char *buffer, bool r32)
 {
 	UINT32 flags = CPU_EFLAG;
 	
 #if defined(HAS_I386)
-	if(CPU_INST_OP32) {
+	if(r32) {
 		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
 		CPU_EAX, CPU_EBX, CPU_ECX, CPU_EDX, CPU_ESP, CPU_EBP, CPU_ESI, CPU_EDI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
 		CPU_STAT_PM ? "PE" : "--",
@@ -1774,7 +1774,7 @@ void debugger_main()
 	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 	debugger_process_info(buffer);
 	telnet_printf("%s", buffer);
-	debugger_regs_info(buffer);
+	debugger_regs_info(buffer, false);
 	telnet_printf("%s", buffer);
 	telnet_set_color(TELNET_RED | TELNET_INTENSITY);
 	telnet_printf("breaked at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
@@ -1982,9 +1982,12 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
+			} else if(_stricmp(params[0], "RX") == 0) {
+				debugger_regs_info(buffer, true);
+				telnet_printf("%s", buffer);
 			} else if(_stricmp(params[0], "R") == 0) {
 				if(num == 1) {
-					debugger_regs_info(buffer);
+					debugger_regs_info(buffer, CPU_INST_OP32);
 					telnet_printf("%s", buffer);
 				} else if(num == 3) {
 #if defined(HAS_I386)
@@ -2586,7 +2589,7 @@ void debugger_main()
 					telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 					
 					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-					debugger_regs_info(buffer);
+					debugger_regs_info(buffer, CPU_INST_OP32);
 					telnet_printf("%s", buffer);
 					
 					if(break_point.hit) {
@@ -2674,7 +2677,7 @@ void debugger_main()
 						telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 						
 						telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-						debugger_regs_info(buffer);
+						debugger_regs_info(buffer, CPU_INST_OP32);
 						telnet_printf("%s", buffer);
 						
 						if(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit || telnet_kbhit()) {
@@ -2774,6 +2777,7 @@ void debugger_main()
 				
 				telnet_printf("R - show registers\n");
 				telnet_printf("R <reg> <value> - edit register\n");
+				telnet_printf("RX - show 32bit registers\n");
 				telnet_printf("S <start> <end> <list> - search\n");
 				telnet_printf("U [<start> [<end>]] - unassemble\n");
 				telnet_printf("UT [<steps>] - unassemble trace\n");
