@@ -2800,7 +2800,7 @@ void debugger_main()
 				telnet_printf("T [<count>] - trace (step in)\n");
 				telnet_printf("Q - quit\n");
 				telnet_printf("X - show dos process info\n");
-				telnet_printf("SELINFO - show pm segment descriptor\n");
+				telnet_printf("SELBASE - show pm segment descriptor base\n");
 				
 				telnet_printf("> <filename> - output logfile\n");
 				telnet_printf("< <filename> - input commands from file\n");
@@ -18849,8 +18849,8 @@ inline void msdos_int_67h_deh()
 //		UINT32 cbseg_low  = (DUMMY_TOP & 0x00ffff) << 16;
 //		UINT32 cbseg_high = (DUMMY_TOP & 0x1f0000) >> 16;
 		// Descriptor 1 (code segment, callback segment)
-		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x00) = 0x0000ffff;
-		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x04) = 0x00409a0f;
+		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x00) = 0x0000ffff + ((IRET_TOP & 0xffff) << 16);
+		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x04) = 0x00409a00 + ((IRET_TOP >> 16) & 0xff);
 		// Descriptor 2 (data segment, full access)
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x08) = 0x0000ffff;
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x0c) = 0x0000920f;
@@ -18858,7 +18858,7 @@ inline void msdos_int_67h_deh()
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x10) = 0x0000ffff;
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x14) = 0x0000920f;
 		// Offset in code segment of protected mode entry point
-		CPU_EBX = DUMMY_TOP + 0x2a - 0xf0000; // fffc:002a
+		CPU_EBX = IRET_SIZE + 5 * 128 + 4;
 	} else if(CPU_AL == 0x02) {
 		CPU_AH = 0x00;
 		CPU_EDX = (MAX_MEM - 1) & 0xfffff000;
@@ -18972,10 +18972,11 @@ inline void msdos_int_67h_deh()
 			// just cheat and switch to real mode instead of v86 mode
 			// otherwise a GDT and IDT would need to be set up
 			// hopefully most VCPI programs are okay with that
+			UINT32 stack = CPU_TRANS_PAGING_ADDR(CPU_SS_BASE + CPU_ESP + 8);
+
 			UINT32 new_cr0 = CPU_CR0 & 0x7ffffffe;
 			CPU_SET_CR0(new_cr0);
 
-			UINT32 stack = CPU_TRANS_PAGING_ADDR(CPU_SS_BASE + CPU_ESP + 8);
 			UINT32 *stkptr = (UINT32 *)(mem + stack);
 
 			stkptr[2] &= ~(0x200);
@@ -20875,6 +20876,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	error_table_seg[2] = error_table_seg[3] = IRET_TOP >> 4;
 	error_table_ofs[0] = error_table_ofs[1] = 
 	error_table_ofs[2] = error_table_ofs[3] = IRET_SIZE + 5 * 128;
+
+	// VCPI entry point, must be within 64K of IRET_TOP
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 4] = 0x9c;	// pushf
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 5] = 0x0e;	// push cs
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 6] = 0xe8;	// call 42h
+	UINT32 offset = 0x42 - (IRET_SIZE + 5 * 128 + 11);
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 7] = offset;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 8] = offset >> 8;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 9] = offset >> 16;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 10] = offset >> 24;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 11] = 0xcb;	// retf
+	
 	
 	// dummy ATOK5 device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ATOK_SIZE >> 4);
@@ -21388,11 +21401,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	mem[DUMMY_TOP + 0x27] = 0xcd;	// int 29h
 	mem[DUMMY_TOP + 0x28] = 0x29;
 	mem[DUMMY_TOP + 0x29] = 0xcb;	// retf
-	
-	// VCPI entry point
-	mem[DUMMY_TOP + 0x2a] = 0xcd;	// int 42h (dummy)
-	mem[DUMMY_TOP + 0x2b] = 0x42;
-	mem[DUMMY_TOP + 0x2c] = 0xcb;	// retf
 	
 	// boot routine
 	mem[0xffff0 + 0x00] = 0xf4;	// halt to exit MS-DOS Player

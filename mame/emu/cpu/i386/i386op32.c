@@ -753,7 +753,7 @@ static void I386OP(inc_edi)()           // Opcode 0x47
 
 static void I386OP(iret32)()            // Opcode 0xcf
 {
-	UINT32 old = m_eip;
+	UINT32 old = m_pc - 1;
 
 	if( PROTECTED_MODE )
 	{
