@@ -18884,6 +18884,7 @@ inline void msdos_int_67h_deh()
 		if(emb_handle != NULL) {
 			CPU_AH = 0x00;
 			CPU_EDX = emb_handle->address;
+			emb_handle->handle = msdos_xms_get_unused_emb_handle_id();
 		}
 	} else if(CPU_AL == 0x05) {
 		for(emb_handle_t *emb_handle = emb_handle_top; emb_handle != NULL; emb_handle = emb_handle->next) {
