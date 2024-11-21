@@ -2081,6 +2081,12 @@ void debugger_main()
 					telnet_printf("%08x\n", CPU_TRANS_CODE_ADDR(debugger_get_val(params[1]), 0));
 				else
 					telnet_printf("invalid selector\n");
+			} else if(_stricmp(params[0], "GDTBASE") == 0) {
+				telnet_printf("%08x\n", CPU_GDTR_BASE, 0);
+			} else if(_stricmp(params[0], "IDTBASE") == 0) {
+				telnet_printf("%08x\n", CPU_IDTR_BASE, 0);
+			} else if(_stricmp(params[0], "TRANS") == 0) {
+				telnet_printf("%08x\n", CPU_TRANS_PAGING_ADDR(debugger_get_val(params[1])));
 #endif
 			} else if(_stricmp(params[0], "S") == 0) {
 				if(num >= 4) {
@@ -2801,6 +2807,8 @@ void debugger_main()
 				telnet_printf("Q - quit\n");
 				telnet_printf("X - show dos process info\n");
 				telnet_printf("SELBASE - show pm segment descriptor base\n");
+				telnet_printf("GDTBASE - show gdt base\n");
+				telnet_printf("IDTBASE - show idt base\n");
 				
 				telnet_printf("> <filename> - output logfile\n");
 				telnet_printf("< <filename> - input commands from file\n");
@@ -18960,7 +18968,7 @@ inline void msdos_int_67h_deh()
 			CPU_LOAD_SREG(CPU_FS_INDEX, 0x0000);
 			CPU_LOAD_SREG(CPU_GS_INDEX, 0x0000);
 
-			//CPU_A20_LINE(1);
+			CPU_A20_LINE(1);
 
 			/* Switch to protected mode */
 			CPU_SET_VM_FLAG(0);
