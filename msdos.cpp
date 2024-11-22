@@ -1131,9 +1131,17 @@ bool update_console_input();
 BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo)
 {
 	if(use_vt) {
-		COORD maxsize = {9998,9998};	
+		HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+		COORD maxsize = {9998,9998};
 		enter_input_lock();
-		update_console_input();
+		DWORD mode, events;
+		BOOL ret;
+		GetConsoleMode(hStdin, &mode);
+		SetConsoleMode(hStdin, mode & ~ENABLE_MOUSE_INPUT);
+		do {
+			update_console_input();
+			ret = GetNumberOfConsoleInputEvents(hStdin, &events);
+		} while(ret && events);
 		read_cursor_pos(hConsoleOutput, &lpConsoleScreenBufferInfo->dwCursorPosition);
 		MySetConsoleCursorPosition(hConsoleOutput, maxsize);
 		read_cursor_pos(hConsoleOutput, &lpConsoleScreenBufferInfo->dwSize);
@@ -1145,6 +1153,7 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 		lpConsoleScreenBufferInfo->srWindow.Right = lpConsoleScreenBufferInfo->dwSize.X - 1;
 		lpConsoleScreenBufferInfo->srWindow.Bottom = lpConsoleScreenBufferInfo->dwSize.Y - 1;
 		lpConsoleScreenBufferInfo->wAttributes = 7;
+		SetConsoleMode(hStdin, mode);
 		leave_input_lock();
 	} else {
 		return GetConsoleScreenBufferInfo(hConsoleOutput, lpConsoleScreenBufferInfo);
@@ -4192,8 +4201,8 @@ int main(int argc, char *argv[], char *envp[])
 	cursor_moved = false;
 	cursor_moved_by_crtc = false;
 	
-	key_buf_char = new FIFO(256);
-	key_buf_scan = new FIFO(256);
+	key_buf_char = new FIFO(4096);
+	key_buf_scan = new FIFO(4096);
 	key_buf_data = new FIFO(256);
 	
 	hardware_init();
