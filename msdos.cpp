@@ -360,6 +360,7 @@ static COORD vram_coord;
 static int is_kanji = 0;
 static int is_esc = 0;
 static unsigned int src_int_num = 0;
+static bool alt_buffer = false;
 
 char temp_file_path[MAX_PATH];
 bool temp_file_created = false;
@@ -3027,6 +3028,7 @@ void exit_handler()
 	}
 	if(use_vt) {
 		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[!p\x1b[0 q", 9, NULL, NULL);
+		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[?1049l", 8, NULL, NULL);
 	}
 #ifdef SUPPORT_XMS
 	msdos_xms_release();
@@ -3608,6 +3610,14 @@ void get_sio_port_numbers()
 	}
 }
 
+void switch_alt_buffer()
+{
+	if(use_vt) {
+		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[?1049h", 8, NULL, NULL);
+		alt_buffer = true;
+	}
+}
+
 #define IS_NUMERIC(c) ((c) >= '0' && (c) <= '9')
 
 int main(int argc, char *argv[], char *envp[])
@@ -3799,6 +3809,7 @@ int main(int argc, char *argv[], char *envp[])
 			if(buf_height <= 0 || buf_height > 0x7fff) {
 				buf_height = 25;
 			}
+			switch_alt_buffer();
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-sd", 3) == 0) {
 			sio_dsr_flow_ctrl = true;
@@ -9045,6 +9056,7 @@ inline void pcbios_int_10h_00h()
 		mem[0x487] &= ~0x80;
 	}
 	mem[0x449] = CPU_AL & 0x7f;
+	switch_alt_buffer();
 }
 
 inline void pcbios_int_10h_01h()
