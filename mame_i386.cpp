@@ -374,6 +374,7 @@ inline void CPU_SET_CR0(UINT32 value)
 inline void CPU_SET_CR3(UINT32 value)
 {
 	m_cr[3] = value;
+	vtlb_flush_dynamic(m_vtlb);
 }
 
 inline void CPU_SET_CPL(int value)

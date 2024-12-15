@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								10/24/2024
+								12/14/2024
 
 ----- What's This
 
@@ -90,6 +90,9 @@ Or if you want to pretend that Windows is not running, specify the option '-d'.
 If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
+
+If '-vX.XX' option is missing and you start COMMAND.COM, MS-DOS Player tries
+to get DOS version from COMMAND.COM of MS-DOS, PC-DOS, or Windows 95/98/Me.
 
 NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
 the version number 7.10 and '-v' option is not affected.
@@ -668,6 +671,8 @@ INT 21H		MS-DOS System Call
 	3305H	Get Boot Drive
 	3306H	Get True Version Number (*5)
 	3307H	Windows95 - Set/Clear DOS_FLAG
+	33FAH	FreeDOS - Get CPU Family
+	33FCH	FreeDOS - Set DOS Version Number To Return
 	34H	Get Address Of InDOS Flag
 	35H	Get Vector
 	36H	Get Disk Free Space

@@ -1115,8 +1115,16 @@ typedef struct {
 	HANDLE find_handle;
 } dtainfo_t;
 
-UINT8 dos_major_version = 7;	// Windows 98 Second Edition
-UINT8 dos_minor_version = 10;
+#if 1
+#define TRUE_MAJOR_VERSION 7	// Windows 98 Second Edition
+#define TRUE_MINOR_VERSION 10
+#else
+#define TRUE_MAJOR_VERSION 5	// NTVDM
+#define TRUE_MINOR_VERSION 50
+#endif
+UINT8 dos_major_version = TRUE_MAJOR_VERSION;
+UINT8 dos_minor_version = TRUE_MINOR_VERSION;
+bool dos_version_specified = false;
 UINT8 win_major_version = 4;
 UINT8 win_minor_version = 10;
 
@@ -1135,9 +1143,6 @@ dtainfo_t dtalist[MAX_DTAINFO];
 UINT16 malloc_strategy = 0;
 
 char comspec_path[MAX_PATH] = "C:\\COMMAND.COM";
-
-UINT16 error_table_seg[4];
-UINT16 error_table_ofs[4];
 
 void msdos_syscall(unsigned num);
 int msdos_init(int argc, char *argv[], char *envp[], int standard_env);
