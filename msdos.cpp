@@ -9684,6 +9684,7 @@ inline void pcbios_int_10h_13h()
 	case 0x11:
 		if(mem[0x462] == CPU_BH) {
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+			DWORD num;
 			ReadConsoleOutputCharacterA(hStdout, scr_char, CPU_CX, co, &num);
 			ReadConsoleOutputAttribute(hStdout, scr_attr, CPU_CX, co, &num);
 			for(int i = 0; i < num; i++) {
