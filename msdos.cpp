@@ -543,16 +543,15 @@ void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32)
 
 #if defined(HAS_IA32)
 	UINT32 msdos_int6h_eip;
-	int cpu_type, cpu_step;
 	#include "np21_i386.cpp"
 #elif defined(HAS_I386)
 	UINT32 msdos_int6h_eip;
-	int cpu_type, cpu_step;
 	#include "mame_i386.cpp"
 #else
 	UINT32 msdos_int6h_pc;
 	#include "mame_i286.cpp"
 #endif
+int cpu_type = 0, cpu_step = 0;
 
 extern "C" {
 #include "wcwidth.c"
@@ -1662,6 +1661,15 @@ void debugger_regs_info(char *buffer, bool r32)
 #endif
 }
 
+void debugger_regs_info(char *buffer)
+{
+#if defined(HAS_I386)
+	debugger_regs_info(buffer, CPU_INST_OP32);
+#else
+	debugger_regs_info(buffer, false);
+#endif
+}
+
 void debugger_process_info(char *buffer)
 {
 	UINT16 psp_seg = current_psp;
@@ -1784,7 +1792,7 @@ void debugger_main()
 	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 	debugger_process_info(buffer);
 	telnet_printf("%s", buffer);
-	debugger_regs_info(buffer, false);
+	debugger_regs_info(buffer);
 	telnet_printf("%s", buffer);
 	telnet_set_color(TELNET_RED | TELNET_INTENSITY);
 	telnet_printf("breaked at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
@@ -1992,12 +2000,14 @@ void debugger_main()
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
+#if defined(HAS_I386)
 			} else if(_stricmp(params[0], "RX") == 0) {
 				debugger_regs_info(buffer, true);
 				telnet_printf("%s", buffer);
+#endif
 			} else if(_stricmp(params[0], "R") == 0) {
 				if(num == 1) {
-					debugger_regs_info(buffer, CPU_INST_OP32);
+					debugger_regs_info(buffer);
 					telnet_printf("%s", buffer);
 				} else if(num == 3) {
 #if defined(HAS_I386)
@@ -2087,16 +2097,25 @@ void debugger_main()
 				}
 #if defined(HAS_I386)
 			} else if(_stricmp(params[0], "SELBASE") == 0) {
-				if(CPU_STAT_PM && !CPU_STAT_VM86)
-					telnet_printf("%08x\n", CPU_TRANS_CODE_ADDR(debugger_get_val(params[1]), 0));
-				else
-					telnet_printf("invalid selector\n");
+				if(num == 2) {
+					if(CPU_STAT_PM && !CPU_STAT_VM86) {
+						telnet_printf("%08x\n", CPU_TRANS_CODE_ADDR(debugger_get_val(params[1]), 0));
+					} else {
+						telnet_printf("invalid selector\n");
+					}
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
 			} else if(_stricmp(params[0], "GDTBASE") == 0) {
 				telnet_printf("%08x\n", CPU_GDTR_BASE, 0);
 			} else if(_stricmp(params[0], "IDTBASE") == 0) {
 				telnet_printf("%08x\n", CPU_IDTR_BASE, 0);
 			} else if(_stricmp(params[0], "TRANS") == 0) {
-				telnet_printf("%08x\n", CPU_TRANS_PAGING_ADDR(debugger_get_val(params[1])));
+				if(num == 2) {
+					telnet_printf("%08x\n", CPU_TRANS_PAGING_ADDR(debugger_get_val(params[1])));
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
 #endif
 			} else if(_stricmp(params[0], "S") == 0) {
 				if(num >= 4) {
@@ -2605,7 +2624,7 @@ void debugger_main()
 					telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 					
 					telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-					debugger_regs_info(buffer, CPU_INST_OP32);
+					debugger_regs_info(buffer);
 					telnet_printf("%s", buffer);
 					
 					if(break_point.hit) {
@@ -2693,7 +2712,7 @@ void debugger_main()
 						telnet_printf("done\t%08X(%04X:%04X)  %s\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP, buffer);
 						
 						telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
-						debugger_regs_info(buffer, CPU_INST_OP32);
+						debugger_regs_info(buffer);
 						telnet_printf("%s", buffer);
 						
 						if(break_point.hit || rd_break_point.hit || wr_break_point.hit || in_break_point.hit || out_break_point.hit || int_break_point.hit || telnet_kbhit()) {
@@ -2793,7 +2812,9 @@ void debugger_main()
 				
 				telnet_printf("R - show registers\n");
 				telnet_printf("R <reg> <value> - edit register\n");
+#if defined(HAS_I386)
 				telnet_printf("RX - show 32bit registers\n");
+#endif
 				telnet_printf("S <start> <end> <list> - search\n");
 				telnet_printf("U [<start> [<end>]] - unassemble\n");
 				telnet_printf("UT [<steps>] - unassemble trace\n");
@@ -2816,9 +2837,12 @@ void debugger_main()
 				telnet_printf("T [<count>] - trace (step in)\n");
 				telnet_printf("Q - quit\n");
 				telnet_printf("X - show dos process info\n");
-				telnet_printf("SELBASE - show pm segment descriptor base\n");
+#if defined(HAS_I386)
+				telnet_printf("SELBASE <address> - show pm segment descriptor base\n");
 				telnet_printf("GDTBASE - show gdt base\n");
 				telnet_printf("IDTBASE - show idt base\n");
+				telnet_printf("TRANS <address> - show translated address\n");
+#endif
 				
 				telnet_printf("> <filename> - output logfile\n");
 				telnet_printf("< <filename> - input commands from file\n");
@@ -3705,6 +3729,7 @@ int main(int argc, char *argv[], char *envp[])
 			if(buffer[6] != 0) {
 				dos_major_version = buffer[6];
 				dos_minor_version = buffer[7];
+				dos_version_specified = true;
 			}
 			if(buffer[8] != 0) {
 				win_major_version = buffer[8];
@@ -3842,6 +3867,7 @@ int main(int argc, char *argv[], char *envp[])
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
 				dos_major_version = argv[i][2] - '0';
 				dos_minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
+				dos_version_specified = true;
 			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-w", 2) == 0) {
@@ -4386,7 +4412,7 @@ void change_console_size(int width, int height)
 			}
 		}
 	
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+	GetConsoleScreenBufferInfo(hStdout, &csbi);
 	
 		int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
@@ -4535,7 +4561,6 @@ bool update_console_input()
 						};
 						bool prev_status = mouse.buttons[j].status;
 						mouse.buttons[j].status = ((ir[i].Event.MouseEvent.dwButtonState & bits[j]) != 0);
-
 						if(!prev_status && mouse.buttons[j].status) {
 							mouse.buttons[j].pressed_times++;
 							mouse.buttons[j].pressed_position.x = mouse.position.x;
@@ -7727,7 +7752,6 @@ int win32_exec(char *command)
 {
 	HANDLE hstdout_r;
 	HANDLE hstdout_w;
-	HANDLE hprocess;
 	STARTUPINFO si = {0};
 	SECURITY_ATTRIBUTES sa = {0};
 	PROCESS_INFORMATION pi = {0};
@@ -7779,8 +7803,6 @@ int win32_exec(char *command)
 	}
 	return retcode;
 }
-								
-							
 
 int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool first_process = false)
 {
@@ -8411,8 +8433,69 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		return(-1);
 	}
 	memset(file_buffer, 0, sizeof(file_buffer));
-	_read(fd, file_buffer, sizeof(file_buffer));
+	int length = _read(fd, file_buffer, sizeof(file_buffer));
 	_close(fd);
+	
+	// check COMMAND.COM version
+	if(first_process && !dos_version_specified && _stricmp(msdos_file_name(path), "COMMAND.COM") == 0) {
+		for(int p = 0; p < length; p++) {
+			char *s = (char *)&file_buffer[p];
+			bool found = false;
+			if(strncmp(s, "Microsoft(R) Windows 95", 23) == 0) {
+				dos_major_version = 7;
+				dos_minor_version = 0;
+				break;
+			} else if(strncmp(s, "Microsoft(R) Windows 98", 23) == 0) {
+				dos_major_version = 7;
+				dos_minor_version = 10;
+				break;
+			} else if(strncmp(s, "Microsoft(R) Windows Millennium", 31) == 0) {
+				dos_major_version = 8;
+				dos_minor_version = 0;
+				break;
+			} else if(strncmp(s, "Microsoft(R) MS-DOS(R) Ver", 26) == 0) {
+				s += 26;
+				while((*s++) != ' ');
+				found = true;
+			} else if(strncmp(s, "Microsoft(R) MS-DOS(R)  Ver", 27) == 0) {
+				s += 27;
+				while((*s++) != ' ');
+				found = true;
+			} else if(strncmp(s, "IBM Personal Computer DOS\r\nVer", 30) == 0) {
+				s += 30;
+				while((*s++) != ' ');
+				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				found = true;
+			} else if(strncmp(s, "IBM DOS Ver", 11) == 0) {
+				s += 11;
+				while((*s++) != ' ');
+				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				found = true;
+			} else if(strncmp(s, "PC DOS Ver", 10) == 0) {
+				s += 10;
+				while((*s++) != ' ');
+				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				found = true;
+			}
+			if(found && *s >= '1' && *s <= '9') {
+				dos_major_version = (*s++) - '0';
+				dos_minor_version = 0;
+				if(*s++ == '.') {
+					if(*s >= '0' && *s <= '9') {
+						dos_minor_version = ((*s++) - '0') * 10;
+						if(*s >= '0' && *s <= '9') {
+							dos_minor_version += *s - '0';
+						}
+					}
+				}
+				// 4.01 -> 4.00
+				if(dos_major_version == 4 && dos_minor_version == 1) {
+					dos_minor_version = 0;
+				}
+				break;
+			}
+		}
+	}
 	
 	// check if this is Win32 program
 	if(!first_process && al == 0) {
@@ -9600,7 +9683,6 @@ inline void pcbios_int_10h_13h()
 	case 0x10:
 	case 0x11:
 		if(mem[0x462] == CPU_BH) {
-			DWORD num;
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			ReadConsoleOutputCharacterA(hStdout, scr_char, CPU_CX, co, &num);
 			ReadConsoleOutputAttribute(hStdout, scr_attr, CPU_CX, co, &num);
@@ -10844,14 +10926,12 @@ inline void pcbios_int_15h_c2h()
 	}
 }
 
-#if defined(HAS_I386)
 inline void pcbios_int_15h_c9h()
 {
 	CPU_AH = 0x00;
 	CPU_CH = cpu_type;
 	CPU_CL = cpu_step;
 }
-#endif
 
 inline void pcbios_int_15h_cah()
 {
@@ -13016,9 +13096,9 @@ inline void msdos_int_21h_33h()
 		CPU_DL = (UINT8)drive;
 		break;
 	case 0x06:
-		// MS-DOS version (5.50)
-		CPU_BL = 5;
-		CPU_BH = 50;
+		// True MS-DOS version
+		CPU_BL = TRUE_MAJOR_VERSION;
+		CPU_BH = TRUE_MINOR_VERSION;
 		CPU_DL = 0;
 #ifdef SUPPORT_HMA
 		CPU_DH = 0x00;
@@ -13032,6 +13112,15 @@ inline void msdos_int_21h_33h()
 		} else if(CPU_DL == 1) {
 			((dos_info_t *)(mem + DOS_INFO_TOP))->dos_flag |= 0x20;
 		}
+		break;
+	case 0xfa:
+		// FreeDOS Extension
+		CPU_AL = cpu_type;
+		break;
+	case 0xfc:
+		// FreeDOS Extension
+		dos_major_version = CPU_BL;
+		dos_minor_version = CPU_BH;
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -16716,11 +16805,12 @@ inline void msdos_int_2fh_12h()
 		break;
 	case 0x2e:
 		if(CPU_DL == 0x00 || CPU_DL == 0x02 || CPU_DL == 0x04 || CPU_DL == 0x06) {
-			CPU_LOAD_SREG(CPU_ES_INDEX, error_table_seg[CPU_DL >> 1]);
-			CPU_DI = error_table_ofs[CPU_DL >> 1];
+			// DOS 5+ always returns 0001h
+			CPU_LOAD_SREG(CPU_ES_INDEX, 0x0001);
+			// DOS 5+ returns offset of error table within COMMAND.COM
+			CPU_DI = 0x0000;
 		} else if(CPU_DL == 0x01 || CPU_DL == 0x03 || CPU_DL == 0x05 || CPU_DL == 0x07) {
-			error_table_seg[CPU_DL >> 1] = CPU_ES;
-			error_table_ofs[CPU_DL >> 1] = CPU_DI;
+			// DOS 5+ COMMAND.COM does not allow setting any of the addresses
 		} else if(CPU_DL == 0x08) {
 			// dummy parameter error message read routine is at fffc:0010
 			CPU_LOAD_SREG(CPU_ES_INDEX, DUMMY_TOP >> 4);
@@ -16732,8 +16822,8 @@ inline void msdos_int_2fh_12h()
 			dos_major_version = CPU_DL;
 			dos_minor_version = CPU_DH;
 		} else {
-			CPU_DL = 7;
-			CPU_DH = 10;
+			dos_major_version = TRUE_MAJOR_VERSION;
+			dos_minor_version = TRUE_MINOR_VERSION;
 		}
 		break;
 //	case 0x30: // Windows95 - Find SFT Entry in Internal File Tables
@@ -18887,7 +18977,7 @@ inline void msdos_int_67h_deh()
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x10) = 0x0000ffff;
 		*(UINT32 *)(mem + CPU_DS_BASE + CPU_SI + 0x14) = 0x0000920f;
 		// Offset in code segment of protected mode entry point
-		CPU_EBX = IRET_SIZE + 5 * 128 + 4;
+		CPU_EBX = IRET_SIZE + 5 * 128;
 	} else if(CPU_AL == 0x02) {
 		CPU_AH = 0x00;
 		CPU_EDX = (MAX_MEM - 1) & 0xfffff000;
@@ -19003,8 +19093,8 @@ inline void msdos_int_67h_deh()
 			// otherwise a GDT and IDT would need to be set up
 			// hopefully most VCPI programs are okay with that
 			UINT32 stack = CPU_TRANS_PAGING_ADDR(CPU_SS_BASE + CPU_ESP + 8);
-
 			UINT32 new_cr0 = CPU_CR0 & 0x7ffffffe;
+
 			CPU_SET_CR0(new_cr0);
 
 			UINT32 *stkptr = (UINT32 *)(mem + stack);
@@ -19949,9 +20039,7 @@ void msdos_syscall(unsigned num)
 		case 0xc1: pcbios_int_15h_c1h(); break;
 #endif
 		case 0xc2: pcbios_int_15h_c2h(); break;
-#if defined(HAS_I386)
 		case 0xc9: pcbios_int_15h_c9h(); break;
-#endif
 		case 0xca: pcbios_int_15h_cah(); break;
 		case 0xe8: pcbios_int_15h_e8h(); break;
 		default:
@@ -20897,27 +20985,17 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 1) = i;
 		*(UINT16 *)(mem + IRET_TOP + IRET_SIZE + 5 * i + 3) = IRET_TOP >> 4;
 	}
-	// dummy error table
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 0] = 0xff;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 1] = 0x04;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 2] = 0x00;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 3] = 0x00;
-	error_table_seg[0] = error_table_seg[1] = 
-	error_table_seg[2] = error_table_seg[3] = IRET_TOP >> 4;
-	error_table_ofs[0] = error_table_ofs[1] = 
-	error_table_ofs[2] = error_table_ofs[3] = IRET_SIZE + 5 * 128;
-
-	// VCPI entry point, must be within 64K of IRET_TOP
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 4] = 0x9c;	// pushf
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 5] = 0x0e;	// push cs
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 6] = 0xe8;	// call 42h
-	UINT32 offset = 0x42 - (IRET_SIZE + 5 * 128 + 11);
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 7] = offset;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 8] = offset >> 8;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 9] = offset >> 16;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 10] = offset >> 24;
-	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 11] = 0xcb;	// retf
 	
+	// VCPI entry point, must be within 64K of IRET_TOP
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 0] = 0x9c;	// pushf
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 1] = 0x0e;	// push cs
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 2] = 0xe8;	// call 42h
+	UINT32 offset = 0x42 - (IRET_SIZE + 5 * 128 + 7);
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 3] = offset;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 4] = offset >> 8;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 5] = offset >> 16;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 6] = offset >> 24;
+	mem[IRET_TOP + IRET_SIZE + 5 * 128 + 7] = 0xcb;	// retf
 	
 	// dummy ATOK5 device
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ATOK_SIZE >> 4);
@@ -21601,6 +21679,11 @@ void hardware_init()
 #if defined(HAS_I386)
 	cpu_type = (CPU_EDX >> 8) & 0x0f;
 	cpu_step = (CPU_EDX >> 0) & 0x0f;
+#elif defined(HAS_I286)
+	cpu_type = 2;
+	cpu_step = 1;
+#elif defined(HAS_I186) || defined(HAS_V30)
+	cpu_type = 1;
 #endif
 	CPU_A20_LINE(0);
 	
@@ -24141,7 +24224,7 @@ void debugger_write_io_word(UINT32 addr, UINT16 val)
 void write_io_dword(UINT32 addr, UINT32 val)
 {
 	write_io_word(addr + 0, (val >>  0) & 0xffff);
-	write_io_word(addr + 2, (val >>  16) & 0xffff);
+	write_io_word(addr + 2, (val >> 16) & 0xffff);
 }
 
 #ifdef USE_DEBUGGER
