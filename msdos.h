@@ -184,21 +184,6 @@ int_break_point_t int_break_point = {0};
 
 FILE *fp_debugger = NULL;
 FILE *fi_debugger = NULL;
-
-// these read/write interfaces do not check break points,
-// debugger should use them not to hit any break point mistakely
-UINT8 debugger_read_byte(UINT32 byteaddress);
-UINT16 debugger_read_word(UINT32 byteaddress);
-UINT32 debugger_read_dword(UINT32 byteaddress);
-void debugger_write_byte(UINT32 byteaddress, UINT8 data);
-void debugger_write_word(UINT32 byteaddress, UINT16 data);
-void debugger_write_dword(UINT32 byteaddress, UINT32 data);
-UINT8 debugger_read_io_byte(UINT32 addr);
-UINT16 debugger_read_io_word(UINT32 addr);
-UINT32 debugger_read_io_dword(UINT32 addr);
-void debugger_write_io_byte(UINT32 addr, UINT8 val);
-void debugger_write_io_word(UINT32 addr, UINT16 val);
-void debugger_write_io_dword(UINT32 addr, UINT32 val);
 #endif
 
 /* ----------------------------------------------------------------------------
@@ -229,8 +214,6 @@ bool in_service_29h = false;
 /* ----------------------------------------------------------------------------
 	PC/AT hardware emulation
 ---------------------------------------------------------------------------- */
-
-//#define SUPPORT_GRAPHIC_SCREEN
 
 void hardware_init();
 void hardware_finish();
@@ -582,11 +565,6 @@ UINT8 crtc_addr = 0;
 UINT8 crtc_regs[16] = {0};
 UINT8 crtc_changed[16] = {0};
 
-#ifdef SUPPORT_GRAPHIC_SCREEN
-// VRAM
-static UINT32 vga_read(UINT32 addr, int size);
-static void vga_write(UINT32 addr, UINT32 data, int size);
-#endif
 
 /* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
@@ -649,13 +627,7 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 #define DBCS_SIZE	0x10
 #define MSDOS_SYSTEM_DATA_END (DBCS_TOP + DBCS_SIZE)
 #define MEMORY_TOP	((MSDOS_SYSTEM_DATA_END + 15) & ~15U)
-#ifdef SUPPORT_GRAPHIC_SCREEN
-#define MEMORY_END	0xa0000
-#define VGA_VRAM_TOP	0xa0000
-#define VGA_VRAM_END	0xc0000
-#else
 #define MEMORY_END	0xb0000
-#endif
 #define MDA_VRAM_TOP	0xb0000
 #define TEXT_VRAM_TOP	0xb8000
 #define EMS_TOP		0xc0000

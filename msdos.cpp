@@ -45,7 +45,7 @@ void nolog(const char *format, ...)
 #ifdef ENABLE_DEBUG_LOG
 	#define EXPORT_DEBUG_TO_FILE
 	#define ENABLE_DEBUG_SYSCALL
-	#define ENABLE_DEBUG_UNIMPLEMENTED
+	//#define ENABLE_DEBUG_UNIMPLEMENTED
 	#define ENABLE_DEBUG_IOPORT
 	#define ENABLE_DEBUG_OPEN_FILE
 	
@@ -561,174 +561,80 @@ extern "C" {
 	memory accessors
 ---------------------------------------------------------------------------- */
 
-// read accessors
-UINT8 read_byte(UINT32 byteaddress)
 #ifdef USE_DEBUGGER
+static void check_bp(UINT32 address, break_point_t bp, int size)
 {
-	if(now_debugging) {
+	if(now_debugging && !now_suspended) {
 		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(rd_break_point.table[i].status == 1) {
-				if(byteaddress == rd_break_point.table[i].addr) {
-					rd_break_point.hit = i + 1;
+			if(bp.table[i].status == 1) {
+				if((address >= bp.table[i].addr) && (address < (bp.table[i].addr + size))) {
+					bp.hit = i + 1;
 					now_suspended = true;
 					break;
 				}
 			}
 		}
 	}
-	return(debugger_read_byte(byteaddress));
 }
-UINT8 debugger_read_byte(UINT32 byteaddress)
-#endif
-{
-	if(byteaddress < MEMORY_END) {
-		return mem[byteaddress];
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM) {
-			return mem[byteaddress];
-		} else if(byteaddress >= 0xfff80000) {
-			return mem[byteaddress & 0xfffff];
-		}
-		return 0xff;
 #else
-		return mem[byteaddress];
+#define check_bp(x,y,z)
 #endif
+
+// read accessors
+UINT8 read_byte(UINT32 byteaddress)
+{
+	UINT8 ret;
+	check_bp(byteaddress, rd_break_point, 1);
+	if(byteaddress < MAX_MEM) {
+		ret = mem[byteaddress];
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+		ret = mem[byteaddress &= 0xfffff];
 	} else {
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if(mem[0x449] > 3) {
-				return vga_read(byteaddress - VGA_VRAM_TOP, 1);
-			}
-		}
-#endif
-		return mem[byteaddress];
+		ret = 0xff;
 	}
+	return ret;
 }
 
 UINT16 read_word(UINT32 byteaddress)
-#ifdef USE_DEBUGGER
 {
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(rd_break_point.table[i].status == 1) {
-				if(byteaddress >= rd_break_point.table[i].addr && byteaddress < rd_break_point.table[i].addr + 2) {
-					rd_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
+	UINT16 ret;
+	check_bp(byteaddress, rd_break_point, 2);
+	if(byteaddress == 0x41c) {
+		// pointer to first free slot in keyboard buffer
+		if(key_buf_char != NULL && key_buf_scan != NULL) {
+			enter_key_buf_lock();
+			bool empty = pcbios_is_key_buffer_empty();
+			leave_key_buf_lock();
+			if(empty) maybe_idle();
 		}
 	}
-	return(debugger_read_word(byteaddress));
-}
-UINT16 debugger_read_word(UINT32 byteaddress)
-#endif
-{
-	if(byteaddress < MEMORY_END - 1) {
-		if(byteaddress == 0x41c) {
-			// pointer to first free slot in keyboard buffer
-			if(key_buf_char != NULL && key_buf_scan != NULL) {
-				enter_key_buf_lock();
-				bool empty = pcbios_is_key_buffer_empty();
-				leave_key_buf_lock();
-				if(empty) maybe_idle();
-			}
-		}
-		return *(UINT16 *)(mem + byteaddress);
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM - 1) {
-			return *(UINT16 *)(mem + byteaddress);
-		} else if(byteaddress < MAX_MEM) {
-			mem[MAX_MEM] = 0xff;
-			return *(UINT16 *)(mem + byteaddress);
-		} else if(byteaddress >= 0xfff80000) {
-			return *(UINT16 *)(mem + (byteaddress & 0xfffff));
-		}
-		return 0xffff;
-#else
-		if(byteaddress == MAX_MEM - 1) {
-			mem[MAX_MEM] = 0xff;
-		}
-		return *(UINT16 *)(mem + byteaddress);
-#endif
-	} else if(byteaddress & 1) {
-		UINT16 value;
-		value  = read_byte(byteaddress    );
-		value |= read_byte(byteaddress + 1) << 8;
-		return value;
+	if(byteaddress < MAX_MEM - 1) {
+		ret = *(UINT16 *)(mem + byteaddress);
+	} else if(byteaddress == MAX_MEM - 1) {
+		ret = mem[byteaddress] | 0xff00;
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+		ret = *(UINT16 *)(mem + (byteaddress & 0xfffff));
 	} else {
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if(mem[0x449] > 3) {
-				return vga_read(byteaddress - VGA_VRAM_TOP, 2);
-			}
-		}
-#endif
-		return *(UINT16 *)(mem + byteaddress);
+		ret = 0xffff;
 	}
+	return ret;
 }
 
 UINT32 read_dword(UINT32 byteaddress)
-#ifdef USE_DEBUGGER
 {
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(rd_break_point.table[i].status == 1) {
-				if(byteaddress >= rd_break_point.table[i].addr && byteaddress < rd_break_point.table[i].addr + 4) {
-					rd_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	return(debugger_read_dword(byteaddress));
-}
-UINT32 debugger_read_dword(UINT32 byteaddress)
-#endif
-{
-	if(byteaddress < MEMORY_END - 3) {
-		return *(UINT32 *)(mem + byteaddress);
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM - 3) {
-			return *(UINT32 *)(mem + byteaddress);
-		} else if(byteaddress < MAX_MEM) {
-			mem[MAX_MEM] = mem[MAX_MEM + 1] = mem[MAX_MEM + 2] = 0xff;
-			return *(UINT32 *)(mem + byteaddress);
-		} else if(byteaddress >= 0xfff80000) {
-			return *(UINT32 *)(mem + (byteaddress & 0xfffff));
-		}
-		return 0xffffffff;
-#else
-		if(byteaddress >= MAX_MEM - 3) {
-			mem[MAX_MEM] = mem[MAX_MEM + 1] = mem[MAX_MEM + 2] = 0xff;
-		}
-		return *(UINT32 *)(mem + byteaddress);
-#endif
-	} else if(byteaddress & 3) {
-		UINT32 value;
-		if(byteaddress & 1) {
-			value  = read_byte(byteaddress    );
-			value |= read_word(byteaddress + 1) <<  8;
-			value |= read_byte(byteaddress + 3) << 24;
-		} else {
-			value  = read_word(byteaddress    );
-			value |= read_word(byteaddress + 2) << 16;
-		}
-		return value;
+	UINT32 ret;
+	check_bp(byteaddress, rd_break_point, 4);
+	if(byteaddress < MAX_MEM - 3) {
+		ret = *(UINT32 *)(mem + byteaddress);
+	} else if((byteaddress & ~3) == (MAX_MEM - 4)) { // if byteaddress == MAX_MEM - 4 we won't reach here
+		int shift = (byteaddress & 3) << 3;
+		ret = (*(UINT32 *)(mem + MAX_MEM - 4) >> shift) | (0xffffffff << (32 - shift));
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+		ret = *(UINT32 *)(mem + (byteaddress & 0xfffff));
 	} else {
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if(mem[0x449] > 3) {
-				return vga_read(byteaddress - VGA_VRAM_TOP, 4);
-			}
-		}
-#endif
-		return *(UINT32 *)(mem + byteaddress);
+		ret = 0xffffffff;
 	}
+	return ret;
 }
 
 // write accessors
@@ -1245,33 +1151,10 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 }
 
 void write_byte(UINT32 byteaddress, UINT8 data)
-#ifdef USE_DEBUGGER
 {
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(wr_break_point.table[i].status == 1) {
-				if(byteaddress == wr_break_point.table[i].addr) {
-					wr_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	debugger_write_byte(byteaddress, data);
-}
-void debugger_write_byte(UINT32 byteaddress, UINT8 data)
-#endif
-{
-	if(byteaddress < MEMORY_END) {
+	check_bp(byteaddress, wr_break_point, 1);
+	if((byteaddress < MEMORY_END) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM))) {
 		mem[byteaddress] = data;
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM)
-#endif
-		{
-			mem[byteaddress] = data;
-		}
 	} else {
 		if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 			if(!restore_console_size) {
@@ -1286,36 +1169,14 @@ void debugger_write_byte(UINT32 byteaddress, UINT8 data)
 				char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
 				write_text_vram((byteaddress & ~1) - shadow_buffer_top_address, chr, attr);
 			}
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if((mem[0x449] > 3) && (mem[0x449] != 7)) {
-				vga_write(byteaddress - VGA_VRAM_TOP, data, 1);
-			}
-#endif
 		}
 		mem[byteaddress] = data;
 	}
 }
 
 void write_word(UINT32 byteaddress, UINT16 data)
-#ifdef USE_DEBUGGER
 {
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(wr_break_point.table[i].status == 1) {
-				if(byteaddress >= wr_break_point.table[i].addr && byteaddress < wr_break_point.table[i].addr + 2) {
-					wr_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	debugger_write_word(byteaddress, data);
-}
-void debugger_write_word(UINT32 byteaddress, UINT16 data)
-#endif
-{
+	check_bp(byteaddress, wr_break_point, 2);
 	if(byteaddress < MEMORY_END - 1) {
 		if(byteaddress == cursor_position_address) {
 			if(*(UINT16 *)(mem + byteaddress) != data) {
@@ -1328,14 +1189,9 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM)
-#endif
-		{
-			*(UINT16 *)(mem + byteaddress) = data;
-		}
-	} else if(byteaddress & 1) {
+	} else if((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 1)) {
+		*(UINT16 *)(mem + byteaddress) = data;
+	} else if(byteaddress & 1) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte
 		write_byte(byteaddress    , (data     ) & 0xff);
 		write_byte(byteaddress + 1, (data >> 8) & 0xff);
 	} else {
@@ -1348,46 +1204,17 @@ void debugger_write_word(UINT32 byteaddress, UINT16 data)
 			if(int_10h_feh_called && !int_10h_ffh_called) {
 				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, data >> 8);
 			}
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if((mem[0x449] > 3) && (mem[0x449] != 7)) {
-				vga_write(byteaddress - VGA_VRAM_TOP, data, 2);
-			}
-#endif
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
 	}
 }
 
 void write_dword(UINT32 byteaddress, UINT32 data)
-#ifdef USE_DEBUGGER
 {
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(wr_break_point.table[i].status == 1) {
-				if(byteaddress >= wr_break_point.table[i].addr && byteaddress < wr_break_point.table[i].addr + 4) {
-					wr_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	debugger_write_dword(byteaddress, data);
-}
-void debugger_write_dword(UINT32 byteaddress, UINT32 data)
-#endif
-{
-	if(byteaddress < MEMORY_END - 3) {
+	check_bp(byteaddress, wr_break_point, 4);
+	if((byteaddress < MEMORY_END - 3) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 3))) {
 		*(UINT32 *)(mem + byteaddress) = data;
-	} else if(byteaddress >= DUMMY_TOP) {
-#if defined(HAS_I386)
-		if(byteaddress < MAX_MEM)
-#endif
-		{
-			*(UINT32 *)(mem + byteaddress) = data;
-		}
-	} else if(byteaddress & 3) {
+	} else {
 		if(byteaddress & 1) {
 			write_byte(byteaddress    , (data      ) & 0x00ff);
 			write_word(byteaddress + 1, (data >>  8) & 0xffff);
@@ -1396,26 +1223,6 @@ void debugger_write_dword(UINT32 byteaddress, UINT32 data)
 			write_word(byteaddress    , (data      ) & 0xffff);
 			write_word(byteaddress + 2, (data >> 16) & 0xffff);
 		}
-	} else {
-		if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
-			if(!restore_console_size) {
-				change_console_size(scr_width, scr_height);
-			}
-			write_text_vram(byteaddress - text_vram_top_address, data & 0xff, (data >> 8) & 0xff);
-			write_text_vram(byteaddress - text_vram_top_address + 2, (data >> 16) & 0xff, data >> 24);
-		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
-			if(int_10h_feh_called && !int_10h_ffh_called) {
-				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, (data >> 8) & 0xff);
-				write_text_vram(byteaddress - shadow_buffer_top_address + 2, (data >> 16) & 0xff, data >> 24);
-			}
-#ifdef SUPPORT_GRAPHIC_SCREEN
-		} else if(byteaddress >= VGA_VRAM_TOP && byteaddress < VGA_VRAM_END) {
-			if((mem[0x449] > 3) && (mem[0x449] != 7)) {
-				vga_write(byteaddress - VGA_VRAM_TOP, data, 4);
-			}
-#endif
-		}
-		*(UINT32 *)(mem + byteaddress) = data;
 	}
 }
 
@@ -1586,7 +1393,7 @@ int debugger_dasm(char *buffer, size_t buffer_len, UINT32 pc, UINT32 eip, BOOL o
 	UINT8 oprom[16];
 	
 	for(int i = 0; i < 16; i++) {
-		oprom[i] = debugger_read_byte((pc++) & ADDR_MASK);
+		oprom[i] = read_byte((pc++) & ADDR_MASK);
 	}
 	
 #if defined(HAS_I386) || defined(HAS_V30)
@@ -1891,7 +1698,7 @@ void debugger_main()
 							telnet_printf("   ");
 							buffer[addr & 0x0f] = ' ';
 						} else {
-							UINT8 data = debugger_read_byte(addr & ADDR_MASK);
+							UINT8 data = read_byte(addr & ADDR_MASK);
 							telnet_printf(" %02X", data);
 //							if(is_sjis) {
 //								buffer[addr & 0x0f] = data;
@@ -1923,7 +1730,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j++) {
-						debugger_write_byte(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xff);
+						write_byte(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xff);
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1933,7 +1740,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j += 2) {
-						debugger_write_word(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xffff);
+						write_word(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]) & 0xffff);
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1943,7 +1750,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					for(int i = 2, j = 0; i < num; i++, j += 4) {
-						debugger_write_dword(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]));
+						write_dword(((seg << 4) + (ofs + j)) & ADDR_MASK, debugger_get_val(params[i]));
 					}
 				} else {
 					telnet_printf("invalid parameter number\n");
@@ -1956,7 +1763,7 @@ void debugger_main()
 					if((token = strtok(buffer, "\"")) != NULL && (token = strtok(NULL, "\"")) != NULL) {
 						int len = (int)strlen(token);
 						for(int i = 0; i < len; i++) {
-							debugger_write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
+							write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
 						}
 					} else {
 						telnet_printf("invalid parameter\n");
@@ -1966,37 +1773,37 @@ void debugger_main()
 				}
 			} else if(_stricmp(params[0], "I") == 0 || _stricmp(params[0], "IB") == 0) {
 				if(num == 2) {
-					telnet_printf("%02X\n", debugger_read_io_byte(debugger_get_val(params[1])) & 0xff);
+					telnet_printf("%02X\n", read_io_byte(debugger_get_val(params[1])) & 0xff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
 			} else if(_stricmp(params[0], "IW") == 0) {
 				if(num == 2) {
-					telnet_printf("%04X\n", debugger_read_io_word(debugger_get_val(params[1])) & 0xffff);
+					telnet_printf("%04X\n", read_io_word(debugger_get_val(params[1])) & 0xffff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
 			} else if(_stricmp(params[0], "ID") == 0) {
 				if(num == 2) {
-					telnet_printf("%08X\n", debugger_read_io_dword(debugger_get_val(params[1])));
+					telnet_printf("%08X\n", read_io_dword(debugger_get_val(params[1])));
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
 			} else if(_stricmp(params[0], "O") == 0 || _stricmp(params[0], "OB") == 0) {
 				if(num == 3) {
-					debugger_write_io_byte(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xff);
+					write_io_byte(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
 			} else if(_stricmp(params[0], "OW") == 0) {
 				if(num == 3) {
-					debugger_write_io_word(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xffff);
+					write_io_word(debugger_get_val(params[1]), debugger_get_val(params[2]) & 0xffff);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
 			} else if(_stricmp(params[0], "OD") == 0) {
 				if(num == 3) {
-					debugger_write_io_dword(debugger_get_val(params[1]), debugger_get_val(params[2]));
+					write_io_dword(debugger_get_val(params[1]), debugger_get_val(params[2]));
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -2131,7 +1938,7 @@ void debugger_main()
 					while((cur_seg << 4) + cur_ofs <= (end_seg << 4) + end_ofs) {
 						bool found = true;
 						for(int i = 3, j = 0; i < num && j < 32; i++, j++) {
-							if(debugger_read_byte(((cur_seg << 4) + (cur_ofs + j)) & ADDR_MASK) != list[j]) {
+							if(read_byte(((cur_seg << 4) + (cur_ofs + j)) & ADDR_MASK) != list[j]) {
 								found = false;
 								break;
 							}
@@ -2163,7 +1970,7 @@ void debugger_main()
 							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
 							telnet_printf("%08X(%04X:%04X)  ", dasm_adr, dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte((dasm_adr + i) & ADDR_MASK));
+								telnet_printf("%02X", read_byte((dasm_adr + i) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
@@ -2177,7 +1984,7 @@ void debugger_main()
 							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
 							telnet_printf("%08X(%04X:%04X)  ", dasm_adr, dasm_seg, dasm_ofs);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte((dasm_adr + i) & ADDR_MASK));
+								telnet_printf("%02X", read_byte((dasm_adr + i) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
@@ -2203,7 +2010,7 @@ void debugger_main()
 							int len = debugger_dasm(buffer, sizeof(buffer), cpu_trace[index].pc, cpu_trace[index].eip);
 							telnet_printf("%08X(%04X:%04X)  ", cpu_trace[index].pc, cpu_trace[index].cs, cpu_trace[index].eip);
 							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", debugger_read_byte((cpu_trace[index].pc + i) & ADDR_MASK));
+								telnet_printf("%02X", read_byte((cpu_trace[index].pc + i) & ADDR_MASK));
 							}
 							for(int i = len; i < 8; i++) {
 								telnet_printf("  ");
@@ -2254,7 +2061,7 @@ void debugger_main()
 								UINT32 bytes = debugger_hexatob(line + 1);
 								UINT32 addr = debugger_hexatow(line + 3) + start_addr + linear + segment;
 								for(UINT32 i = 0; i < bytes; i++) {
-									debugger_write_byte((addr + i) & ADDR_MASK, debugger_hexatob(line + 9 + 2 * i));
+									write_byte((addr + i) & ADDR_MASK, debugger_hexatob(line + 9 + 2 * i));
 								}
 							} else if(type == 0x01) {
 								break;
@@ -2291,7 +2098,7 @@ void debugger_main()
 							if(data == EOF) {
 								break;
 							}
-							debugger_write_byte(addr & ADDR_MASK, data);
+							write_byte(addr & ADDR_MASK, data);
 						}
 						fclose(fp);
 					} else {
@@ -2314,7 +2121,7 @@ void debugger_main()
 								UINT32 sum = len + ((addr >> 8) & 0xff) + (addr & 0xff) + 0x00;
 								fprintf(fp, ":%02X%04X%02X", len, addr & 0xffff, 0x00);
 								for(UINT32 i = 0; i < len; i++) {
-									UINT8 data = debugger_read_byte((addr++) & ADDR_MASK);
+									UINT8 data = read_byte((addr++) & ADDR_MASK);
 									sum += data;
 									fprintf(fp, "%02X", data);
 								}
@@ -2328,7 +2135,7 @@ void debugger_main()
 					} else {
 						if((fp = fopen(file_path, "wb")) != NULL) {
 							for(UINT32 addr = start_addr; addr <= end_addr; addr++) {
-								fputc(debugger_read_byte(addr & ADDR_MASK),fp);
+								fputc(read_byte(addr & ADDR_MASK),fp);
 							}
 							fclose(fp);
 						} else {
@@ -9094,18 +8901,6 @@ void pcbios_update_cursor_position()
 	mem[0x450 + mem[0x462] * 2] = csbi.dwCursorPosition.X;
 	mem[0x451 + mem[0x462] * 2] = csbi.dwCursorPosition.Y - scr_top;
 }
-
-#ifdef SUPPORT_GRAPHIC_SCREEN
-static UINT32 vga_read(UINT32 addr, int size)
-{
-	UINT32 ret = 0;
-	return ret;
-}
-
-static void vga_write(UINT32 addr, UINT32 data, int size)
-{
-}
-#endif
 
 inline void pcbios_int_10h_00h()
 {
@@ -23891,24 +23686,7 @@ UINT8 read_io_byte(UINT32 addr)
 	WORD val = 0xff;
 	if(vdd_io_read(addr, 1, &val))
 		return val;
-#ifdef USE_DEBUGGER
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(in_break_point.table[i].status == 1) {
-				if(addr == in_break_point.table[i].addr) {
-					in_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	return(debugger_read_io_byte(addr));
-}
-UINT8 debugger_read_io_byte(UINT32 addr)
-{
-	WORD val = 0xff;
-#endif
+	check_bp(addr, in_break_point, 1);
 	
 	switch(addr) {
 #ifdef SW1US_PATCH
@@ -24034,49 +23812,16 @@ UINT16 read_io_word(UINT32 addr)
 	return(read_io_byte(addr) | (read_io_byte(addr + 1) << 8));
 }
 
-#ifdef USE_DEBUGGER
-UINT16 debugger_read_io_word(UINT32 addr)
-{
-	WORD val = 0xffff;
-	if(vdd_io_read(addr, 2, &val))
-		return val;
-	return(debugger_read_io_byte(addr) | (debugger_read_io_byte(addr + 1) << 8));
-}
-#endif
-
 UINT32 read_io_dword(UINT32 addr)
 {
 	return(read_io_word(addr) | (read_io_word(addr + 2) << 16));
 }
 
-#ifdef USE_DEBUGGER
-UINT32 debugger_read_io_dword(UINT32 addr)
-{
-	return(debugger_read_io_word(addr) | (debugger_read_io_word(addr + 2) << 16));
-}
-#endif
-
 void write_io_byte(UINT32 addr, UINT8 val)
 {
 	if(vdd_io_write(addr, 1, val))
 		return;
-#ifdef USE_DEBUGGER
-	if(now_debugging) {
-		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
-			if(out_break_point.table[i].status == 1) {
-				if(addr == out_break_point.table[i].addr) {
-					out_break_point.hit = i + 1;
-					now_suspended = true;
-					break;
-				}
-			}
-		}
-	}
-	debugger_write_io_byte(addr, val);
-}
-void debugger_write_io_byte(UINT32 addr, UINT8 val)
-{
-#endif
+	check_bp(addr, out_break_point, 1);
 #ifdef ENABLE_DEBUG_IOPORT
 	if(fp_debug_log != NULL) {
 		if(!(use_service_thread && addr == 0xf7)) {
@@ -24211,30 +23956,11 @@ void write_io_word(UINT32 addr, UINT16 val)
 	}
 }
 
-#ifdef USE_DEBUGGER
-void debugger_write_io_word(UINT32 addr, UINT16 val)
-{
-	if(!vdd_io_write(addr, 2, val))
-	{
-		debugger_write_io_byte(addr + 0, (val >> 0) & 0xff);
-		debugger_write_io_byte(addr + 1, (val >> 8) & 0xff);
-	}
-}
-#endif
-
 void write_io_dword(UINT32 addr, UINT32 val)
 {
 	write_io_word(addr + 0, (val >>  0) & 0xffff);
 	write_io_word(addr + 2, (val >> 16) & 0xffff);
 }
-
-#ifdef USE_DEBUGGER
-void debugger_write_io_dword(UINT32 addr, UINT32 val)
-{
-	debugger_write_io_word(addr + 0, (val >>  0) & 0xffff);
-	debugger_write_io_word(addr + 2, (val >> 16) & 0xffff);
-}
-#endif
 
 #ifdef SUPPORT_VDD
 typedef struct

@@ -17,13 +17,26 @@ CC = gcc
 CXX = g++ 
 CFLAGS_OO=-o $@
 CFLAGS_OX=-o $@
-CFLAGS= -O3 -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT -DSUPPORT_DISASSEMBLER
+CFLAGS= -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
 LIBS = -lwinmm -lpsapi -lwsock32 -lgdi32 -lmpr -luuid -lsetupapi
 LDFLAGS = -mconsole -static -static-libgcc -Wl,--kill-at
 LDFLAGS_NTVDM = -shared -s -static-libgcc
 
+ifdef DEBUG
+CFLAGS += -Og -g
+else
+CFLAGS += -O3
+endif
+
+ifdef DEBUGGER
+CFLAGS += -DUSE_DEBUGGER
+endif
+
+ifdef LOG
+CFLAGS += -DENABLE_DEBUG_LOG
+endif
 
 #
 # Visual C++/WinSDK Command Prompt (with nmake)
