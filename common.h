@@ -46,11 +46,6 @@
 #include <psapi.h>
 #endif
 
-// required for compatibility with the Windows 8.1 SDK
-#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
-#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
-#endif
-
 #ifdef _DEBUG
 // _malloca is defined in both intrin.h and crtdbg.h
 #ifdef _malloca

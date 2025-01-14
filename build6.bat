@@ -66,6 +66,17 @@ msdev.com msdos.dsw /Make "msdos - Win32 Release_pentium4" /Rebuild
 mkdir binary\pentium4_vc6
 copy Release\msdos.exe binary\pentium4_vc6\.
 
+msdev.com ntvdm.dsw /Make "ntvdm - Win32 Release" /Rebuild
+copy Release\ntvdm.dll binary\i386_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\i486_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\mediagx_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium_pro_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium_mmx_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium2_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium3_vc6\ntvdm.exe
+copy Release\ntvdm.dll binary\pentium4_vc6\ntvdm.exe
+
 endlocal
 
 rmdir /s /q Release

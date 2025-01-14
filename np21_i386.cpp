@@ -82,9 +82,13 @@ inline void CPU_SET_EIP(UINT32 value)
 }
 
 #define CPU_C_FLAG			((CPU_FLAGL & C_FLAG) != 0)
+#define CPU_P_FLAG			((CPU_FLAGL & P_FLAG) != 0)
+#define CPU_A_FLAG			((CPU_FLAGL & A_FLAG) != 0)
 #define CPU_Z_FLAG			((CPU_FLAGL & Z_FLAG) != 0)
 #define CPU_S_FLAG			((CPU_FLAGL & S_FLAG) != 0)
 #define CPU_I_FLAG			((CPU_FLAGH & I_FLAG) != 0)
+#define CPU_D_FLAG			((CPU_FLAGH & D_FLAG) != 0)
+#define CPU_O_FLAG			((CPU_FLAGH & O_FLAG) != 0)
 
 inline void CPU_SET_C_FLAG(UINT8 value)
 {
@@ -531,7 +535,6 @@ UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 	return addr;
 }
 
-#ifdef USE_DEBUGGER
 UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 {
 	if(CPU_STAT_PM && !CPU_STAT_VM86) {
@@ -560,6 +563,7 @@ UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 	return (seg << 4) + ofs;
 }
 
+#ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
 	return CPU_PREV_PC;

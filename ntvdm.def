@@ -1,86 +1,102 @@
 LIBRARY ntvdm.exe
 
 EXPORTS
-  getAL = msdos.exe.getAL
-  getAH = msdos.exe.getAH
-  getAX = msdos.exe.getAX
-  getEAX = msdos.exe.getEAX
-  getBL = msdos.exe.getBL
-  getBH = msdos.exe.getBH
-  getBX = msdos.exe.getBX
-  getEBX = msdos.exe.getEBX
-  getCL = msdos.exe.getCL
-  getCH = msdos.exe.getCH
-  getCX = msdos.exe.getCX
-  getECX = msdos.exe.getECX
-  getDL = msdos.exe.getDL
-  getDH = msdos.exe.getDH
-  getDX = msdos.exe.getDX
-  getEDX = msdos.exe.getEDX
-  getSP = msdos.exe.getSP
-  getESP = msdos.exe.getESP
-  getBP = msdos.exe.getBP
-  getEBP = msdos.exe.getEBP
-  getSI = msdos.exe.getSI
-  getESI = msdos.exe.getESI
-  getDI = msdos.exe.getDI
-  getEDI = msdos.exe.getEDI
-  setAL = msdos.exe.setAL
-  setAH = msdos.exe.setAH
-  setAX = msdos.exe.setAX
-  setEAX = msdos.exe.setEAX
-  setBL = msdos.exe.setBL
-  setBH = msdos.exe.setBH
-  setBX = msdos.exe.setBX
-  setEBX = msdos.exe.setEBX
-  setCL = msdos.exe.setCL
-  setCH = msdos.exe.setCH
-  setCX = msdos.exe.setCX
-  setECX = msdos.exe.setECX
-  setDL = msdos.exe.setDL
-  setDH = msdos.exe.setDH
-  setDX = msdos.exe.setDX
-  setEDX = msdos.exe.setEDX
-  setSP = msdos.exe.setSP
-  setESP = msdos.exe.setESP
-  setBP = msdos.exe.setBP
-  setEBP = msdos.exe.setEBP
-  setSI = msdos.exe.setSI
-  setESI = msdos.exe.setESI
-  setDI = msdos.exe.setDI
-  setEDI = msdos.exe.setEDI
-  getDS = msdos.exe.getDS
-  getES = msdos.exe.getES
-  getCS = msdos.exe.getCS
-  getSS = msdos.exe.getSS
-  getFS = msdos.exe.getFS
-  getGS = msdos.exe.getGS
-  setDS = msdos.exe.setDS
-  setES = msdos.exe.setES
-  setCS = msdos.exe.setCS
-  setSS = msdos.exe.setSS
-  setFS = msdos.exe.setFS
-  setGS = msdos.exe.setGS
-  getIP = msdos.exe.getIP
-  getEIP = msdos.exe.getEIP
-  setIP = msdos.exe.setIP
-  setEIP = msdos.exe.setEIP
-  getCF = msdos.exe.getCF
-  getPF = msdos.exe.getPF
-  getAF = msdos.exe.getAF
-  getZF = msdos.exe.getZF
-  getSF = msdos.exe.getSF
-  getIF = msdos.exe.getIF
-  getDF = msdos.exe.getDF
-  getOF = msdos.exe.getOF
-  setCF = msdos.exe.setCF
-  setPF = msdos.exe.setPF
-  setAF = msdos.exe.setAF
-  setZF = msdos.exe.setZF
-  setSF = msdos.exe.setSF
-  setIF = msdos.exe.setIF
-  setDF = msdos.exe.setDF
-  setOF = msdos.exe.setOF
-  VDDInstallIOHook = msdos.exe.VDDInstallIOHook
-  VDDDeInstallIOHook = msdos.exe.VDDDeInstallIOHook
-  MGetVdmPointer = msdos.exe.MGetVdmPointer
+	SetFuncTable	@1
+	getAL	@2
+	getAH	@3
+	getAX	@4
+	getEAX	@5
+	getBL	@6
+	getBH	@7
+	getBX	@8
+	getEBX	@9
+	getCL	@10
+	getCH	@11
+	getCX	@12
+	getECX	@13
+	getDL	@14
+	getDH	@15
+	getDX	@16
+	getEDX	@17
+	getSP	@18
+	getESP	@19
+	getBP	@20
+	getEBP	@21
+	getSI	@22
+	getESI	@23
+	getDI	@24
+	getEDI	@25
+	setAL	@26
+	setAH	@27
+	setAX	@28
+	setEAX	@29
+	setBL	@30
+	setBH	@31
+	setBX	@32
+	setEBX	@33
+	setCL	@34
+	setCH	@35
+	setCX	@36
+	setECX	@37
+	setDL	@38
+	setDH	@39
+	setDX	@40
+	setEDX	@41
+	setSP	@42
+	setESP	@43
+	setBP	@44
+	setEBP	@45
+	setSI	@46
+	setESI	@47
+	setDI	@48
+	setEDI	@49
+	getDS	@50
+	getES	@51
+	getCS	@52
+	getSS	@53
+	getFS	@54
+	getGS	@55
+	setDS	@56
+	setES	@57
+	setCS	@58
+	setSS	@59
+	setFS	@60
+	setGS	@61
+	getIP	@62
+	getEIP	@63
+	setIP	@64
+	setEIP	@65
+	getCF	@66
+	getPF	@67
+	getAF	@68
+	getZF	@69
+	getSF	@70
+	getIF	@71
+	getDF	@72
+	getOF	@73
+	setCF	@74
+	setPF	@75
+	setAF	@76
+	setZF	@77
+	setSF	@78
+	setIF	@79
+	setDF	@80
+	setOF	@81
+	getEFLAGS	@82
+	setEFLAGS	@83
+	getMSW	@84
+	setMSW	@85
+	VDDInstallIOHook	@86
+	VDDDeInstallIOHook	@87
+	MGetVdmPointer	@88
+	Sim32pGetVDMPointer	@89
+	VdmMapFlat	@90
+	VdmUnmapFlat	@91
+	VdmFlushCache	@92
+	VDDInstallMemoryHook	@93
+	VDDDeInstallMemoryHook	@94
+	VDDAllocMem	@95
+	VDDFreeMem	@96
+	VDDIncludeMem	@97
+	VDDExcludeMem	@98
+	VDDTerminateVDM	@99

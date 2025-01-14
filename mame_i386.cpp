@@ -301,9 +301,13 @@ inline void CPU_SET_EIP(UINT32 value)
 #define CPU_DR(x)			m_dr[x]
 
 #define CPU_C_FLAG			(m_CF != 0)
+#define CPU_P_FLAG			(m_PF != 0)
+#define CPU_A_FLAG			(m_AF != 0)
 #define CPU_Z_FLAG			(m_ZF != 0)
 #define CPU_S_FLAG			(m_SF != 0)
 #define CPU_I_FLAG			(m_IF != 0)
+#define CPU_D_FLAG			(m_DF != 0)
+#define CPU_O_FLAG			(m_OF != 0)
 
 inline void CPU_SET_C_FLAG(UINT8 value)
 {
@@ -539,7 +543,6 @@ UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 	return addr;
 }
 
-#ifdef USE_DEBUGGER
 UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 {
 	if(PROTECTED_MODE && !V8086_MODE) {
@@ -554,6 +557,7 @@ UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 	return (seg << 4) + ofs;
 }
 
+#ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
 	UINT32 addr = m_prev_pc;

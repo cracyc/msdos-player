@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								12/14/2024
+								1/12/2025
 
 ----- What's This
 
@@ -86,7 +86,7 @@ Or if you want to pretend that Windows is not running, specify the option '-d'.
 
 	> msdos -d command.com
 
-"Get Version Number" API (INT 21H, AH=30H) returns the version number 7.10.
+"Get Version Number" API (INT 21H, AH=30H) returns the version number 5.00.
 If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
@@ -95,9 +95,10 @@ If '-vX.XX' option is missing and you start COMMAND.COM, MS-DOS Player tries
 to get DOS version from COMMAND.COM of MS-DOS, PC-DOS, or Windows 95/98/Me.
 
 NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
-the version number 7.10 and '-v' option is not affected.
+the version number 5.50 and '-v' option is not affected.
 
-NOTE: the Windows version 4.10 and the DOS version 7.10 are same as Windows 98,
+NOTE: Windows version 4.10 is same as Windows 98.
+NOTE: DOS version 5.00 and true DOS version 5.50 are same as NTVDM.
 
 To enable XMS (i286 or later) and LIM EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
@@ -379,6 +380,10 @@ If you try CP/M-80 emulator using 8080 emulation mode, use these binaries.
 
 IA32 binaries include Neko Project 21/W i386c core and support FPU/MMX/SSE/2/3.
 These binaries will emulate the protected mode more correctly.
+
+i386_x86, i486_x86, pentium4_x86, and ia32_x86 folders contain ntvdm.exe.
+This is required to support VDD (virtal device driver).
+Please place msdos.exe and ntvdm.exe together.
 
 VC++ project files msdos.dsp/vcproj/vcxproj also contains the configurations
 for 80186, Pentium/PRO/MMX/2/3, and Cyrix MediaGX.
@@ -1034,11 +1039,30 @@ CALL FAR XMS
 	8EH	XMS 3.0 - Get Extended EMB Handle Information
 	8FH	XMS 3.0 - Reallocate Any Extended Memory Block
 
+NTVDM (Virtual Device Driver)
+
+	getAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
+	setAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
+	getSP,ESP,BP,EBP,SI,ESI,DI,EDI,IP,EIP
+	setSP,ESP,BP,EBP,SI,ESI,DI,EDI,IP,EIP
+	getDS,ES,CS,SS,FS,GS
+	setDS,ES,CS,SS,FS,GS
+	getCF,PF,AF,ZF,SF,IF,DF,OF,EFLAGS,MSW
+	setCF,PF,AF,ZF,SF,IF,DF,OF,EFLAGS,MSW
+	VDDInstallIOHook
+	VDDDeInstallIOHook
+	MGetVdmPointer
+	Sim32pGetVDMPointer
+	VdmMapFlat
+	VdmUnmapFlat
+	VdmFlushCache
+	VDDTerminateVDM
+
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive
 (*3) Joysticks are not connected
-(*4) MS-DOS Version: 7.10 (default) or specified version with -v option
-(*5) MS-DOS Version: 7.10, -v option is not affected
+(*4) MS-DOS Version: 5.00 (default) or specified version with -v option
+(*5) True MS-DOS Version: 5.50, -v option is not affected
 (*6) Windows Version: 4.10 (default) or specified version with -w option
 (*7) Mouse Version: 8.05
 (*8) EMS Version: 4.0
@@ -1083,7 +1107,7 @@ While waiting until the child process is terminated, the virtual CPU is
 suspended and outputs of "type foo.txt" never be sent to the child process.
 
 
------ Starting COMMAND.COM / C As Child Process
+----- Starting "COMMAND.COM /C" As Child Process
 
 Parent process may try to start "COMMAND.COM /C (program)" as child process,
 but COMMAND.COM may be missing.
@@ -1109,6 +1133,16 @@ In this case, outputting characters to console is not thru INT 29h.
 Otherwise, COMMAND.COM will be started as child process.
 
 NOTE: In the case COMMAND.COM is not started, pipe connection does not work.
+
+
+----- VDD (Virtual Device Driver)
+
+VDD is partially supported on 32bit versions of MS-DOS Player that emulate
+i386 or later.
+Please place ntvdm.exe included in this archive together with msdos.exe.
+
+VDD is not supported on 64bit versions of MS-DOS Player, because VDD DLLs
+are 32bit module and they cannot be loaded in 64bit process.
 
 
 ----- License

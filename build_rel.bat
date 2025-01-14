@@ -53,6 +53,12 @@ mt.exe /manifest vista.manifest -outputresource:Release\msdos.exe;1
 mkdir binary\ia32_x86
 copy Release\msdos.exe binary\ia32_x86\.
 
+devenv.com ntvdm.vcproj /Rebuild "Release|Win32"
+copy Release\ntvdm.exe binary\i386_x86\.
+copy Release\ntvdm.exe binary\i486_x86\.
+copy Release\ntvdm.exe binary\pentium4_x86\.
+copy Release\ntvdm.exe binary\ia32_x86\.
+
 endlocal
 
 setlocal

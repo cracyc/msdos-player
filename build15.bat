@@ -131,6 +131,18 @@ msbuild.exe msdos_np21.vcxproj /t:clean;rebuild /p:Configuration=Release;Platfor
 mkdir binary\ia32_x64
 copy Release\msdos.exe binary\ia32_x64\.
 
+msbuild.exe ntvdm.vcxproj /t:clean;rebuild /p:Configuration=Release;Platform="Win32"
+copy Release\ntvdm.exe binary\i386_x86\.
+copy Release\ntvdm.exe binary\i486_x86\.
+copy Release\ntvdm.exe binary\pentium_x86\.
+copy Release\ntvdm.exe binary\mediagx_x86\.
+copy Release\ntvdm.exe binary\pentium_pro_x86\.
+copy Release\ntvdm.exe binary\pentium_mmx_x86\.
+copy Release\ntvdm.exe binary\pentium2_x86\.
+copy Release\ntvdm.exe binary\pentium3_x86\.
+copy Release\ntvdm.exe binary\pentium4_x86\.
+copy Release\ntvdm.exe binary\ia32_x86\.
+
 endlocal
 
 rmdir /s /q Release
