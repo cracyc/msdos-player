@@ -21,8 +21,8 @@ CFLAGS= -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-func
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
 LIBS = -lwinmm -lpsapi -lwsock32 -lgdi32 -lmpr -luuid -lsetupapi
-LDFLAGS = -mconsole -static -static-libgcc -Wl,--kill-at
-LDFLAGS_NTVDM = -shared -s -static-libgcc
+LDFLAGS = -mconsole -static -static-libgcc
+LDFLAGS_NTVDM = -shared -s -static-libgcc -Wl,--enable-stdcall-fixup -Wl,--kill-at
 
 ifdef DEBUG
 CFLAGS += -Og -g
@@ -181,7 +181,7 @@ $(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
 $(TARGET_NTVDM) : $(SRCD_BASE)ntvdm.c $(SRCD_BASE)ntvdm.def
-	$(CXX) $(CXXFLAGS) $(CFLAGS_OX) $(SRCD_BASE)ntvdm.c $(SRCD_BASE)ntvdm.def $(LDFLAGS_NTVDM)
+	$(CC) $(CFLAGS) $(CFLAGS_OX) $(SRCD_BASE)ntvdm.c $(SRCD_BASE)ntvdm.def $(LDFLAGS_NTVDM)
 
 clean:
 	-$(RM_F) $(TARGET_I286)
