@@ -1433,6 +1433,7 @@ void dbg_printf(const char *str, ...);
 #define	FPU_CTRLWORD		FPU_REGS.control
 #define	FPU_CTRLWORDMASK	FPU_REGS.cw_mask_all
 #define	FPU_STATUSWORD		FPU_REGS.status
+#define	FPU_TAGWORD		FPU_REGS.tag
 #define	FPU_INSTPTR		FPU_REGS.inst
 #define	FPU_DATAPTR		FPU_REGS.data
 #define	FPU_LASTINSTOP		FPU_REGS.op
@@ -1459,7 +1460,7 @@ void dbg_printf(const char *str, ...);
 #else
 #define	FPU_ST(i)		((FPU_STAT_TOP+ (i) ) & 7)
 #endif
-#define	FPU_REG(i)		FPU_STAT.reg[i]
+#define	FPU_REG(n,i)		FPU_STAT.reg[n].b[i]
 
 /* FPU status register */
 #define	FP_IE_FLAG	(1 << 0)	/* –³Œø‚È“®ì */

@@ -309,6 +309,33 @@ inline void CPU_SET_EIP(UINT32 value)
 #define CPU_D_FLAG			(m_DF != 0)
 #define CPU_O_FLAG			(m_OF != 0)
 
+#if defined(SUPPORT_FPU)
+#define FPU_CTRLWORD			m_x87_cw
+#define FPU_STATUSWORD			m_x87_sw
+#define FPU_TAGWORD			m_x87_tw
+#define FPU_INSTPTR_OFFSET		m_x87_inst_ptr
+#define FPU_INSTPTR_SEG			m_x87_cs
+#define FPU_DATAPTR_OFFSET		m_x87_data_ptr
+#define FPU_DATAPTR_SEG			m_x87_ds
+
+UINT8 FPU_REG(int n, int i)
+{
+	switch(i) {
+	case 0: return (m_x87_reg[n].low  >>  0) & 0xff;
+	case 1: return (m_x87_reg[n].low  >>  8) & 0xff;
+	case 2: return (m_x87_reg[n].low  >> 16) & 0xff;
+	case 3: return (m_x87_reg[n].low  >> 24) & 0xff;
+	case 4: return (m_x87_reg[n].low  >> 32) & 0xff;
+	case 5: return (m_x87_reg[n].low  >> 40) & 0xff;
+	case 6: return (m_x87_reg[n].low  >> 48) & 0xff;
+	case 7: return (m_x87_reg[n].low  >> 56) & 0xff;
+	case 8: return (m_x87_reg[n].high >>  0) & 0xff;
+	case 9: return (m_x87_reg[n].high >>  8) & 0xff;
+	}
+	return 0;
+}
+#endif
+
 inline void CPU_SET_C_FLAG(UINT8 value)
 {
 	m_CF = value;

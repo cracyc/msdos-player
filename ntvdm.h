@@ -10,6 +10,8 @@
 
 #include <windows.h>
 
+typedef VOID (WINAPI *PVDD_MEMORY_HANDLER)(PVOID addr, DWORD mode);
+
 typedef VOID (WINAPI *PFNVDD_INB)(WORD iport, PBYTE data);
 typedef VOID (WINAPI *PFNVDD_INW)(WORD iport, PWORD data);
 typedef VOID (WINAPI *PFNVDD_INSB)(WORD iport, PBYTE data, WORD count);
@@ -18,7 +20,55 @@ typedef VOID (WINAPI *PFNVDD_OUTB)(WORD iport, BYTE data);
 typedef VOID (WINAPI *PFNVDD_OUTW)(WORD iport, WORD data);
 typedef VOID (WINAPI *PFNVDD_OUTSB)(WORD iport, PBYTE data, WORD count);
 typedef VOID (WINAPI *PFNVDD_OUTSW)(WORD iport, PWORD data, WORD count);
-typedef VOID (WINAPI *PVDD_MEMORY_HANDLER)(PVOID addr, ULONG mode);
+
+typedef VOID (*PFNVDD_UCREATE)(USHORT pdb);
+typedef VOID (*PFNVDD_UTERMINATE)(USHORT pdb);
+typedef VOID (*PFNVDD_UBLOCK)();
+typedef VOID (*PFNVDD_URESUME)();
+
+// same as WOW64_FLOATING_SAVE_AREA
+
+typedef struct _X87_FLOATING_SAVE_AREA {
+	DWORD ControlWord;
+	DWORD StatusWord;
+	DWORD TagWord;
+	DWORD ErrorOffset;
+	DWORD ErrorSelector;
+	DWORD DataOffset;
+	DWORD DataSelector;
+	BYTE  RegisterArea[80];
+	DWORD Cr0NpxState;
+} X87_FLOATING_SAVE_AREA;
+
+// same as WOW64_CONTEXT
+
+typedef struct _X86_CONTEXT {
+	DWORD ContextFlags;
+	DWORD Dr0;
+	DWORD Dr1;
+	DWORD Dr2;
+	DWORD Dr3;
+	DWORD Dr6;
+	DWORD Dr7;
+	X87_FLOATING_SAVE_AREA FloatSave;
+	DWORD SegGs;
+	DWORD SegFs;
+	DWORD SegEs;
+	DWORD SegDs;
+	DWORD Edi;
+	DWORD Esi;
+	DWORD Ebx;
+	DWORD Edx;
+	DWORD Ecx;
+	DWORD Eax;
+	DWORD Ebp;
+	DWORD Eip;
+	DWORD SegCs;
+	DWORD EFlags;
+	DWORD Esp;
+	DWORD SegSs;
+	BYTE  ExtendedRegisters[512];
+} X86_CONTEXT;
 
 typedef struct _VDD_IO_HANDLERS {
 	PFNVDD_INB inb_handler;
@@ -36,6 +86,15 @@ typedef struct _VDD_IO_PORTRANGE {
 	WORD Last;
 } VDD_IO_PORTRANGE, *PVDD_IO_PORTRANGE;
 
+typedef struct _VDD_DMA_INFO {
+	WORD addr;
+	WORD count;
+	WORD page;
+	BYTE status;
+	BYTE mode;
+	BYTE mask;
+} VDD_DMA_INFO, *PVDD_DMA_INFO;
+
 typedef enum {
 	VDM_V86,
 	VDM_PM
@@ -44,13 +103,23 @@ typedef enum {
 typedef BYTE (*funcGetBYTE)();
 typedef WORD (*funcGetWORD)();
 typedef DWORD (*funcGetDWORD)();
+typedef PVOID (*funcGetPVOID)();
 typedef void (*funcSetBYTE)(BYTE val);
 typedef void (*funcSetWORD)(WORD val);
 typedef void (*funcSetDWORD)(DWORD val);
+typedef PBYTE (*funcMGetVdmPointer)(DWORD addr, DWORD size, BOOL protmode);
+typedef PBYTE (*funcVdmMapFlat)(WORD seg, DWORD ofs, VDM_MODE mode);
+typedef BOOL (*funcVDDInstallMemoryHook)(HANDLE hvdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDLER handler);
+typedef BOOL (*funcVDDDeInstallMemoryHook)(HANDLE hvdd, PVOID addr, DWORD size);
+typedef BOOL (*funcVDDAllocMem)(HANDLE hvdd, PVOID addr, DWORD size);
+typedef BOOL (*funcVDDFreeMem)(HANDLE hvdd, PVOID addr, DWORD size);
+typedef void (*funcVDDSimulateInterrupt)(int ms, BYTE line, int count);
 typedef BOOL (*funcVDDInstallIOHook)(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler);
 typedef void (*funcVDDDeInstallIOHook)(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange);
-typedef BYTE* (*funcMGetVdmPointer)(DWORD addr, DWORD size, BOOL protmode);
-typedef BYTE* (*funcVdmMapFlat)(WORD seg, DWORD ofs, VDM_MODE mode);
+typedef DWORD (*funcVDDRequestDMA)(HANDLE hvdd, WORD ch, PVOID buf, DWORD len);
+typedef BOOL (*funcVDDQueryDMA)(HANDLE hvdd, WORD ch, PVDD_DMA_INFO info);
+typedef BOOL (*funcVDDSetDMA)(HANDLE hvdd, WORD ch, WORD flag, PVDD_DMA_INFO info);
+typedef void (*funcVDDSimulate16)();
 typedef void (*funcVDDTerminateVDM)(void);
 
 typedef struct _VDD_FUNC_TABLE {
@@ -138,10 +207,20 @@ typedef struct _VDD_FUNC_TABLE {
 	funcSetDWORD setEFLAGS;
 	funcGetWORD getMSW;
 	funcSetWORD setMSW;
-	funcVDDInstallIOHook VDDInstallIOHook;
-	funcVDDDeInstallIOHook VDDDeInstallIOHook;
+	funcGetPVOID getIntelRegistersPointer;
 	funcMGetVdmPointer MGetVdmPointer;
 	funcVdmMapFlat VdmMapFlat;
+	funcVDDInstallMemoryHook VDDInstallMemoryHook;
+	funcVDDDeInstallMemoryHook VDDDeInstallMemoryHook;
+	funcVDDAllocMem VDDAllocMem;
+	funcVDDFreeMem VDDFreeMem;
+	funcVDDSimulateInterrupt VDDSimulateInterrupt;
+	funcVDDInstallIOHook VDDInstallIOHook;
+	funcVDDDeInstallIOHook VDDDeInstallIOHook;
+	funcVDDRequestDMA VDDRequestDMA;
+	funcVDDQueryDMA VDDQueryDMA;
+	funcVDDSetDMA VDDSetDMA;
+	funcVDDSimulate16 VDDSimulate16;
 	funcVDDTerminateVDM VDDTerminateVDM;
 } VDD_FUNC_TABLE, *PVDD_FUNC_TABLE;
 

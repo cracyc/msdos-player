@@ -43,9 +43,8 @@
  */
 extern UINT32 CPU_PREV_PC;
 extern UINT32 IRET_TOP;
-#ifdef USE_DEBUGGER
-extern int msdos_int_num;
-#endif
+extern unsigned msdos_stat;
+extern unsigned msdos_int_num;
 
 
 /*
@@ -1345,13 +1344,9 @@ IRET(void)
 
 	// Emulate system call on MS-DOS Player
 	if(IRET_TOP <= CPU_PREV_PC && CPU_PREV_PC < (IRET_TOP + IRET_SIZE)) {
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
 		msdos_int_num = (CPU_PREV_PC - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		msdos_syscall(CPU_PREV_PC - IRET_TOP);
-#endif
+//		msdos_stat |= REQ_SYSCALL;
+		msdos_stat |= 2;
 	}
 }
 

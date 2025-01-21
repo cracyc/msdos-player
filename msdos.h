@@ -1296,12 +1296,22 @@ void msdos_xms_free_emb_handle(emb_handle_t *emb_handle);
 #ifdef SUPPORT_VDD
 #include "ntvdm.h"
 
+#define MAX_MEM_PAGE	0x100000
+
 typedef struct {
 	HMODULE hvdd;
 	FARPROC dispatch;
 } vdd_module_t;
 
 static vdd_module_t vdd_modules[5] = {0};
+
+typedef struct {
+	HANDLE hvdd;
+	BYTE *mem;
+	PVDD_MEMORY_HANDLER handler;
+} vdd_mem_t;
+
+static vdd_mem_t *vdd_mem = NULL;
 
 typedef struct {
 	HANDLE hvdd;

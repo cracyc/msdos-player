@@ -34,7 +34,7 @@
  * MS-DOS Player
  */
 extern UINT32 CPU_PREV_PC;
-extern int msdos_exit;
+extern unsigned msdos_stat;
 
 
 void CPUCALL
@@ -1063,7 +1063,8 @@ HLT(void)
 	// Exit MS-DOS Player
 	if(CPU_PREV_PC == 0xffff0) {
 		// The first process is terminated and jump to FFFF:0000 HALT
-		msdos_exit = 1;
+//		msdos_stat |= REQ_EXIT;
+		msdos_stat |= 1;
 	}
 }
 

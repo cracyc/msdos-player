@@ -390,8 +390,8 @@ bool hide_cursor = false;
 #define REQUEST_HARDWRE_UPDATE() { \
 	update_ops = UPDATE_OPS - 1; \
 }
-UINT32 update_ops = 0;
-UINT32 idle_ops = 0;
+unsigned update_ops = 0;
+unsigned idle_ops = 0;
 
 #ifdef _MSC_VC6
 inline void __cpuid(int cpu_info[4], int function_id)
@@ -520,11 +520,18 @@ inline void leave_vram_lock()
 
 // flag to exit MS-DOS Player
 // this is set when the first process is terminated and jump to FFFF:0000 HALT
-int msdos_exit = 0;
+#define REQ_EXIT	1
+// flag to request system call
+#define REQ_SYSCALL	2
+// flag to request VDDUnSimulate16
+#define REQ_UNSIM16	4
+
+unsigned msdos_stat = 0;
+unsigned msdos_int_num;
+
+#define msdos_exit	(msdos_stat & REQ_EXIT)
 
 #ifdef USE_DEBUGGER
-int msdos_int_num = -1;
-
 cpu_trace_t cpu_trace[MAX_CPU_TRACE] = {0};
 int cpu_trace_ptr = 0;
 UINT32 prev_trace_pc = -1;
@@ -584,6 +591,23 @@ static void check_bp(UINT32 address, break_point_t *bp, int size)
 #define check_bp(x,y,z)
 #endif
 
+#ifdef SUPPORT_VDD
+static BYTE *get_virtual_memory(UINT32 byteaddress)
+{
+	vdd_mem_t *hook = vdd_mem + (byteaddress >> 12);
+	if(hook->hvdd) {
+		if(!hook->mem) {
+			hook->mem = (BYTE *)VirtualAlloc(NULL, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		}
+		if(hook->mem) {
+			return (hook->mem + (byteaddress & 0xfff));
+		}
+	}
+	return NULL;
+}
+#endif
+
+void vram_flush();
 
 // read accessors
 UINT8 read_byte(UINT32 byteaddress)
@@ -594,6 +618,13 @@ UINT8 read_byte(UINT32 byteaddress)
 		ret = mem[byteaddress];
 	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
 		ret = mem[byteaddress &= 0xfffff];
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT8 *ptr = get_virtual_memory(byteaddress);
+		if(ptr) return *ptr;
+		ret = 0xff;
+#endif
 	} else {
 		ret = 0xff;
 	}
@@ -619,6 +650,13 @@ UINT16 read_word(UINT32 byteaddress)
 		ret = mem[byteaddress] | 0xff00;
 	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
 		ret = *(UINT16 *)(mem + (byteaddress & 0xfffff));
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT16 *ptr = (UINT16 *)get_virtual_memory(byteaddress);
+		if(ptr) return *ptr;
+		ret = 0xffff;
+#endif
 	} else {
 		ret = 0xffff;
 	}
@@ -636,6 +674,13 @@ UINT32 read_dword(UINT32 byteaddress)
 		ret = (*(UINT32 *)(mem + MAX_MEM - 4) >> shift) | (0xffffffff << (32 - shift));
 	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
 		ret = *(UINT32 *)(mem + (byteaddress & 0xfffff));
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT32 *ptr = (UINT32 *)get_virtual_memory(byteaddress);
+		if(ptr) return *ptr;
+		ret = 0xffffffff;
+#endif
 	} else {
 		ret = 0xffffffff;
 	}
@@ -1160,6 +1205,12 @@ void write_byte(UINT32 byteaddress, UINT8 data)
 	check_bp(byteaddress, &wr_break_point, 1);
 	if((byteaddress < MEMORY_END) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM))) {
 		mem[byteaddress] = data;
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT8 *ptr = get_virtual_memory(byteaddress);
+		if(ptr) *ptr = data;
+#endif
 	} else {
 		if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 			if(!restore_console_size) {
@@ -1197,6 +1248,12 @@ void write_word(UINT32 byteaddress, UINT16 data)
 	} else if((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 1)) {
 		*(UINT16 *)(mem + byteaddress) = data;
 	} else if(byteaddress & 1) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT16 *ptr = (UINT16 *)get_virtual_memory(byteaddress);
+		if(ptr) *ptr = data;
+#endif
 		// if the bp hit above now_suspended will be true so it won't hit again in write_byte
 		write_byte(byteaddress    , (data     ) & 0xff);
 		write_byte(byteaddress + 1, (data >> 8) & 0xff);
@@ -1220,8 +1277,14 @@ void write_dword(UINT32 byteaddress, UINT32 data)
 	check_bp(byteaddress, &wr_break_point, 4);
 	if((byteaddress < MEMORY_END - 3) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 3))) {
 		*(UINT32 *)(mem + byteaddress) = data;
-	} else {
-		// if the bp hit above now_suspended will be true so it won't hit again in write_byte/word
+	} else if(byteaddress & 3) {
+#ifdef SUPPORT_VDD
+	} else if(vdd_mem) {
+		// call VirtualAlloc automatically instead of page-fault handler
+		UINT32 *ptr = (UINT32 *)get_virtual_memory(byteaddress);
+		if(ptr) *ptr = data;
+#endif
+	} else {		// if the bp hit above now_suspended will be true so it won't hit again in write_byte/word
 		if(byteaddress & 1) {
 			write_byte(byteaddress    , (data      ) & 0x00ff);
 			write_word(byteaddress + 1, (data >>  8) & 0xffff);
@@ -8253,7 +8316,16 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	// check COMMAND.COM version
 	if(first_process && !dos_version_specified && _stricmp(msdos_file_name(path), "COMMAND.COM") == 0) {
 		for(int p = 0; p < length; p++) {
-			const BYTE msdos_version_kana[] = {0xCF,0xB2,0xB8,0xDB,0xBF,0xCC,0xC4,0x20,0x4D,0x53,0x2D,0x44,0x4F,0x53,0x20,0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20};
+			const BYTE msdos_version_kana1[] = {
+				0xCF,0xB2,0xB8,0xDB,0xBF,0xCC,0xC4,0x20,
+				0x4D,0x53,0x2D,0x44,0x4F,0x53,0x20,
+				0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20
+			};
+			const BYTE msdos_version_kana2[] = {
+				0x4D,0x69,0x63,0x72,0x6F,0x73,0x6F,0x66,0x74,0x28,0x52,0x29,0x20,
+				0x4D,0x53,0x2D,0x44,0x4F,0x53,0x28,0x52,0x29,0x20,
+				0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20
+			};
 			char *s = (char *)&file_buffer[p];
 			bool found = false;
 			if(strncmp(s, "Microsoft(R) Windows 95", 23) == 0) {
@@ -8276,8 +8348,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				s += 27;
 				while((*s++) != ' ');
 				found = true;
-			} else if(strncmp(s, (const char *)msdos_version_kana, 23) == 0) {
-				s += 23;
+			} else if(memcmp(s, msdos_version_kana1, sizeof(msdos_version_kana1)) == 0) {
+				s += sizeof(msdos_version_kana1);
+				found = true;
+			} else if(memcmp(s, msdos_version_kana2, sizeof(msdos_version_kana2)) == 0) {
+				s += sizeof(msdos_version_kana2);
 				found = true;
 			} else if(strncmp(s, "IBM Personal Computer DOS\r\nVer", 30) == 0) {
 				s += 30;
@@ -19649,6 +19724,11 @@ void msdos_syscall(unsigned num)
 				vdd_req(opcode[3]);
 				break;
 			}
+			if((opcode[0] == 0xc4) && (opcode[1] == 0xc4) && (opcode[2] == 0xfe)) {
+				// VDDUnSimulate16
+				msdos_stat |= REQ_UNSIM16;
+				break;
+			}
 		} catch(...) {
 		}
 #endif
@@ -21547,12 +21627,29 @@ void hardware_run()
 	// open debug log file after msdos_init() is done not to use the standard file handlers
 	fp_debug_log = fopen("debug.log", "w");
 #endif
-#ifdef USE_DEBUGGER
-	msdos_int_num = -1;
-#endif
+	idle_ops = update_ops = 0;
+	msdos_stat = 0;
 //	DWORD t = timeGetTime();
-	while(!msdos_exit) {
+	while(!msdos_stat) {
+#if 1
+		while(!msdos_stat && update_ops < UPDATE_OPS) {
+			CPU_EXECUTE();
+			if(CPU_EIP_CHANGED) {
+				idle_ops++;
+			}
+			update_ops++;
+		}
+		if(msdos_stat & REQ_SYSCALL) {
+			msdos_stat &= ~REQ_SYSCALL;
+			msdos_syscall(msdos_int_num);
+		}
+		if(update_ops >= UPDATE_OPS) {
+			update_ops = 0;
+			hardware_update();
+		}
+#else
 		hardware_run_cpu();
+#endif
 	}
 //	t = timeGetTime() - t;
 //	fprintf(stderr,"time=%d\n",t);
@@ -21570,22 +21667,18 @@ inline void hardware_run_cpu()
 	if(CPU_EIP_CHANGED) {
 		idle_ops++;
 	}
-#ifdef USE_DEBUGGER
-#ifdef ENABLE_DEBUG_LOG
-        	if(debug_trace && fp_debug_log != NULL) {
+#if defined(DEBUGGER) && defined(ENABLE_DEBUG_LOG)
+			if(debug_trace && fp_debug_log != NULL) {
 			char buffer[256];
 			debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
 			fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
 		}
 #endif
-// Disallow reentering CPU_EXECUTE() in msdos_syscall()
-	if(msdos_int_num >= 0) {
-		unsigned num = (unsigned)msdos_int_num;
-		msdos_int_num = -1;
-		msdos_syscall(num);
+	if(msdos_stat & REQ_SYSCALL) {
+		msdos_stat &= ~REQ_SYSCALL;
+		msdos_syscall(msdos_int_num);
 	}
-#endif
-	if(++update_ops == UPDATE_OPS) {
+	if(++update_ops >= UPDATE_OPS) {
 		update_ops = 0;
 		hardware_update();
 	}
@@ -24040,6 +24133,7 @@ void vdd_init()
 /*
 	memset(vdd_modules, 0, sizeof(vdd_modules));
 	memset(vdd_io, 0, sizeof(vdd_io));
+	vdd_mem = NULL;
 	hNTVDM = NULL;
 */
 }
@@ -24047,14 +24141,23 @@ void vdd_init()
 void vdd_finish()
 {
 	if (hNTVDM) {
-		for (int i = 0; i < 5; i++) {
-			if (vdd_io[i].hvdd) {
-				if (vdd_io[i].io_range) {
-					HeapFree(GetProcessHeap(), 0, vdd_io[i].io_range);
-					vdd_io[i].io_range = NULL;
+		if (vdd_mem) {
+			for (DWORD page = 0; page < MAX_MEM_PAGE; page++) {
+				if ((vdd_mem + page)->mem) {
+					VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+					(vdd_mem + page)->mem = NULL;
 				}
-				vdd_io[i].hvdd = NULL;
+				(vdd_mem + page)->hvdd = NULL;
 			}
+			free(vdd_mem);
+			vdd_mem = NULL;
+		}
+		for (int i = 0; i < 5; i++) {
+			if (vdd_io[i].io_range) {
+				HeapFree(GetProcessHeap(), 0, vdd_io[i].io_range);
+				vdd_io[i].io_range = NULL;
+			}
+			vdd_io[i].hvdd = NULL;
 		}
 		for (int i = 0; i < 5; i++) {
 			if (vdd_modules[i].hvdd) {
@@ -24569,6 +24672,218 @@ void setMSW(WORD val)
 	CPU_SET_CR0((CPU_CR0 & ~0xffff) | val);
 }
 
+PVOID getIntelRegistersPointer()
+{
+	static X86_CONTEXT IntelRegister;
+	
+	memset(&IntelRegister, 0, sizeof(IntelRegister));
+	
+	IntelRegister.ContextFlags  = 0x00010000; // Intel 386
+	IntelRegister.ContextFlags |= 0x00000010; // DR0, DR1, DR2, DR3, DR6, DR7
+	IntelRegister.ContextFlags |= 0x00000004; // DS, ES, FS, GS
+	IntelRegister.ContextFlags |= 0x00000002; // AX, BX, CX, DX, SI, DI
+	IntelRegister.ContextFlags |= 0x00000001; // SS:SP, CS:IP, FLAGS, BP
+	
+	IntelRegister.Dr0    = CPU_DR(0);
+	IntelRegister.Dr1    = CPU_DR(1);
+	IntelRegister.Dr2    = CPU_DR(2);
+	IntelRegister.Dr3    = CPU_DR(3);
+	IntelRegister.Dr6    = CPU_DR(6);
+	IntelRegister.Dr7    = CPU_DR(7);
+	IntelRegister.SegGs  = CPU_GS;
+	IntelRegister.SegFs  = CPU_FS;
+	IntelRegister.SegEs  = CPU_ES;
+	IntelRegister.SegDs  = CPU_DS;
+	IntelRegister.Edi    = CPU_EDI;
+	IntelRegister.Esi    = CPU_ESI;
+	IntelRegister.Ebx    = CPU_EBX;
+	IntelRegister.Edx    = CPU_EDX;
+	IntelRegister.Ecx    = CPU_ECX;
+	IntelRegister.Eax    = CPU_EAX;
+	IntelRegister.Ebp    = CPU_EBP;
+	IntelRegister.Eip    = CPU_EIP;
+	IntelRegister.SegCs  = CPU_CS;
+	IntelRegister.EFlags = CPU_EFLAG;
+	IntelRegister.Esp    = CPU_ESP;
+	IntelRegister.SegSs  = CPU_SS;
+	
+#if defined(SUPPORT_FPU)
+	IntelRegister.ContextFlags |= 0x00000008; // FPU
+	
+	IntelRegister.FloatSave.ControlWord   = FPU_CTRLWORD;
+	IntelRegister.FloatSave.StatusWord    = FPU_STATUSWORD;
+	IntelRegister.FloatSave.TagWord       = FPU_TAGWORD;
+	IntelRegister.FloatSave.ErrorOffset   = FPU_INSTPTR_OFFSET;
+	IntelRegister.FloatSave.ErrorSelector = FPU_INSTPTR_SEG;
+	IntelRegister.FloatSave.DataOffset    = FPU_DATAPTR_OFFSET;
+	IntelRegister.FloatSave.DataSelector  = FPU_DATAPTR_SEG;
+	for (int n = 0; n < 8; n++) {
+		for (int i = 0; i < 10; i++) {
+			IntelRegister.FloatSave.RegisterArea[n * 10 + i] = FPU_REG(n, i);
+		}
+	}
+	IntelRegister.FloatSave.Cr0NpxState   = 0; // ???
+#endif
+	return &IntelRegister;
+}
+
+PBYTE MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
+{
+	// NOTE: ReactOS ignores protmode and always translates address as real mode
+	if (protmode) {
+		// NOTE: i386 may not be protected mode now :-(
+		addr = CPU_TRANS_CODE_ADDR(HIWORD(addr), LOWORD(addr));
+	} else {
+		addr = (HIWORD(addr) << 4) + LOWORD(addr);
+	}
+	if (addr >= 0xfff80000) {
+		addr &= 0xfffff;
+	}
+	if (addr < MAX_MEM) {
+		return mem + addr;
+	}
+	return NULL;
+}
+
+PBYTE VdmMapFlat(WORD seg, DWORD ofs, VDM_MODE mode)
+{
+	DWORD addr;
+	
+	// NOTE: ReactOS ignores mode and always translates address as real mode
+	if (mode == VDM_PM) {
+		// NOTE: i386 may not be protected mode now :-(
+		addr = CPU_TRANS_CODE_ADDR(seg, ofs);
+	} else {
+		addr = (seg << 4) + (ofs & 0xffff);
+	}
+	if (addr >= 0xfff80000) {
+		addr &= 0xfffff;
+	}
+	if (addr < MAX_MEM) {
+		return mem + addr;
+	}
+	return NULL;
+}
+
+BOOL VDDInstallMemoryHook(HANDLE hvdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDLER handler)
+{
+	DWORD offset = (ULONG_PTR)addr - (ULONG_PTR)mem;
+	DWORD first = offset >> 12;
+	DWORD last = (offset + size - 1) >> 12;
+	
+	if (offset < MAX_MEM) {
+		return FALSE;
+	}
+	if (!vdd_mem) {
+		vdd_mem = (vdd_mem_t *)calloc(MAX_MEM_PAGE, sizeof(vdd_mem_t));
+	}
+	if (!vdd_mem) {
+		return FALSE;
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if ((vdd_mem + page)->hvdd && (vdd_mem + page)->hvdd != hvdd) {
+			return FALSE;
+		}
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if (!(vdd_mem + page)->hvdd) {
+			(vdd_mem + page)->hvdd = hvdd;
+			(vdd_mem + page)->mem = NULL;
+		}
+		(vdd_mem + page)->handler = handler;
+	}
+	return TRUE;
+}
+
+BOOL VDDDeInstallMemoryHook(HANDLE hvdd, PVOID addr, DWORD size)
+{
+	DWORD offset = (ULONG_PTR)addr - (ULONG_PTR)mem;
+	DWORD first = offset >> 12;
+	DWORD last = (offset + size - 1) >> 12;
+	
+	if (!vdd_mem) {
+		return FALSE;
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if ((vdd_mem + page)->hvdd == hvdd) {
+			if ((vdd_mem + page)->mem) {
+				VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+				(vdd_mem + page)->mem = NULL;
+			}
+			(vdd_mem + page)->hvdd = NULL;
+		}
+	}
+	return TRUE;
+}
+
+BOOL VDDAllocMem(HANDLE hvdd, PVOID addr, DWORD size)
+{
+	DWORD offset = (ULONG_PTR)addr - (ULONG_PTR)mem;
+	DWORD first = offset >> 12;
+	DWORD last = (offset + size - 1) >> 12;
+	
+	if (!vdd_mem) {
+		return FALSE;
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if ((vdd_mem + page)->hvdd != hvdd) {
+			return FALSE;
+		}
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if (!(vdd_mem + page)->mem) {
+			(vdd_mem + page)->mem = (BYTE *)VirtualAlloc(NULL, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		}
+	}
+	addr = mem + offset;
+	return TRUE;
+}
+
+BOOL VDDFreeMem(HANDLE hvdd, PVOID addr, DWORD size)
+{
+	DWORD offset = (ULONG_PTR)addr - (ULONG_PTR)mem;
+	DWORD first = offset >> 12;
+	DWORD last = (offset + size - 1) >> 12;
+	
+	if (!vdd_mem) {
+		return FALSE;
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if ((vdd_mem + page)->hvdd != hvdd) {
+			return FALSE;
+		}
+	}
+	for (DWORD page = first; page <= last; page++) {
+		if ((vdd_mem + page)->mem) {
+			VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+			(vdd_mem + page)->mem = NULL;
+		}
+	}
+	addr = mem + offset;
+	return TRUE;
+}
+
+void VDDSimulateInterrupt(int ms, BYTE line, int count)
+{
+	if ((ms == 0 || ms == 1) && (line >= 0 && line < 8) && (count > 0)) {
+		UINT16 tmp_cs = CPU_CS;
+		UINT32 tmp_eip = CPU_EIP;
+		int vector = (pic[ms].icw2 & 0xf8) | line;
+		
+		for (int i = 0; i < count; i++) {
+			CPU_SOFT_INTERRUPT(vector);
+			
+			// run cpu until interrupt routine is done
+			while (!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
+				try {
+					hardware_run_cpu();
+				} catch(...) {
+				}
+			}
+		}
+	}
+}
+
 BOOL VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
 {
 	int handle = (int)hvdd;
@@ -24613,47 +24928,200 @@ void VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRan
 	vdd_io[i].hvdd = NULL;
 }
 
-BYTE *MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
+DWORD VDDRequestDMA(HANDLE hvdd, WORD ch, PVOID buf, DWORD len)
 {
-	// NOTE: ReactOS ignores protmode and always translates address as real mode
-	if (protmode) {
-		// NOTE: i386 may not be protected mode now :-(
-		addr = CPU_TRANS_CODE_ADDR(HIWORD(addr), LOWORD(addr));
+	if (ch < 8) {
+		WORD c = ch >> 2;
+		ch &= 3;
+		UINT8 bit = 1 << ch;
+		UINT32 addr = dma[c].ch[ch].areg.w | (dma[c].ch[ch].pagereg << 16);
+		PBYTE buffer = (PBYTE)buf;
+		if(c) {
+			len &= ~1; // word access: make len even value
+		}
+		DWORD remain = len;
+		
+		dma[c].req |= bit;
+		
+		while((dma[c].req & bit) && !(dma[c].mask & bit) && remain > 0) {
+			if(ch == 0 && (dma[c].cmd & 0x01)) {
+				// memory -> memory
+				UINT32 saddr = dma[c].ch[0].areg.w | (dma[c].ch[0].pagereg << 16);
+				UINT32 daddr = dma[c].ch[1].areg.w | (dma[c].ch[1].pagereg << 16);
+				
+				if(c == 0) {
+					dma[c].tmp = read_byte(saddr);
+					write_byte(daddr, dma[c].tmp);
+				} else {
+					dma[c].tmp = read_word(saddr << 1);
+					write_word(daddr << 1, dma[c].tmp);
+				}
+				if(!(dma[c].cmd & 0x02)) {
+					if(dma[c].ch[0].mode & 0x20) {
+						dma[c].ch[0].areg.w--;
+						if(dma[c].ch[0].areg.w == 0xffff) {
+							dma[c].ch[0].pagereg--;
+						}
+					} else {
+						dma[c].ch[0].areg.w++;
+						if(dma[c].ch[0].areg.w == 0) {
+							dma[c].ch[0].pagereg++;
+						}
+					}
+				}
+				if(dma[c].ch[1].mode & 0x20) {
+					dma[c].ch[1].areg.w--;
+					if(dma[c].ch[1].areg.w == 0xffff) {
+						dma[c].ch[1].pagereg--;
+					}
+				} else {
+					dma[c].ch[1].areg.w++;
+					if(dma[c].ch[1].areg.w == 0) {
+						dma[c].ch[1].pagereg++;
+					}
+				}
+				
+				// check dma condition
+				if(dma[c].ch[0].creg.w-- == 0) {
+					if(dma[c].ch[0].mode & 0x10) {
+						// self initialize
+						dma[c].ch[0].areg.w = dma[c].ch[0].bareg.w;
+						dma[c].ch[0].creg.w = dma[c].ch[0].bcreg.w;
+					} else {
+//						dma[c].mask |= bit;
+					}
+				}
+				if(dma[c].ch[1].creg.w-- == 0) {
+					// terminal count
+					if(dma[c].ch[1].mode & 0x10) {
+						// self initialize
+						dma[c].ch[1].areg.w = dma[c].ch[1].bareg.w;
+						dma[c].ch[1].creg.w = dma[c].ch[1].bcreg.w;
+					} else {
+						dma[c].mask |= bit;
+					}
+					dma[c].req &= ~bit;
+					dma[c].tc |= bit;
+				}
+			} else {
+				UINT32 addr = dma[c].ch[ch].areg.w | (dma[c].ch[ch].pagereg << 16);
+				
+				if((dma[c].ch[ch].mode & 0x0c) == 0x00) {
+					// verify
+				} else if((dma[c].ch[ch].mode & 0x0c) == 0x04) {
+					// io -> memory
+					if(c == 0) {
+						dma[c].tmp = *buffer++;
+						remain--;
+						write_byte(addr, dma[c].tmp);
+					} else {
+						dma[c].tmp  = *buffer++;
+						dma[c].tmp |= *buffer++ < 8;
+						remain -= 2;
+						write_word(addr << 1, dma[c].tmp);
+					}
+				} else if((dma[c].ch[ch].mode & 0x0c) == 0x08) {
+					// memory -> io
+					if(c == 0) {
+						dma[c].tmp = read_byte(addr);
+						*buffer++ = dma[c].tmp;
+						remain--;
+					} else {
+						dma[c].tmp = read_word(addr << 1);
+						*buffer++ = dma[c].tmp;
+						*buffer++ = dma[c].tmp >> 8;
+						remain -= 2;
+					}
+				}
+				if(dma[c].ch[ch].mode & 0x20) {
+					dma[c].ch[ch].areg.w--;
+					if(dma[c].ch[ch].areg.w == 0xffff) {
+						dma[c].ch[ch].pagereg--;
+					}
+				} else {
+					dma[c].ch[ch].areg.w++;
+					if(dma[c].ch[ch].areg.w == 0) {
+						dma[c].ch[ch].pagereg++;
+					}
+				}
+				
+				// check dma condition
+				if(dma[c].ch[ch].creg.w-- == 0) {
+					// terminal count
+					if(dma[c].ch[ch].mode & 0x10) {
+						// self initialize
+						dma[c].ch[ch].areg.w = dma[c].ch[ch].bareg.w;
+						dma[c].ch[ch].creg.w = dma[c].ch[ch].bcreg.w;
+					} else {
+						dma[c].mask |= bit;
+					}
+					dma[c].req &= ~bit;
+					dma[c].tc |= bit;
+				}
+			}
+		}
+		SetLastError(ERROR_SUCCESS);
+		return len - remain;
 	} else {
-		addr = (HIWORD(addr) << 4) + LOWORD(addr);
+		SetLastError(ERROR_INVALID_ADDRESS);
+		return 0;
 	}
-	if (addr >= 0xfff80000) {
-		addr &= 0xfffff;
-	}
-	if (addr < MAX_MEM) {
-		return mem + addr;
-	}
-	return NULL;
 }
 
-BYTE *VdmMapFlat(WORD seg, DWORD ofs, VDM_MODE mode)
+BOOL VDDQueryDMA(HANDLE hvdd, WORD ch, PVDD_DMA_INFO info)
 {
-	DWORD addr;
-	
-	// NOTE: ReactOS ignores mode and always translates address as real mode
-	if (mode == VDM_PM) {
-		// NOTE: i386 may not be protected mode now :-(
-		addr = CPU_TRANS_CODE_ADDR(seg, ofs);
+	if (ch < 8) {
+		WORD c = ch >> 2;
+		ch &= 3;
+		info->addr = dma[c].ch[ch].areg.w;
+		info->count = dma[c].ch[ch].creg.w;
+		info->page = dma[c].ch[ch].pagereg;
+		info->status = (dma[c].req << 4) | dma[c].tc;
+		info->mode = dma[c].ch[ch].mode;
+		info->mask = dma[c].mask;
+		return TRUE;
 	} else {
-		addr = (seg << 4) + (ofs & 0xffff);
+		SetLastError(ERROR_INVALID_ADDRESS);
+		return FALSE;
 	}
-	if (addr >= 0xfff80000) {
-		addr &= 0xfffff;
+}
+
+BOOL VDDSetDMA(HANDLE hvdd, WORD ch, WORD flag, PVDD_DMA_INFO info)
+{
+	if (ch < 8) {
+		WORD c = ch >> 2;
+		ch &= 3;
+		if (flag & 1) {
+			dma[c].ch[ch].areg.w = info->addr;
+		}
+		if (flag & 2) {
+			dma[c].ch[ch].creg.w = info->count;
+		}
+		if (flag & 4) {
+			dma[c].ch[ch].pagereg = info->page;
+		}
+		if (flag & 8) {
+			dma[c].req = info->status >> 4;
+			dma[c].tc = info->status & 0x0f;
+		}
+		return TRUE;
+	} else {
+		SetLastError(ERROR_INVALID_ADDRESS);
+		return FALSE;
 	}
-	if (addr < MAX_MEM) {
-		return mem + addr;
+}
+
+void VDDSimulate16()
+{
+	while (!(msdos_stat & (REQ_EXIT | REQ_UNSIM16))) {
+		hardware_run_cpu();
 	}
-	return NULL;
+	msdos_stat &= ~REQ_UNSIM16;
 }
 
 void VDDTerminateVDM(void)
 {
-	msdos_exit = 1;
+	msdos_stat |= REQ_EXIT;
 }
 
 BOOL vdd_io_read(int port, int size, void *val)
@@ -24796,10 +25264,20 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 	ptr->setEFLAGS = setEFLAGS;
 	ptr->getMSW = getMSW;
 	ptr->setMSW = setMSW;
-	ptr->VDDInstallIOHook = VDDInstallIOHook;
-	ptr->VDDDeInstallIOHook = VDDDeInstallIOHook;
+	ptr->getIntelRegistersPointer = getIntelRegistersPointer;
 	ptr->MGetVdmPointer = MGetVdmPointer;
 	ptr->VdmMapFlat = VdmMapFlat;
+	ptr->VDDInstallMemoryHook = VDDInstallMemoryHook;
+	ptr->VDDDeInstallMemoryHook = VDDDeInstallMemoryHook;
+	ptr->VDDAllocMem = VDDAllocMem;
+	ptr->VDDFreeMem = VDDFreeMem;
+	ptr->VDDSimulateInterrupt = VDDSimulateInterrupt;
+	ptr->VDDInstallIOHook = VDDInstallIOHook;
+	ptr->VDDDeInstallIOHook = VDDDeInstallIOHook;
+	ptr->VDDRequestDMA = VDDRequestDMA;
+	ptr->VDDQueryDMA = VDDQueryDMA;
+	ptr->VDDSetDMA = VDDSetDMA;
+	ptr->VDDSimulate16 = VDDSimulate16;
 	ptr->VDDTerminateVDM = VDDTerminateVDM;
 }
 #endif

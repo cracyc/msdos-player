@@ -372,7 +372,6 @@ void CPU_EXECUTE()
 #ifdef USE_CLOCK
 	CPU_REMCLOCK = CPU_BASECLOCK = 1;
 #endif
-	CPU_EXEC();
 //	if(nmi_pending) {
 //		CPU_INTERRUPT(2, 0);
 //		nmi_pending = false;
@@ -382,6 +381,7 @@ void CPU_EXECUTE()
 		irq_pending = false;
 		pic_update();
 	}
+	CPU_EXEC();
 //	return CPU_BASECLOCK - CPU_REMCLOCK;
 
 #ifdef USE_DEBUGGER

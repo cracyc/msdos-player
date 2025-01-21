@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/12/2025
+								1/21/2025
 
 ----- What's This
 
@@ -1039,8 +1039,11 @@ CALL FAR XMS
 	8EH	XMS 3.0 - Get Extended EMB Handle Information
 	8FH	XMS 3.0 - Reallocate Any Extended Memory Block
 
-NTVDM (Virtual Device Driver)
+VDD (Virtual Device Driver)
 
+	RegisterModule
+	UnRegisterModule
+	DispatchCall
 	getAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
 	setAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
 	getSP,ESP,BP,EBP,SI,ESI,DI,EDI,IP,EIP
@@ -1049,14 +1052,40 @@ NTVDM (Virtual Device Driver)
 	setDS,ES,CS,SS,FS,GS
 	getCF,PF,AF,ZF,SF,IF,DF,OF,EFLAGS,MSW
 	setCF,PF,AF,ZF,SF,IF,DF,OF,EFLAGS,MSW
-	VDDInstallIOHook
-	VDDDeInstallIOHook
+	getIntelRegistersPointer
+	demClientErrorEx (*10)
+	demFileDelete
+	demFileFindFirst
+	demFileFindNext
+	demGetPhysicalDriveType (*10)
+	demIsShortPathName (*10)
+	demSetCurrentDirectoryGetDrive (*10)
 	MGetVdmPointer
 	Sim32pGetVDMPointer
+	Sim32GetVDMPointer
+	Sim32FlushVDMPointerc
+	Sim32FreeVDMPointerc
 	VdmMapFlat
-	VdmUnmapFlat
-	VdmFlushCache
+	VDDInstallMemoryHook
+	VDDDeInstallMemoryHook
+	VDDAllocMem
+	VDDFreeMem
+	VDDIncludeMem (*10)
+	VDDExcludeMem (*10)
+	call_ica_hw_interrupt
+	VDDReserveIrqLine (*10)
+	VDDReleaseIrqLine (*10)
+	VDDInstallIOHook
+	VDDDeInstallIOHook
+	VDDRequestDMA
+	VDDQueryDMA
+	VDDSetDMA
+	VDDSimulate16
+	host_simulate
+	VDDUnSimulate16
 	VDDTerminateVDM
+	VDDInstallUserHook (*10)
+	VDDDeInstallUserHook (*10)
 
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive
@@ -1067,6 +1096,7 @@ NTVDM (Virtual Device Driver)
 (*7) Mouse Version: 8.05
 (*8) EMS Version: 4.0
 (*9) XMS Version: 3.95
+(*10) Exported but not implemented
 
 
 ----- INT 29H Limitations
@@ -1174,6 +1204,8 @@ and some DOS info block improvements are based on DOSBox.
 INT 16H, AX=1300H (Set Double-Byte Character Set Shift Control)
 INT 16H, AX=1301H (Get Double-Byte Character Set Shift Control)
 and some FEP control improvements are based on DOSVAXJ3.
+
+VDD are based on Mr.cracyc's fork and ReactOS.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player

@@ -6,7 +6,12 @@
 */
 
 #include <windows.h>
+#include <direct.h>
 #include "ntvdm.h"
+
+#if defined(_MSC_VER) && (_MSC_VER >= 1200)
+#pragma warning( disable : 4996 )
+#endif
 
 static VDD_FUNC_TABLE func;
 
@@ -17,6 +22,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 	}
 	return TRUE;
 }
+
+// NTVDM Registers
 
 __declspec(dllexport) void WINAPI SetFuncTable(PVDD_FUNC_TABLE ptr)
 {
@@ -443,15 +450,556 @@ __declspec(dllexport) void WINAPI setMSW(WORD val)
 	func.setMSW(val);
 }
 
-__declspec(dllexport) BOOL WINAPI VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
+__declspec(dllexport) PVOID WINAPI getIntelRegistersPointer()
 {
-	return func.VDDInstallIOHook(hvdd, cPortRange, pPortRange, IOhandler);
+	return func.getIntelRegistersPointer();
 }
 
-__declspec(dllexport) void WINAPI VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange)
+// NTVDM CCPU MIPS Compatibility
+
+__declspec(dllexport) BYTE WINAPI c_getAL()
 {
-	func.VDDDeInstallIOHook(hvdd, cPortRange, pPortRange);
+	return func.getAL();
 }
+
+__declspec(dllexport) BYTE WINAPI c_getAH()
+{
+	return func.getAH();
+}
+
+__declspec(dllexport) WORD WINAPI c_getAX()
+{
+	return func.getAX();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEAX()
+{
+	return func.getEAX();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getBL()
+{
+	return func.getBL();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getBH()
+{
+	return func.getBH();
+}
+
+__declspec(dllexport) WORD WINAPI c_getBX()
+{
+	return func.getBX();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEBX()
+{
+	return func.getEBX();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getCL()
+{
+	return func.getCL();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getCH()
+{
+	return func.getCH();
+}
+
+__declspec(dllexport) WORD WINAPI c_getCX()
+{
+	return func.getCX();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getECX()
+{
+	return func.getECX();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getDL()
+{
+	return func.getDL();
+}
+
+__declspec(dllexport) BYTE WINAPI c_getDH()
+{
+	return func.getDH();
+}
+
+__declspec(dllexport) WORD WINAPI c_getDX()
+{
+	return func.getDX();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEDX()
+{
+	return func.getEDX();
+}
+
+__declspec(dllexport) WORD WINAPI c_getSP()
+{
+	return func.getSP();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getESP()
+{
+	return func.getESP();
+}
+
+__declspec(dllexport) WORD WINAPI c_getBP()
+{
+	return func.getBP();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEBP()
+{
+	return func.getEBP();
+}
+
+__declspec(dllexport) WORD WINAPI c_getSI()
+{
+	return func.getSI();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getESI()
+{
+	return func.getESI();
+}
+
+__declspec(dllexport) WORD WINAPI c_getDI()
+{
+	return func.getDI();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEDI()
+{
+	return func.getEDI();
+}
+
+__declspec(dllexport) void WINAPI c_setAL(BYTE val)
+{
+	func.setAL(val);
+}
+
+__declspec(dllexport) void WINAPI c_setAH(BYTE val)
+{
+	func.setAH(val);
+}
+
+__declspec(dllexport) void WINAPI c_setAX(WORD val)
+{
+	func.setAX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEAX(DWORD val)
+{
+	func.setEAX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setBL(BYTE val)
+{
+	func.setBL(val);
+}
+
+__declspec(dllexport) void WINAPI c_setBH(BYTE val)
+{
+	func.setBH(val);
+}
+
+__declspec(dllexport) void WINAPI c_setBX(WORD val)
+{
+	func.setBX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEBX(DWORD val)
+{
+	func.setEBX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setCL(BYTE val)
+{
+	func.setCL(val);
+}
+
+__declspec(dllexport) void WINAPI c_setCH(BYTE val)
+{
+	func.setCH(val);
+}
+
+__declspec(dllexport) void WINAPI c_setCX(WORD val)
+{
+	func.setCX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setECX(DWORD val)
+{
+	func.setECX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setDL(BYTE val)
+{
+	func.setDL(val);
+}
+
+__declspec(dllexport) void WINAPI c_setDH(BYTE val)
+{
+	func.setDH(val);
+}
+
+__declspec(dllexport) void WINAPI c_setDX(WORD val)
+{
+	func.setDX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEDX(DWORD val)
+{
+	func.setEDX(val);
+}
+
+__declspec(dllexport) void WINAPI c_setSP(WORD val)
+{
+	func.setSP(val);
+}
+
+__declspec(dllexport) void WINAPI c_setESP(DWORD val)
+{
+	func.setESP(val);
+}
+
+__declspec(dllexport) void WINAPI c_setBP(WORD val)
+{
+	func.setBP(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEBP(DWORD val)
+{
+	func.setEBP(val);
+}
+
+__declspec(dllexport) void WINAPI c_setSI(WORD val)
+{
+	func.setSI(val);
+}
+
+__declspec(dllexport) void WINAPI c_setESI(DWORD val)
+{
+	func.setESI(val);
+}
+
+__declspec(dllexport) void WINAPI c_setDI(WORD val)
+{
+	func.setDI(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEDI(DWORD val)
+{
+	func.setEDI(val);
+}
+
+__declspec(dllexport) WORD WINAPI c_getDS()
+{
+	return func.getDS();
+}
+
+__declspec(dllexport) WORD WINAPI c_getES()
+{
+	return func.getES();
+}
+
+__declspec(dllexport) WORD WINAPI c_getCS()
+{
+	return func.getCS();
+}
+
+__declspec(dllexport) WORD WINAPI c_getSS()
+{
+	return func.getSS();
+}
+
+__declspec(dllexport) WORD WINAPI c_getFS()
+{
+	return func.getFS();
+}
+
+__declspec(dllexport) WORD WINAPI c_getGS()
+{
+	return func.getGS();
+}
+
+__declspec(dllexport) void WINAPI c_setDS(WORD val)
+{
+	func.setDS(val);
+}
+
+__declspec(dllexport) void WINAPI c_setES(WORD val)
+{
+	func.setES(val);
+}
+
+__declspec(dllexport) void WINAPI c_setCS(WORD val)
+{
+	func.setCS(val);
+}
+
+__declspec(dllexport) void WINAPI c_setSS(WORD val)
+{
+	func.setSS(val);
+}
+
+__declspec(dllexport) void WINAPI c_setFS(WORD val)
+{
+	func.setFS(val);
+}
+
+__declspec(dllexport) void WINAPI c_setGS(WORD val)
+{
+	func.setGS(val);
+}
+
+__declspec(dllexport) WORD WINAPI c_getIP()
+{
+	return func.getIP();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getEIP()
+{
+	return func.getEIP();
+}
+
+__declspec(dllexport) void WINAPI c_setIP(WORD val)
+{
+	func.setIP(val);
+}
+
+__declspec(dllexport) void WINAPI c_setEIP(DWORD val)
+{
+	func.setEIP(val);
+}
+
+__declspec(dllexport) DWORD WINAPI c_getCF()
+{
+	return func.getCF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getPF()
+{
+	return func.getPF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getAF()
+{
+	return func.getAF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getZF()
+{
+	return func.getZF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getSF()
+{
+	return func.getSF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getIF()
+{
+	return func.getIF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getDF()
+{
+	return func.getDF();
+}
+
+__declspec(dllexport) DWORD WINAPI c_getOF()
+{
+	return func.getOF();
+}
+
+__declspec(dllexport) void WINAPI c_setCF(DWORD val)
+{
+	func.setCF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setPF(DWORD val)
+{
+	func.setPF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setAF(DWORD val)
+{
+	func.setAF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setZF(DWORD val)
+{
+	func.setZF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setSF(DWORD val)
+{
+	func.setSF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setIF(DWORD val)
+{
+	func.setIF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setDF(DWORD val)
+{
+	func.setDF(val);
+}
+
+__declspec(dllexport) void WINAPI c_setOF(DWORD val)
+{
+	func.setOF(val);
+}
+
+__declspec(dllexport) WORD WINAPI c_getMSW()
+{
+	return func.getMSW();
+}
+
+__declspec(dllexport) void WINAPI c_setMSW(WORD val)
+{
+	func.setMSW(val);
+}
+
+// NTVDM DOS-32 Emulation (from ReactOS/subsystem/mvdm/dos/dem.c)
+
+__declspec(dllexport) DWORD WINAPI demClientErrorEx(IN HANDLE FileHandle, CHAR Unknown, BOOL Flag)
+{
+	return GetLastError();
+}
+
+__declspec(dllexport) DWORD WINAPI demFileDelete(IN LPCSTR FileName)
+{
+	if (DeleteFileA(FileName)) SetLastError(ERROR_SUCCESS);
+
+	return GetLastError();
+}
+
+typedef struct _DOS_FIND_FILE_BLOCK
+{
+	CHAR DriveLetter;
+	CHAR Pattern[11];
+	UCHAR AttribMask;
+	DWORD Unused;
+	HANDLE SearchHandle;
+
+	/* The following part of the structure is documented */
+	UCHAR Attributes;
+	WORD FileTime;
+	WORD FileDate;
+	DWORD FileSize;
+	CHAR FileName[13];
+} DOS_FIND_FILE_BLOCK, *PDOS_FIND_FILE_BLOCK;
+
+__declspec(dllexport) DWORD WINAPI demFileFindFirst(PVOID lpFindFileData, LPCSTR FileName, WORD AttribMask)
+{
+	BOOLEAN Success = TRUE;
+	WIN32_FIND_DATAA FindData;
+	HANDLE SearchHandle;
+	PDOS_FIND_FILE_BLOCK FindFileBlock = (PDOS_FIND_FILE_BLOCK)lpFindFileData;
+
+	/* Start a search */
+	SearchHandle = FindFirstFileA(FileName, &FindData);
+	if (SearchHandle == INVALID_HANDLE_VALUE) return GetLastError();
+
+	do
+	{
+		/* Check the attributes and retry as long as we haven't found a matching file */
+		if (!((FindData.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN |
+		                                    FILE_ATTRIBUTE_SYSTEM |
+		                                    FILE_ATTRIBUTE_DIRECTORY))
+		     & ~AttribMask))
+		{
+			break;
+		}
+	}
+	while ((Success = FindNextFileA(SearchHandle, &FindData)));
+
+	/* If we failed at some point, close the search and return an error */
+	if (!Success)
+	{
+		FindClose(SearchHandle);
+		return GetLastError();
+	}
+
+	/* Fill the block */
+	FindFileBlock->DriveLetter  = 'A' + (_getdrive() - 1);
+	FindFileBlock->AttribMask   = (UCHAR)AttribMask;
+	FindFileBlock->SearchHandle = SearchHandle;
+	FindFileBlock->Attributes   = LOBYTE(FindData.dwFileAttributes);
+	FileTimeToDosDateTime(&FindData.ftLastWriteTime,
+	                      &FindFileBlock->FileDate,
+	                      &FindFileBlock->FileTime);
+	FindFileBlock->FileSize = FindData.nFileSizeHigh ? 0xFFFFFFFF
+	                                                 : FindData.nFileSizeLow;
+	/* Build a short path name */
+	if (*FindData.cAlternateFileName)
+		strncpy(FindFileBlock->FileName, FindData.cAlternateFileName, sizeof(FindFileBlock->FileName));
+	else
+		GetShortPathNameA(FindData.cFileName, FindFileBlock->FileName, sizeof(FindFileBlock->FileName));
+
+	return ERROR_SUCCESS;
+}
+
+__declspec(dllexport) DWORD WINAPI demFileFindNext(OUT PVOID lpFindFileData)
+{
+	WIN32_FIND_DATAA FindData;
+	PDOS_FIND_FILE_BLOCK FindFileBlock = (PDOS_FIND_FILE_BLOCK)lpFindFileData;
+
+	do
+	{
+		/* Continue searching as long as we haven't found a matching file */
+
+		/* If we failed at some point, close the search and return an error */
+		if (!FindNextFileA(FindFileBlock->SearchHandle, &FindData))
+		{
+			FindClose(FindFileBlock->SearchHandle);
+			return GetLastError();
+		}
+	}
+	while ((FindData.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN |
+	                                     FILE_ATTRIBUTE_SYSTEM |
+	                                     FILE_ATTRIBUTE_DIRECTORY))
+	       & ~FindFileBlock->AttribMask);
+
+	/* Update the block */
+	FindFileBlock->Attributes = LOBYTE(FindData.dwFileAttributes);
+	FileTimeToDosDateTime(&FindData.ftLastWriteTime,
+	                      &FindFileBlock->FileDate,
+	                      &FindFileBlock->FileTime);
+	FindFileBlock->FileSize = FindData.nFileSizeHigh ? 0xFFFFFFFF
+	                                                 : FindData.nFileSizeLow;
+	/* Build a short path name */
+	if (*FindData.cAlternateFileName)
+		strncpy(FindFileBlock->FileName, FindData.cAlternateFileName, sizeof(FindFileBlock->FileName));
+	else
+		GetShortPathNameA(FindData.cFileName, FindFileBlock->FileName, sizeof(FindFileBlock->FileName));
+
+	return ERROR_SUCCESS;
+}
+
+__declspec(dllexport) UCHAR WINAPI demGetPhysicalDriveType(IN UCHAR DriveNumber)
+{
+    return 0; //DOSDEVICE_DRIVE_UNKNOWN;
+}
+
+__declspec(dllexport) BOOL WINAPI demIsShortPathName(LPCSTR Path, BOOL Unknown)
+{
+	return FALSE;
+}
+
+__declspec(dllexport) DWORD WINAPI demSetCurrentDirectoryGetDrive(LPCSTR CurrentDirectory, PUCHAR DriveNumber)
+{
+	return ERROR_SUCCESS;
+}
+
+// NTVDM Miscellaneous
 
 __declspec(dllexport) BYTE *WINAPI MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
 {
@@ -463,11 +1011,31 @@ __declspec(dllexport) BYTE *WINAPI Sim32pGetVDMPointer(DWORD addr, BOOL protmode
 	return func.MGetVdmPointer(addr, 0, protmode);
 }
 
+// NT 3.1 Compatibility
+__declspec(dllexport) BYTE *WINAPI Sim32GetVDMPointer(DWORD addr, WORD size, BOOL protmode)
+{
+	return func.MGetVdmPointer(addr, (DWORD)size, protmode);
+}
+
+// NT 3.1 Compatibility
+__declspec(dllexport) BOOL WINAPI Sim32FlushVDMPointer(DWORD addr, WORD size, PVOID buf, BOOL protmode)
+{
+	return TRUE;
+}
+
+// NT 3.1 Compatibility
+__declspec(dllexport) BOOL WINAPI Sim32FreeVDMPointer(DWORD addr, WORD size, PVOID buf, BOOL protmode)
+{
+	return TRUE;
+}
+
 __declspec(dllexport) BYTE *WINAPI VdmMapFlat(WORD seg, DWORD ofs, VDM_MODE mode)
 {
 	return func.VdmMapFlat(seg, ofs, mode);
 }
 
+// VdmUnmapFlat and VdmFlushCache are not supported on x86
+#if 0
 __declspec(dllexport) BOOL WINAPI VdmUnmapFlat(WORD seg, DWORD ofs, PVOID buf, VDM_MODE mode)
 {
 	return TRUE;
@@ -477,38 +1045,99 @@ __declspec(dllexport) BOOL WINAPI VdmFlushCache(WORD seg, DWORD ofs, DWORD size,
 {
 	return TRUE;
 }
+#endif
 
-__declspec(dllexport) BOOL WINAPI VDDInstallMemoryHook(HANDLE hVdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDLER MemoryHandler)
+__declspec(dllexport) BOOL WINAPI VDDInstallMemoryHook(HANDLE hVdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDLER handler)
 {
-	return FALSE;
+	return func.VDDInstallMemoryHook(hVdd, addr, size, handler);
 }
 
 __declspec(dllexport) BOOL WINAPI VDDDeInstallMemoryHook(HANDLE hVdd, PVOID addr, DWORD size)
 {
-	return FALSE;
+	return func.VDDDeInstallMemoryHook(hVdd, addr, size);
 }
 
-__declspec(dllexport) BOOL WINAPI VDDAllocMem(HANDLE hVdd, PVOID addr, ULONG size)
+__declspec(dllexport) BOOL WINAPI VDDAllocMem(HANDLE hVdd, PVOID addr, DWORD size)
+{
+	return func.VDDAllocMem(hVdd, addr, size);
+}
+
+__declspec(dllexport) BOOL WINAPI VDDFreeMem(HANDLE hVdd, PVOID addr, DWORD size)
+{
+	return func.VDDFreeMem(hVdd, addr, size);
+}
+
+__declspec(dllexport) BOOL WINAPI VDDIncludeMem(HANDLE hVdd, PVOID addr, DWORD size)
 {
 	return FALSE;
 }
 
-__declspec(dllexport) BOOL WINAPI VDDFreeMem(HANDLE hVdd, PVOID addr, ULONG size)
+__declspec(dllexport) BOOL WINAPI VDDExcludeMem(HANDLE hVdd, PVOID addr, DWORD size)
 {
 	return FALSE;
 }
 
-__declspec(dllexport) BOOL WINAPI VDDIncludeMem(HANDLE hVdd, PVOID addr, ULONG size)
+__declspec(dllexport) void WINAPI call_ica_hw_interrupt(int ms, BYTE line, int count)
+{
+	func.VDDSimulateInterrupt(ms, line, count);
+}
+
+__declspec(dllexport) WORD WINAPI VDDReserveIrqLine(HANDLE hvdd, WORD line)
+{
+	return 0xffff;
+}
+
+__declspec(dllexport) BOOL WINAPI VDDReleaseIrqLine(HANDLE hvdd, WORD line)
 {
 	return FALSE;
 }
 
-__declspec(dllexport) BOOL WINAPI VDDExcludeMem(HANDLE hVdd, PVOID addr, ULONG size)
+__declspec(dllexport) BOOL WINAPI VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
 {
-	return FALSE;
+	return func.VDDInstallIOHook(hvdd, cPortRange, pPortRange, IOhandler);
+}
+
+__declspec(dllexport) void WINAPI VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange)
+{
+	func.VDDDeInstallIOHook(hvdd, cPortRange, pPortRange);
+}
+
+__declspec(dllexport) DWORD WINAPI VDDRequestDMA(HANDLE hvdd, WORD ch, PVOID buf, DWORD len)
+{
+	return func.VDDRequestDMA(hvdd, ch, buf, len);
+}
+
+__declspec(dllexport) BOOL WINAPI VDDQueryDMA(HANDLE hvdd, WORD ch, PVDD_DMA_INFO info)
+{
+	return func.VDDQueryDMA(hvdd, ch, info);
+}
+
+__declspec(dllexport) BOOL WINAPI VDDSetDMA(HANDLE hvdd, WORD ch, WORD flag, PVDD_DMA_INFO info)
+{
+	return func.VDDSetDMA(hvdd, ch, flag, info);
+}
+
+__declspec(dllexport) void WINAPI VDDSimulate16()
+{
+	func.VDDSimulate16();
+}
+
+__declspec(dllexport) void WINAPI host_simulate()
+{
+	func.VDDSimulate16();
 }
 
 __declspec(dllexport) void WINAPI VDDTerminateVDM(void)
 {
 	func.VDDTerminateVDM();
+}
+
+__declspec(dllexport) BOOL WINAPI VDDInstallUserHook(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler)
+{
+	return FALSE;
+}
+
+__declspec(dllexport) BOOL WINAPI VDDDeInstallUserHook(HANDLE hvdd)
+{
+	return FALSE;
 }

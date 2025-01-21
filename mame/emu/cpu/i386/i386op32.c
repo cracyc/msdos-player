@@ -773,21 +773,8 @@ static void I386OP(iret32)()            // Opcode 0xcf
 
 	// Emulate system call on MS-DOS Player
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
 		msdos_int_num = (old - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		if(m_lock)
-			m_lock = false;
-#ifdef SUPPORT_RDTSC
-		m_tsc += (m_base_cycles - m_cycles);
-#endif
-		msdos_syscall(old - IRET_TOP);
-#ifdef SUPPORT_RDTSC
-		m_cycles = m_base_cycles = 1;
-#endif
-#endif
+		msdos_stat |= REQ_SYSCALL;
 	}
 }
 

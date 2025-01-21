@@ -1,102 +1,203 @@
 LIBRARY ntvdm.exe
 
 EXPORTS
-	SetFuncTable	@1
-	getAL	@2
-	getAH	@3
-	getAX	@4
-	getEAX	@5
-	getBL	@6
-	getBH	@7
-	getBX	@8
-	getEBX	@9
-	getCL	@10
-	getCH	@11
-	getCX	@12
-	getECX	@13
-	getDL	@14
-	getDH	@15
-	getDX	@16
-	getEDX	@17
-	getSP	@18
-	getESP	@19
-	getBP	@20
-	getEBP	@21
-	getSI	@22
-	getESI	@23
-	getDI	@24
-	getEDI	@25
-	setAL	@26
-	setAH	@27
-	setAX	@28
-	setEAX	@29
-	setBL	@30
-	setBH	@31
-	setBX	@32
-	setEBX	@33
-	setCL	@34
-	setCH	@35
-	setCX	@36
-	setECX	@37
-	setDL	@38
-	setDH	@39
-	setDX	@40
-	setEDX	@41
-	setSP	@42
-	setESP	@43
-	setBP	@44
-	setEBP	@45
-	setSI	@46
-	setESI	@47
-	setDI	@48
-	setEDI	@49
-	getDS	@50
-	getES	@51
-	getCS	@52
-	getSS	@53
-	getFS	@54
-	getGS	@55
-	setDS	@56
-	setES	@57
-	setCS	@58
-	setSS	@59
-	setFS	@60
-	setGS	@61
-	getIP	@62
-	getEIP	@63
-	setIP	@64
-	setEIP	@65
-	getCF	@66
-	getPF	@67
-	getAF	@68
-	getZF	@69
-	getSF	@70
-	getIF	@71
-	getDF	@72
-	getOF	@73
-	setCF	@74
-	setPF	@75
-	setAF	@76
-	setZF	@77
-	setSF	@78
-	setIF	@79
-	setDF	@80
-	setOF	@81
-	getEFLAGS	@82
-	setEFLAGS	@83
-	getMSW	@84
-	setMSW	@85
-	VDDInstallIOHook	@86
-	VDDDeInstallIOHook	@87
-	MGetVdmPointer	@88
-	Sim32pGetVDMPointer	@89
-	VdmMapFlat	@90
-	VdmUnmapFlat	@91
-	VdmFlushCache	@92
-	VDDInstallMemoryHook	@93
-	VDDDeInstallMemoryHook	@94
-	VDDAllocMem	@95
-	VDDFreeMem	@96
-	VDDIncludeMem	@97
-	VDDExcludeMem	@98
-	VDDTerminateVDM	@99
+	SetFuncTable
+	getAL
+	getAH
+	getAX
+	getEAX
+	getBL
+	getBH
+	getBX
+	getEBX
+	getCL
+	getCH
+	getCX
+	getECX
+	getDL
+	getDH
+	getDX
+	getEDX
+	getSP
+	getESP
+	getBP
+	getEBP
+	getSI
+	getESI
+	getDI
+	getEDI
+	setAL
+	setAH
+	setAX
+	setEAX
+	setBL
+	setBH
+	setBX
+	setEBX
+	setCL
+	setCH
+	setCX
+	setECX
+	setDL
+	setDH
+	setDX
+	setEDX
+	setSP
+	setESP
+	setBP
+	setEBP
+	setSI
+	setESI
+	setDI
+	setEDI
+	getDS
+	getES
+	getCS
+	getSS
+	getFS
+	getGS
+	setDS
+	setES
+	setCS
+	setSS
+	setFS
+	setGS
+	getIP
+	getEIP
+	setIP
+	setEIP
+	getCF
+	getPF
+	getAF
+	getZF
+	getSF
+	getIF
+	getDF
+	getOF
+	setCF
+	setPF
+	setAF
+	setZF
+	setSF
+	setIF
+	setDF
+	setOF
+	getEFLAGS
+	setEFLAGS
+	getMSW
+	setMSW
+	getIntelRegistersPointer
+	c_getAL
+	c_getAH
+	c_getAX
+	c_getEAX
+	c_getBL
+	c_getBH
+	c_getBX
+	c_getEBX
+	c_getCL
+	c_getCH
+	c_getCX
+	c_getECX
+	c_getDL
+	c_getDH
+	c_getDX
+	c_getEDX
+	c_getSP
+	c_getESP
+	c_getBP
+	c_getEBP
+	c_getSI
+	c_getESI
+	c_getDI
+	c_getEDI
+	c_setAL
+	c_setAH
+	c_setAX
+	c_setEAX
+	c_setBL
+	c_setBH
+	c_setBX
+	c_setEBX
+	c_setCL
+	c_setCH
+	c_setCX
+	c_setECX
+	c_setDL
+	c_setDH
+	c_setDX
+	c_setEDX
+	c_setSP
+	c_setESP
+	c_setBP
+	c_setEBP
+	c_setSI
+	c_setESI
+	c_setDI
+	c_setEDI
+	c_getDS
+	c_getES
+	c_getCS
+	c_getSS
+	c_getFS
+	c_getGS
+	c_setDS
+	c_setES
+	c_setCS
+	c_setSS
+	c_setFS
+	c_setGS
+	c_getIP
+	c_getEIP
+	c_setIP
+	c_setEIP
+	c_getCF
+	c_getPF
+	c_getAF
+	c_getZF
+	c_getSF
+	c_getIF
+	c_getDF
+	c_getOF
+	c_setCF
+	c_setPF
+	c_setAF
+	c_setZF
+	c_setSF
+	c_setIF
+	c_setDF
+	c_setOF
+	c_getMSW
+	c_setMSW
+	demClientErrorEx
+	demFileDelete
+	demFileFindFirst
+	demFileFindNext
+	demGetPhysicalDriveType
+	demIsShortPathName
+	demSetCurrentDirectoryGetDrive
+	MGetVdmPointer
+	Sim32pGetVDMPointer
+	Sim32GetVDMPointer
+	Sim32FlushVDMPointer
+	Sim32FreeVDMPointer
+	VdmMapFlat
+	VDDInstallMemoryHook
+	VDDDeInstallMemoryHook
+	VDDAllocMem
+	VDDFreeMem
+	VDDIncludeMem
+	VDDExcludeMem
+	call_ica_hw_interrupt
+	VDDReserveIrqLine
+	VDDReleaseIrqLine
+	VDDInstallIOHook
+	VDDDeInstallIOHook
+	VDDRequestDMA
+	VDDQueryDMA
+	VDDSetDMA
+	VDDSimulate16
+	host_simulate
+	VDDTerminateVDM
+	VDDInstallUserHook
+	VDDDeInstallUserHook

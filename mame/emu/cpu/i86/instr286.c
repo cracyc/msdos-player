@@ -853,13 +853,8 @@ static void PREFIX286(_iret)()
 
 	// Emulate system call on MS-DOS Player
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
-#ifdef USE_DEBUGGER
-		// Disallow reentering CPU_EXECUTE() in msdos_syscall()
 		msdos_int_num = (old - IRET_TOP);
-#else
-		// Call msdos_syscall() here for better processing speed
-		msdos_syscall(old - IRET_TOP);
-#endif
+		msdos_stat |= REQ_SYSCALL;
 	}
 }
 
