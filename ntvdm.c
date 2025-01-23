@@ -1194,7 +1194,6 @@ __declspec(dllexport) DWORD WOWSysErrorBox(LPCSTR title, LPCSTR message, ULONG b
 			break;
 	}
 	int ret = MessageBoxA(NULL, title, message, mbbtn);
-	mbbtn &= 0xf;
 	switch(ret) {
 		case IDOK:
 			ret = kBtnOk;
