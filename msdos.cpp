@@ -21667,12 +21667,12 @@ inline void hardware_run_cpu()
 	if(CPU_EIP_CHANGED) {
 		idle_ops++;
 	}
-#if defined(DEBUGGER) && defined(ENABLE_DEBUG_LOG)
-			if(debug_trace && fp_debug_log != NULL) {
-			char buffer[256];
-			debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
-			fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
-		}
+#if defined(USE_DEBUGGER) && defined(ENABLE_DEBUG_LOG)
+	if(debug_trace && fp_debug_log != NULL) {
+		char buffer[256];
+		debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
+		fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
+	}
 #endif
 	if(msdos_stat & REQ_SYSCALL) {
 		msdos_stat &= ~REQ_SYSCALL;
@@ -24736,13 +24736,7 @@ PBYTE MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
 	} else {
 		addr = (HIWORD(addr) << 4) + LOWORD(addr);
 	}
-	if (addr >= 0xfff80000) {
-		addr &= 0xfffff;
-	}
-	if (addr < MAX_MEM) {
-		return mem + addr;
-	}
-	return NULL;
+	return mem + addr;
 }
 
 PBYTE VdmMapFlat(WORD seg, DWORD ofs, VDM_MODE mode)
@@ -24756,13 +24750,7 @@ PBYTE VdmMapFlat(WORD seg, DWORD ofs, VDM_MODE mode)
 	} else {
 		addr = (seg << 4) + (ofs & 0xffff);
 	}
-	if (addr >= 0xfff80000) {
-		addr &= 0xfffff;
-	}
-	if (addr < MAX_MEM) {
-		return mem + addr;
-	}
-	return NULL;
+	return mem + addr;
 }
 
 BOOL VDDInstallMemoryHook(HANDLE hvdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDLER handler)
@@ -24771,9 +24759,6 @@ BOOL VDDInstallMemoryHook(HANDLE hvdd, PVOID addr, DWORD size, PVDD_MEMORY_HANDL
 	DWORD first = offset >> 12;
 	DWORD last = (offset + size - 1) >> 12;
 	
-	if (offset < MAX_MEM) {
-		return FALSE;
-	}
 	if (!vdd_mem) {
 		vdd_mem = (vdd_mem_t *)calloc(MAX_MEM_PAGE, sizeof(vdd_mem_t));
 	}
@@ -24865,22 +24850,12 @@ BOOL VDDFreeMem(HANDLE hvdd, PVOID addr, DWORD size)
 
 void VDDSimulateInterrupt(int ms, BYTE line, int count)
 {
+#ifdef ENABLE_DEBUG_LOG
+	fprintf(fp_debug_log, "VDDSimulateInterrupt %d %d %d\n", ms, line, count);
+#endif
+	// protected mode programs need the isr bit set to avoid confusing irqs with faults in irq 8-f
 	if ((ms == 0 || ms == 1) && (line >= 0 && line < 8) && (count > 0)) {
-		UINT16 tmp_cs = CPU_CS;
-		UINT32 tmp_eip = CPU_EIP;
-		int vector = (pic[ms].icw2 & 0xf8) | line;
-		
-		for (int i = 0; i < count; i++) {
-			CPU_SOFT_INTERRUPT(vector);
-			
-			// run cpu until interrupt routine is done
-			while (!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
-				try {
-					hardware_run_cpu();
-				} catch(...) {
-				}
-			}
-		}
+		pic_req(ms, line, 1);
 	}
 }
 
@@ -24905,7 +24880,7 @@ BOOL VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange
 	vdd_io[found].hvdd = hvdd;
 	memcpy(&vdd_io[found].io_funcs, IOhandler, sizeof(VDD_IO_HANDLERS));
 	vdd_io[found].io_range_len = cPortRange;
-	memcpy(&vdd_io[found].io_range, pPortRange, cPortRange * sizeof(VDD_IO_PORTRANGE));
+	memcpy(vdd_io[found].io_range, pPortRange, cPortRange * sizeof(VDD_IO_PORTRANGE));
 	return TRUE;
 }
 
@@ -25129,7 +25104,7 @@ BOOL vdd_io_read(int port, int size, void *val)
 	for (int i = 0; i < 5; i++) {
 		if (vdd_io[i].hvdd) {
 			for (int j = 0; j < vdd_io[i].io_range_len; j++) {
-				if ((vdd_io[i].io_range[j].First >= port) && (vdd_io[i].io_range[j].Last <= port)) {
+				if ((vdd_io[i].io_range[j].First <= port) && (vdd_io[i].io_range[j].Last >= port)) {
 					switch (size) {
 						case 2:
 							if (vdd_io[i].io_funcs.inw_handler) {
@@ -25156,7 +25131,7 @@ BOOL vdd_io_write(int port, int size, WORD val)
 	for (int i = 0; i < 5; i++) {
 		if (vdd_io[i].hvdd) {
 			for (int j = 0; j < vdd_io[i].io_range_len; j++) {
-				if ((vdd_io[i].io_range[j].First >= port) && (vdd_io[i].io_range[j].Last <= port)) {
+				if ((vdd_io[i].io_range[j].First <= port) && (vdd_io[i].io_range[j].Last >= port)) {
 					switch (size) {
 						case 2:
 							if (vdd_io[i].io_funcs.outw_handler) {
