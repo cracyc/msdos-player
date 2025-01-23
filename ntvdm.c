@@ -1170,27 +1170,27 @@ __declspec(dllexport) DWORD WOWSysErrorBox(LPCSTR title, LPCSTR message, ULONG b
 	{
 		case (1 << kBtnOk) | (1 << kBtnCancel):
 		case (1 << kBtnOk) | (1 << kBtnClose):
-			btn |= MB_OKCANCEL;
+			mbbtn |= MB_OKCANCEL;
 			break;
 		case (1 << kBtnAbort) | (1 << kBtnRetry) | (1 << kBtnIgnore):
-			btn |= MB_ABORTRETRYIGNORE;
+			mbbtn |= MB_ABORTRETRYIGNORE;
 			break;
 		case (1 << kBtnCancel) | (1 << kBtnRetry) | (1 << kBtnClose):
-			btn |= MB_CANCELTRYCONTINUE;
+			mbbtn |= MB_CANCELTRYCONTINUE;
 			break;
 		case (1 << kBtnYes) | (1 << kBtnNo):
-			btn |= MB_YESNO;
+			mbbtn |= MB_YESNO;
 			break;
 		case (1 << kBtnYes) | (1 << kBtnNo) | (1 << kBtnCancel):
 		case (1 << kBtnYes) | (1 << kBtnNo) | (1 << kBtnClose):
-			btn |= MB_YESNOCANCEL;
+			mbbtn |= MB_YESNOCANCEL;
 			break;
 		case (1 << kBtnRetry) | (1 << kBtnCancel):
 		case (1 << kBtnRetry) | (1 << kBtnClose):
-			btn |= MB_RETRYCANCEL;
+			mbbtn |= MB_RETRYCANCEL;
 			break;
 		default:
-			btn |= MB_OK;
+			mbbtn |= MB_OK;
 			break;
 	}
 	int ret = MessageBoxA(NULL, title, message, mbbtn);

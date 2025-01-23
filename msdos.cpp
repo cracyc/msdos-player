@@ -24853,7 +24853,7 @@ void VDDSimulateInterrupt(int ms, BYTE line, int count)
 #ifdef ENABLE_DEBUG_LOG
 	fprintf(fp_debug_log, "VDDSimulateInterrupt %d %d %d\n", ms, line, count);
 #endif
-	// protected mode programs need the isr bit set to avoid confusing irqs with faults in irq 8-f
+	// protected mode programs need the isr bit set to avoid confusing irqs with faults in int 8-f
 	if ((ms == 0 || ms == 1) && (line >= 0 && line < 8) && (count > 0)) {
 		pic_req(ms, line, 1);
 	}
