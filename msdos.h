@@ -1301,6 +1301,10 @@ void msdos_xms_free_emb_handle(emb_handle_t *emb_handle);
 typedef struct {
 	HMODULE hvdd;
 	FARPROC dispatch;
+	PFNVDD_UCREATE ucr_Handler;
+	PFNVDD_UTERMINATE uterm_Handler;
+	PFNVDD_UBLOCK ublock_handler;
+	PFNVDD_URESUME uresume_handler;
 } vdd_module_t;
 
 static vdd_module_t vdd_modules[5] = {0};

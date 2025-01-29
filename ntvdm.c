@@ -1134,16 +1134,15 @@ __declspec(dllexport) void WINAPI VDDTerminateVDM(void)
 
 __declspec(dllexport) BOOL WINAPI VDDInstallUserHook(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler)
 {
-	//return FALSE;
-	return TRUE;
+	return func.VDDInstallUserHook(hvdd, ucr_Handler, uterm_Handler, ublock_handler, uresume_handler);
 }
 
 __declspec(dllexport) BOOL WINAPI VDDDeInstallUserHook(HANDLE hvdd)
 {
-	return FALSE;
+	return func.VDDDeInstallUserHook(hvdd);
 }
 
-enum btnmask 
+enum btnmask
 {
 	kBtnOk = 1,
 	kBtnCancel = 2,
@@ -1159,13 +1158,16 @@ enum btnmask
 __declspec(dllexport) DWORD WOWSysErrorBox(LPCSTR title, LPCSTR message, ULONG btn1, ULONG btn2, ULONG btn3)
 {
 	ULONG mbbtn = MB_DEFBUTTON1;
+	ULONG btn;
+	int ret;
+	
 	if(btn2 & 0x8000) {
 		mbbtn = MB_DEFBUTTON2;
 	} else if(btn3 & 0x8000) {
 		mbbtn = MB_DEFBUTTON3;
 	}
-	ULONG btn = (1 << (btn1 & 0xf)) | (1 << (btn2 & 0xf)) | (1 << (btn3 & 0xf));  // try to convert buttons into MB_*
-
+	btn = (1 << (btn1 & 0xf)) | (1 << (btn2 & 0xf)) | (1 << (btn3 & 0xf));  // try to convert buttons into MB_*
+	
 	switch(btn)
 	{
 		case (1 << kBtnOk) | (1 << kBtnCancel):
@@ -1193,7 +1195,7 @@ __declspec(dllexport) DWORD WOWSysErrorBox(LPCSTR title, LPCSTR message, ULONG b
 			mbbtn |= MB_OK;
 			break;
 	}
-	int ret = MessageBoxA(NULL, title, message, mbbtn);
+	ret = MessageBoxA(NULL, title, message, mbbtn);
 	switch(ret) {
 		case IDOK:
 			ret = kBtnOk;

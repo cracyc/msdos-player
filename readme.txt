@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/21/2025
+								1/25/2025
 
 ----- What's This
 
@@ -1084,8 +1084,8 @@ VDD (Virtual Device Driver)
 	host_simulate
 	VDDUnSimulate16
 	VDDTerminateVDM
-	VDDInstallUserHook (*10)
-	VDDDeInstallUserHook (*10)
+	VDDInstallUserHook
+	VDDDeInstallUserHook
 
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive

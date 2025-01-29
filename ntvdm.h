@@ -121,6 +121,8 @@ typedef BOOL (*funcVDDQueryDMA)(HANDLE hvdd, WORD ch, PVDD_DMA_INFO info);
 typedef BOOL (*funcVDDSetDMA)(HANDLE hvdd, WORD ch, WORD flag, PVDD_DMA_INFO info);
 typedef void (*funcVDDSimulate16)();
 typedef void (*funcVDDTerminateVDM)(void);
+typedef BOOL (*funcVDDInstallUserHook)(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler);
+typedef BOOL (*funcVDDDeInstallUserHook)(HANDLE hvdd);
 
 typedef struct _VDD_FUNC_TABLE {
 	funcGetBYTE getAL;
@@ -222,6 +224,8 @@ typedef struct _VDD_FUNC_TABLE {
 	funcVDDSetDMA VDDSetDMA;
 	funcVDDSimulate16 VDDSimulate16;
 	funcVDDTerminateVDM VDDTerminateVDM;
+	funcVDDInstallUserHook VDDInstallUserHook;
+	funcVDDDeInstallUserHook VDDDeInstallUserHook;
 } VDD_FUNC_TABLE, *PVDD_FUNC_TABLE;
 
 #endif

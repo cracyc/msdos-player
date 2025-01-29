@@ -1203,8 +1203,10 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 void write_byte(UINT32 byteaddress, UINT8 data)
 {
 	check_bp(byteaddress, &wr_break_point, 1);
-	if((byteaddress < MEMORY_END) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM))) {
-		mem[byteaddress] = data;
+	if((byteaddress < MEMORY_END) || (byteaddress >= DUMMY_TOP)) {
+		if (byteaddress < MAX_MEM) {
+			mem[byteaddress] = data;
+		}
 #ifdef SUPPORT_VDD
 	} else if(vdd_mem) {
 		// call VirtualAlloc automatically instead of page-fault handler
@@ -1245,16 +1247,17 @@ void write_word(UINT32 byteaddress, UINT16 data)
 			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
-	} else if((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 1)) {
-		*(UINT16 *)(mem + byteaddress) = data;
-	} else if(byteaddress & 1) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte
+	} else if(byteaddress >= DUMMY_TOP) {
+		if (byteaddress < MAX_MEM - 1) {
+			*(UINT16 *)(mem + byteaddress) = data;
+		}
 #ifdef SUPPORT_VDD
 	} else if(vdd_mem) {
 		// call VirtualAlloc automatically instead of page-fault handler
 		UINT16 *ptr = (UINT16 *)get_virtual_memory(byteaddress);
 		if(ptr) *ptr = data;
 #endif
-		// if the bp hit above now_suspended will be true so it won't hit again in write_byte
+	} else if(byteaddress & 1) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte
 		write_byte(byteaddress    , (data     ) & 0xff);
 		write_byte(byteaddress + 1, (data >> 8) & 0xff);
 	} else {
@@ -1277,14 +1280,13 @@ void write_dword(UINT32 byteaddress, UINT32 data)
 	check_bp(byteaddress, &wr_break_point, 4);
 	if((byteaddress < MEMORY_END - 3) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 3))) {
 		*(UINT32 *)(mem + byteaddress) = data;
-	} else if(byteaddress & 3) {
 #ifdef SUPPORT_VDD
 	} else if(vdd_mem) {
 		// call VirtualAlloc automatically instead of page-fault handler
 		UINT32 *ptr = (UINT32 *)get_virtual_memory(byteaddress);
 		if(ptr) *ptr = data;
 #endif
-	} else {		// if the bp hit above now_suspended will be true so it won't hit again in write_byte/word
+	} else if(byteaddress & 3) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte/word
 		if(byteaddress & 1) {
 			write_byte(byteaddress    , (data      ) & 0x00ff);
 			write_word(byteaddress + 1, (data >>  8) & 0xffff);
@@ -8656,6 +8658,14 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		*(UINT16 *)(mem + (ss << 4) + sp) = 0;
 		CPU_JMP_FAR(cs, ip);
 		MySetConsoleTitleA(process->module_path);
+		
+#ifdef SUPPORT_VDD
+		for(int i = 0; i < 5; i++) {
+			if(vdd_modules[i].hvdd && vdd_modules[i].ucr_Handler) {
+				vdd_modules[i].ucr_Handler(psp_seg);
+			}
+		}
+#endif
 	} else if(al == 0x01) {
 		// copy ss:sp and cs:ip to param block
 		param->sp = sp;
@@ -8733,6 +8743,14 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	
 	current_psp = psp->parent_psp;
 	msdos_sda_update(current_psp);
+	
+#ifdef SUPPORT_VDD
+	for(int i = 0; i < 5; i++) {
+		if(vdd_modules[i].hvdd && vdd_modules[i].uterm_Handler) {
+			vdd_modules[i].uterm_Handler(psp_seg);
+		}
+	}
+#endif
 }
 
 // drive
@@ -20761,8 +20779,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// init DTA info
 	msdos_dta_info_init();
 	
-#if 0
 	// init memory
+#if 0
 	memset(mem, 0, sizeof(mem));
 #endif
 	
@@ -24850,9 +24868,6 @@ BOOL VDDFreeMem(HANDLE hvdd, PVOID addr, DWORD size)
 
 void VDDSimulateInterrupt(int ms, BYTE line, int count)
 {
-#ifdef ENABLE_DEBUG_LOG
-	fprintf(fp_debug_log, "VDDSimulateInterrupt %d %d %d\n", ms, line, count);
-#endif
 	// protected mode programs need the isr bit set to avoid confusing irqs with faults in int 8-f
 	if ((ms == 0 || ms == 1) && (line >= 0 && line < 8) && (count > 0)) {
 		pic_req(ms, line, 1);
@@ -25099,6 +25114,34 @@ void VDDTerminateVDM(void)
 	msdos_stat |= REQ_EXIT;
 }
 
+BOOL VDDInstallUserHook(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler)
+{
+	for (int i = 0; i < 5; i++) {
+		if (vdd_modules[i].hvdd == hvdd) {
+			vdd_modules[i].ucr_Handler = ucr_Handler;
+			vdd_modules[i].uterm_Handler = uterm_Handler;
+			vdd_modules[i].ublock_handler = ublock_handler;
+			vdd_modules[i].uresume_handler = uresume_handler;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+BOOL VDDDeInstallUserHook(HANDLE hvdd)
+{
+	for (int i = 0; i < 5; i++) {
+		if (vdd_modules[i].hvdd == hvdd) {
+			vdd_modules[i].ucr_Handler = NULL;
+			vdd_modules[i].uterm_Handler = NULL;
+			vdd_modules[i].ublock_handler = NULL;
+			vdd_modules[i].uresume_handler = NULL;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 BOOL vdd_io_read(int port, int size, void *val)
 {
 	for (int i = 0; i < 5; i++) {
@@ -25254,5 +25297,7 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 	ptr->VDDSetDMA = VDDSetDMA;
 	ptr->VDDSimulate16 = VDDSimulate16;
 	ptr->VDDTerminateVDM = VDDTerminateVDM;
+	ptr->VDDInstallUserHook = VDDInstallUserHook;
+	ptr->VDDDeInstallUserHook = VDDDeInstallUserHook;
 }
 #endif
