@@ -5529,6 +5529,10 @@ bool msdos_is_device_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
+	
 	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
 		if(_stricmp(full, "\\\\.\\AUX" ) == 0 ||
 		   _stricmp(full, "\\\\.\\CON" ) == 0 ||
@@ -5941,6 +5945,10 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 	int fd = -1;
 	
 	*sio_port = *lpt_port = 0;
+
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
 	
 	if(msdos_is_con_path(path)) {
 		// MODE.COM opens CON device with read/write mode :-(
@@ -5968,6 +5976,10 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 
 UINT16 msdos_device_info(const char *path)
 {
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
+
 	if(msdos_is_con_path(path)) {
 		return(0x80d3);
 	} else if(msdos_is_comm_path(path)) {
@@ -23779,12 +23791,15 @@ void beep_update()
 
 // VGA
 
+static bool hsync = false;
+
 UINT8 mda_read_status()
 {
 	// 50Hz
 	UINT32 time = timeGetTime() % 20;
+	hsync = !hsync;
 	
-	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
+	return 0xf0 | (time < 4 ? 0x09 : (hsync ? 1 : 0));
 }
 
 UINT8 vga_read_status()
@@ -23795,7 +23810,8 @@ UINT8 vga_read_status()
 	UINT32 time = timeGetTime() % period[index];
 	
 	index = (index + 1) % 3;
-	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
+	hsync = !hsync;
+	return 0xf0 | (time < 4 ? 0x09 : (hsync ? 1 : 0));
 }
 
 // I/O bus
