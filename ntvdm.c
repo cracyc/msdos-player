@@ -1142,7 +1142,7 @@ __declspec(dllexport) BOOL WINAPI VDDDeInstallUserHook(HANDLE hvdd)
 	return func.VDDDeInstallUserHook(hvdd);
 }
 
-enum btnmask
+enum btnval
 {
 	kBtnOk = 1,
 	kBtnCancel = 2,
@@ -1223,11 +1223,11 @@ __declspec(dllexport) DWORD WOWSysErrorBox(LPCSTR title, LPCSTR message, ULONG b
 			ret = kBtnClose;
 			break;
 	}
-	if((btn1 == ret) || ((btn1 == kBtnClose) && (ret == IDCANCEL))) {
+	if((btn1 == ret) || ((btn1 == kBtnClose) && (ret == kBtnCancel))) {
 		return 1;
-	} else if((btn2 == ret) || ((btn2 == kBtnClose) && (ret == IDCANCEL))) {
+	} else if((btn2 == ret) || ((btn2 == kBtnClose) && (ret == kBtnCancel))) {
 		return 2;
-	} else if((btn3 == ret) || ((btn3 == kBtnClose) && (ret == IDCANCEL))) {
+	} else if((btn3 == ret) || ((btn3 == kBtnClose) && (ret == kBtnCancel))) {
 		return 3;
 	}
 	return 1;
