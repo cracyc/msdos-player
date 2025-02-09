@@ -23798,15 +23798,12 @@ void beep_update()
 
 // VGA
 
-static bool hsync = false;
-
 UINT8 mda_read_status()
 {
 	// 50Hz
 	UINT32 time = timeGetTime() % 20;
-	hsync = !hsync;
 	
-	return 0xf0 | (time < 4 ? 0x09 : (hsync ? 1 : 0));
+	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
 }
 
 UINT8 vga_read_status()
@@ -23817,8 +23814,7 @@ UINT8 vga_read_status()
 	UINT32 time = timeGetTime() % period[index];
 	
 	index = (index + 1) % 3;
-	hsync = !hsync;
-	return 0xf0 | (time < 4 ? 0x09 : (hsync ? 1 : 0));
+	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
 }
 
 // I/O bus
