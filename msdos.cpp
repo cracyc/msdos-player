@@ -9025,13 +9025,28 @@ inline void pcbios_int_10h_00h()
 	case 0x71: // Extended CGA V-Text Mode
 		pcbios_set_console_size(scr_width, scr_height, !(CPU_AL & 0x80));
 		break;
+	case 0x03: { // CGA Text Mode
+		int lines = 400;
+		switch(mem[0x489] & 0x90)
+		{
+			case 0x00:
+				lines = 350;
+				break;
+			case 0x80:
+				lines = 200;
+				break;
+		}
+		change_console_size(80, 25); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(80, lines / 16, !(CPU_AL & 0x80));
+		break;
+	}
 	case 0x73: // Extended CGA Text Mode
 	case 0x64: // J-3100 DCGA (mono)
 	case 0x65: // J-3100 DCGA
 	case 0x74: // J-3100 DCGA (mono)
 	case 0x75: // J-3100 DCGA
 	case 0x02: // CGA Text Mode (gray)
-	case 0x03: // CGA Text Mode
 	case 0x07: // MDA Text Mode (mono)
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
@@ -9434,6 +9449,16 @@ inline void pcbios_int_10h_10h()
 
 inline void pcbios_int_10h_11h()
 {
+	int lines = 400;
+	switch(mem[0x489] & 0x90)
+	{
+		case 0x00:
+			lines = 350;
+			break;
+		case 0x80:
+			lines = 200;
+			break;
+	}
 	switch(CPU_AL) {
 	case 0x00:
 	case 0x10:
@@ -9448,7 +9473,7 @@ inline void pcbios_int_10h_11h()
 					}
 				}
 			}
-			pcbios_set_console_size(80, (25 * 16) / CPU_BH, true);
+			pcbios_set_console_size(80, lines / CPU_BH, true);
 		}
 		break;
 	case 0x01:
@@ -9463,7 +9488,7 @@ inline void pcbios_int_10h_11h()
 				}
 			}
 		}
-		pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
+		pcbios_set_console_size(80, lines / 14, true); // 28 = 25 * 16 / 14
 		break;
 	case 0x02:
 	case 0x12:
@@ -9482,13 +9507,13 @@ inline void pcbios_int_10h_11h()
 				pcbios_set_font_size(font_width, font_height);
 			}
 		}
-		pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
+		pcbios_set_console_size(80, lines / 8, true); // 50 = 25 * 16 / 8
 		break;
 	case 0x04:
 	case 0x14:
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
-		pcbios_set_console_size(80, 25, true);
+		pcbios_set_console_size(80, lines / 16, true);
 		break;
 	case 0x18:
 		change_console_size(80, 25); // for Windows10
@@ -9514,6 +9539,23 @@ inline void pcbios_int_10h_12h()
 	case 0x10:
 		CPU_BX = 0x0003;
 		CPU_CX = 0x0009;
+		break;
+	case 0x30:
+		UINT8 modebits;
+		switch(CPU_AL) {
+			case 0:
+				modebits = 0x80;
+				break;
+			case 1:
+				modebits = 0x00;
+				break;
+			case 2:
+				modebits = 0x10;
+				break;
+			default:
+				return;
+		}
+		mem[0x489] |= (mem[0x489] & ~0x90) | modebits;
 		break;
 	}
 }
@@ -20870,6 +20912,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
+	*(UINT8  *)(mem + 0x489) = 0x10; // 400 line mode
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 	// put ROM configuration table for INT 15h, AH=C0h (Get Configuration) in reserved area
 	*(UINT16 *)(mem + 0x4ac + 0) = 0x0a; // number of bytes following
