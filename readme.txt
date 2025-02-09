@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								1/25/2025
+								2/7/2025
 
 ----- What's This
 
@@ -1057,8 +1057,8 @@ VDD (Virtual Device Driver)
 	demFileDelete
 	demFileFindFirst
 	demFileFindNext
-	demGetPhysicalDriveType (*10)
-	demIsShortPathName (*10)
+	demGetPhysicalDriveType
+	demIsShortPathName
 	demSetCurrentDirectoryGetDrive (*10)
 	MGetVdmPointer
 	Sim32pGetVDMPointer
@@ -1086,6 +1086,14 @@ VDD (Virtual Device Driver)
 	VDDTerminateVDM
 	VDDInstallUserHook
 	VDDDeInstallUserHook
+	VDDAllocateDosHandle (*10)
+	VDDReleaseDosHandle (*10)
+	VDDAssociateNtHandle (*10)
+	VDDRetrieveNtHandle (*10)
+	VdmTraceEvent (*10)
+	VdmParametersInfo (*10)
+	VdmGetParametersInfoError (*10)
+	WOWSysErrorBox
 
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive

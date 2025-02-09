@@ -7,6 +7,7 @@
 
 #include <windows.h>
 #include <direct.h>
+#include <mbstring.h>
 #include "ntvdm.h"
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
@@ -986,12 +987,84 @@ __declspec(dllexport) DWORD WINAPI demFileFindNext(OUT PVOID lpFindFileData)
 
 __declspec(dllexport) UCHAR WINAPI demGetPhysicalDriveType(IN UCHAR DriveNumber)
 {
-    return 0; //DOSDEVICE_DRIVE_UNKNOWN;
+	if(DriveNumber < 26) {
+		char Volume[] = "A:\\";
+		Volume[0] = 'A' + DriveNumber;
+		return GetDriveTypeA(Volume);
+	}
+	return 0;
+}
+
+#ifdef _MBCS
+static __inline  char *my_strchr(char *str, int chr)
+{
+	return (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr));
+}
+static __inline  char *my_strrchr(char *str, int chr)
+{
+	return (char *)_mbsrchr((unsigned char *)(str), (unsigned int)(chr));
+}
+#else
+#define my_strchr(str, chr) strchr((str), (chr))
+#define my_strrchr(str, chr) strrchr((str), (chr))
+#endif
+
+static BOOL IsInvalidName(char *Name, size_t Length)
+{
+	if(strcmp(Name, ".") == 0 || strcmp(Name, "..") == 0) {
+		return FALSE;
+	}
+	if(strlen(Name) > Length) {
+		return TRUE;
+	}
+	if(my_strchr(Name, ' ') != NULL ||
+	   my_strchr(Name, '"') != NULL ||
+	   my_strchr(Name, '<') != NULL ||
+	   my_strchr(Name, '>') != NULL ||
+	   my_strchr(Name, '|') != NULL ||
+	   my_strchr(Name, ':') != NULL ||
+	   my_strchr(Name, '*') != NULL ||
+	   my_strchr(Name, '?') != NULL ||
+	   my_strchr(Name, '.') != NULL) {
+		return TRUE;
+	}
+	return FALSE;
 }
 
 __declspec(dllexport) BOOL WINAPI demIsShortPathName(LPCSTR Path, BOOL Unknown)
 {
-	return FALSE;
+	if(((Path[0] >= 'A' && Path[0] <= 'Z') || (Path[0] >= 'a' && Path[0] <= 'z')) && Path[1] == ':') {
+		Path += 2;
+	}
+	while(Path[0] != '\0') {
+		char Name[MAX_PATH], *Sep1, *Sep2, *Ext;
+
+		strncpy(Name, Path, MAX_PATH);
+		Name[MAX_PATH - 1] = '\0';
+		
+		if((Sep1 = my_strchr(Name, '\\')) != NULL) {
+			*Sep1 = '\0';
+		}
+		if((Sep2 = my_strchr(Name, '/')) != NULL) {
+			*Sep2 = '\0';
+		}
+		Path += strlen(Name) + (Sep1 || Sep2 ? 1 : 0);
+		
+		Ext = my_strrchr(Name, '.');
+		if(Ext) {
+			if(Sep1 || Sep2) {
+				return FALSE;
+			}
+			*Ext++ = '\0';
+			if(IsInvalidName(Ext, 3)) {
+				return FALSE;
+			}
+		}
+		if(IsInvalidName(Name, 8)) {
+			return FALSE;
+		}
+	}
+	return TRUE;
 }
 
 __declspec(dllexport) DWORD WINAPI demSetCurrentDirectoryGetDrive(LPCSTR CurrentDirectory, PUCHAR DriveNumber)
@@ -1140,6 +1213,42 @@ __declspec(dllexport) BOOL WINAPI VDDInstallUserHook(HANDLE hvdd, PFNVDD_UCREATE
 __declspec(dllexport) BOOL WINAPI VDDDeInstallUserHook(HANDLE hvdd)
 {
 	return func.VDDDeInstallUserHook(hvdd);
+}
+
+// Unknown functions defined in NT_VDD.H
+__declspec(dllexport) SHORT WINAPI VDDAllocateDosHandle(ULONG pPDB, PVOID* ppSFT, PVOID* ppJFT)
+{
+	return 0;
+}
+
+__declspec(dllexport) BOOL WINAPI VDDReleaseDosHandle(ULONG pPDB, SHORT hFile)
+{
+	return FALSE;
+}
+
+__declspec(dllexport) void WINAPI VDDAssociateNtHandle(PVOID pSFT, HANDLE h32File, WORD wAccess)
+{
+	
+}
+
+__declspec(dllexport) HANDLE WINAPI VDDRetrieveNtHandle(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT)
+{
+	return NULL;
+}
+
+__declspec(dllexport) VOID WINAPI VdmTraceEvent(USHORT Type, USHORT wData, ULONG  lData)
+{
+	
+}
+
+__declspec(dllexport) BOOL WINAPI VdmParametersInfo(VDM_INFO_TYPE infotype, PVOID pBuffer, ULONG cbBufferSize)
+{
+	return FALSE;
+}
+
+__declspec(dllexport) VDM_INFO_TYPE WINAPI VdmGetParametersInfoError(VOID)
+{
+	return 0;
 }
 
 enum btnval

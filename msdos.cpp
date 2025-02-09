@@ -1728,9 +1728,9 @@ void debugger_main()
 			int num = 0;
 			FILE *fp = NULL;
 			
-			if((token = strtok(command, " ")) != NULL) {
+			if((token = my_strtok(command, " ")) != NULL) {
 				params[num++] = token;
-				while(num < 32 && (token = strtok(NULL, " ")) != NULL) {
+				while(num < 32 && (token = my_strtok(NULL, " ")) != NULL) {
 					params[num++] = token;
 				}
 			}
@@ -1832,7 +1832,7 @@ void debugger_main()
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
 					strcpy(buffer, prev_command);
-					if((token = strtok(buffer, "\"")) != NULL && (token = strtok(NULL, "\"")) != NULL) {
+					if((token = my_strtok(buffer, "\"")) != NULL && (token = my_strtok(NULL, "\"")) != NULL) {
 						int len = (int)strlen(token);
 						for(int i = 0; i < len; i++) {
 							write_byte(((seg << 4) + (ofs + i)) & ADDR_MASK, token[i] & 0xff);
@@ -3724,11 +3724,11 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-s", 2) == 0) {
 			if(IS_NUMERIC(argv[i][2])) {
 				char *p0 = &argv[i][2], *p1, *p2, *p3;
-				if((p1 = strchr(p0, ',')) != NULL && IS_NUMERIC(p1[1])) {
+				if((p1 = my_strchr(p0, ',')) != NULL && IS_NUMERIC(p1[1])) {
 					sio_port_number[1] = atoi(p1 + 1);
-					if((p2 = strchr(p1, ',')) != NULL && IS_NUMERIC(p2[1])) {
+					if((p2 = my_strchr(p1, ',')) != NULL && IS_NUMERIC(p2[1])) {
 						sio_port_number[2] = atoi(p2 + 1);
-						if((p3 = strchr(p2, ',')) != NULL && IS_NUMERIC(p3[1])) {
+						if((p3 = my_strchr(p2, ',')) != NULL && IS_NUMERIC(p3[1])) {
 							sio_port_number[3] = atoi(p3 + 1);
 						}
 					}
@@ -5342,12 +5342,12 @@ void msdos_init_fcb_in_psp(fcb_t *fcb, const char *argv)
 			}
 		}
 		strcpy(tmp, msdos_short_full_path(path));
-		if((name = strrchr(tmp, '\\')) != NULL) {
+		if((name = my_strrchr(tmp, '\\')) != NULL) {
 			name++;
 		} else {
 			name = tmp;
 		}
-		if((ext = strrchr(name, '.')) != NULL) {
+		if((ext = my_strrchr(name, '.')) != NULL) {
 			*ext++ = '\0';
 			memcpy(fcb->file_name + 8, ext, min(strlen(ext), 3));
 		}
@@ -5462,7 +5462,7 @@ const char *msdos_short_full_dir(const char *path)
 	
 	strcpy(tmp, msdos_short_full_path(path));
 	
-	if((sep = strrchr(tmp, '\\')) != NULL) {
+	if((sep = my_strrchr(tmp, '\\')) != NULL) {
 		sep[0] = '\0';
 	}
 	return(tmp);
@@ -5499,7 +5499,7 @@ const char *msdos_local_file_path(const char *path, int lfn)
 const char *msdos_file_name(const char *path)
 {
 	static char tmp[MAX_PATH];
-	const char *sep = strrchr(path, '\\');
+	const char *sep = my_strrchr(path, '\\');
 	
 	if(sep) {
 		strcpy(tmp, sep + 1);
@@ -6143,7 +6143,7 @@ int msdos_find_file_has_8dot3name(WIN32_FIND_DATAA *fd)
 	if(len > 12) {
 		return(0);
 	}
-	const char *ext = strrchr(fd->cFileName, '.');
+	const char *ext = my_strrchr(fd->cFileName, '.');
 	if((ext ? ext - fd->cFileName : len) > 8) {
 		return(0);
 	}
@@ -7320,7 +7320,7 @@ const char *msdos_env_get(int env_seg, const char *name)
 	src[ENV_SIZE - 1] = '\0';
 	
 	while(1) {
-		if(src[0] == 0 || strchr(src, '=') == NULL) {
+		if(src[0] == 0 || my_strchr(src, '=') == NULL) {
 			break;
 		}
 		int len = (int)strlen(src);
@@ -7348,7 +7348,7 @@ void msdos_env_set(int env_seg, const char *name, const char *value)
 	memset(dst, 0, ENV_SIZE);
 	
 	while(1) {
-		if(src[0] == 0 || strchr(src, '=') == NULL) {
+		if(src[0] == 0 || my_strchr(src, '=') == NULL) {
 			break;
 		}
 		int len = (int)strlen(src);
@@ -7423,7 +7423,7 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 	
 	if(check_file_extension(command, ".COM") || check_file_extension(command, ".EXE") || check_file_extension(command, ".BAT")) {
 		strcpy(path, command);
-		if(_access(path, 0) != 0 && strchr(command, ':') == NULL && strchr(command, '\\') == NULL) {
+		if(_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 			// search path in parent environments
 			const char *env = msdos_env_get(env_seg, "PATH");
 			if(env != NULL) {
@@ -7441,13 +7441,13 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 				}
 			}
 		}
-	} else if(strchr(command, '.') == NULL) {
+	} else if(my_strchr(command, '.') == NULL) {
 		sprintf(path, "%s.COM", command);
 		if(_access(path, 0) != 0) {
 			sprintf(path, "%s.EXE", command);
 			if(_access(path, 0) != 0) {
 				sprintf(path, "%s.BAT", command);
-				if(_access(path, 0) != 0 && strchr(command, ':') == NULL && strchr(command, '\\') == NULL) {
+				if(_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 					// search path in parent environments
 					const char *env = msdos_env_get(env_seg, "PATH");
 					if(env != NULL) {
@@ -8126,7 +8126,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						src[ENV_SIZE - 1] = '\0';
 						OPEN_STDOUT();
 						while(1) {
-							if(src[0] == 0 || strchr(src, '=') == NULL) {
+							if(src[0] == 0 || my_strchr(src, '=') == NULL) {
 								break;
 							}
 							int len = (int)strlen(src);
@@ -8136,7 +8136,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							src += len + 1;
 						}
 						CLOSE_STDOUT();
-					} else if(strchr(opt, '=') == NULL) {
+					} else if(my_strchr(opt, '=') == NULL) {
 						// NOTE: this is Windows NT specific
 						const char *env = msdos_env_get(parent_psp->env_seg, opt);
 						if(env != NULL) {
@@ -12499,7 +12499,7 @@ inline void msdos_int_21h_17h()
 				
 				strcpy(path, fd.cFileName);
 				
-				if((ext = strrchr(path, '.')) != NULL) {
+				if((ext = my_strrchr(path, '.')) != NULL) {
 					*ext++ = '\0';
 					for(int i = 0; i < strlen(ext); i++) {
 						char c = (i < 3) ? fcb_dst->file_name[8 + i] : (fcb_dst->file_name[10] == '?') ? '?' : '\0';
@@ -13192,7 +13192,7 @@ int get_country_info(country_info_t *ci, LCID locale = LOCALE_USER_DEFAULT)
 	GetLocaleInfoA(locale, LOCALE_STIME, LCdata, sizeof(LCdata));
 	*ci->time_sep = *LCdata;
 	GetLocaleInfoA(locale, LOCALE_STIMEFORMAT, LCdata, sizeof(LCdata));
-	if(strchr(LCdata, 'H') != NULL) {
+	if(my_strchr(LCdata, 'H') != NULL) {
 		ci->time_format = 1;
 	}
 	ci->case_map.w.l = 0x000a; // dummy case map routine is at fffc:000a
@@ -15694,7 +15694,7 @@ inline void msdos_int_21h_7141h()
 	if(tmp_name) {
 		++tmp_name;
 	} else {
-		tmp_name = strchr(tmp, ':');
+		tmp_name = my_strchr(tmp, ':');
 		tmp_name = tmp_name ? tmp_name + 1 : tmp;
 	}
 	
@@ -21532,14 +21532,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	if(argc > 1) {
-		if(strchr(argv[1], ' ')) {
+		if(my_strchr(argv[1], ' ')) {
 			sprintf(cmd_line->cmd, " \"%s\"", argv[1]);
 		} else {
 			sprintf(cmd_line->cmd, " %s", argv[1]);
 		}
 		for(int i = 2; i < argc; i++) {
 			char tmp[128];
-			if(strchr(argv[i], ' ')) {
+			if(my_strchr(argv[i], ' ')) {
 				sprintf(tmp, "%s \"%s\"", cmd_line->cmd, argv[i]);
 			} else {
 				sprintf(tmp, "%s %s", cmd_line->cmd, argv[i]);

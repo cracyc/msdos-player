@@ -100,6 +100,14 @@ typedef enum {
 	VDM_PM
 } VDM_MODE;
 
+typedef enum {
+	VDM_GET_TICK_COUNT,
+	VDM_GET_TIMER0_INITIAL_COUNT,
+	VDM_GET_LAST_UPDATED_TIMER0_COUNT,
+	VDM_LATCH_TIMER0_COUNT,
+	VDM_SET_NEXT_TIMER0_COUNT,
+} VDM_INFO_TYPE;
+
 typedef BYTE (*funcGetBYTE)();
 typedef WORD (*funcGetWORD)();
 typedef DWORD (*funcGetDWORD)();

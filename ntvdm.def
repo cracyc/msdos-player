@@ -201,3 +201,11 @@ EXPORTS
 	VDDTerminateVDM
 	VDDInstallUserHook
 	VDDDeInstallUserHook
+	VDDAllocateDosHandle
+	VDDReleaseDosHandle
+	VDDAssociateNtHandle
+	VDDRetrieveNtHandle
+	VdmTraceEvent
+	VdmParametersInfo
+	VdmGetParametersInfoError
+	WOWSysErrorBox
