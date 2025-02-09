@@ -9422,7 +9422,7 @@ inline void pcbios_int_10h_0fh()
 inline void pcbios_int_10h_10h()
 {
 	switch(CPU_AL) {
-	case 0x10:
+	case 0x03:
 		mem[0x465] &= ~0x20 | (CPU_BL << 5);
 		break;
 	default:
