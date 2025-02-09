@@ -9898,6 +9898,13 @@ inline void pcbios_int_10h_efh()
 	CPU_DX = 0xffff;
 }
 
+inline void pcbios_int_10h_fah()
+{
+	// just return something, used for mouse driver detection
+	CPU_LOAD_SREG(CPU_ES_INDEX, 0xffff);
+	CPU_BX = 0x0005;
+}
+
 inline void pcbios_int_10h_feh()
 {
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
@@ -19848,7 +19855,7 @@ void msdos_syscall(unsigned num)
 		case 0x92: break;
 		case 0x93: break;
 		case 0xef: pcbios_int_10h_efh(); break;
-		case 0xfa: break; // ega register interface library is not installed
+		case 0xfa: pcbios_int_10h_fah(); break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
