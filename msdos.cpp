@@ -278,15 +278,6 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	return dwLength;
 }
 
-BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
-{
-#if 0
-	return SetConsoleTitleA(lpConsoleTitle);
-#else
-	return TRUE;
-#endif
-}
-
 HWND MyImmGetDefaultIMEWnd(HWND hWnd)
 {
 	HMODULE hLibrary = LoadLibraryA("Imm32.dll");
@@ -912,8 +903,45 @@ BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, D
 		return WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter, nLength, dwWriteCoord, lpNumberOfCharsWritten);
 	}
 }
+
+BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
+{
+#if 0
+	return SetConsoleTitleA(lpConsoleTitle);
+#else
+	return TRUE;
+#endif
+}
 #else
 #define MyWriteConsoleOutputCharacterA WriteConsoleOutputCharacterA
+#define MySetConsoleTitleA SetConsoleTitleA
+#endif
+
+#if 0
+BOOL MyWriteConsoleOutputA(HANDLE hConsoleOutput, const CHAR_INFO *lpBuffer, COORD dwBufferSize, COORD dwBufferCoord, PSMALL_RECT lpWriteRegion)
+{
+	return WriteConsoleOutputA(hConsoleOutput, lpBuffer, dwBufferSize, dwBufferCoord, lpWriteRegion);
+}
+
+BOOL MySetConsoleCursorPosition(HANDLE hConsoleOutput, COORD dwCursorPosition)
+{
+	return SetConsoleCursorPosition(hConsoleOutput, dwCursorPosition);
+}
+
+BOOL MySetConsoleTextAttribute(HANDLE hConsoleOutput, WORD wAttributes)
+{
+	return SetConsoleTextAttribute(hConsoleOutput, wAttributes);
+}
+
+BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo)
+{
+	return GetConsoleScreenBufferInfo(hConsoleOutput, lpConsoleScreenBufferInfo);
+}
+#else
+#define MyWriteConsoleOutputA WriteConsoleOutputA
+#define MySetConsoleCursorPosition SetConsoleCursorPosition
+#define MySetConsoleTextAttribute SetConsoleTextAttribute
+#define MyGetConsoleScreenBufferInfo GetConsoleScreenBufferInfo
 #endif
 
 void vram_flush_char()
@@ -1102,7 +1130,7 @@ void write_word(UINT32 byteaddress, UINT16 data)
 				COORD co;
 				co.X = data & 0xff;
 				co.Y = (data >> 8) + scr_top;
-				SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+				MySetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
 				cursor_moved = false;
 				cursor_moved_by_crtc = false;
 			}
@@ -3976,7 +4004,7 @@ int main(int argc, char *argv[], char *envp[])
 		set_input_code_page(code_page);
 		set_output_code_page(code_page);
 	}
-	get_console_buffer_success = (GetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
+	get_console_buffer_success = (MyGetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
 	get_console_cursor_success = (GetConsoleCursorInfo(hStdout, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
 	
@@ -4122,7 +4150,7 @@ int main(int argc, char *argv[], char *envp[])
 					SetConsoleWindowInfo(hStdout, TRUE, &rect);
 				}
 			}
-			SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+			MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 		}
 		if(get_console_cursor_success) {
 			if(restore_console_cursor) {
@@ -4198,11 +4226,11 @@ void change_console_size(int width, int height)
 	int cur_buffer_width  = csbi.dwSize.X;
 	int cur_buffer_height = csbi.dwSize.Y;
 	
-	// workaround Windows 10 conhost v2 bug that crash when cursor is out of range
+	// workaround win10 conhost v2 bug that crash when cursor is out of range
 	if(is_win10_or_later) {
 		co.X = 0;
 		co.Y = 0;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 	}
 	
 	if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
@@ -5439,6 +5467,9 @@ bool msdos_is_device_path(const char *path)
 {
 	char full[MAX_PATH], *name;
 	
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
 	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
 		if(_stricmp(full, "\\\\.\\AUX" ) == 0 ||
 		   _stricmp(full, "\\\\.\\CON" ) == 0 ||
@@ -5852,6 +5883,9 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 	
 	*sio_port = *lpt_port = 0;
 	
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
 	if(msdos_is_con_path(path)) {
 		// MODE.COM opens CON device with read/write mode :-(
 		if((oflag & (_O_RDONLY | _O_WRONLY | _O_RDWR)) == _O_RDWR) {
@@ -5878,6 +5912,9 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 
 UINT16 msdos_device_info(const char *path)
 {
+	if(!strnicmp(path, "\\DEV\\", 5)) {
+		path += 5;
+	}
 	if(msdos_is_con_path(path)) {
 		return(0x80d3);
 	} else if(msdos_is_comm_path(path)) {
@@ -6673,13 +6710,13 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved_by_crtc = false;
 	}
 	if(q == 1 && msdos_symbol_code_check(out[0], int_num, reg_ah)) {
 		const char *dummy = " ";
 		WriteConsoleA(hStdout, dummy, 1, &num, NULL);
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		MyGetConsoleScreenBufferInfo(hStdout, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
 			co.Y = csbi.dwCursorPosition.Y;
@@ -6693,15 +6730,15 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		MyWriteConsoleOutputCharacterA(hStdout, out, 1, co, &num);
 	} else if(q == 1 && out[0] == 0x08) {
 		// back space
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		MyGetConsoleScreenBufferInfo(hStdout, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
 			co.Y = csbi.dwCursorPosition.Y;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		} else if(csbi.dwCursorPosition.Y > 0) {
 			co.X = csbi.dwSize.X - 1;
 			co.Y = csbi.dwCursorPosition.Y - 1;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		} else {
 			WriteConsoleA(hStdout, out, 1, &num, NULL); // to make sure
 		}
@@ -8885,7 +8922,7 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		}
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
-		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length_char = vram_last_length_char = 0;
 		vram_length_attr = vram_last_length_attr = 0;
 		leave_vram_lock();
@@ -8893,16 +8930,16 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	COORD co;
 	co.X = 0;
 	co.Y = scr_top;
-	SetConsoleCursorPosition(hStdout, co);
+	MySetConsoleCursorPosition(hStdout, co);
 	cursor_moved = true;
 	cursor_moved_by_crtc = false;
-	SetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+	MySetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
 
 void pcbios_update_cursor_position()
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+	MyGetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
 	if(!restore_console_size) {
 		scr_top = csbi.srWindow.Top;
 	}
@@ -8922,6 +8959,21 @@ static void vga_write(UINT32 addr, UINT32 data, int size)
 }
 #endif
 
+int get_scan_lines()
+{
+	switch(mem[0x489] & 0x90) {
+	case 0x00:
+		return 350;
+	case 0x10:
+		return 400;
+	case 0x80:
+		return 200;
+//	case 0x90:
+//		return 480;
+	}
+	return 400;
+}
+
 inline void pcbios_int_10h_00h()
 {
 	switch(CPU_AL & 0x7f) {
@@ -8929,13 +8981,17 @@ inline void pcbios_int_10h_00h()
 	case 0x71: // Extended CGA V-Text Mode
 		pcbios_set_console_size(scr_width, scr_height, !(CPU_AL & 0x80));
 		break;
+	case 0x03: // CGA Text Mode
+		change_console_size(80, 25); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(80, get_scan_lines() / 16, !(CPU_AL & 0x80));
+		break;
 	case 0x73: // Extended CGA Text Mode
 	case 0x64: // J-3100 DCGA (mono)
 	case 0x65: // J-3100 DCGA
 	case 0x74: // J-3100 DCGA (mono)
 	case 0x75: // J-3100 DCGA
 	case 0x02: // CGA Text Mode (gray)
-	case 0x03: // CGA Text Mode
 	case 0x07: // MDA Text Mode (mono)
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
@@ -8983,7 +9039,7 @@ inline void pcbios_int_10h_02h()
 		static bool hidden = false;
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		
-		if(CPU_DH >= scr_height || !SetConsoleCursorPosition(hStdout, co)) {
+		if(CPU_DH >= scr_height || !MySetConsoleCursorPosition(hStdout, co)) {
 			if(ci_new.bVisible) {
 				ci_new.bVisible = FALSE;
 				hidden = true;
@@ -9034,13 +9090,13 @@ inline void pcbios_int_10h_05h()
 				SCR_BUF(y,x).Attributes = mem[ofs++];
 			}
 		}
-		WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
 		COORD co;
 		co.X = mem[0x450 + CPU_AL * 2];
 		co.Y = mem[0x451 + CPU_AL * 2] + scr_top;
 		if(co.Y < scr_top + scr_height) {
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 		}
 		cursor_moved_by_crtc = false;
 	}
@@ -9092,7 +9148,7 @@ inline void pcbios_int_10h_06h()
 			}
 		}
 	}
-	WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_07h()
@@ -9133,7 +9189,7 @@ inline void pcbios_int_10h_07h()
 			}
 		}
 	}
-	WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_08h()
@@ -9269,7 +9325,7 @@ inline void pcbios_int_10h_0eh()
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		SetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hStdout, co);
 		cursor_moved_by_crtc = false;
 	}
 	co.X = mem[0x450 + mem[0x462] * 2];
@@ -9301,7 +9357,7 @@ inline void pcbios_int_10h_0eh()
 		}
 		if(!cursor_moved) {
 			co.Y += scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			cursor_moved = true;
 		}
 		mem[dest] = CPU_AL;
@@ -9317,9 +9373,26 @@ inline void pcbios_int_10h_0fh()
 
 inline void pcbios_int_10h_10h()
 {
+	static UINT8 palette[17] = {
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+		0x00
+	};
+	
 	switch(CPU_AL) {
-	case 0x10:
+	case 0x01:
+		palette[16] = CPU_BH;
+		break;
+	case 0x02:
+		memcpy(palette, mem + CPU_ES_BASE + CPU_DX, sizeof(palette));
+		break;
+	case 0x03:
 		mem[0x465] &= ~0x20 | (CPU_BL << 5);
+		break;
+	case 0x08:
+		CPU_BH = palette[16];
+		break;
+	case 0x09:
+		memcpy(mem + CPU_ES_BASE + CPU_DX, palette, sizeof(palette));
 		break;
 	default:
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -9344,7 +9417,7 @@ inline void pcbios_int_10h_11h()
 					}
 				}
 			}
-			pcbios_set_console_size(80, (25 * 16) / CPU_BH, true);
+			pcbios_set_console_size(80, get_scan_lines() / CPU_BH, true);
 		}
 		break;
 	case 0x01:
@@ -9359,7 +9432,7 @@ inline void pcbios_int_10h_11h()
 				}
 			}
 		}
-		pcbios_set_console_size(80, 28, true); // 28 = 25 * 16 / 14
+		pcbios_set_console_size(80, get_scan_lines() / 14, true);
 		break;
 	case 0x02:
 	case 0x12:
@@ -9378,13 +9451,13 @@ inline void pcbios_int_10h_11h()
 				pcbios_set_font_size(font_width, font_height);
 			}
 		}
-		pcbios_set_console_size(80, 50, true); // 50 = 25 * 16 / 8
+		pcbios_set_console_size(80, get_scan_lines() / 8, true);
 		break;
 	case 0x04:
 	case 0x14:
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
-		pcbios_set_console_size(80, 25, true);
+		pcbios_set_console_size(80, get_scan_lines() / 16, true);
 		break;
 	case 0x18:
 		change_console_size(80, 25); // for Windows10
@@ -9406,10 +9479,31 @@ inline void pcbios_int_10h_11h()
 
 inline void pcbios_int_10h_12h()
 {
+	UINT8 modebits;
+	
 	switch(CPU_BL) {
 	case 0x10:
 		CPU_BX = 0x0003;
 		CPU_CX = 0x0009;
+		break;
+	case 0x30:
+		modebits = mem[0x489] & 0x90;
+		switch(CPU_AL) {
+		case 0:
+			modebits = 0x80;
+			break;
+		case 1:
+			modebits = 0x00;
+			break;
+		case 2:
+			modebits = 0x10;
+			break;
+//		case 3:
+//			modebits = 0x90;
+//			break;
+		}
+		mem[0x489] = (mem[0x489] & ~0x90) | modebits;
+		CPU_AL = 0x12; // success
 		break;
 	}
 }
@@ -9432,16 +9526,16 @@ inline void pcbios_int_10h_13h()
 		if(mem[0x462] == CPU_BH) {
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
-			SetConsoleCursorPosition(hStdout, co);
+			MyGetConsoleScreenBufferInfo(hStdout, &csbi);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				SetConsoleTextAttribute(hStdout, CPU_BL);
+				MySetConsoleTextAttribute(hStdout, CPU_BL);
 			}
 			WriteConsoleA(hStdout, &mem[ofs], CPU_CX, &num, NULL);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x00) {
 				if(!restore_console_size) {
@@ -9450,7 +9544,7 @@ inline void pcbios_int_10h_13h()
 				}
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hStdout, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -9464,24 +9558,24 @@ inline void pcbios_int_10h_13h()
 		if(mem[0x462] == CPU_BH) {
 			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
-			SetConsoleCursorPosition(hStdout, co);
+			MyGetConsoleScreenBufferInfo(hStdout, &csbi);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			WORD wAttributes = -1;
 			for(int i = 0; i < CPU_CX; i++, ofs += 2) {
 				if(wAttributes != mem[ofs + 1]) {
-					SetConsoleTextAttribute(hStdout, mem[ofs + 1]);
+					MySetConsoleTextAttribute(hStdout, mem[ofs + 1]);
 					wAttributes = mem[ofs + 1];
 				}
 				WriteConsoleA(hStdout, &mem[ofs], 1, &num, NULL);
 			}
 			if(csbi.wAttributes != wAttributes) {
-				SetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x02) {
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hStdout, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -9795,6 +9889,18 @@ inline void pcbios_int_10h_91h()
 inline void pcbios_int_10h_efh()
 {
 	CPU_DX = 0xffff;
+}
+
+inline void pcbios_int_10h_fah()
+{
+	if(CPU_BX == 0x0000) {
+		// just return something, used for mouse driver detection
+		CPU_LOAD_SREG(CPU_ES_INDEX, 0xffff);
+		CPU_BX = 0x0005;
+	} else {
+		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_SET_C_FLAG(1);
+	}
 }
 
 inline void pcbios_int_10h_feh()
@@ -19749,7 +19855,7 @@ void msdos_syscall(unsigned num)
 		case 0x92: break;
 		case 0x93: break;
 		case 0xef: pcbios_int_10h_efh(); break;
-		case 0xfa: break; // ega register interface library is not installed
+		case 0xfa: pcbios_int_10h_fah(); break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
 		default:
@@ -20701,7 +20807,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// BIOS data area
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	GetConsoleScreenBufferInfo(hStdout, &csbi);
+	MyGetConsoleScreenBufferInfo(hStdout, &csbi);
 //	CONSOLE_FONT_INFO cfi;
 //	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
 	
@@ -20765,6 +20871,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
+	*(UINT8  *)(mem + 0x489) = 0x10; // 400 line mode
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 	// put ROM configuration table for INT 15h, AH=C0h (Get Configuration) in reserved area
 	*(UINT16 *)(mem + 0x4ac + 0) = 0x0a; // number of bytes following
@@ -21754,7 +21861,7 @@ void hardware_update()
 			COORD co;
 			co.X = position % width;
 			co.Y = position / width + scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hStdout, co);
 			
 			crtc_changed[14] = crtc_changed[15] = 0;
 			cursor_moved_by_crtc = true;
