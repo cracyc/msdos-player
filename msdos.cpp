@@ -4287,7 +4287,7 @@ void change_console_size(int width, int height)
 			}
 		}
 	
-	GetConsoleScreenBufferInfo(hStdout, &csbi);
+		GetConsoleScreenBufferInfo(hStdout, &csbi);
 	
 		int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
@@ -4350,7 +4350,6 @@ void change_console_size(int width, int height)
 			restore_console_size = true;
 		}
 	}
-	restore_console_size = true;
 	
 	scr_width = scr_buf_size.X = width;
 	scr_height = scr_buf_size.Y = height;
@@ -9465,16 +9464,6 @@ inline void pcbios_int_10h_10h()
 
 inline void pcbios_int_10h_11h()
 {
-	int lines = 400;
-	switch(mem[0x489] & 0x90)
-	{
-		case 0x00:
-			lines = 350;
-			break;
-		case 0x80:
-			lines = 200;
-			break;
-	}
 	switch(CPU_AL) {
 	case 0x00:
 	case 0x10:
