@@ -564,8 +564,21 @@ void beep_update();
 // CRTC
 
 UINT8 crtc_addr = 0;
-UINT8 crtc_regs[16] = {0};
-UINT8 crtc_changed[16] = {0};
+UINT8 crtc_regs[32] = {0};
+UINT8 crtc_changed[32] = {0};
+
+UINT8 vga_attrib_mode = 0;
+UINT8 vga_attrib_addr = 0;
+UINT8 vga_attrib_regs[32] = {0};
+UINT8 vga_seq_addr = 0;
+UINT8 vga_seq_regs[8] = {0};
+UINT8 vga_pixel_mask = 0;
+UINT8 vga_dac_stat = 0;
+UINT16 vga_dac_addr = 0;
+UINT8 vga_dac_regs[0x300] = {0};
+UINT8 vga_gfx_addr = 0;
+UINT8 vga_gfx_regs[16] = {0};
+UINT8 vga_ctrl = 0x01;
 
 #ifdef SUPPORT_GRAPHIC_SCREEN
 // VRAM

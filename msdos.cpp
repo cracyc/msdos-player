@@ -9009,6 +9009,11 @@ inline void pcbios_int_10h_00h()
 	} else {
 		mem[0x487] &= ~0x80;
 	}
+	if((CPU_AL & 0x7f) == 0x07) {
+		*(UINT16 *)(mem + 0x463) = 0x3b4;
+	} else {
+		*(UINT16 *)(mem + 0x463) = 0x3d4;
+	}
 	mem[0x449] = CPU_AL & 0x7f;
 }
 
@@ -9373,26 +9378,25 @@ inline void pcbios_int_10h_0fh()
 
 inline void pcbios_int_10h_10h()
 {
-	static UINT8 palette[17] = {
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-		0x00
-	};
-	
 	switch(CPU_AL) {
 	case 0x01:
-		palette[16] = CPU_BH;
+		vga_attrib_regs[0x11] = CPU_BH;
 		break;
 	case 0x02:
-		memcpy(palette, mem + CPU_ES_BASE + CPU_DX, sizeof(palette));
+		for(int i = 0; i < 17; i++) {
+			vga_attrib_regs[(i < 16) ? i : 0x11] = mem[CPU_ES_BASE + CPU_DX + i];
+		}
 		break;
 	case 0x03:
 		mem[0x465] &= ~0x20 | (CPU_BL << 5);
 		break;
 	case 0x08:
-		CPU_BH = palette[16];
+		CPU_BH = vga_attrib_regs[0x11];
 		break;
 	case 0x09:
-		memcpy(mem + CPU_ES_BASE + CPU_DX, palette, sizeof(palette));
+		for(int i = 0; i < 17; i++) {
+			mem[CPU_ES_BASE + CPU_DX + i] = vga_attrib_regs[(i < 16) ? i : 0x11];
+		}
 		break;
 	default:
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -9889,6 +9893,209 @@ inline void pcbios_int_10h_91h()
 inline void pcbios_int_10h_efh()
 {
 	CPU_DX = 0xffff;
+}
+
+inline void pcbios_int_10h_f0h()
+{
+	switch(CPU_DX) {
+	case 0x00:
+		CPU_BL = crtc_regs[CPU_BL & 31];
+		break;
+	case 0x08:
+		CPU_BL = vga_seq_regs[CPU_BL & 7];
+		break;
+	case 0x10:
+		CPU_BL = vga_gfx_regs[CPU_BL & 15];
+		break;
+	case 0x18:
+		CPU_BL = vga_attrib_regs[CPU_BL & 31];
+		break;
+	case 0x20:
+		CPU_BL = read_io_byte(0x3c2);
+		break;
+	case 0x28:
+		if(mem[0x449] == 0x07) {
+			CPU_BL = read_io_byte(0x3ba);
+		} else {
+			CPU_BL = read_io_byte(0x3da);
+		}
+		break;
+	case 0x30:
+		CPU_BL = read_io_byte(0x3cc);
+		break;
+	case 0x38:
+		CPU_BL = read_io_byte(0x3ca);
+		break;
+	}
+}
+
+inline void pcbios_int_10h_f1h()
+{
+	switch(CPU_DX) {
+	case 0x00:
+		crtc_regs[CPU_BL & 31] = CPU_BH;
+		break;
+	case 0x08:
+		vga_seq_regs[CPU_BL & 7] = CPU_BH;
+		break;
+	case 0x10:
+		vga_gfx_regs[CPU_BL & 15] = CPU_BH;
+		break;
+	case 0x18:
+		vga_attrib_regs[CPU_BL & 31] = CPU_BH;
+		break;
+	case 0x20:
+		write_io_byte(0x3c2, CPU_BL);
+		break;
+	case 0x28:
+		if(mem[0x449] == 0x07) {
+			write_io_byte(0x3ba, CPU_BL);
+		} else {
+			write_io_byte(0x3da, CPU_BL);
+		}
+		break;
+	case 0x30:
+		write_io_byte(0x3cc, CPU_BL);
+		break;
+	case 0x38:
+		write_io_byte(0x3ca, CPU_BL);
+		break;
+	}
+}
+
+inline void pcbios_int_10h_f2h()
+{
+	UINT32 offset = CPU_ES_BASE + CPU_BX;
+	
+	switch(CPU_DX) {
+	case 0x00:
+		for(int i = 0; i < CPU_CL; i++) {
+			mem[offset + i] = crtc_regs[(CPU_CH + i) & 31];
+		}
+		break;
+	case 0x08:
+		for(int i = 0; i < CPU_CL; i++) {
+			mem[offset + i] = vga_seq_regs[(CPU_CH + i) & 7];
+		}
+		break;
+	case 0x10:
+		for(int i = 0; i < CPU_CL; i++) {
+			mem[offset + i] = vga_gfx_regs[(CPU_CH + i) & 15];
+		}
+		break;
+	case 0x18:
+		for(int i = 0; i < CPU_CL; i++) {
+			mem[offset + i] = vga_attrib_regs[(CPU_CH + i) & 31];
+		}
+	}
+}
+
+inline void pcbios_int_10h_f3h()
+{
+	UINT32 offset = CPU_ES_BASE + CPU_BX;
+	
+	switch(CPU_DX) {
+	case 0x00:
+		for(int i = 0; i < CPU_CL; i++) {
+			crtc_regs[(CPU_CH + i) & 31] = mem[offset + i];
+		}
+		break;
+	case 0x08:
+		for(int i = 0; i < CPU_CL; i++) {
+			vga_seq_regs[(CPU_CH + i) & 7] = mem[offset + i];
+		}
+		break;
+	case 0x10:
+		for(int i = 0; i < CPU_CL; i++) {
+			vga_gfx_regs[(CPU_CH + i) & 15] = mem[offset + i];
+		}
+		break;
+	case 0x18:
+		for(int i = 0; i < CPU_CL; i++) {
+			vga_attrib_regs[(CPU_CH + i) & 31] = mem[offset + i];
+		}
+	}
+}
+
+inline void pcbios_int_10h_f4h()
+{
+	UINT32 offset = CPU_ES_BASE + CPU_BX;
+	
+	for(int i = 0; i < CPU_CX; i++) {
+		switch(*(UINT16 *)(mem + offset)) {
+		case 0x00:
+			mem[offset + 3] = crtc_regs[mem[offset + 2] & 31];
+			break;
+		case 0x08:
+			mem[offset + 3] = vga_seq_regs[mem[offset + 2] & 7];
+			break;
+		case 0x10:
+			mem[offset + 3] = vga_gfx_regs[mem[offset + 2] & 15];
+			break;
+		case 0x18:
+			mem[offset + 3] = vga_attrib_regs[mem[offset + 2] & 31];
+			break;
+		case 0x20:
+			mem[offset + 3] = read_io_byte(0x3c2);
+			break;
+		case 0x28:
+			if(mem[0x449] == 0x07) {
+				mem[offset + 3] = read_io_byte(0x3ba);
+			} else {
+				mem[offset + 3] = read_io_byte(0x3da);
+			}
+			break;
+		case 0x30:
+			mem[offset + 3] = read_io_byte(0x3cc);
+			break;
+		case 0x38:
+			mem[offset + 3] = read_io_byte(0x3ca);
+			break;
+		}
+		offset += 4;
+	}
+}
+
+inline void pcbios_int_10h_f5h()
+{
+	UINT32 offset = CPU_ES_BASE + CPU_BX;
+	
+	for(int i = 0; i < CPU_CX; i++) {
+		UINT16 group = *(UINT16 *)(mem + offset);
+		UINT8 num = mem[offset + 2];
+		
+		switch(*(UINT16 *)(mem + offset)) {
+		case 0x00:
+			crtc_regs[mem[offset + 2] & 31] = mem[offset + 3];
+			break;
+		case 0x08:
+			vga_seq_regs[mem[offset + 2] & 7] = mem[offset + 3];
+			break;
+		case 0x10:
+			vga_gfx_regs[mem[offset + 2] & 15] = mem[offset + 3];
+			break;
+		case 0x18:
+			vga_attrib_regs[mem[offset + 2] & 31] = mem[offset + 3];
+			break;
+		case 0x20:
+			write_io_byte(0x3c2, mem[offset + 3]);
+			break;
+		case 0x28:
+			if(mem[0x449] == 0x07) {
+				write_io_byte(0x3ba, mem[offset + 3]);
+			} else {
+				write_io_byte(0x3da, mem[offset + 3]);
+			}
+			break;
+		case 0x30:
+			write_io_byte(0x3cc, mem[offset + 3]);
+			break;
+		case 0x38:
+			write_io_byte(0x3ca, mem[offset + 3]);
+			break;
+		}
+		offset += 4;
+	}
 }
 
 inline void pcbios_int_10h_fah()
@@ -16199,6 +16406,9 @@ inline void msdos_int_24h()
 		}
 	}
 	fprintf(stderr, "%c\n", key);
+	
+	// clear indos flag
+	((sda_t *)(mem + SDA_TOP))->indos_flag = 0;
 }
 
 inline void msdos_int_25h()
@@ -16871,6 +17081,8 @@ inline void msdos_int_2fh_15h()
 
 inline void msdos_int_2fh_16h()
 {
+	static char reg_file_path[MAX_PATH] = "C:\\WINDOWS\\SYSTEM.DAT";
+	
 	switch(CPU_AL) {
 	case 0x00:
 		if(no_windows) {
@@ -16906,10 +17118,7 @@ inline void msdos_int_2fh_16h()
 	case 0x0e:
 	case 0x0f:
 	case 0x10:
-	case 0x11:
 	case 0x12:
-	case 0x13:
-	case 0x14:
 	case 0x15:
 	case 0x81:
 	case 0x82:
@@ -16919,6 +17128,21 @@ inline void msdos_int_2fh_16h()
 	case 0x87:
 	case 0x8a:
 		// function not supported, do not clear AX
+		break;
+	case 0x11:
+		strcpy((char *)(mem + CPU_DS_BASE + CPU_DX), "COMMAND.COM");
+		strcpy((char *)(mem + CPU_DS_BASE + CPU_SI + 1), "/P");
+		mem[CPU_DS_BASE + CPU_SI] = (UINT8)strlen((char *)(mem + CPU_DS_BASE + CPU_SI + 1));
+		CPU_AX = CPU_BX = 0x0000;
+		break;
+	case 0x13:
+		strcpy((char *)(mem + CPU_ES_BASE + CPU_SI), reg_file_path);
+		CPU_AX = 0x0000;
+		CPU_CX = (UINT16)strlen(reg_file_path);
+		break;
+	case 0x14:
+		strcpy(reg_file_path, (char *)(mem + CPU_ES_BASE + CPU_SI));
+		CPU_AX = 0x0000;
 		break;
 	case 0x80:
 	case 0x89:
@@ -19702,6 +19926,20 @@ UINT16 msdos_get_equipment()
 	return(equip);
 }
 
+inline void msdos_inc_indos()
+{
+	if(((sda_t *)(mem + SDA_TOP))->indos_flag != 0xff) {
+		((sda_t *)(mem + SDA_TOP))->indos_flag++;
+	}
+}
+
+inline void msdos_dec_indos()
+{
+	if(((sda_t *)(mem + SDA_TOP))->indos_flag != 0) {
+		((sda_t *)(mem + SDA_TOP))->indos_flag--;
+	}
+}
+
 void msdos_syscall(unsigned num)
 {
 #ifdef ENABLE_DEBUG_SYSCALL
@@ -19836,7 +20074,7 @@ void msdos_syscall(unsigned num)
 		case 0x1c: CPU_AL = 0x00; break; // save/restore video state is not supported
 		case 0x1d: pcbios_int_10h_1dh(); break;
 		case 0x1e: CPU_AL = 0x00; break; // flat-panel functions are not supported
-		case 0x1f: CPU_AL = 0x00; break; // xga functions are not supported
+		case 0x1f: CPU_AL = 0x00; break; // XGA functions are not supported
 		case 0x4f: pcbios_int_10h_4fh(); break;
 		case 0x50: pcbios_int_10h_50h(); break;
 //		case 0x52: pcbios_int_10h_52h(); break;
@@ -19855,6 +20093,12 @@ void msdos_syscall(unsigned num)
 		case 0x92: break;
 		case 0x93: break;
 		case 0xef: pcbios_int_10h_efh(); break;
+		case 0xf0: pcbios_int_10h_f0h(); break;
+		case 0xf1: pcbios_int_10h_f1h(); break;
+		case 0xf2: pcbios_int_10h_f2h(); break;
+		case 0xf3: pcbios_int_10h_f3h(); break;
+		case 0xf4: pcbios_int_10h_f4h(); break;
+		case 0xf5: pcbios_int_10h_f5h(); break;
 		case 0xfa: pcbios_int_10h_fah(); break;
 		case 0xfe: pcbios_int_10h_feh(); break;
 		case 0xff: pcbios_int_10h_ffh(); break;
@@ -20065,6 +20309,7 @@ void msdos_syscall(unsigned num)
 //		}
 	case 0x21:
 		// MS-DOS System Call
+		msdos_inc_indos();
 		CPU_SET_C_FLAG(0);
 		try {
 			switch(num == 0x21 ? CPU_AH : CPU_CL) {
@@ -20258,6 +20503,7 @@ void msdos_syscall(unsigned num)
 			// raise int 23h
 			CPU_SOFT_INTERRUPT(0x23);
 		}
+		msdos_dec_indos();
 		break;
 	case 0x22:
 		fatalerror("int 22h (terminate address)\n");
@@ -20279,10 +20525,14 @@ void msdos_syscall(unsigned num)
 		msdos_int_24h();
 		break;
 	case 0x25:
+		msdos_inc_indos();
 		msdos_int_25h();
+		msdos_dec_indos();
 		break;
 	case 0x26:
+		msdos_inc_indos();
 		msdos_int_26h();
+		msdos_dec_indos();
 		break;
 	case 0x27:
 		try {
@@ -23779,13 +24029,150 @@ void beep_update()
 	}
 }
 
+// CRTC
+
+void crtc_write_addr(UINT8 data)
+{
+	crtc_addr = data;
+}
+
+void crtc_write_data(UINT8 data)
+{
+	if(crtc_addr < 25) {
+		if(crtc_regs[crtc_addr] != data) {
+			crtc_regs[crtc_addr] = data;
+			crtc_changed[crtc_addr] = 1;
+		}
+	}
+}
+
+UINT8 crtc_read_data()
+{
+	if(crtc_addr < 25) {
+		return crtc_regs[crtc_addr];
+	}
+	return 0xff;
+}
+
 // VGA
+
+void vga_write_attrib(UINT8 data)
+{
+	if(vga_attrib_mode) {
+		// palette(index<16) cannot be written when bit5 is on
+		if((vga_attrib_addr & 0x30) != 0x20) {
+			vga_attrib_regs[vga_attrib_addr & 0x1f] = data;
+		}
+		vga_attrib_mode = 0;
+	} else {
+		vga_attrib_addr = data;
+		vga_attrib_mode = 1;
+	}
+}
+
+UINT8 vga_read_attrib()
+{
+	return vga_attrib_regs[vga_attrib_addr & 31];
+}
+
+void vga_write_seq_addr(UINT8 data)
+{
+	vga_seq_addr = data;
+}
+
+void vga_write_seq_data(UINT8 data)
+{
+	vga_seq_regs[(vga_seq_addr++) & 7] = data;
+}
+
+UINT8 vga_read_seq_data()
+{
+	return vga_seq_regs[(vga_seq_addr++) & 7];
+}
+
+void vga_write_pixel_mask(UINT8 data)
+{
+	vga_pixel_mask = data;
+}
+
+UINT8 vga_read_pixel_mask()
+{
+	return vga_pixel_mask;
+}
+
+UINT8 vga_read_dac_stat()
+{
+	return vga_dac_stat;
+}
+
+void vga_write_dac_addr(UINT32 port, UINT8 data)
+{
+	vga_dac_stat = port & 1;
+	vga_dac_addr = data * 3;
+}
+
+void vga_write_dac_data(UINT8 data)
+{
+	vga_dac_regs[(vga_dac_addr++) % 0x300] = data;
+}
+
+UINT8 vga_read_dac_data()
+{
+	return vga_dac_regs[(vga_dac_addr++) % 0x300];
+}
+
+void vga_write_gfx_addr(UINT8 data)
+{
+	vga_gfx_addr = data;
+}
+
+void vga_write_gfx_data(UINT8 data)
+{
+	vga_gfx_regs[(vga_gfx_addr++) & 15] = data;
+}
+
+UINT8 vga_read_gfx_data()
+{
+	return vga_gfx_regs[(vga_gfx_addr++) & 15];
+}
+
+void vga_write_ctrl(UINT8 data)
+{
+	vga_ctrl = data;
+}
+
+UINT8 vga_read_ctrl()
+{
+	UINT8 val = vga_ctrl & 0x3e;
+	
+	if(mem[0x449] != 0x07) {
+		val |= 0x01;
+	}
+	switch(get_scan_lines()) {
+	case 350:
+		val |= 0x80;
+		break;
+	case 400:
+		val |= 0x40;
+		break;
+	case 480:
+		val |= 0xc0;
+		break;
+	}
+	return val;
+}
+
+UINT8 vga_read_status0()
+{
+	return 0x10; // color display
+}
 
 UINT8 mda_read_status()
 {
 	// 50Hz
 	UINT32 time = timeGetTime() % 20;
 	
+	vga_attrib_mode = 0;
 	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
 }
 
@@ -23797,6 +24184,7 @@ UINT8 vga_read_status()
 	UINT32 time = timeGetTime() % period[index];
 	
 	index = (index + 1) % 3;
+	vga_attrib_mode = 0;
 	return((time < 4 ? 0x08 : 0) | (time == 0 ? 0 : 0x01));
 }
 
@@ -23897,12 +24285,34 @@ UINT8 read_io_byte(UINT32 addr)
 		break;
 	case 0x3b1: case 0x3b3: case 0x3b5: case 0x3b7:
 	case 0x3d5:
-		if(crtc_addr < 16) {
-			val = crtc_regs[crtc_addr];
-		}
+		val = crtc_read_data();
 		break;
 	case 0x3ba:
 		val = mda_read_status();
+		break;
+	case 0x3c0: case 0x3c1:
+		val = vga_read_attrib();
+		break;
+	case 0x3c2:
+		val = vga_read_status0();
+		break;
+	case 0x3c4:
+		val = vga_read_seq_data();
+		break;
+	case 0x3c6:
+		val = vga_read_pixel_mask();
+		break;
+	case 0x3c7:
+		val = vga_read_dac_stat();
+		break;
+	case 0x3c9:
+		val = vga_read_dac_data();
+		break;
+	case 0x3cc:
+		val = vga_read_ctrl();
+		break;
+	case 0x3cf:
+		val = vga_read_seq_data();
 		break;
 	case 0x3da:
 		val = vga_read_status();
@@ -24074,19 +24484,41 @@ void write_io_byte(UINT32 addr, UINT8 val)
 		break;
 	case 0x3b0: case 0x3b2: case 0x3b4: case 0x3b6:
 	case 0x3d4:
-		crtc_addr = val;
+		crtc_write_addr(val);
 		break;
 	case 0x3b1: case 0x3b3: case 0x3b5: case 0x3b7:
 	case 0x3d5:
-		if(crtc_addr < 16) {
-			if(crtc_regs[crtc_addr] != val) {
-				crtc_regs[crtc_addr] = val;
-				crtc_changed[crtc_addr] = 1;
-			}
-		}
+		crtc_write_data(val);
 		break;
 	case 0x3bc: case 0x3bd: case 0x3be:
 		pio_write(2, addr, val);
+		break;
+	case 0x3c0:
+		vga_write_attrib(val);
+		break;
+	case 0x3c2:
+		vga_write_ctrl(val);
+		break;
+	case 0x3c4:
+		vga_write_seq_addr(val);
+		break;
+	case 0x3c5:
+		vga_write_seq_data(val);
+		break;
+	case 0x3c6:
+		vga_write_pixel_mask(val);
+		break;
+	case 0x3c7: case 0x3c8:
+		vga_write_dac_addr(addr, val);
+		break;
+	case 0x3c9:
+		vga_write_dac_data(val);
+		break;
+	case 0x3ce:
+		vga_write_gfx_addr(val);
+		break;
+	case 0x3cf:
+		vga_write_gfx_data(val);
 		break;
 	case 0x3e8: case 0x3e9: case 0x3ea: case 0x3eb: case 0x3ec: case 0x3ed: case 0x3ee: case 0x3ef:
 		sio_write(2, addr, val);
