@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/7/2025
+								2/16/2025
 
 ----- What's This
 
@@ -431,12 +431,13 @@ This emulator provides a very simple IBM PC-like hardware emulation:
 CPU 8086/286/386/486/Pentium4, RAM 1MB/16MB/32MB, LIM EMS 32MB (Hardware EMS),
 PC BIOS, DMA Controller (dummy), Interrupt Controller, System Timer,
 Parallel I/O (LPT1-3), Serial I/O (COM1-4), Real Time Clock + CMOS Memory,
-MDA/CGA CRTC + Status Register, Keyboard Controller (A20 Line Mask, CPU Reset),
-and 2-Button Mouse
+MDA/CGA CRTC + Status Register, EGA/VGA Registers (dummy),
+Keyboard Controller (A20 Line Mask, CPU Reset), and 2-Button Mouse
 
 NOTE:
 - Graphic/Sound hardwares are NOT implemented.
 - DMA Controller is implemented, but FDC and HDC are not connected.
+- EGA/VGA Registers are implemented, but they affects nothing to text screen.
 - Parallel I/O is implemented and the output data is written to the file
   "Year-Month-Day_Hour-Minute-Second.PRN" created in the TEMP directory.
 - Serial I/O is implemented and can be connected to the host's COM ports.
@@ -479,6 +480,11 @@ INT 10H		PC BIOS - Video
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
+	1001H	Set Overscan Register
+	1002H	Set All Palette Registers and Overscan Register
+	1003H	Toggle Intensity/Blinking Bit
+	1008H	Read Overscan Register
+	1009H	Read All Palette Registers and Overscan Register
 	1100H	Load User-Specified Patterns
 	1101H	Load ROM 8x14 Monochrome Patterns
 	1102H	Load ROM 8x8 Dbl-Dot Patterns
@@ -489,7 +495,8 @@ INT 10H		PC BIOS - Video
 	1114H	Load ROM 8x16 Character Set
 	1118H	Set V-TEXT Vertically Long Mode
 	1130H	Get Font Information
-	12H	Alternate Function Select (BL=10H)
+	12H	Alternate Function Select - Get EGA Info (BL=10H)
+	12H	Alternate Function Select - Select Vertical Resolution (BL=30H)
 	130*H	Write String
 	1310H	Read Characters And Standard Attributes
 	1311H	Read Characters And Extended Attributes
@@ -508,6 +515,13 @@ INT 10H		PC BIOS - Video
 	90H	Get Physical Workstation Display Mode
 	91H	Get Physical Workstation Adapter Type
 	EFH	Get Video Adapter Type And Mode (*1)
+	F0H	EGA Register Interface Library - Read One Register
+	F1H	EGA Register Interface Library - Write One Register
+	F2H	EGA Register Interface Library - Read Register Range
+	F3H	EGA Register Interface Library - Write Register Range
+	F4H	EGA Register Interface Library - Read Register Set
+	F5H	EGA Register Interface Library - Write Register Set
+	FAH	EGA Register Interface Library - Interrogate Driver
 	FEH	Get Shadow Buffer
 	FFH	Update Screen From Shadow Buffer
 
@@ -866,6 +880,9 @@ INT 2FH		Multiplex Interrupt
 	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
 	160AH	Windows - Identify Windows Version And Type (*6)
+	1611H	MS-DOS 7 kernel - Get Shell Parameter
+	1613H	MS-DOS 7 kernel - Get SYSTEM.DAT (Registry File) PathName
+	1614H	MS-DOS 7 kernel - Get SYSTEM.DAT (Registry File) PathName
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1689H	Windows 3+ - Kernel Idle Call
@@ -1212,6 +1229,11 @@ and some DOS info block improvements are based on DOSBox.
 INT 16H, AX=1300H (Set Double-Byte Character Set Shift Control)
 INT 16H, AX=1301H (Get Double-Byte Character Set Shift Control)
 and some FEP control improvements are based on DOSVAXJ3.
+
+INT 2FH AX=1611H (MS-DOS 7 kernel - Get Shell Parameter)
+INT 2FH AX=1613H (MS-DOS 7 kernel - Get SYSTEM.DAT PathName)
+INT 2FH AX=1614H (MS-DOS 7 kernel - Set SYSTEM.DAT PathName)
+are based on DOSBox-X.
 
 VDD are based on Mr.cracyc's fork and ReactOS.
 
