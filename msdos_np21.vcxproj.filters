@@ -238,6 +238,12 @@
     <ClInclude Include="lang_ko.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lang_cn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lang_tw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="msdos.h">
       <Filter>Header Files</Filter>
     </ClInclude>

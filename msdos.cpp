@@ -3140,12 +3140,28 @@ HDC get_console_window_device_context()
 #endif
 #define LANG_BRAZILIAN MAKELANGID(LANG_PORTUGUESE, SUBLANG_PORTUGUESE_BRAZILIAN)
 
+#ifdef LANG_TAIWANESE
+#undef LANG_TAIWANESE
+#endif
+#define LANG_TAIWANESE MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED)
+
+#ifdef LANG_TAIWANESE_IBM5550
+#undef LANG_TAIWANESE_IBM5550
+#endif
+#define LANG_TAIWANESE_IBM5550 MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_MACAU + 1)
+
 USHORT get_message_lang()
 {
 	if(active_code_page == 932) {
 		return LANG_JAPANESE;
 	} else if(active_code_page == 949) {
 		return LANG_KOREAN;
+	} else if(active_code_page == 936) {
+		return LANG_CHINESE;
+	} else if(active_code_page == 950) {
+		return LANG_TAIWANESE;
+	} else if(active_code_page == 938) {
+		return LANG_TAIWANESE_IBM5550;
 	} else if(active_code_page == 850 || active_code_page == 860) {
 		LANGID langID = GetUserDefaultLangID();
 		switch(PRIMARYLANGID(langID)) {
@@ -3165,36 +3181,64 @@ USHORT get_message_lang()
 	return LANG_ENGLISH;
 }
 
+// IBM5550 Taiwan
+// DOS = 938, Windows = 20003
+
+UINT code_page_to_win32(UINT cp)
+{
+	if(cp == 938) {
+		cp = 20003;
+	}
+	return cp;
+}
+
+UINT code_page_from_win32(UINT cp)
+{
+	if(cp == 20003) {
+		cp = 938;
+	}
+	return cp;
+}
+
 UINT get_input_code_page()
 {
-	return GetConsoleCP();
+	UINT cp = GetConsoleCP();
+	cp = code_page_from_win32(cp);
+	return cp;
 }
 
 BOOL set_input_code_page(UINT cp)
 {
 	restore_input_cp = (input_cp != cp);
+	cp = code_page_to_win32(cp);
 	return SetConsoleCP(cp);
 }
 
 UINT get_output_code_page()
 {
-	return GetConsoleOutputCP();
+	UINT cp = GetConsoleOutputCP();
+	cp = code_page_from_win32(cp);
+	return cp;
 }
 
 BOOL set_output_code_page(UINT cp)
 {
 	restore_output_cp = (output_cp != cp);
+	cp = code_page_to_win32(cp);
 	return SetConsoleOutputCP(cp);
 }
 
 int get_multibyte_code_page()
 {
-	return _getmbcp();
+	int cp = _getmbcp();
+	cp = (int)code_page_from_win32((UINT)cp);
+	return cp;
 }
 
 int set_multibyte_code_page(int cp)
 {
 	restore_multibyte_cp = (multibyte_cp != cp);
+	cp = (int)code_page_to_win32((UINT)cp);
 	return _setmbcp(cp);
 }
 
@@ -4070,8 +4114,9 @@ int main(int argc, char *argv[], char *envp[])
 		set_output_code_page(code_page);
 	}
 	get_console_buffer_success = (MyGetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
-	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hStdout, &ci) != 0);	get_console_font_success = get_console_font_info(&fi);
-
+	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hStdout, &ci) != 0);
+	get_console_font_success = get_console_font_info(&fi);
+	
 	if(!get_console_cursor_success) {
 		ci.bVisible = TRUE;
 	}
@@ -7481,6 +7526,17 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 
 // error message
 
+const char *taiwanese_from_big5_to_ibm5550(const char *cp950_msg)
+{
+	static char cp938_msg[1024] = {0};
+	wchar_t utf16_msg[1024];
+	
+	// Big5 (950) -> IBM5550 Taiwan (20003)
+	MultiByteToWideChar(950, 0, cp950_msg, -1, utf16_msg, 1024);
+	WideCharToMultiByte(20003, 0, utf16_msg, -1, cp938_msg, 1024, NULL, NULL);
+	return cp938_msg;
+}
+
 const char *msdos_standard_error_message(UINT16 code)
 {
 	USHORT lang = get_message_lang();
@@ -7502,6 +7558,12 @@ const char *msdos_standard_error_message(UINT16 code)
 				return (const char *)standard_error_table[i].message_japanese;
 			} else if(lang == LANG_KOREAN) {
 				return (const char *)standard_error_table[i].message_korean;
+			} else if(lang == LANG_CHINESE) {
+				return (const char *)standard_error_table[i].message_chinese;
+			} else if(lang == LANG_TAIWANESE) {
+				return (const char *)standard_error_table[i].message_taiwanese;
+			} else if(lang == LANG_TAIWANESE_IBM5550) {
+				return taiwanese_from_big5_to_ibm5550((const char *)standard_error_table[i].message_taiwanese);
 			}
 			return standard_error_table[i].message_english;
 		}
@@ -7531,6 +7593,12 @@ const char *msdos_critical_error_message(UINT16 code)
 				return (const char *)critical_error_table[i].message_japanese;
 			} else if(lang == LANG_KOREAN) {
 				return (const char *)critical_error_table[i].message_korean;
+			} else if(lang == LANG_CHINESE) {
+				return (const char *)critical_error_table[i].message_chinese;
+			} else if(lang == LANG_TAIWANESE) {
+				return (const char *)critical_error_table[i].message_taiwanese;
+			} else if(lang == LANG_TAIWANESE_IBM5550) {
+				return taiwanese_from_big5_to_ibm5550((const char *)critical_error_table[i].message_taiwanese);
 			}
 			return critical_error_table[i].message_english;
 		}
@@ -7560,6 +7628,12 @@ const char *msdos_param_error_message(UINT16 code)
 				return (const char *)param_error_table[i].message_japanese;
 			} else if(lang == LANG_KOREAN) {
 				return (const char *)param_error_table[i].message_korean;
+			} else if(lang == LANG_CHINESE) {
+				return (const char *)param_error_table[i].message_chinese;
+			} else if(lang == LANG_TAIWANESE) {
+				return (const char *)param_error_table[i].message_taiwanese;
+			} else if(lang == LANG_TAIWANESE_IBM5550) {
+				return taiwanese_from_big5_to_ibm5550((const char *)param_error_table[i].message_taiwanese);
 			}
 			return param_error_table[i].message_english;
 		}
@@ -7952,6 +8026,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_chdir_japanese);
 						} else if(lang == LANG_KOREAN) {
 							msdos_printf(fstdout, (const char*)help_chdir_korean);
+						} else if(lang == LANG_CHINESE) {
+							msdos_printf(fstdout, (const char*)help_chdir_chinese);
+						} else if(lang == LANG_TAIWANESE) {
+							msdos_printf(fstdout, (const char*)help_chdir_taiwanese);
+						} else if(lang == LANG_TAIWANESE_IBM5550) {
+							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_chdir_taiwanese));
 						} else {
 							msdos_printf(fstdout,
 							"Displays the name of or changes the current directory.\r\n"
@@ -8034,6 +8114,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_path_japanese);
 						} else if(lang == LANG_KOREAN) {
 							msdos_printf(fstdout, (const char*)help_path_korean);
+						} else if(lang == LANG_CHINESE) {
+							msdos_printf(fstdout, (const char*)help_path_chinese);
+						} else if(lang == LANG_TAIWANESE) {
+							msdos_printf(fstdout, (const char*)help_path_taiwanese);
+						} else if(lang == LANG_TAIWANESE_IBM5550) {
+							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_path_taiwanese));
 						} else {
 							msdos_printf(fstdout,
 							"Displays or sets a search path for executable files.\r\n"
@@ -8100,6 +8186,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_set_japanese);
 						} else if(lang == LANG_KOREAN) {
 							msdos_printf(fstdout, (const char*)help_set_korean);
+						} else if(lang == LANG_CHINESE) {
+							msdos_printf(fstdout, (const char*)help_set_chinese);
+						} else if(lang == LANG_TAIWANESE) {
+							msdos_printf(fstdout, (const char*)help_set_taiwanese);
+						} else if(lang == LANG_TAIWANESE_IBM5550) {
+							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_set_taiwanese));
 						} else {
 							msdos_printf(fstdout,
 							"Displays, sets, or removes MS-DOS environment variables.\r\n"
@@ -8155,22 +8247,30 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							USHORT lang = get_message_lang();
 							OPEN_STDOUT();
 							if(lang == LANG_FRENCH) {
-								msdos_printf(fstdout, (const char*)help_reserved_french);
+								msdos_printf(fstdout, (const char*)help_truename_french);
 							} else if(lang == LANG_GERMAN) {
-								msdos_printf(fstdout, (const char*)help_reserved_german);
+								msdos_printf(fstdout, (const char*)help_truename_german);
 							} else if(lang == LANG_SPANISH) {
-								msdos_printf(fstdout, (const char*)help_reserved_spanish);
+								msdos_printf(fstdout, (const char*)help_truename_spanish);
 							} else if(lang == LANG_PORTUGUESE) {
-								msdos_printf(fstdout, (const char*)help_reserved_portuguese);
+								msdos_printf(fstdout, (const char*)help_truename_portuguese);
 							} else if(lang == LANG_BRAZILIAN) {
-								msdos_printf(fstdout, (const char*)help_reserved_brazilian);
+								msdos_printf(fstdout, (const char*)help_truename_brazilian);
 							} else if(lang == LANG_JAPANESE) {
-								msdos_printf(fstdout, (const char*)help_reserved_japanese);
+								msdos_printf(fstdout, (const char*)help_truename_japanese);
 							} else if(lang == LANG_KOREAN) {
-								msdos_printf(fstdout, (const char*)help_reserved_korean);
+								msdos_printf(fstdout, (const char*)help_truename_korean);
+							} else if(lang == LANG_CHINESE) {
+								msdos_printf(fstdout, (const char*)help_truename_chinese);
+							} else if(lang == LANG_TAIWANESE) {
+								msdos_printf(fstdout, (const char*)help_truename_taiwanese);
+							} else if(lang == LANG_TAIWANESE_IBM5550) {
+								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_truename_taiwanese));
 							} else {
 								msdos_printf(fstdout,
-								"Reserved command name\r\n"
+								"Returns a fully qualified filename.\r\n"
+								"\r\n"
+								"TRUENAME [drive:][path]filename\r\n"
 								);
 							}
 							CLOSE_STDOUT();
@@ -8214,6 +8314,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 								msdos_printf(fstdout, (const char*)help_type_japanese);
 							} else if(lang == LANG_KOREAN) {
 								msdos_printf(fstdout, (const char*)help_type_korean);
+							} else if(lang == LANG_CHINESE) {
+								msdos_printf(fstdout, (const char*)help_type_chinese);
+							} else if(lang == LANG_TAIWANESE) {
+								msdos_printf(fstdout, (const char*)help_type_chinese);
+							} else if(lang == LANG_TAIWANESE_IBM5550) {
+								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_type_chinese));
 							} else {
 								msdos_printf(fstdout,
 								"Displays the contents of text files.\r\n"
@@ -8267,6 +8373,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 								msdos_printf(fstdout, (const char*)help_ver_japanese);
 							} else if(lang == LANG_KOREAN) {
 								msdos_printf(fstdout, (const char*)help_ver_korean);
+							} else if(lang == LANG_CHINESE) {
+								msdos_printf(fstdout, (const char*)help_ver_chinese);
+							} else if(lang == LANG_TAIWANESE) {
+								msdos_printf(fstdout, (const char*)help_ver_taiwanese);
+							} else if(lang == LANG_TAIWANESE_IBM5550) {
+								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_ver_taiwanese));
 							} else {
 								msdos_printf(fstdout,
 								"Displays the MS-DOS Version.\r\n"
@@ -8324,14 +8436,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	// check COMMAND.COM version
 	if(first_process && !dos_version_specified && _stricmp(msdos_file_name(path), "COMMAND.COM") == 0) {
 		for(int p = 0; p < length; p++) {
-			const BYTE msdos_version_kana1[] = {
-				0xCF,0xB2,0xB8,0xDB,0xBF,0xCC,0xC4,0x20,
-				0x4D,0x53,0x2D,0x44,0x4F,0x53,0x20,
-				0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20
-			};
-			const BYTE msdos_version_kana2[] = {
-				0x4D,0x69,0x63,0x72,0x6F,0x73,0x6F,0x66,0x74,0x28,0x52,0x29,0x20,
-				0x4D,0x53,0x2D,0x44,0x4F,0x53,0x28,0x52,0x29,0x20,
+			const BYTE version_kana[] = {
 				0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20
 			};
 			char *s = (char *)&file_buffer[p];
@@ -8348,34 +8453,58 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				dos_major_version = 8;
 				dos_minor_version = 0;
 				break;
-			} else if(strncmp(s, "Microsoft(R) MS-DOS(R) Ver", 26) == 0) {
-				s += 26;
-				while((*s++) != ' ');
-				found = true;
-			} else if(strncmp(s, "Microsoft(R) MS-DOS(R)  Ver", 27) == 0) {
-				s += 27;
-				while((*s++) != ' ');
-				found = true;
-			} else if(memcmp(s, msdos_version_kana1, sizeof(msdos_version_kana1)) == 0) {
-				s += sizeof(msdos_version_kana1);
-				found = true;
-			} else if(memcmp(s, msdos_version_kana2, sizeof(msdos_version_kana2)) == 0) {
-				s += sizeof(msdos_version_kana2);
-				found = true;
+			} else if(strncmp(s, "MS-DOS", 6) == 0) {
+				s += 6;
+				if(strncmp(s, "(R)", 3) == 0) {
+					s += 3;
+				}
+				if(strncmp(s, " ROM", 4) == 0) {
+					s += 4;
+				}
+				if((*s++) == ' ') {
+					if(*s == ' ') s++;
+					if(strncmp(s, "Ver", 3) == 0 || strncmp(s, "ver", 3) == 0) {
+						while((*s++) != ' ');
+						found = true;
+					} else if(memcmp(s, version_kana, sizeof(version_kana)) == 0) {
+						s += sizeof(version_kana);
+						found = true;
+					}
+				}
 			} else if(strncmp(s, "IBM Personal Computer DOS\r\nVer", 30) == 0) {
 				s += 30;
 				while((*s++) != ' ');
-				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				if(strncmp(s, "3.22", 4) == 0) {
+					// IBM JX PC-DOS Version 3.22
+					dos_major_version = 3;
+					dos_minor_version = 20;
+					break;
+				}
+				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
 				found = true;
 			} else if(strncmp(s, "IBM DOS Ver", 11) == 0) {
 				s += 11;
 				while((*s++) != ' ');
-				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
 				found = true;
 			} else if(strncmp(s, "PC DOS Ver", 10) == 0) {
 				s += 10;
 				while((*s++) != ' ');
-				if(*s == 'H' || *s == 'J' || *s == 'K') s++;
+				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
+				found = true;
+			} else if(strncmp(s, "Japanese DOS Version ", 21) == 0) {
+				s += 21;
+				if(strncmp(s, "2.22", 4) == 0) {
+					// IBM JX PC-DOS Version 2.22
+					dos_major_version = 2;
+					dos_minor_version = 1;
+					break;
+				}
+				if(*s == 'J' || *s == 'K') s++;
+				found = true;
+			} else if(strncmp(s, "Kanji DOS Version ", 18) == 0) {
+				s += 18;
+				if(*s == 'J' || *s == 'K') s++;
 				found = true;
 			}
 			if(found && *s >= '1' && *s <= '9') {
@@ -9440,6 +9569,9 @@ inline void pcbios_int_10h_0fh()
 inline void pcbios_int_10h_10h()
 {
 	switch(CPU_AL) {
+	case 0x00:
+		vga_attrib_regs[CPU_BL & 31] = CPU_BH;
+		break;
 	case 0x01:
 		vga_attrib_regs[0x11] = CPU_BH;
 		break;
@@ -9451,6 +9583,9 @@ inline void pcbios_int_10h_10h()
 	case 0x03:
 		mem[0x465] &= ~0x20 | (CPU_BL << 5);
 		break;
+	case 0x07:
+		CPU_BH = vga_attrib_regs[CPU_BL & 31];
+		break;
 	case 0x08:
 		CPU_BH = vga_attrib_regs[0x11];
 		break;
@@ -9458,6 +9593,44 @@ inline void pcbios_int_10h_10h()
 		for(int i = 0; i < 17; i++) {
 			mem[CPU_ES_BASE + CPU_DX + i] = vga_attrib_regs[(i < 16) ? i : 0x11];
 		}
+		break;
+	case 0x10:
+		if(CPU_BX < 256) {
+			vga_dac_regs[CPU_BX * 3 + 0] = CPU_DH;
+			vga_dac_regs[CPU_BX * 3 + 1] = CPU_CH;
+			vga_dac_regs[CPU_BX * 3 + 2] = CPU_CL;
+		}
+		break;
+	case 0x12:
+		for(int i = 0; i < CPU_CX; i++) {
+			if(CPU_BX + i < 256) {
+				vga_dac_regs[(CPU_BX + i) * 3 + 0] = mem[CPU_ES_BASE + CPU_DX + i * 3 + 0];
+				vga_dac_regs[(CPU_BX + i) * 3 + 0] = mem[CPU_ES_BASE + CPU_DX + i * 3 + 1];
+				vga_dac_regs[(CPU_BX + i) * 3 + 0] = mem[CPU_ES_BASE + CPU_DX + i * 3 + 2];
+			}
+		}
+		break;
+	case 0x15:
+		if(CPU_BX < 256) {
+			CPU_DH = vga_dac_regs[CPU_BX * 3 + 0];
+			CPU_CH = vga_dac_regs[CPU_BX * 3 + 1];
+			CPU_CL = vga_dac_regs[CPU_BX * 3 + 2];
+		}
+		break;
+	case 0x17:
+		for(int i = 0; i < CPU_CX; i++) {
+			if(CPU_BX + i < 256) {
+				mem[CPU_ES_BASE + CPU_DX + i * 3 + 0] = vga_dac_regs[(CPU_BX + i) * 3 + 0];
+				mem[CPU_ES_BASE + CPU_DX + i * 3 + 0] = vga_dac_regs[(CPU_BX + i) * 3 + 0];
+				mem[CPU_ES_BASE + CPU_DX + i * 3 + 0] = vga_dac_regs[(CPU_BX + i) * 3 + 0];
+			}
+		}
+		break;
+	case 0x18:
+		vga_pixel_mask = CPU_BL;
+		break;
+	case 0x19:
+		CPU_BL = vga_pixel_mask;
 		break;
 	default:
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -16334,6 +16507,12 @@ inline void msdos_int_24h()
 				fprintf(stderr, " %s %c", (const char*)writing_drive_japanese, 'A' + CPU_AL);
 			} else if(lang == LANG_KOREAN) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_korean, 'A' + CPU_AL);
+			} else if(lang == LANG_CHINESE) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_chinese, 'A' + CPU_AL);
+			} else if(lang == LANG_TAIWANESE) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_taiwanese, 'A' + CPU_AL);
+			} else if(lang == LANG_TAIWANESE_IBM5550) {
+				fprintf(stderr, " %s %c", taiwanese_from_big5_to_ibm5550((const char*)writing_drive_taiwanese), 'A' + CPU_AL);
 			} else {
 				fprintf(stderr, " %s %c", "writing drive", 'A' + CPU_AL);
 			}
@@ -16352,6 +16531,12 @@ inline void msdos_int_24h()
 				fprintf(stderr, " %s %c", (const char*)reading_drive_japanese, 'A' + CPU_AL);
 			} else if(lang == LANG_KOREAN) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_korean, 'A' + CPU_AL);
+			} else if(lang == LANG_CHINESE) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_chinese, 'A' + CPU_AL);
+			} else if(lang == LANG_TAIWANESE) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_taiwanese, 'A' + CPU_AL);
+			} else if(lang == LANG_TAIWANESE_IBM5550) {
+				fprintf(stderr, " %s %c", taiwanese_from_big5_to_ibm5550((const char*)reading_drive_taiwanese), 'A' + CPU_AL);
 			} else {
 				fprintf(stderr, " %s %c", "reading drive", 'A' + CPU_AL);
 			}
@@ -16374,6 +16559,12 @@ inline void msdos_int_24h()
 			fprintf(stderr, "%s", (const char*)abort_japanese);
 		} else if(lang == LANG_KOREAN) {
 			fprintf(stderr, "%s", (const char*)abort_korean);
+		} else if(lang == LANG_CHINESE) {
+			fprintf(stderr, "%s", (const char*)abort_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			fprintf(stderr, "%s", (const char*)abort_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			fprintf(stderr, "%s", taiwanese_from_big5_to_ibm5550((const char*)abort_taiwanese));
 		} else {
 			fprintf(stderr, "%s", "Abort");
 		}
@@ -16393,6 +16584,12 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)retry_japanese);
 		} else if(lang == LANG_KOREAN) {
 			fprintf(stderr, ", %s", (const char*)retry_korean);
+		} else if(lang == LANG_CHINESE) {
+			fprintf(stderr, ", %s", (const char*)retry_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			fprintf(stderr, ", %s", (const char*)retry_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			fprintf(stderr, ", %s", taiwanese_from_big5_to_ibm5550((const char*)retry_taiwanese));
 		} else {
 			fprintf(stderr, ", %s", "Retry");
 		}
@@ -16412,6 +16609,12 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)ignore_japanese);
 		} else if(lang == LANG_KOREAN) {
 			fprintf(stderr, ", %s", (const char*)ignore_korean);
+		} else if(lang == LANG_CHINESE) {
+			fprintf(stderr, ", %s", (const char*)ignore_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			fprintf(stderr, ", %s", (const char*)ignore_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			fprintf(stderr, ", %s", taiwanese_from_big5_to_ibm5550((const char*)ignore_taiwanese));
 		} else {
 			fprintf(stderr, ", %s", "Ignore");
 		}
@@ -16431,6 +16634,12 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)fail_japanese);
 		} else if(lang == LANG_KOREAN) {
 			fprintf(stderr, ", %s", (const char*)fail_korean);
+		} else if(lang == LANG_CHINESE) {
+			fprintf(stderr, ", %s", (const char*)fail_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			fprintf(stderr, ", %s", (const char*)fail_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			fprintf(stderr, ", %s", taiwanese_from_big5_to_ibm5550((const char*)fail_taiwanese));
 		} else {
 			fprintf(stderr, ", %s", "Fail");
 		}

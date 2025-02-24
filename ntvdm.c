@@ -14,6 +14,18 @@
 #pragma warning( disable : 4996 )
 #endif
 
+#ifndef MB_CANCELTRYCONTINUE
+#define MB_CANCELTRYCONTINUE 0x00000006L
+#endif
+
+#ifndef IDTRYAGAIN
+#define IDTRYAGAIN 10
+#endif
+
+#ifndef IDCONTINUE
+#define IDCONTINUE 11
+#endif
+
 static VDD_FUNC_TABLE func;
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)

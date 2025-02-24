@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/16/2025
+								2/23/2025
 
 ----- What's This
 
@@ -480,11 +480,19 @@ INT 10H		PC BIOS - Video
 	0DH	Read Graphics Pixel
 	0EH	Teletype Output
 	0FH	Get Current Video Mode
+	1000H	Set Single Palette Register
 	1001H	Set Overscan Register
 	1002H	Set All Palette Registers and Overscan Register
 	1003H	Toggle Intensity/Blinking Bit
+	1007H	Get Individual Palette Register
 	1008H	Read Overscan Register
 	1009H	Read All Palette Registers and Overscan Register
+	1010H	Set Individual DAC Register
+	1012H	Set Block of DAC Registers
+	1015H	Read Individual DAC Register
+	1017H	Read Block of DAC Registers
+	1018H	Set Pel Mask
+	1019H	Read Pel Mask
 	1100H	Load User-Specified Patterns
 	1101H	Load ROM 8x14 Monochrome Patterns
 	1102H	Load ROM 8x8 Dbl-Dot Patterns

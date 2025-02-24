@@ -3330,6 +3330,8 @@
     <ClInclude Include="lang_br.h" />
     <ClInclude Include="lang_jp.h" />
     <ClInclude Include="lang_ko.h" />
+    <ClInclude Include="lang_cn.h" />
+    <ClInclude Include="lang_tw.h" />
     <ClInclude Include="msdos.h" />
   </ItemGroup>
   <ItemGroup>
