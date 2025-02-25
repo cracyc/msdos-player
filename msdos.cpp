@@ -330,6 +330,67 @@ bool check_file_extension(const char *file_path, const char *ext)
 	return (nam_len >= ext_len && _strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
 }
 
+// IBM5550 Taiwan
+// DOS = 938, Windows = 20003
+
+UINT code_page_to_win32(UINT cp)
+{
+	if(cp == 938) {
+		cp = 20003;
+	}
+	return cp;
+}
+
+UINT code_page_from_win32(UINT cp)
+{
+	if(cp == 20003) {
+		cp = 938;
+	}
+	return cp;
+}
+
+UINT get_input_code_page()
+{
+	UINT cp = GetConsoleCP();
+	cp = code_page_from_win32(cp);
+	return cp;
+}
+
+BOOL set_input_code_page(UINT cp)
+{
+	restore_input_cp = (input_cp != cp);
+	cp = code_page_to_win32(cp);
+	return SetConsoleCP(cp);
+}
+
+UINT get_output_code_page()
+{
+	UINT cp = GetConsoleOutputCP();
+	cp = code_page_from_win32(cp);
+	return cp;
+}
+
+BOOL set_output_code_page(UINT cp)
+{
+	restore_output_cp = (output_cp != cp);
+	cp = code_page_to_win32(cp);
+	return SetConsoleOutputCP(cp);
+}
+
+int get_multibyte_code_page()
+{
+	int cp = _getmbcp();
+	cp = (int)code_page_from_win32((UINT)cp);
+	return cp;
+}
+
+int set_multibyte_code_page(int cp)
+{
+	restore_multibyte_cp = (multibyte_cp != cp);
+	cp = (int)code_page_to_win32((UINT)cp);
+	return _setmbcp(cp);
+}
+
 #if defined(__MINGW32__)
 extern "C" int _CRT_glob = 0;
 #endif
@@ -856,7 +917,7 @@ void write_line_with_attrs(HANDLE hout, LPCSTR chrs, LPWORD attrs, DWORD len)
 	WORD attr = attrs[0];
 	int start = 0, slen = 0, apos = 0;
 	WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, len * 4);
-	int wcharlen = MultiByteToWideChar(active_code_page, 0, chrs, len, wchar, len);
+	int wcharlen = MultiByteToWideChar(code_page_to_win32(active_code_page), 0, chrs, len, wchar, len);
 	for(int i = 0; i < wcharlen; i++) {
 		if(attr != attrs[apos]) {
 			set_console_attr(hout, attr);
@@ -3181,67 +3242,6 @@ USHORT get_message_lang()
 	return LANG_ENGLISH;
 }
 
-// IBM5550 Taiwan
-// DOS = 938, Windows = 20003
-
-UINT code_page_to_win32(UINT cp)
-{
-	if(cp == 938) {
-		cp = 20003;
-	}
-	return cp;
-}
-
-UINT code_page_from_win32(UINT cp)
-{
-	if(cp == 20003) {
-		cp = 938;
-	}
-	return cp;
-}
-
-UINT get_input_code_page()
-{
-	UINT cp = GetConsoleCP();
-	cp = code_page_from_win32(cp);
-	return cp;
-}
-
-BOOL set_input_code_page(UINT cp)
-{
-	restore_input_cp = (input_cp != cp);
-	cp = code_page_to_win32(cp);
-	return SetConsoleCP(cp);
-}
-
-UINT get_output_code_page()
-{
-	UINT cp = GetConsoleOutputCP();
-	cp = code_page_from_win32(cp);
-	return cp;
-}
-
-BOOL set_output_code_page(UINT cp)
-{
-	restore_output_cp = (output_cp != cp);
-	cp = code_page_to_win32(cp);
-	return SetConsoleOutputCP(cp);
-}
-
-int get_multibyte_code_page()
-{
-	int cp = _getmbcp();
-	cp = (int)code_page_from_win32((UINT)cp);
-	return cp;
-}
-
-int set_multibyte_code_page(int cp)
-{
-	restore_multibyte_cp = (multibyte_cp != cp);
-	cp = (int)code_page_to_win32((UINT)cp);
-	return _setmbcp(cp);
-}
-
 void set_default_console_font_info(CONSOLE_FONT_INFOEX *fi)
 {
 	fi->cbSize = sizeof(CONSOLE_FONT_INFOEX);
@@ -5026,7 +5026,7 @@ void msdos_dbcs_table_update()
 	memset(dbcs_data, 0, sizeof(dbcs_data));
 	
 	CPINFO info;
-	GetCPInfo(active_code_page, &info);
+	GetCPInfo(code_page_to_win32(active_code_page), &info);
 	
 	if(info.MaxCharSize != 1) {
 		for(int i = 0;; i += 2) {
