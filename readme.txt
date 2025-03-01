@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								2/23/2025
+								3/1/2025
 
 ----- What's This
 
@@ -888,9 +888,6 @@ INT 2FH		Multiplex Interrupt
 	1600H	Windows - Windows Enhanced Mode Installation Check (*6)
 	1605H	Windows - Windows Enhanced Mode & 286 DOSX Init Broadcast
 	160AH	Windows - Identify Windows Version And Type (*6)
-	1611H	MS-DOS 7 kernel - Get Shell Parameter
-	1613H	MS-DOS 7 kernel - Get SYSTEM.DAT (Registry File) PathName
-	1614H	MS-DOS 7 kernel - Get SYSTEM.DAT (Registry File) PathName
 	1680H	Windows, DPMI - Release Current Virtual Machine Time-Slice
 	1683H	Windows 3+ - Get Current Virtual Machine ID
 	1689H	Windows 3+ - Kernel Idle Call

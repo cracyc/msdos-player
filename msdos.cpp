@@ -5023,12 +5023,11 @@ void msdos_collating_table_update()
 void msdos_dbcs_table_update()
 {
 	UINT8 dbcs_data[DBCS_SIZE];
+	CPINFO info;
+	
 	memset(dbcs_data, 0, sizeof(dbcs_data));
 	
-	CPINFO info;
-	GetCPInfo(code_page_to_win32(active_code_page), &info);
-	
-	if(info.MaxCharSize != 1) {
+	if(GetCPInfo(code_page_to_win32(active_code_page), &info) != 0 && info.MaxCharSize != 1) {
 		for(int i = 0;; i += 2) {
 			UINT8 lo = info.LeadByte[i + 0];
 			UINT8 hi = info.LeadByte[i + 1];
@@ -7006,8 +7005,6 @@ int msdos_mem_alloc(int mcb_seg, int paragraphs)
 			if((malloc_strategy & 0x0f) >= 2 && (mcb->paragraphs >= paragraphs) && !mcb->psp) {
 				found_seg = mcb_seg;
 			}
-			int next_seg = mcb_seg + 1 + mcb->paragraphs;
-			mcb_t *next_mcb = (mcb_t *)(mem + (next_seg << 4));
 		}
 		if((malloc_strategy & 0x0f) >= 2 && found_seg) {
 			mcb = (mcb_t *)(mem + (found_seg << 4));
@@ -7315,7 +7312,9 @@ int msdos_hma_mem_get_free(int *available_offset)
 
 void msdos_env_set_argv(int env_seg, const char *argv)
 {
-	char *dst = (char *)(mem + (env_seg << 4));
+	int env_size = ((mcb_t *)(mem + ((env_seg - 1) << 4)))->paragraphs * 16;
+	char *env = (char *)(mem + (env_seg << 4));
+	char *dst = env;
 	
 	while(1) {
 		if(dst[0] == 0) {
@@ -7330,102 +7329,93 @@ void msdos_env_set_argv(int env_seg, const char *argv)
 	dst += strlen(argv);
 	*dst++ = 0;
 	*dst++ = 0;
+	
+	if(dst - env > env_size) {
+		fatalerror("too many environments\n");
+	}
 }
 
-const char *msdos_env_get_argv(int env_seg)
+void msdos_env_get_argv(int env_seg, char *argv)
 {
-	static char env[ENV_SIZE];
-	char *src = env;
+	char *env = (char *)(mem + (env_seg << 4));
 	
-	memcpy(src, mem + (env_seg << 4), ENV_SIZE);
+	argv[0] = '\0';
+	
 	while(1) {
-		if(src[0] == 0) {
-			if(src[1] == 1) {
-				return(src + 3);
+		if(env[0] == 0) {
+			if(env[1] == 1 && env[2] == 0) {
+				strcpy(argv, env + 3);
 			}
-			break;
+			return;
 		}
-		src += strlen(src) + 1;
+		env += strlen(env) + 1;
 	}
-	return(NULL);
 }
 
 const char *msdos_env_get(int env_seg, const char *name)
 {
-	static char env[ENV_SIZE];
-	char *src = env;
-	
-	memcpy(src, mem + (env_seg << 4), ENV_SIZE);
-	src[ENV_SIZE - 1] = '\0';
+	char *env = (char *)(mem + (env_seg << 4));
+	size_t name_len = strlen(name);
 	
 	while(1) {
-		if(src[0] == 0 || my_strchr(src, '=') == NULL) {
+		if(env[0] == 0 || my_strchr(env, '=') == NULL) {
 			break;
 		}
-		int len = (int)strlen(src);
-		char *n = my_strtok(src, "=");
-		char *v = src + strlen(n) + 1;
-		
-		if(_stricmp(name, n) == 0) {
-			return(v);
+		if(_strnicmp(env, name, name_len) == 0 && env[name_len] == '=') {
+			return(env + name_len + 1);
 		}
-		src += len + 1;
+		env += strlen(env) + 1;
 	}
 	return(NULL);
 }
 
 void msdos_env_set(int env_seg, const char *name, const char *value)
 {
-	char env[ENV_SIZE];
-	char *src = env;
-	char *dst = (char *)(mem + (env_seg << 4));
-	const char *argv = msdos_env_get_argv(env_seg);
+	int env_size = ((mcb_t *)(mem + ((env_seg - 1) << 4)))->paragraphs * 16;
+	char *buf = (char *)malloc(env_size + 1);
+	char *src = buf;
+	char *env = (char *)(mem + (env_seg << 4));
+	char *dst = env;
+	char argv[MAX_PATH];
 	int done = 0;
+	size_t name_len = strlen(name);
 	
-	memcpy(src, dst, ENV_SIZE);
-	src[ENV_SIZE - 1] = '\0';
-	memset(dst, 0, ENV_SIZE);
+	memcpy(src, env, env_size);
+	src[env_size] = '\0';
+	msdos_env_get_argv(env_seg, argv);
+	memset(dst, 0, env_size);
 	
 	while(1) {
 		if(src[0] == 0 || my_strchr(src, '=') == NULL) {
 			break;
 		}
-		int len = (int)strlen(src);
-		char *n = my_strtok(src, "=");
-		char *v = src + strlen(n) + 1;
-		char tmp[1024];
-		
-		if(_stricmp(name, n) == 0) {
+		if(_strnicmp(src, name, name_len) == 0 && src[name_len] == '=') {
 			if(value[0] != '\0') {
-				sprintf(tmp, "%s=%s", n, value);
-			} else {
-				tmp[0] = '\0'; // delete
+				sprintf(dst, "%s=%s", name, value);
+				dst += strlen(dst) + 1;
 			}
 			done = 1;
 		} else {
-			sprintf(tmp, "%s=%s", n, v);
+			sprintf(dst, "%s", src);
+			dst += strlen(dst) + 1;
 		}
-		if(tmp[0] != '\0') {
-			memcpy(dst, tmp, strlen(tmp));
-			dst += strlen(tmp) + 1;
-		}
-		src += len + 1;
+		src += strlen(src) + 1;
 	}
-	if(!done) {
-		char tmp[1024];
-		
-		sprintf(tmp, "%s=%s", name, value);
-		memcpy(dst, tmp, strlen(tmp));
-		dst += strlen(tmp) + 1;
+	if(!done && value[0] != '\0') {
+		sprintf(dst, "%s=%s", name, value);
+		dst += strlen(dst) + 1;
 	}
-	if(argv) {
-		*dst++ = 0; // end of environment
-		*dst++ = 1; // top of argv[0]
-		*dst++ = 0;
-		memcpy(dst, argv, strlen(argv));
-		dst += strlen(argv);
-		*dst++ = 0;
-		*dst++ = 0;
+	*dst++ = 0; // end of environment
+	*dst++ = 1; // top of argv[0]
+	*dst++ = 0;
+	memcpy(dst, argv, strlen(argv));
+	dst += strlen(argv);
+	*dst++ = 0;
+	*dst++ = 0;
+	free(buf);
+	
+	if(dst - env > env_size) {
+		fatalerror("too many environments\n");
 	}
 }
 
@@ -8553,24 +8543,28 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	}
 	
 	// copy environment
+	int parent_env_seg, parent_env_size;
 	int umb_linked, env_seg, psp_seg;
+	
+	if(param->env_seg == 0) {
+		parent_env_seg = parent_psp->env_seg;
+	} else {
+		parent_env_seg = param->env_seg;
+	}
+	parent_env_size = ((mcb_t *)(mem + ((parent_env_seg - 1) << 4)))->paragraphs * 16;
 	
 	if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
 		msdos_mem_unlink_umb();
 	}
-	if((env_seg = msdos_mem_alloc(first_mcb, ENV_SIZE >> 4)) == -1) {
-		if((env_seg = msdos_mem_alloc(UMB_TOP >> 4, ENV_SIZE >> 4)) == -1) {
+	if((env_seg = msdos_mem_alloc(first_mcb, parent_env_size >> 4)) == -1) {
+		if((env_seg = msdos_mem_alloc(UMB_TOP >> 4, parent_env_size >> 4)) == -1) {
 			if(umb_linked != 0) {
 				msdos_mem_link_umb();
 			}
 			return(-1);
 		}
 	}
-	if(param->env_seg == 0) {
-		memcpy(mem + (env_seg << 4), mem + (parent_psp->env_seg << 4), ENV_SIZE);
-	} else {
-		memcpy(mem + (env_seg << 4), mem + (param->env_seg << 4), ENV_SIZE);
-	}
+	memcpy(mem + (env_seg << 4), mem + (parent_env_seg << 4), parent_env_size);
 	msdos_env_set_argv(env_seg, msdos_short_full_path(path));
 	
 	// check exe header
@@ -8817,7 +8811,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 {
 	retval = ret;
-
+	
 	psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
 	
 	*(UINT32 *)(mem + 4 * 0x22) = psp->int_22h.dw;
@@ -8874,8 +8868,9 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	}
 	msdos_stdio_reopen();
 	
-	memset(current_process, 0, sizeof(process_t));
-	
+	if(current_psp != psp->parent_psp) {
+		memset(current_process, 0, sizeof(process_t));
+	}
 	current_psp = psp->parent_psp;
 	msdos_sda_update(current_psp);
 	
@@ -14209,6 +14204,7 @@ inline void msdos_int_21h_44h()
 	
 	process_t *process;
 	int fd = 0, drv = 0;
+	CPINFO info;
 	
 	switch(CPU_AL) {
 	case 0x00:
@@ -14454,10 +14450,7 @@ inline void msdos_int_21h_44h()
 			*(UINT16 *)(mem + CPU_DS_BASE + CPU_DX + 0) = 2; // FIXME
 			*(UINT16 *)(mem + CPU_DS_BASE + CPU_DX + 2) = active_code_page;
 			
-			CPINFO info;
-			GetCPInfo(active_code_page, &info);
-			
-			if(info.MaxCharSize != 1) {
+			if(GetCPInfo(code_page_to_win32(active_code_page), &info) != 0 && info.MaxCharSize != 1) {
 				for(int i = 0;; i++) {
 					UINT8 lo = info.LeadByte[2 * i + 0];
 					UINT8 hi = info.LeadByte[2 * i + 1];
@@ -17348,7 +17341,9 @@ inline void msdos_int_2fh_15h()
 
 inline void msdos_int_2fh_16h()
 {
+#if 0
 	static char reg_file_path[MAX_PATH] = "C:\\WINDOWS\\SYSTEM.DAT";
+#endif
 	
 	switch(CPU_AL) {
 	case 0x00:
@@ -17385,7 +17380,10 @@ inline void msdos_int_2fh_16h()
 	case 0x0e:
 	case 0x0f:
 	case 0x10:
+	case 0x11:
 	case 0x12:
+	case 0x13:
+	case 0x14:
 	case 0x15:
 	case 0x81:
 	case 0x82:
@@ -17396,6 +17394,7 @@ inline void msdos_int_2fh_16h()
 	case 0x8a:
 		// function not supported, do not clear AX
 		break;
+#if 0
 	case 0x11:
 		strcpy((char *)(mem + CPU_DS_BASE + CPU_DX), "COMMAND.COM");
 		strcpy((char *)(mem + CPU_DS_BASE + CPU_SI + 1), "/P");
@@ -17411,6 +17410,7 @@ inline void msdos_int_2fh_16h()
 		strcpy(reg_file_path, (char *)(mem + CPU_ES_BASE + CPU_SI));
 		CPU_AX = 0x0000;
 		break;
+#endif
 	case 0x80:
 	case 0x89:
 		Sleep(10);
@@ -21454,8 +21454,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	seg += XMS_SIZE >> 4;
 	
 	// environment
-	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, ENV_SIZE >> 4);
-	int env_seg = seg;
+	int env_seg = seg + 1;
 	int ofs = 0;
 	char env_append[ENV_SIZE] = {0}, append_added = 0;
 	char comspec_added = 0;
@@ -21593,10 +21592,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				tz_added = 1;
 			}
 			int len = (int)strlen(tmp);
-			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) {
-				fatalerror("too many environments\n");
-			}
-			memcpy(mem + (seg << 4) + ofs, tmp, len);
+			memcpy(mem + (env_seg << 4) + ofs, tmp, len);
 			ofs += len + 1;
 		}
 	}
@@ -21605,10 +21601,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			char tmp[ENV_SIZE]; \
 			sprintf(tmp, "%s=%s", name, value); \
 			int len = (int)strlen(tmp); \
-			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > ENV_SIZE) { \
-				fatalerror("too many environments\n"); \
-			} \
-			memcpy(mem + (seg << 4) + ofs, tmp, len); \
+			memcpy(mem + (env_seg << 4) + ofs, tmp, len); \
 			ofs += len + 1; \
 		}
 		SET_ENV("APPEND", env_append);
@@ -21690,7 +21683,14 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		SET_ENV("TZ", tz_value);
 	}
-	seg += (ENV_SIZE >> 4);
+	int env_size = (ofs + 1) + (2 + MAX_PATH + 1);
+	env_size = ((env_size + 15) >> 4) << 4;
+	if(env_size > 32768) {
+		fatalerror("too many environments\n");
+	}
+	env_size = min(env_size + 512, 32768);
+	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, env_size >> 4);
+	seg += (env_size >> 4);
 	
 	// PSP
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, PSP_SIZE >> 4);
