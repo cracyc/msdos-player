@@ -181,6 +181,14 @@ inline const char *my_strrchr(const char *str, int chr)
 {
 	return (const char *)_mbsrchr((const unsigned char *)(str), (unsigned int)(chr));
 }
+inline char *my_strstr(char *str, const char *search)
+{
+	return (char *)_mbsstr((unsigned char *)(str), (const unsigned char *)(search));
+}
+inline const char *my_strstr(const char *str, const char *search)
+{
+	return (const char *)_mbsstr((const unsigned char *)(str), (const unsigned char *)(search));
+}
 inline char *my_strtok(char *tok, const char *del)
 {
 	return (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del));
@@ -200,6 +208,7 @@ inline char *my_strupr(char *str)
 #else
 #define my_strchr(str, chr) strchr((str), (chr))
 #define my_strrchr(str, chr) strrchr((str), (chr))
+#defube my_strstr(str, search) strstr((str), (search))
 #define my_strtok(tok, del) strtok((tok), (del))
 #define my_strtok_s(tok, del, context) strtok_s((tok), (del), (context))
 #define my_strupr(str) _strupr((str))
@@ -1393,7 +1402,7 @@ void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
 	strcpy(buffer, string);
-	while((ptr = strstr(buffer, "\n")) != NULL) {
+	while((ptr = my_strstr(buffer, "\n")) != NULL) {
 		char tmp[8192];
 		*ptr = '\0';
 		sprintf(tmp, "%s\033E%s", buffer, ptr + 1);
@@ -1623,7 +1632,7 @@ void debugger_process_info(char *buffer)
 		char *file = process->module_path, *s;
 		char tmp[8192];
 		
-		while((s = strstr(file, "\\")) != NULL) {
+		while((s = my_strstr(file, "\\")) != NULL) {
 			file = s + 1;
 		}
 		sprintf(tmp, "PSP=%04X  ENV=%04X  RETURN=%04X:%04X  PROGRAM=%s\n", psp_seg, psp->env_seg, psp->int_22h.w.h, psp->int_22h.w.l, my_strupr(file));
@@ -1663,7 +1672,7 @@ UINT32 debugger_get_seg(const char *str, UINT32 val)
 	}
 	strcpy(tmp, str);
 	
-	if((s = strstr(tmp, ":")) != NULL) {
+	if((s = my_strstr(tmp, ":")) != NULL) {
 		// 0000:0000
 		*s = '\0';
 		return(debugger_get_val(tmp));
@@ -1680,7 +1689,7 @@ UINT32 debugger_get_ofs(const char *str)
 	}
 	strcpy(tmp, str);
 	
-	if((s = strstr(tmp, ":")) != NULL) {
+	if((s = my_strstr(tmp, ":")) != NULL) {
 		// 0000:0000
 		return(debugger_get_val(s + 1));
 	}
@@ -5253,7 +5262,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 		dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 		
 		if(GetFullPathNameA(tmp, MAX_PATH, temp, &name_temp) != 0 &&
-		   name_temp != NULL && strstr(name_temp, "?") == NULL && strstr(name_temp, "*") == NULL) {
+		   name_temp != NULL && my_strstr(name_temp, "?") == NULL && my_strstr(name_temp, "*") == NULL) {
 			strcpy(name, name_temp);
 			name_temp[0] = '\0';
 			
@@ -5295,20 +5304,26 @@ const char *msdos_get_multiple_short_path(const char *src)
 {
 	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
 	static char env_path[ENV_SIZE];
-	char tmp[ENV_SIZE], *token;
-#ifdef _WIN64
-	char tmp_syswow64[ENV_SIZE];
-#endif
+	const char *sep = NULL;
+	char token[MAX_PATH];
+	char short_path[MAX_PATH];
+	struct _stat s;
 	
-	memset(env_path, 0, sizeof(env_path));
-	strcpy(tmp, src);
-	token = my_strtok(tmp, ";");
+	env_path[0] = '\0';
 	
-	while(token != NULL) {
+	while(src != NULL && *src != '\0') {
+		if((sep = my_strchr(src, ';')) != NULL) {
+			int len = sep - src;
+			memcpy(token, src, len);
+			token[len] = '\0';
+			src = sep + 1;
+		} else {
+			strcpy(token, src);
+			src += strlen(src);
+		}
 		if(token[0] != '\0') {
 			const char *path = msdos_remove_double_quote(token);
-			char short_path[MAX_PATH];
-			if(path != NULL && strlen(path) != 0) {
+			if(path != NULL && *path != '\0' && !_stat(path, &s) && (s.st_mode & _S_IFDIR)) {
 				if(env_path[0] != '\0') {
 					strcat(env_path, ";");
 				}
@@ -5320,14 +5335,12 @@ const char *msdos_get_multiple_short_path(const char *src)
 				}
 #ifdef _WIN64
 				if(_strnicmp(path + 1, ":\\Windows\\System32", 18) == 0) {
-					sprintf(tmp_syswow64, "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
-					path = tmp_syswow64;
-				}
+					sprintf(env_path + strlen(env_path), "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
+				} else
 #endif
 				strcat(env_path, path);
 			}
 		}
-		token = my_strtok(NULL, ";");
 	}
 	return(env_path);
 }
@@ -5646,14 +5659,14 @@ void msdos_set_comm_params(int sio_port, const char *path)
 	// COM1:{110,150,300,600,1200,2400,4800,9600},{N,O,E,M,S},{8,7,6,5},{1,1.5,2}
 	const char *p = NULL;
 	
-	if((p = strstr(path, ":")) != NULL) {
+	if((p = my_strstr(path, ":")) != NULL) {
 		UINT8 selector = sio_read(sio_port - 1, 3);
 		
 		// baud rate
 		int baud = max(110, min(9600, atoi(p + 1)));
 		UINT16 divisor = 115200 / baud;
 		
-		if((p = strstr(p + 1, ",")) != NULL) {
+		if((p = my_strstr(p + 1, ",")) != NULL) {
 			// parity
 			if(p[1] == 'N' || p[1] == 'n') {
 				selector = (selector & ~0x38) | 0x00;
@@ -5666,7 +5679,7 @@ void msdos_set_comm_params(int sio_port, const char *path)
 			} else if(p[1] == 'S' || p[1] == 's') {
 				selector = (selector & ~0x38) | 0x38;
 			}
-			if((p = strstr(p + 1, ",")) != NULL) {
+			if((p = my_strstr(p + 1, ",")) != NULL) {
 				// word length
 				if(p[1] == '8') {
 					selector = (selector & ~0x03) | 0x03;
@@ -5677,7 +5690,7 @@ void msdos_set_comm_params(int sio_port, const char *path)
 				} else if(p[1] == '5') {
 					selector = (selector & ~0x03) | 0x00;
 				}
-				if((p = strstr(p + 1, ",")) != NULL) {
+				if((p = my_strstr(p + 1, ",")) != NULL) {
 					// stop bits
 					float bits = atof(p + 1);
 					if(bits > 1.0F) {
@@ -5776,7 +5789,8 @@ bool msdos_is_existing_dir(const char *path)
 const char *msdos_search_command_com(const char *command_path, const char *env_path)
 {
 	static char tmp[MAX_PATH];
-	char path[ENV_SIZE], *file_name;
+	char path[MAX_PATH], *file_name;
+	const char *sep = NULL;
 	
 	// check if COMMAND.COM is in the same directory as the target program file
 	if(GetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0) {
@@ -5802,16 +5816,22 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	}
 	
 	// cehck if COMMAND.COM is in the directory that is in MSDOS_PATH and PATH environment variables
-	strcpy(path, env_path);
-	char *token = my_strtok(path, ";");
-	while(token != NULL) {
-		if(strlen(token) != 0 && token[0] != '%') {
-			strcpy(tmp, msdos_combine_path(token, "COMMAND.COM"));
+	while(env_path != NULL && *env_path != '\0') {
+		if((sep = my_strchr(env_path, ';')) != NULL) {
+			int len = sep - env_path;
+			memcpy(path, env_path, len);
+			path[len] = '\0';
+			env_path = sep + 1;
+		} else {
+			strcpy(path, env_path);
+			env_path += strlen(env_path);
+		}
+		if(path[0] != '\0' && path[0] != '%') {
+			strcpy(tmp, msdos_combine_path(path, "COMMAND.COM"));
 			if(_access(tmp, 0) == 0) {
 				return(tmp);
 			}
 		}
-		token = my_strtok(NULL, ";");
 	}
 	return(NULL);
 }
@@ -6026,16 +6046,16 @@ UINT16 msdos_device_info(const char *path)
 //		return(0xa8c0);
 		return(0x80a0);
 	} else if(msdos_is_device_path(path)) {
-		if(strstr(path, "EMMXXXX0") != NULL && support_ems) {
+		if(my_strstr(path, "EMMXXXX0") != NULL && support_ems) {
 			return(0xc0c0);
 		}
-//		if(strstr(path, "MSCD001") != NULL) {
+//		if(my_strstr(path, "MSCD001") != NULL) {
 //			return(0xc880);
 //		}
-		if(strstr(path, "$IBMAFNT") != NULL ||
-		   strstr(path, "$IBMADSP") != NULL ||
-		   strstr(path, "$IBMAIAS") != NULL ||
-		   strstr(path, "FP$ATOK6") != NULL) {
+		if(my_strstr(path, "$IBMAFNT") != NULL ||
+		   my_strstr(path, "$IBMADSP") != NULL ||
+		   my_strstr(path, "$IBMAIAS") != NULL ||
+		   my_strstr(path, "FP$ATOK6") != NULL) {
 //			return(0xc080);
 			return(0x0080);
 		}
@@ -6866,7 +6886,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 
 void msdos_printf(FILE *fp, const char *format, ...)
 {
-	char buffer[ENV_SIZE];
+	char buffer[8192];
 	va_list ap;
 	va_start(ap, format);
 	vsprintf(buffer, format, ap);
@@ -7331,7 +7351,7 @@ void msdos_env_set_argv(int env_seg, const char *argv)
 	*dst++ = 0;
 	
 	if(dst - env > env_size) {
-		fatalerror("too many environments\n");
+		fatalerror("not enough variable table size (size:%d written:%d)\n", env_size, (int)(dst - env));
 	}
 }
 
@@ -7415,7 +7435,7 @@ void msdos_env_set(int env_seg, const char *name, const char *value)
 	free(buf);
 	
 	if(dst - env > env_size) {
-		fatalerror("too many environments\n");
+		fatalerror("not enough variable table size (size:%d written:%d)\n", env_size, (int)(dst - env));
 	}
 }
 
@@ -7447,26 +7467,29 @@ const char *msdos_comspec_path(int env_seg)
 
 bool msdos_search_command_file(const char *command, int env_seg, char *dest_path)
 {
-	char path[MAX_PATH];
-	char env_path[ENV_SIZE];
+	char path[MAX_PATH], token[MAX_PATH];
+	const char *sep = NULL;
 	
 	if(check_file_extension(command, ".COM") || check_file_extension(command, ".EXE") || check_file_extension(command, ".BAT")) {
 		strcpy(path, command);
 		if(_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 			// search path in parent environments
 			const char *env = msdos_env_get(env_seg, "PATH");
-			if(env != NULL) {
-				strcpy(env_path, env);
-				char *token = my_strtok(env_path, ";");
-				
-				while(token != NULL) {
-					if(strlen(token) != 0) {
-						strcpy(path, msdos_combine_path(token, command));
-						if(_access(path, 0) == 0) {
-							break;
-						}
+			while(env != NULL && *env != '\0') {
+				if((sep = my_strchr(env, ';')) != NULL) {
+					int len = sep - env;
+					memcpy(token, env, len);
+					token[len] = '\0';
+					env = sep + 1;
+				} else {
+					strcpy(token, env);
+					env += strlen(env);
+				}
+				if(token[0] != '\0') {
+					strcpy(path, msdos_combine_path(token, command));
+					if(_access(path, 0) == 0) {
+						break;
 					}
-					token = my_strtok(NULL, ";");
 				}
 			}
 		}
@@ -7479,26 +7502,29 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 				if(_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 					// search path in parent environments
 					const char *env = msdos_env_get(env_seg, "PATH");
-					if(env != NULL) {
-						strcpy(env_path, env);
-						char *token = my_strtok(env_path, ";");
-						
-						while(token != NULL) {
-							if(strlen(token) != 0) {
-								sprintf(path, "%s.COM", msdos_combine_path(token, command));
-								if(_access(path, 0) == 0) {
-									break;
-								}
-								sprintf(path, "%s.EXE", msdos_combine_path(token, command));
-								if(_access(path, 0) == 0) {
-									break;
-								}
-								sprintf(path, "%s.BAT", msdos_combine_path(token, command));
-								if(_access(path, 0) == 0) {
-									break;
-								}
+					while(env != NULL && *env != '\0') {
+						if((sep = my_strchr(env, ';')) != NULL) {
+							int len = sep - env;
+							memcpy(token, env, len);
+							token[len] = '\0';
+							env = sep + 1;
+						} else {
+							strcpy(token, env);
+							env += strlen(env);
+						}
+						if(token[0] != '\0') {
+							sprintf(path, "%s.COM", msdos_combine_path(token, command));
+							if(_access(path, 0) == 0) {
+								break;
 							}
-							token = my_strtok(NULL, ";");
+							sprintf(path, "%s.EXE", msdos_combine_path(token, command));
+							if(_access(path, 0) == 0) {
+								break;
+							}
+							sprintf(path, "%s.BAT", msdos_combine_path(token, command));
+							if(_access(path, 0) == 0) {
+								break;
+							}
 						}
 					}
 				}
@@ -7844,7 +7870,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		strcpy(opt_tmp, opt);
 		
 		// search /C option, and get program and remaining command line
-		if((opt_len = (int)strlen(opt)) > 0 && (strstr(opt, "/C ") != NULL || strstr(opt, "/c ") != NULL)) {
+		if((opt_len = (int)strlen(opt)) > 0 && (my_strstr(opt, "/C ") != NULL || my_strstr(opt, "/c ") != NULL)) {
 			for(int i = 0; i < opt_len - 3; i++) {
 				if(_strnicmp(opt + i, "/C ", 3) != 0) {
 					continue;
@@ -7895,39 +7921,39 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					}
 					char *token;
 					
-					if((token = strstr(opt, "0<")) != NULL || (token = strstr(opt, "<")) != NULL) {
+					if((token = my_strstr(opt, "0<")) != NULL || (token = my_strstr(opt, "<")) != NULL) {
 						GET_FILE_PATH();
 						strcpy(pipe_stdin_path, token);
 						strcpy(opt, tmp);
 					}
-					if((token = strstr(opt, "1>")) != NULL || (token = strstr(opt, ">")) != NULL) {
+					if((token = my_strstr(opt, "1>")) != NULL || (token = my_strstr(opt, ">")) != NULL) {
 						GET_FILE_PATH();
 						strcpy(pipe_stdout_path, token);
 						strcpy(opt, tmp);
 					}
-					if((token = strstr(opt, "2>")) != NULL) {
+					if((token = my_strstr(opt, "2>")) != NULL) {
 						GET_FILE_PATH();
 						strcpy(pipe_stderr_path, token);
 						strcpy(opt, tmp);
 					}
 					#undef GET_FILE_PATH
 					
-					if((token = strstr(opt, "0<")) != NULL) {
+					if((token = my_strstr(opt, "0<")) != NULL) {
 						*token = '\0';
 					}
-					if((token = strstr(opt, "1>")) != NULL) {
+					if((token = my_strstr(opt, "1>")) != NULL) {
 						*token = '\0';
 					}
-					if((token = strstr(opt, "2>")) != NULL) {
+					if((token = my_strstr(opt, "2>")) != NULL) {
 						*token = '\0';
 					}
-					if((token = strstr(opt, "<")) != NULL) {
+					if((token = my_strstr(opt, "<")) != NULL) {
 						*token = '\0';
 					}
-					if((token = strstr(opt, ">")) != NULL) {
+					if((token = my_strstr(opt, ">")) != NULL) {
 						*token = '\0';
 					}
-					if((token = strstr(opt, "|")) != NULL) {
+					if((token = my_strstr(opt, "|")) != NULL) {
 						*token = '\0';
 					}
 					for(int i = (int)strlen(opt) - 1; i >= 0 && opt[i] == ' '; i--) {
@@ -8196,20 +8222,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						}
 						CLOSE_STDOUT();
 					} else if(opt[0] == '\0') {
-						char env[ENV_SIZE];
-						char *src = env;
-						memcpy(src, mem + (parent_psp->env_seg << 4), ENV_SIZE);
-						src[ENV_SIZE - 1] = '\0';
+						const char *env = (const char *)(mem + (parent_psp->env_seg << 4));
 						OPEN_STDOUT();
-						while(1) {
-							if(src[0] == 0 || my_strchr(src, '=') == NULL) {
-								break;
-							}
-							int len = (int)strlen(src);
-							char *nam = my_strtok(src, "=");
-							char *val = src + strlen(nam) + 1;
-							msdos_printf(fstdout, "%s=%s\n", nam, val);
-							src += len + 1;
+						while(*env != '\0') {
+							msdos_printf(fstdout, "%s\n", env);
+							env += strlen(env) + 1;
 						}
 						CLOSE_STDOUT();
 					} else if(my_strchr(opt, '=') == NULL) {
@@ -14252,7 +14269,7 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x02: // Read From Character Device Control Channel
-		if(strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) {
+		if(my_strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) {
 			// from DOSBox
 			switch(*(UINT8 *)(mem + CPU_DS_BASE + CPU_DX)) {
 			case 0x00:
@@ -14329,7 +14346,7 @@ inline void msdos_int_21h_44h()
 				CPU_AX = 0x01; // function number invalid
 				CPU_SET_C_FLAG(1);
 			}
-		} else if(strstr(file_handler[fd].path, "CONFIG$") != NULL) {
+		} else if(my_strstr(file_handler[fd].path, "CONFIG$") != NULL) {
 			if(CPU_CX >= 5) {
 				memset(mem + CPU_DS_BASE + CPU_DX, 0, 5);
 				CPU_AX = 5; // number of bytes actually read
@@ -21456,15 +21473,17 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// environment
 	int env_seg = seg + 1;
 	int ofs = 0;
-	char env_append[ENV_SIZE] = {0}, append_added = 0;
+	char env_append[ENV_SIZE], append_added = 0;
 	char comspec_added = 0;
 	char lastdrive_added = 0;
-	char env_msdos_path[ENV_SIZE] = {0};
-	char env_path[ENV_SIZE] = {0}, path_added = 0;
+	char env_msdos_path[ENV_SIZE];
+	char env_path[ENV_SIZE], path_added = 0;
 	char prompt_added = 0;
-	char env_temp[ENV_SIZE] = {0}, temp_added = 0, tmp_added = 0;
+	char env_temp[MAX_PATH], temp_added = 0, tmp_added = 0;
 	char tz_added = 0;
 	const char *path, *short_path;
+	
+	env_append[0] = env_msdos_path[0] = env_path[0] = env_temp[0] = '\0';
 	
 	if((path = getenv("MSDOS_APPEND")) != NULL) {
 		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
@@ -21496,23 +21515,23 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	}
 	
 	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+		if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
 			strcpy(comspec_path, short_path);
 		}
 	}
 	if((path = getenv("MSDOS_COMSPEC")) != NULL && _access(path, 0) == 0) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+		if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
 			strcpy(comspec_path, short_path);
 		}
 	}
 	
-	if(GetTempPathA(ENV_SIZE, env_temp) != 0) {
-		strcpy(env_temp, msdos_get_multiple_short_path(env_temp));
+	if(GetTempPathA(MAX_PATH, env_temp) != 0) {
+		strcpy(env_temp, msdos_short_path(env_temp));
 	}
 	for(int i = 0; i < 4; i++) {
 		static const char *name[4] = {"MSDOS_TEMP", "MSDOS_TMP", "TEMP", "TMP"};
 		if((path = getenv(name[i])) != NULL && _access(path, 0) == 0) {
-			if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+			if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
 				strcpy(env_temp, short_path);
 				break;
 			}
@@ -21521,88 +21540,96 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
-		char tmp[ENV_SIZE], name[ENV_SIZE];
-		strcpy(tmp, *p);
-		for(int i = 0;; i++) {
+		char *tmp = *p;
+		char *value = NULL;
+		char name[128], name2[130];
+		
+		for(int i = 0; i < 128; i++) {
 			if(tmp[i] == '=') {
-				tmp[i] = '\0';
-				sprintf(name, ";%s;", tmp);
-				my_strupr(name);
-				tmp[i] = '=';
+				value = tmp + i + 1;
+				name[i] = '\0';
+				sprintf(name2, ";%s;", name);
 				break;
 			} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
-				tmp[i] = (tmp[i] - 'a') + 'A';
+				name[i] = (tmp[i] - 'a') + 'A';
+			} else {
+				name[i] = tmp[i];
 			}
 		}
-		if(strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_LASTDRIVE;MSDOS_TEMP;MSDOS_TMP;MSDOS_TZ;", name) != NULL) {
+		if(value == NULL) {
+			continue;
+		}
+		if(my_strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_LASTDRIVE;MSDOS_TEMP;MSDOS_TMP;MSDOS_TZ;", name2) != NULL) {
 			// ignore MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TMP/TZ)
-		} else if(standard_env && strstr(";APPEND;COMSPEC;LASTDRIVE;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name) == NULL) {
+		} else if(standard_env && my_strstr(";APPEND;COMSPEC;LASTDRIVE;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name2) == NULL) {
 			// ignore non standard environments
 		} else {
-			if(strncmp(tmp, "APPEND=", 7) == 0) {
+			if(strcmp(name, "APPEND") == 0) {
 				if(env_append[0] != '\0') {
-					sprintf(tmp, "APPEND=%s", env_append);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "APPEND=%s", env_append);
 				} else {
-					sprintf(tmp, "APPEND=%s", msdos_get_multiple_short_path(tmp + 7));
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "APPEND=%s", msdos_get_multiple_short_path(value));
 				}
 				append_added = 1;
-			} else if(strncmp(tmp, "COMSPEC=", 8) == 0) {
-				strcpy(tmp, "COMSPEC=C:\\COMMAND.COM");
+			} else if(strcmp(name, "COMSPEC") == 0) {
+				sprintf((char *)(mem + (env_seg << 4) + ofs), "COMSPEC=C:\\COMMAND.COM");
 				comspec_added = 1;
-			} else if(strncmp(tmp, "LASTDRIVE=", 10) == 0) {
+			} else if(strcmp(name, "LASTDRIVE") == 0) {
 				char *env = getenv("MSDOS_LASTDRIVE");
 				if(env != NULL) {
-					sprintf(tmp, "LASTDRIVE=%s", env);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "LASTDRIVE=%s", env);
+				} else {
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "LASTDRIVE=%s", value);
 				}
 				lastdrive_added = 1;
-			} else if(strncmp(tmp, "MSDOS_PATH=", 11) == 0) {
+			} else if(strcmp(name, "MSDOS_PATH") == 0) {
 				if(env_msdos_path[0] != '\0') {
-					sprintf(tmp, "MSDOS_PATH=%s", env_msdos_path);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "MSDOS_PATH=%s", env_msdos_path);
 				} else {
-					sprintf(tmp, "MSDOS_PATH=%s", msdos_get_multiple_short_path(tmp + 11));
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "MSDOS_PATH=%s", msdos_get_multiple_short_path(value));
 				}
-			} else if(strncmp(tmp, "PATH=", 5) == 0) {
+			} else if(strcmp(name, "PATH") == 0) {
 				if(env_path[0] != '\0') {
-					sprintf(tmp, "PATH=%s", env_path);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "PATH=%s", env_path);
 				} else {
-					sprintf(tmp, "PATH=%s", msdos_get_multiple_short_path(tmp + 5));
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "PATH=%s", msdos_get_multiple_short_path(value));
 				}
 				path_added = 1;
-			} else if(strncmp(tmp, "PROMPT=", 7) == 0) {
+			} else if(strcmp(name, "PROMPT") == 0) {
+				sprintf((char *)(mem + (env_seg << 4) + ofs), "PROMPT=%s", value);
 				prompt_added = 1;
-			} else if(strncmp(tmp, "TEMP=", 5) == 0) {
+			} else if(strcmp(name, "TEMP") == 0) {
 				if(env_temp[0] != '\0') {
-					sprintf(tmp, "TEMP=%s", env_temp);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TEMP=%s", env_temp);
 				} else {
-					sprintf(tmp, "TEMP=%s", msdos_get_multiple_short_path(tmp + 5));
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TEMP=%s", msdos_short_path(value));
 				}
 				temp_added = 1;
-			} else if(strncmp(tmp, "TMP=", 4) == 0) {
+			} else if(strcmp(name, "TMP") == 0) {
 				if(env_temp[0] != '\0') {
-					sprintf(tmp, "TMP=%s", env_temp);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TMP=%s", env_temp);
 				} else {
-					sprintf(tmp, "TMP=%s", msdos_get_multiple_short_path(tmp + 4));
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TMP=%s", msdos_short_path(value));
 				}
 				tmp_added = 1;
-			} else if(strncmp(tmp, "TZ=", 3) == 0) {
+			} else if(strcmp(name, "TZ") == 0) {
 				char *env = getenv("MSDOS_TZ");
 				if(env != NULL) {
-					sprintf(tmp, "TZ=%s", env);
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TZ=%s", env);
+				} else {
+					sprintf((char *)(mem + (env_seg << 4) + ofs), "TZ=%s", value);
 				}
 				tz_added = 1;
+			} else {
+				sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value);
 			}
-			int len = (int)strlen(tmp);
-			memcpy(mem + (env_seg << 4) + ofs, tmp, len);
-			ofs += len + 1;
+			ofs += (int)strlen((char *)(mem + (env_seg << 4) + ofs)) + 1;
 		}
 	}
 	if(!append_added && env_append[0] != '\0') {
 		#define SET_ENV(name, value) { \
-			char tmp[ENV_SIZE]; \
-			sprintf(tmp, "%s=%s", name, value); \
-			int len = (int)strlen(tmp); \
-			memcpy(mem + (env_seg << 4) + ofs, tmp, len); \
-			ofs += len + 1; \
+			sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value); \
+			ofs += (int)strlen((char *)(mem + (env_seg << 4) + ofs)) + 1; \
 		}
 		SET_ENV("APPEND", env_append);
 	}
@@ -21688,7 +21715,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	if(env_size > 32768) {
 		fatalerror("too many environments\n");
 	}
-	env_size = min(env_size + 512, 32768);
+	if(standard_env) {
+		env_size = max(env_size + 128, 1024);
+	} else {
+		env_size = min(env_size + 512, 32768);
+	}
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, env_size >> 4);
 	seg += (env_size >> 4);
 	

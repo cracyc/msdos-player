@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/1/2025
+								3/2/2025
 
 ----- What's This
 
@@ -128,18 +128,26 @@ NOTE: The maximum baud rate is limited to 9600bps.
 Basically, the environment variable table on the host Windows is copied to
 the table on the virtual machine (hereinafter, referred to as "virtual table"),
 and in this time, APPEND/MSDOS_PATH/PATH/TEMP/TMP values are converted to
-short path.
+short path. The x64 version of MS-DOS Player also replaces "C:\Windows\System"
+in these variables to "C:\WINDOWS\SYSWOW64" to prevent 64bit modules are
+mistakenly loaded to the virtual MS-DOS machine.
 
 Some software (for example DoDiary Version 1.55) expect that the environment
-variable table should be less than 1024 bytes.
+variable table is not greater than 1024 bytes.
 On the Windows OS, there are too many variables and the environment variable
-table size will be more than 1024 bytes and it causes an error.
+table size will be greater than 1024 bytes and it causes an error.
 
 In this case, please specify the option '-e' and only the minimum environment
 variables (APPEND/COMSPEC/LASTDRIVE/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are
 copied to the virtual table.
 
 	> msdos -e dd.com
+
+If you see the message "not enough variable table size (size:%d written:%d)",
+start COMMAND.COM with /E option and specify the size greater than the value
+in written field.
+
+	> msdos -e COMMAND.COM /E:1024
 
 The environment variable COMSPEC is not copied from the host Windows, and its
 value on the virtual table is always "C:\COMMAND.COM".
