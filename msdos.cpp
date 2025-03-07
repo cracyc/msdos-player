@@ -5530,7 +5530,7 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	strncpy(tmp_path, path, MAX_PATH);
 	tmp_path[MAX_PATH - 1] = '\0';
 	
-	// fix lack of null terminator (‚‹´”Å VZ Editor)
+	// fix lack of null terminator (é«˜æ©‹ç‰ˆ VZ Editor)
 	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
 		tmp_path[8] = '\0';
 	}
@@ -11947,9 +11947,9 @@ UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
 	return((hi << 8) + lo);
 }
 
-// AXƒeƒNƒjƒJƒ‹ƒŠƒtƒ@ƒŒƒ“ƒXƒKƒCƒh 1989
-// •t˜^10 “ú–{ŒêŠg’£PRINTER DRIVER NIOSŠTd—l
-// 6. ƒRƒ“ƒgƒ[ƒ‹ƒR[ƒh‚Ì‰ğÍ
+// AXãƒ†ã‚¯ãƒ‹ã‚«ãƒ«ãƒªãƒ•ã‚¡ãƒ¬ãƒ³ã‚¹ã‚¬ã‚¤ãƒ‰ 1989
+// ä»˜éŒ²10 æ—¥æœ¬èªæ‹¡å¼µPRINTER DRIVER NIOSæ¦‚ä»•æ§˜
+// 6. ã‚³ãƒ³ãƒˆãƒ­ãƒ¼ãƒ«ã‚³ãƒ¼ãƒ‰ã®è§£æ
 
 void pcbios_printer_out(int c, UINT8 data)
 {
@@ -19607,7 +19607,7 @@ inline void atok_int_6fh_66h()
 			CPU_AL = 0x01;
 		}
 #else
-		CPU_AL = 0x01; // mode = "‚ ˜A‚qŠ¿"
+		CPU_AL = 0x01; // mode = "ã‚é€£ï¼²æ¼¢"
 #endif
 	} else {
 		CPU_AL = 0x00;
@@ -24980,11 +24980,21 @@ void vdd_req(char func)
 		FARPROC pfnInit = GetProcAddress(hVdd, init);
 		FARPROC pfnDispatch = GetProcAddress(hVdd, dispatch);
 		int i;
+		// Try to locate the handle in case it was already added to the list during DLL initialisation
 		for (i = 0; i < 5; i++) {
-			if (!vdd_modules[i].hvdd) {
-				vdd_modules[i].hvdd = hVdd;
+			if (vdd_modules[i].hvdd == hVdd) {
 				vdd_modules[i].dispatch = pfnDispatch;
 				break;
+			}
+		}
+		// If not found, try to add it
+		if (i == 5) {
+			for (i = 0; i < 5; i++) {
+				if (!vdd_modules[i].hvdd) {
+					vdd_modules[i].hvdd = hVdd;
+					vdd_modules[i].dispatch = pfnDispatch;
+					break;
+				}
 			}
 		}
 		if (i == 5) {
@@ -25866,8 +25876,20 @@ void VDDTerminateVDM(void)
 
 BOOL VDDInstallUserHook(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler)
 {
+	// Try to locate the handle
 	for (int i = 0; i < 5; i++) {
 		if (vdd_modules[i].hvdd == hvdd) {
+			vdd_modules[i].ucr_Handler = ucr_Handler;
+			vdd_modules[i].uterm_Handler = uterm_Handler;
+			vdd_modules[i].ublock_handler = ublock_handler;
+			vdd_modules[i].uresume_handler = uresume_handler;
+			return TRUE;
+		}
+	}
+	// If not found, try to add it
+	for (int i = 0; i < 5; i++) {
+		if (!vdd_modules[i].hvdd) {
+			vdd_modules[i].hvdd = (HMODULE)hvdd;
 			vdd_modules[i].ucr_Handler = ucr_Handler;
 			vdd_modules[i].uterm_Handler = uterm_Handler;
 			vdd_modules[i].ublock_handler = ublock_handler;
