@@ -676,8 +676,7 @@ UINT32 XMS_TOP = 0;
 // XMS_TOP + 0x1b9	EMMXXXX0 driver dummy routine (at XMS_TOP + XMS_SIZE - 7)
 #define XMS_SIZE	0x1c0	/* 18 + 6 + 413 + 7 */
 
-//#define ENV_SIZE	0x800
-#define ENV_SIZE	0x2000
+#define ENV_SIZE	0x8000
 #define PSP_SIZE	0x100
 #define PSP_SYSTEM	0x0008
 

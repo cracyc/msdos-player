@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/2/2025
+								3/9/2025
 
 ----- What's This
 
@@ -1253,8 +1253,9 @@ VDD are based on Mr.cracyc's fork and ReactOS.
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player
 
-Patched by Mr.Sagawa, Mr.sava (lukewarm), Mr.Kimura (emk), Mr.Jason Hood,
-Mr.N2583ZYOB6, Mr.Fujita, Mr.Mark Ogden, Mr.cacyc, Mr.roytam, and Mr.Nmlgc
+Patched by Mr. Sagawa, Mr. sava (lukewarm), Mr. Kimura (emk), Mr. Jason Hood,
+Mr. N2583ZYOB6, Mr. Fujita, Mr. Mark Ogden, Mr. cacyc, Mr. roytam, Mr. Nmlgc,
+and Mr. 0957811.
 
 ----------------------------------------
 TAKEDA, toshiya
