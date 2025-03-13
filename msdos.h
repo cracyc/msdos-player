@@ -1035,7 +1035,7 @@ typedef struct {
 	// swappable data area
 	UINT8 printer_cho_flag;		// -34
 	UINT16 int21h_5d0ah_dx;		// -33
-	UINT8 switchar;				// -31 current switch character
+	UINT8 switchar;			// -31 current switch character
 	UINT8 malloc_strategy;		// -30 current memory allocation strategy
 	UINT8 int21h_5d0ah_cl;		// -29
 	UINT8 int21h_5e01h_counter;	// -28
