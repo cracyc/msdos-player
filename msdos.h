@@ -613,19 +613,24 @@ UINT8 vga_ctrl = 0x01;
 #define DOS_DEVCMD_REMOVABLE    15
 #define DOS_DEVCMD_OUTPUT_BUSY  16
 
-#define DOS_DEVSTAT_ERROR (1 << 15)
+#define DOS_DEVSTAT_DONE    (1 << 8)
+#define DOS_DEVSTAT_BUSY    (1 << 9)
+#define DOS_DEVSTAT_ERROR	(1 << 15)
 
 #define FAR_POINTER(_addr) (mem + ((_addr).w.h << 4) + (_addr).w.l)
 
+#pragma pack(1)
 typedef struct _DOS_REQUEST_HEADER
 {
     BYTE RequestLength;
-    BYTE UnitNumber OPTIONAL;
+    BYTE UnitNumber;
     BYTE CommandCode;
     WORD Status;
     BYTE Reserved[8];
 } DOS_REQUEST_HEADER, *PDOS_REQUEST_HEADER;
+#pragma pack()
  
+#pragma pack(1)
 typedef struct _DOS_INIT_REQUEST
 {
     DOS_REQUEST_HEADER Header;
@@ -641,20 +646,23 @@ typedef struct _DOS_INIT_REQUEST
         };
     };
 } DOS_INIT_REQUEST, *PDOS_INIT_REQUEST;
+#pragma pack()
 
+#pragma pack(1)
 typedef struct _DOS_RW_REQUEST
 {
     DOS_REQUEST_HEADER Header;
-    BYTE  MediaDescriptorByte OPTIONAL;
-    DWORD BufferPointer;
+    BYTE  MediaDescriptorByte;
+    PAIR32 BufferPointer;
     WORD  Length;
-    WORD  StartingBlock  OPTIONAL;
-    DWORD VolumeLabelPtr OPTIONAL;
+    WORD  StartingBlock;
+    PAIR32 VolumeLabelPtr;
 } DOS_RW_REQUEST, *PDOS_RW_REQUEST;
+#pragma pack()
 
 int load_config_sys();
 DWORD DosLoadDriver(LPCSTR DriverFile);
-static inline WORD DosDriverGenericRequest(PAIR32 Driver, BYTE CommandCode);
+static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode);
 static VOID DosAddDriver(PAIR32 Driver);
 static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request);
 void RunCallback16(UINT16 segment, UINT16 offset);
@@ -1035,7 +1043,7 @@ typedef struct {
 	// swappable data area
 	UINT8 printer_cho_flag;		// -34
 	UINT16 int21h_5d0ah_dx;		// -33
-	UINT8 switchar;			// -31 current switch character
+	UINT8 switchar;				// -31 current switch character
 	UINT8 malloc_strategy;		// -30 current memory allocation strategy
 	UINT8 int21h_5d0ah_cl;		// -29
 	UINT8 int21h_5e01h_counter;	// -28
@@ -1044,20 +1052,20 @@ typedef struct {
 	UINT8 int21h_5d0ah_called;	// -1
 	// ----- from DOSBox -----
 	UINT8 crit_error_flag;		// 0x00 Critical Error Flag
-	UINT8 indos_flag;		// 0x01 InDOS flag (count of active INT 21 calls)
+	UINT8 indos_flag;			// 0x01 InDOS flag (count of active INT 21 calls)
 	UINT8 drive_crit_error;		// 0x02 Drive on which current critical error occurred or FFh
 	UINT8 locus_of_last_error;	// 0x03 locus of last error
 	UINT16 extended_error_code;	// 0x04 extended error code of last error
 	UINT8 suggested_action;		// 0x06 suggested action for last error
-	UINT8 error_class;		// 0x07 class of last error
+	UINT8 error_class;			// 0x07 class of last error
 	PAIR32 last_error_pointer; 	// 0x08 ES:DI pointer for last error
-	PAIR32 current_dta;		// 0x0C current DTA (Disk Transfer Address)
+	PAIR32 current_dta;			// 0x0C current DTA (Disk Transfer Address)
 	UINT16 current_psp; 		// 0x10 current PSP
-	UINT16 sp_int_23;		// 0x12 stores SP across an INT 23
-	UINT16 return_code;		// 0x14 return code from last process termination (zerod after reading with AH=4Dh)
+	UINT16 sp_int_23;			// 0x12 stores SP across an INT 23
+	UINT16 return_code;			// 0x14 return code from last process termination (zerod after reading with AH=4Dh)
 	UINT8 current_drive;		// 0x16 current drive
 	UINT8 extended_break_flag; 	// 0x17 extended break flag
-	UINT8 fill[2];			// 0x18 flag: code page switching || flag: copy of previous byte in case of INT 24 Abort
+	UINT8 fill[2];				// 0x18 flag: code page switching || flag: copy of previous byte in case of INT 24 Abort
 	UINT8 unimplemented[24];	// 0x20 not implemented yet (padding)
 	DOS_RW_REQUEST Request;		// 0x38 device driver request header
 } sda_t;

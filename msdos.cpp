@@ -5984,7 +5984,7 @@ int msdos_open(const char *path, int oflag)
 		disposition = CREATE_ALWAYS;
 		break;
 	}
-	
+
 	HANDLE h = CreateFileA(path, GENERIC_READ | FILE_WRITE_ATTRIBUTES,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, disposition,
 		FILE_ATTRIBUTE_NORMAL, NULL);
@@ -6030,6 +6030,9 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 		msdos_set_comm_params(*sio_port, path);
 	} else if((*lpt_port = msdos_is_prn_path(path)) != 0) {
 		fd = msdos_open("NUL", oflag);
+	} else if(dos_get_device(path).dw) {
+		// Create a temporary file to get a valid file descriptor for the device
+		fd = _open(path, _O_CREAT | _O_TEMPORARY, _S_IREAD | _S_IWRITE);
 	} else if(msdos_is_device_path(path)) {
 		fd = msdos_open("NUL", oflag);
 //	} else if(oflag & _O_CREAT) {
@@ -6071,7 +6074,7 @@ UINT16 msdos_device_info(const char *path)
 		}
 		// Search in the device_t linked list
 		device = dos_get_device(path);
-		if(device.dw != 0){
+		if(device.dw){
 			device_header = (device_t*)FAR_POINTER(device);
 			return(device_header->attributes);
 		}
@@ -6086,7 +6089,7 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	static int id = 0;
 	char full[MAX_PATH], *name;
 	
-	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
+	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0 && !(info & DOS_DEVATTR_IOCTL)) {
 		strcpy(file_handler[fd].path, full);
 	} else {
 		strcpy(file_handler[fd].path, path);
@@ -14238,6 +14241,7 @@ inline void msdos_int_21h_44h()
 	process_t *process;
 	int fd = 0, drv = 0;
 	CPINFO info;
+	PAIR32 device;
 	
 	switch(CPU_AL) {
 	case 0x00:
@@ -14378,9 +14382,28 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x03: // Write To Character Device Control Channel
-//		CPU_AX = 0x05;
-//		CPU_SET_C_FLAG(1);
-		CPU_AX = 0x00; // success
+		// If installed device, send driver request
+		device = dos_get_device(file_handler[fd].path);
+		if(device.dw && (file_handler[fd].info & DOS_DEVATTR_IOCTL)){
+			PAIR32 buffer;
+			WORD length = CPU_CX;
+			buffer.w.h = CPU_DS;
+			buffer.w.l = CPU_DX;
+			WORD status = DosDriverRequest(device, buffer, &length, DOS_DEVCMD_IOCTL_WRITE);
+			if(status & DOS_DEVSTAT_ERROR){
+				CPU_AX = status & 0xff;
+				CPU_SET_C_FLAG(1);
+			}
+			else{
+				CPU_AX = length;
+			}
+		}
+		else{
+			// If dummy device, return success
+//			CPU_AX = 0x05;
+//			CPU_SET_C_FLAG(1);
+			CPU_AX = 0x00; // success
+		}
 		break;
 	case 0x04: // Read From Block Device Control Channel
 	case 0x05: // Write To Block Device Control Channel
@@ -26097,11 +26120,18 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 int load_config_sys()
 {
 	FILE *fp;
-	char line[1024];
+	char line[1024], old_path[_MAX_PATH], my_path[_MAX_PATH], drive[_MAX_DRIVE], dir[_MAX_DIR];
 	char *path, *args, *c;
 	int devices_added = 0;
 	bool quote = 0;
 	DWORD result;
+
+	// Get path to this executable
+	GetModuleFileNameA(NULL, my_path, sizeof(my_path));
+	_splitpath_s(my_path, drive, sizeof(drive), dir, sizeof(dir), NULL, 0, NULL, 0);
+	sprintf_s(my_path, sizeof(my_path), "%s%s", drive, dir);
+	getcwd(old_path, _MAX_PATH);
+	chdir(my_path);
 
 	// Open config.sys (the file must be in the same directory as msdos.exe)
 	fp = fopen("config.sys", "r");
@@ -26151,6 +26181,10 @@ int load_config_sys()
 	}
 	
 	fclose(fp);
+
+	// Set the previous path
+	chdir(old_path);
+
 	return devices_added;
 }
 
@@ -26167,7 +26201,7 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
     DWORD DriversLoaded = 0;
     DOS_INIT_REQUEST Request;
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
-	mcb_t *mcb_driver;
+	mcb_t *mcb_driver, *mcb_driver_config;
 	const char *tmp;
  
     /* Open a handle to the driver file */
@@ -26187,29 +26221,38 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
     /* Get the file size */
     FileSize = GetFileSize(FileHandle, NULL);
  
-    /* Allocate DOS memory for the driver */
-	if((seg = msdos_mem_alloc(first_mcb, (FileSize >> 4) + 1)) == -1)
+    /* Allocate DOS memory for the driver. Add one paragraph for driver config MCB and one more for rounding paragraph. */
+	if((seg = msdos_mem_alloc(first_mcb, (FileSize >> 4) + 2)) == -1)
     {
         Result = sda->extended_error_code;
         goto Cleanup;
     }
+
+	/* Set the MCB so MEM.exe will show the driver */
 	mcb_driver = (mcb_t *)(mem + ((seg - 1) << 4));
-	mcb_driver->psp = seg; //mcb_driver->psp = PSP_SYSTEM;
+	mcb_driver->psp = PSP_SYSTEM;
+	mcb_driver->prog_name[0] = 'S';
+	mcb_driver->prog_name[1] = 'D';
+	mcb_driver->prog_name[2] = '\0';
+
+	/* Add Driver Config subsequent MCB */
+	mcb_driver_config = msdos_mcb_create(seg, 'D', seg + 1, mcb_driver->paragraphs - 1);
 	tmp = msdos_file_name(DriverFile);
 	for(int i = 0; i < 8; i++) {
 		if(tmp[i] == '.') {
-			mcb_driver->prog_name[i] = '\0';
+			mcb_driver_config->prog_name[i] = '\0';
 			break;
 		} else if(i < 7 && msdos_lead_byte_check(tmp[i])) {
-			mcb_driver->prog_name[i] = tmp[i];
+			mcb_driver_config->prog_name[i] = tmp[i];
 			i++;
-			mcb_driver->prog_name[i] = tmp[i];
+			mcb_driver_config->prog_name[i] = tmp[i];
 		} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
-			mcb_driver->prog_name[i] = tmp[i] - 'a' + 'A';
+			mcb_driver_config->prog_name[i] = tmp[i] - 'a' + 'A';
 		} else {
-			mcb_driver->prog_name[i] = tmp[i];
+			mcb_driver_config->prog_name[i] = tmp[i];
 		}
 	}
+	seg++;
  
     /* Create a mapping object for the file */
     FileMapping = CreateFileMappingA(FileHandle,
@@ -26241,36 +26284,38 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
     /* Loop through all the drivers in this file */
     while (TRUE)
     {
-        if (!(DriverHeader->attributes & DOS_DEVATTR_CHARACTER))
+        if (DriverHeader->attributes & DOS_DEVATTR_CHARACTER)
         {
-            fprintf(stderr, "Error loading driver at %04X:%04X: "
-                    "Block device drivers are not supported.\n",
-                    Driver.w.h,
-                    Driver.w.l);
-            goto Next;
-        }
- 
-        /* Send the driver an init request */
-        memset(&Request, 0, sizeof(Request));
-        Request.Header.RequestLength = sizeof(DOS_INIT_REQUEST);
-        Request.Header.CommandCode = DOS_DEVCMD_INIT;
-        DosCallDriver(Driver, &Request.Header);
-		
-        if (Request.Header.Status & DOS_DEVSTAT_ERROR)
-        {
+            /* Send the driver an init request */
+			memset(&Request, 0, sizeof(Request));
+			Request.Header.RequestLength = sizeof(DOS_INIT_REQUEST);
+			Request.Header.CommandCode = DOS_DEVCMD_INIT;
+			DosCallDriver(Driver, &Request.Header);
+
+			/* If init was successful, link the driver block */
+			if (!(Request.Header.Status & DOS_DEVSTAT_ERROR))
+			{
+				DosAddDriver(Driver);
+        		DriversLoaded++;
+			}
+			else
+        	{
             fprintf(stderr, "Error loading driver at %04X:%04X: "
                     "Initialization routine returned error %u.\n",
                     Driver.w.h,
                     Driver.w.l,
                     Request.Header.Status & 0x7F);
-            goto Next;
+        	}
         }
-
-		//fprintf(stderr, "Adding driver %.*s at %04X:%04X\n", MAX_DEVICE_NAME, DriverHeader->dev_name, Driver.w.h, Driver.w.l);
-        DosAddDriver(Driver);
-        DriversLoaded++;
+		else
+		{
+			fprintf(stderr, "Error loading driver at %04X:%04X: "
+				"Block device drivers are not supported.\n",
+				Driver.w.h,
+				Driver.w.l);
+		}
  
-Next:
+		/* Check if this .sys file has more drivers to load */
         if (DriverHeader->next_driver.w.l == 0xFFFF) break;
         Driver = DriverHeader->next_driver;
         DriverHeader = (device_t*)FAR_POINTER(Driver);
@@ -26293,19 +26338,6 @@ Cleanup:
     if (FileHandle != INVALID_HANDLE_VALUE) CloseHandle(FileHandle);
  
     return Result;
-}
-
-// From ReactOS
-static inline WORD DosDriverGenericRequest(PAIR32 Driver, BYTE CommandCode)
-{
-DOS_REQUEST_HEADER Request;
-
-Request.RequestLength = sizeof(DOS_REQUEST_HEADER);
-Request.CommandCode = CommandCode;
-
-DosCallDriver(Driver, &Request);
-
-return Request.Status;
 }
 
 // From ReactOS
@@ -26340,6 +26372,21 @@ static VOID DosAddDriver(PAIR32 Driver)
 }
 
 // From ReactOS
+static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode)
+{
+	DOS_RW_REQUEST Request;
+	Request.Header.RequestLength = sizeof(DOS_RW_REQUEST);
+	Request.Header.CommandCode = CommandCode;
+	Request.BufferPointer = Buffer;
+	Request.Length = *Length;
+
+	DosCallDriver(Driver, &Request.Header);
+
+	*Length = Request.Length;
+	return Request.Header.Status;
+}
+
+// From ReactOS
 static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request)
 {
     device_t *DriverBlock = (device_t*)FAR_POINTER(Driver);
@@ -26357,13 +26404,13 @@ static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request)
 
     // Copy the request structure to ES:BX 
     memmove(&sda->Request, Request, Request->RequestLength);
- 
+
 	// Set ES:BX to the location of the request 
 	CPU_LOAD_SREG(CPU_ES_INDEX, SDA_TOP >> 4);
 	CPU_BX = offsetof(sda_t, Request);
 
     // Call the strategy routine, and then the interrupt routine
-    RunCallback16(Driver.w.h, DriverBlock->strategy);
+	RunCallback16(Driver.w.h, DriverBlock->strategy);
     RunCallback16(Driver.w.h, DriverBlock->interrupt);
  
     // Get the request structure from ES:BX
@@ -26402,6 +26449,19 @@ PAIR32 dos_get_device(const char* name)
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 	PAIR32 Driver = dos_info->nul_device.next_driver;
 	device_t *DriverHeader;
+
+	// Skip dummy devices
+	if(_stricmp(name, "CLOCK$"  ) == 0 ||
+		_stricmp(name, "CONFIG$" ) == 0 ||
+		_stricmp(name, "EMMXXXX0") == 0 ||
+//		stricmp(name, "SCSIMGR$") == 0 ||
+		_stricmp(name, "$IBMAFNT") == 0 ||
+		_stricmp(name, "$IBMADSP") == 0 ||
+		_stricmp(name, "$IBMAIAS") == 0 ||
+		_stricmp(name, "FP$ATOK6") == 0) {
+		Driver.dw = 0;
+		return(Driver);
+	}
 
 	if(strlen(name) <= MAX_DEVICE_NAME){
 		// Search in the device_t linked list
