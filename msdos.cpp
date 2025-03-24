@@ -456,6 +456,8 @@ bool glyph_char = false;
 bool is_dbcs_cp = false;
 bool hide_cursor = false;
 
+char devices_to_load[MAX_PATH];
+
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
 	update_ops = UPDATE_OPS - 1; \
@@ -3826,6 +3828,9 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-a", 2) == 0) {
 			ansi_sys = false;
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-ld", 3) == 0) {
+			strcpy_s(devices_to_load, MAX_PATH, &argv[i][3]);
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-l", 2) == 0) {
 			box_line = true;
 			arg_offset++;
@@ -3856,8 +3861,8 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr,
 			"Usage:\n\n"
 			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]\n"
-			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-vt] [-g] [-h]\n"
-			"      (command) [options]\n"
+			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]\n"
+			"      [-ld[(drivers)]] [-l] [-vt] [-g] [-h] (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -3885,6 +3890,7 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-x\tenable LIM EMS\n"
 #endif
 			"\t-a\tdisable ANSI.SYS\n"
+			"\t-ld\tload device drivers\n"
 			"\t-l\tdraw box lines with ank characters\n"
 			"\t-vt\ttoggle vt mode, default is on for win10 and above\n"
 			"\t-g\tuse cp437 glyphs for code points 0-31, always enabled in cp437\n"
@@ -22228,8 +22234,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// NLS stuff
 	msdos_nls_tables_init();
 
-	// Parse config.sys to load VDD device drivers
-	load_config_sys();
+	// Load device drivers specified with -ld
+	load_devices(devices_to_load);
 	
 	// execute command
 	try {
@@ -26202,79 +26208,32 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 }
 #endif
 
-// Load device drivers from config.sys
-int load_config_sys()
+// Load device drivers from a list delimited by ";"
+void load_devices(char *device_list)
 {
-	FILE *fp;
-	char line[1024], old_path[_MAX_PATH], my_path[_MAX_PATH], drive[_MAX_DRIVE], dir[_MAX_DIR];
-	char *path, *args, *c;
-	int devices_added = 0;
-	bool quote = 0;
-	DWORD result;
+	char *token;
+	DWORD dwAttrib;
 
-	// Get path to this executable
-	GetModuleFileNameA(NULL, my_path, sizeof(my_path));
-	_splitpath_s(my_path, drive, sizeof(drive), dir, sizeof(dir), NULL, 0, NULL, 0);
-	sprintf_s(my_path, sizeof(my_path), "%s%s", drive, dir);
-	getcwd(old_path, _MAX_PATH);
-	chdir(my_path);
-
-	// Open config.sys (the file must be in the same directory as msdos.exe)
-	fp = fopen("config.sys", "r");
-	if(fp == NULL){
-		return 0;
-	}
-	
-	// Check each line of the file
-	while(fgets(line, sizeof(line), fp) != NULL)
-	{
-		// Only "DEVICE" is implemented
-		if(my_strstr(line, "DEVICE=") != NULL)
-		{
-			path = line + sizeof("DEVICE=") - 1;
-			args = 0;
-			// Evaluate each char of the path until end of line
-			for(c = path; c < (line + sizeof(line)); c++)
-			{
-				// Terminate line if non-readable character
-				if(*c < ' ')
+	// Parse device_list
+	if(device_list && device_list[0] != '\0'){
+		token = my_strtok(device_list, ";");
+		while(token) {
+			// Check if valid file path		
+			dwAttrib = GetFileAttributesA(token);
+			if((dwAttrib != INVALID_FILE_ATTRIBUTES && 
+				!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))){
+				// Handle .sys files only
+				if(check_file_extension(token, ".SYS"))
 				{
-					*c = '\0';
-					if(!args) {args = c;}
-					break;
-				}
-				// Find the end of path and start of arguments
-				if(!args)
-				{
-					// Check if inside of quotation marks
-					if(*c == '\"') {quote = !quote;}
-					// If not inside quotation marks, we found the end of the path
-					if(!quote && (*c == ' '))
-					{
-						*c = '\0';
-						args = c + 1;
-					}
+					DosLoadDriver(token);
 				}
 			}
-			// Handle .sys files, no args
-			if(check_file_extension(path, ".SYS"))
-			{
-				if(result = DosLoadDriver(path) == ERROR_SUCCESS){
-					devices_added++;
-				}
-			}
+			token = my_strtok(NULL, ";");
 		}
 	}
-	
-	fclose(fp);
-
-	// Set the previous path
-	chdir(old_path);
-
-	return devices_added;
 }
 
-// From ReactOS
+// Load a .sys file into memory and install it
 DWORD DosLoadDriver(LPCSTR DriverFile)
 {
     DWORD Result = ERROR_SUCCESS;
@@ -26284,7 +26243,6 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
     device_t *DriverHeader;
     WORD seg = 0;
     DWORD FileSize;
-    DWORD DriversLoaded = 0;
     DOS_INIT_REQUEST Request;
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
 	mcb_t *mcb_driver, *mcb_driver_config;
@@ -26382,7 +26340,6 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
 			if (!(Request.Header.Status & DOS_DEVSTAT_ERROR))
 			{
 				DosAddDriver(Driver);
-        		DriversLoaded++;
 			}
 			else
         	{
@@ -26426,7 +26383,7 @@ Cleanup:
     return Result;
 }
 
-// From ReactOS
+// Add a driver to the device_t linked list
 static VOID DosAddDriver(PAIR32 Driver)
 {
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
@@ -26441,23 +26398,9 @@ static VOID DosAddDriver(PAIR32 Driver)
     /* Add the new driver to the list */
     LastDriver->next_driver = Driver;
     LastDriver = (device_t *)FAR_POINTER(Driver);
- 
-    if (LastDriver->attributes & 0x0008)	// DOS_DEVATTR_CLOCK
-    {
-        /* Update the active CLOCK driver */
-        dos_info->clock_device = Driver;
-    }
- 
-    if (LastDriver->attributes
-        & (0x0001 | 0x0002 | 0x0010))	// DOS_DEVATTR_STDIN | DOS_DEVATTR_STDOUT | DOS_DEVATTR_CON
-    {
-        /* Update the active CON driver */
-        dos_info->con_device = Driver;
-    }
-	
 }
 
-// From ReactOS
+// Create a request structure and call the driver
 static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode)
 {
 	DOS_RW_REQUEST Request;
@@ -26472,8 +26415,8 @@ static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, 
 	return Request.Header.Status;
 }
 
-// From ReactOS
-static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request)
+// Call a device driver using a request structure
+static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request)
 {
     device_t *DriverBlock = (device_t*)FAR_POINTER(Driver);
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
@@ -26488,7 +26431,7 @@ static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request)
     UINT16 tmp_DS = CPU_DS;
     UINT16 tmp_ES = CPU_ES;
 
-    // Copy the request structure to ES:BX 
+    // Copy the request structure to the sda
     memmove(&sda->Request, Request, Request->RequestLength);
 
 	// Set ES:BX to the location of the request 
@@ -26512,7 +26455,6 @@ static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request)
     CPU_DI = tmp_DI;
     CPU_LOAD_SREG(CPU_DS_INDEX, tmp_DS);
     CPU_LOAD_SREG(CPU_ES_INDEX, tmp_ES);
-
 }
 
 void RunCallback16(UINT16 segment, UINT16 offset)
@@ -26520,6 +26462,7 @@ void RunCallback16(UINT16 segment, UINT16 offset)
 	UINT16 tmp_cs = CPU_CS;
 	UINT32 tmp_eip = CPU_EIP;
 
+	// set instruction pointer
 	CPU_CALL_FAR(segment, offset);
 	// run cpu until routine is done
 	while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
@@ -26530,17 +26473,17 @@ void RunCallback16(UINT16 segment, UINT16 offset)
 	}
 }
 
+// Get the PAIR32 address of a device by name
 PAIR32 dos_get_device(const char* name)
 {
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 	PAIR32 Driver = dos_info->nul_device.next_driver;
 	device_t *DriverHeader;
 
-	// Skip dummy devices
+	// Skip dummy devices, return 0
 	if(_stricmp(name, "CLOCK$"  ) == 0 ||
 		_stricmp(name, "CONFIG$" ) == 0 ||
 		_stricmp(name, "EMMXXXX0") == 0 ||
-//		stricmp(name, "SCSIMGR$") == 0 ||
 		_stricmp(name, "$IBMAFNT") == 0 ||
 		_stricmp(name, "$IBMADSP") == 0 ||
 		_stricmp(name, "$IBMAIAS") == 0 ||
@@ -26554,7 +26497,7 @@ PAIR32 dos_get_device(const char* name)
 		while (Driver.w.l != 0xFFFF)
 		{
 			DriverHeader = (device_t*)FAR_POINTER(Driver);
-			// Compare both strings and consider ' ' as string termination
+			// Compare both strings and consider space ' ' as string termination
 			for(int i = 0; i < MAX_DEVICE_NAME; i++){
 				if((i != 0) && (name[i] == '\0' || name[i] == ' ') && (DriverHeader->dev_name[i] == '\0' || DriverHeader->dev_name[i] == ' ')){
 					return(Driver);

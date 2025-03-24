@@ -613,8 +613,6 @@ UINT8 vga_ctrl = 0x01;
 #define DOS_DEVCMD_REMOVABLE    15
 #define DOS_DEVCMD_OUTPUT_BUSY  16
 
-#define DOS_DEVSTAT_DONE    (1 << 8)
-#define DOS_DEVSTAT_BUSY    (1 << 9)
 #define DOS_DEVSTAT_ERROR	(1 << 15)
 
 #define FAR_POINTER(_addr) (mem + ((_addr).w.h << 4) + (_addr).w.l)
@@ -627,7 +625,7 @@ typedef struct _DOS_REQUEST_HEADER
     BYTE CommandCode;
     WORD Status;
     BYTE Reserved[8];
-} DOS_REQUEST_HEADER, *PDOS_REQUEST_HEADER;
+} DOS_REQUEST_HEADER;
 #pragma pack()
  
 #pragma pack(1)
@@ -636,16 +634,8 @@ typedef struct _DOS_INIT_REQUEST
     DOS_REQUEST_HEADER Header;
     BYTE  UnitsInitialized;
     DWORD ReturnBreakAddress;
-    union
-    {
-        DWORD DeviceString; // for character devices
-        struct // for block devices
-        {
-            BYTE FirstDriveLetter;
-            DWORD BpbPointer;
-        };
-    };
-} DOS_INIT_REQUEST, *PDOS_INIT_REQUEST;
+    DWORD DeviceString;
+} DOS_INIT_REQUEST;
 #pragma pack()
 
 #pragma pack(1)
@@ -657,14 +647,14 @@ typedef struct _DOS_RW_REQUEST
     WORD  Length;
     WORD  StartingBlock;
     PAIR32 VolumeLabelPtr;
-} DOS_RW_REQUEST, *PDOS_RW_REQUEST;
+} DOS_RW_REQUEST;
 #pragma pack()
 
-int load_config_sys();
+void load_devices(char *device_list);
 DWORD DosLoadDriver(LPCSTR DriverFile);
 static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode);
 static VOID DosAddDriver(PAIR32 Driver);
-static VOID DosCallDriver(PAIR32 Driver, PDOS_REQUEST_HEADER Request);
+static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request);
 void RunCallback16(UINT16 segment, UINT16 offset);
 PAIR32 dos_get_device(const char* name);
 
