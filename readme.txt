@@ -44,8 +44,8 @@ In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
 Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
-      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-h]
-      (command) [options]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]
+      [-ld[(drivers)]] [-l] [-vt] [-g] [-h] (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -63,7 +63,10 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
 	-a	disable ANSI.SYS
+	-ld	load device drivers
 	-l	draw box lines with ank characters
+	-vt	toggle vt mode, default is on for win10 and above
+	-g	use cp437 glyphs for code points 0-31, always enabled in cp437
 	-h	allow making cursor invisible
 
 ISH.COM contains any invalid instructions and it cause an error.
@@ -128,6 +131,13 @@ RTS pin of the host's COM port is always active.
 
 NOTE: The maximum baud rate is limited to 9600bps.
 
+To load device drivers, please specify the option '-ld'.
+This is intended for VDD drivers that use NTVDM.
+Drivers made for real DOS may not all work as expected.
+Only character devices from .sys files are supported at the moment.
+You can load multiple drivers by using a ';' delimiter.
+
+	> msdos -ld"device1.sys;device2.sys" command.com
 
 ----- Environment Variable Table
 
