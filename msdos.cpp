@@ -3629,7 +3629,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[17];
+			UINT8 buffer[18];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -3670,8 +3670,11 @@ int main(int argc, char *argv[], char *envp[])
 			if((code_page = buffer[10] | (buffer[11] << 8)) != 0) {
 				set_code_page = true;
 			}
-			int name_len = buffer[12];
-			int file_len = buffer[13] | (buffer[14] << 8) | (buffer[15] << 16) | (buffer[16] << 24);
+			if(buffer[12] != 0) {
+				max_files = buffer[12];
+			}
+			int name_len = buffer[13];
+			int file_len = buffer[14] | (buffer[15] << 8) | (buffer[16] << 16) | (buffer[17] << 24);
 			
 			// restore command file name
 			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
@@ -3746,6 +3749,11 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-e", 2) == 0) {
 			standard_env = 1;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-f", 2) == 0) {
+			if(IS_NUMERIC(argv[i][2])) {
+				max_files = min(max(atoi(&argv[i][2]), 20), MAX_FILES);
+			}
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-i", 2) == 0) {
 			ignore_illegal_insn = true;
@@ -3847,7 +3855,7 @@ int main(int argc, char *argv[], char *envp[])
 #endif
 		fprintf(stderr,
 			"Usage:\n\n"
-			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]\n"
+			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]\n"
 			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-vt] [-g] [-h]\n"
 			"      (command) [options]\n"
 			"\n"
@@ -3860,6 +3868,7 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-p\trecord current code page when convert command file\n"
 			"\t-d\tpretend running under straight DOS, not Windows\n"
 			"\t-e\tuse a reduced environment block\n"
+			"\t-f\tset the limit on number of files process can open\n"
 			"\t-i\tignore invalid instructions\n"
 			"\t-m\trestrict free memory to 0x7FFF paragraphs\n"
 			"\t-n\tcreate a new buffer (25 lines, 80 columns by default)\n"
@@ -4010,6 +4019,7 @@ int main(int argc, char *argv[], char *envp[])
 					fputc(win_minor_version, fo);
 					fputc((code_page >> 0) & 0xff, fo);
 					fputc((code_page >> 8) & 0xff, fo);
+					fputc(max_files, fo);
 					
 					// store command file info
 					GetFullPathNameA(argv[arg_offset + 1], MAX_PATH, full, &name);
@@ -4521,7 +4531,7 @@ bool update_console_input()
 						} else {
 							ir[i].Event.KeyEvent.wVirtualKeyCode = VK_DOWN;
 							ir[i].Event.KeyEvent.wVirtualScanCode = 0xe050;
-						}							
+						}
 					}
 				}
 				if(ir[i].EventType & KEY_EVENT) {
@@ -4684,10 +4694,10 @@ bool update_console_input()
 							}
 						} else {
 							if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) {
-								if(scn >= 0x02 && scn <= 0x0e) {
+								if(scn >= 0x02 && scn <= 0x0d) {
 									scn += 0x78 - 0x02;	// 1 to 0 - =
 								}
-								chr = 0;
+								chr = 0x00;
 								enter_key_buf_lock();
 								pcbios_set_key_buffer(0x00, 0x00);
 								leave_key_buf_lock();
@@ -4705,6 +4715,9 @@ bool update_console_input()
 							}
 							if(key_buf_char != NULL && key_buf_scan != NULL) {
 								enter_key_buf_lock();
+								if(chr == 0) {
+									pcbios_set_key_buffer(0x00, 0x00);
+								}
 								pcbios_set_key_buffer(chr, scn);
 								leave_key_buf_lock();
 							}
@@ -4810,7 +4823,10 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 			process[i].dta.w.l = 0x80;
 			process[i].dta.w.h = psp_seg;
 			process[i].switchar = '/';
-			process[i].max_files = 20;
+			process[i].max_files = max_files;
+			for(int j = 20; j < MAX_FILES; j++) {
+				process[i].file_table[j - 20] = 0xff;
+			}
 			process[i].parent_int_10h_feh_called = int_10h_feh_called;
 			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
 			process[i].parent_ds = CPU_DS;
@@ -5533,7 +5549,7 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	strncpy(tmp_path, path, MAX_PATH);
 	tmp_path[MAX_PATH - 1] = '\0';
 	
-	// fix lack of null terminator (高橋版 VZ Editor)
+	// fix lack of null terminator (??? VZ Editor)
 	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
 		tmp_path[8] = '\0';
 	}
@@ -7679,7 +7695,7 @@ const char *msdos_param_error_message(UINT16 code)
 
 // process
 
-psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 env_seg)
+psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_seg, UINT16 env_seg)
 {
 	psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
 	
@@ -7701,8 +7717,8 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 	psp->int_22h.dw = *(UINT32 *)(mem + 4 * 0x22);
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
-	psp->parent_psp = parent_psp;
-	if(parent_psp == (UINT16)-1) {
+	psp->parent_psp = parent_seg;
+	if(parent_seg == (UINT16)-1) {
 		for(int i = 0; i < 20; i++) {
 			if(file_handler[i].valid) {
 				psp->file_table[i] = i;
@@ -7710,8 +7726,13 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 				psp->file_table[i] = 0xff;
 			}
 		}
+		psp->dos_major_version = dos_major_version;
+		psp->dos_minor_version = dos_minor_version;
 	} else {
-		memcpy(psp->file_table, ((psp_t *)(mem + (parent_psp << 4)))->file_table, 20);
+		psp_t *parent_psp = (psp_t *)(mem + (parent_seg << 4));
+		memcpy(psp->file_table, parent_psp->file_table, 20);
+		psp->dos_major_version = parent_psp->dos_major_version;
+		psp->dos_minor_version = parent_psp->dos_minor_version;
 	}
 	psp->env_seg = env_seg;
 	psp->stack.w.l = CPU_SP;
@@ -7727,17 +7748,31 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_psp, UINT16 e
 
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg)
 {
-	if(psp_seg && fd < 20) {
-		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		psp->file_table[fd] = value;
+	if(psp_seg) {
+		if(fd < 20) {
+			psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
+			psp->file_table[fd] = value;
+		} else {
+			process_t *process = msdos_process_info_get(psp_seg, false);
+			if(process && fd < process->max_files) {
+				process->file_table[fd - 20] = value;
+			}
+		}
 	}
 }
 
 int msdos_psp_get_file_table(int fd, int psp_seg)
 {
-	if(psp_seg && fd < 20) {
-		psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
-		fd = psp->file_table[fd];
+	if(psp_seg) {
+		if(fd < 20) {
+			psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
+			fd = psp->file_table[fd];
+		} else {
+			process_t *process = msdos_process_info_get(psp_seg, false);
+			if(process && fd < process->max_files) {
+				fd = process->file_table[fd - 20];
+			}
+		}
 	}
 	return fd;
 }
@@ -7817,6 +7852,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	memcpy(opt, mem + opt_ofs + 1, opt_len);
 	
 	psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
+	process_t *parent_process = msdos_process_info_get(current_psp, false);
 	
 	// search command file
 	if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
@@ -8415,7 +8451,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							CLOSE_STDOUT();
 						} else {
 							OPEN_STDOUT();
-							msdos_printf(fstdout, "MS-DOS Version %d.%2d\n", dos_major_version, dos_minor_version);
+							msdos_printf(fstdout, "MS-DOS Version %d.%2d\n", parent_psp->dos_major_version, parent_psp->dos_minor_version);
 							CLOSE_STDOUT();
 						}
 						retval = 0x00;
@@ -8468,16 +8504,16 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			char *s = (char *)&file_buffer[p];
 			bool found = false;
 			if(strncmp(s, "Microsoft(R) Windows 95", 23) == 0) {
-				dos_major_version = 7;
-				dos_minor_version = 0;
+				parent_psp->dos_major_version = 7;
+				parent_psp->dos_minor_version = 0;
 				break;
 			} else if(strncmp(s, "Microsoft(R) Windows 98", 23) == 0) {
-				dos_major_version = 7;
-				dos_minor_version = 10;
+				parent_psp->dos_major_version = 7;
+				parent_psp->dos_minor_version = 10;
 				break;
 			} else if(strncmp(s, "Microsoft(R) Windows Millennium", 31) == 0) {
-				dos_major_version = 8;
-				dos_minor_version = 0;
+				parent_psp->dos_major_version = 8;
+				parent_psp->dos_minor_version = 0;
 				break;
 			} else if(strncmp(s, "MS-DOS", 6) == 0) {
 				s += 6;
@@ -8496,14 +8532,20 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						s += sizeof(version_kana);
 						found = true;
 					}
+					if(found && strncmp(s, "6.21", 4) == 0) {
+						// MS-DOS Version 6.21
+						parent_psp->dos_major_version = 6;
+						parent_psp->dos_minor_version = 20;
+						break;
+					}
 				}
 			} else if(strncmp(s, "IBM Personal Computer DOS\r\nVer", 30) == 0) {
 				s += 30;
 				while((*s++) != ' ');
 				if(strncmp(s, "3.22", 4) == 0) {
 					// IBM JX PC-DOS Version 3.22
-					dos_major_version = 3;
-					dos_minor_version = 20;
+					parent_psp->dos_major_version = 3;
+					parent_psp->dos_minor_version = 20;
 					break;
 				}
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
@@ -8517,13 +8559,19 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				s += 10;
 				while((*s++) != ' ');
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
+				if(strncmp(s, "6.10", 4) == 0) {
+					// PC-DOS Version 6.10
+					parent_psp->dos_major_version = 6;
+					parent_psp->dos_minor_version = 0;
+					break;
+				}
 				found = true;
 			} else if(strncmp(s, "Japanese DOS Version ", 21) == 0) {
 				s += 21;
 				if(strncmp(s, "2.22", 4) == 0) {
 					// IBM JX PC-DOS Version 2.22
-					dos_major_version = 2;
-					dos_minor_version = 1;
+					parent_psp->dos_major_version = 2;
+					parent_psp->dos_minor_version = 1;
 					break;
 				}
 				if(*s == 'J' || *s == 'K') s++;
@@ -8534,19 +8582,19 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				found = true;
 			}
 			if(found && *s >= '1' && *s <= '9') {
-				dos_major_version = (*s++) - '0';
-				dos_minor_version = 0;
+				parent_psp->dos_major_version = (*s++) - '0';
+				parent_psp->dos_minor_version = 0;
 				if(*s++ == '.') {
 					if(*s >= '0' && *s <= '9') {
-						dos_minor_version = ((*s++) - '0') * 10;
+						parent_psp->dos_minor_version = ((*s++) - '0') * 10;
 						if(*s >= '0' && *s <= '9') {
-							dos_minor_version += *s - '0';
+							parent_psp->dos_minor_version += *s - '0';
 						}
 					}
 				}
 				// 4.01 -> 4.00
-				if(dos_major_version == 4 && dos_minor_version == 1) {
-					dos_minor_version = 0;
+				if(parent_psp->dos_major_version == 4 && parent_psp->dos_minor_version == 1) {
+					parent_psp->dos_minor_version = 0;
 				}
 				break;
 			}
@@ -8754,6 +8802,15 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	
 	// process info
 	process_t *process = msdos_process_info_create(psp_seg, path);
+	if(parent_process) {
+		// NOTE: only the first 20 handles are copied to child processes in DOS 3.3-6.0
+		if(process->max_files < parent_process->max_files) {
+			process->max_files = parent_process->max_files;
+		}
+		for(int i = 20; i < parent_process->max_files; i++) {
+			process->file_table[i - 20] = parent_process->file_table[i - 20];
+		}
+	}
 	current_psp = psp_seg;
 	msdos_sda_update(current_psp);
 	
@@ -11966,9 +12023,9 @@ UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
 	return((hi << 8) + lo);
 }
 
-// AXテクニカルリファレンスガイド 1989
-// 付録10 日本語拡張PRINTER DRIVER NIOS概仕様
-// 6. コントロールコードの解析
+// AX?????????????? 1989
+// ??10 ?????PRINTER DRIVER NIOS???
+// 6. ????????????
 
 void pcbios_printer_out(int c, UINT8 data)
 {
@@ -13419,8 +13476,8 @@ inline void msdos_int_21h_30h()
 		CPU_BX = 0xff00;	// OEM = Microsoft
 	}
 	CPU_CX = 0x0000;
-	CPU_AL = dos_major_version;
-	CPU_AH = dos_minor_version;
+	CPU_AL = ((psp_t *)(mem + (current_psp << 4)))->dos_major_version;
+	CPU_AH = ((psp_t *)(mem + (current_psp << 4)))->dos_minor_version;
 }
 
 inline void msdos_int_21h_31h()
@@ -13507,8 +13564,8 @@ inline void msdos_int_21h_33h()
 		break;
 	case 0xfc:
 		// FreeDOS Extension
-		dos_major_version = CPU_BL;
-		dos_minor_version = CPU_BH;
+		((psp_t *)(mem + (current_psp << 4)))->dos_major_version = CPU_BL;
+		((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = CPU_BH;
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -15242,13 +15299,20 @@ inline void msdos_int_21h_55h()
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
 	psp->parent_psp = current_psp;
 	
-	process_t *process = msdos_process_info_get(current_psp);
-	process = msdos_process_info_create(CPU_DX, process->module_path);
+	process_t *parent_process = msdos_process_info_get(current_psp);
+	process_t *process = msdos_process_info_create(CPU_DX, parent_process->module_path);
+	// NOTE: only the first 20 handles are copied to child processes in DOS 3.3-6.0
+	if(process->max_files < parent_process->max_files) {
+		process->max_files = parent_process->max_files;
+	}
+	for(int i = 20; i < parent_process->max_files; i++) {
+		process->file_table[i - 20] = parent_process->file_table[i - 20];
+	}
 	current_psp = CPU_DX;
 	msdos_sda_update(current_psp);
 	
 	//increment file ref count
-	for(int i = 0; i < 20; i++) {
+	for(int i = 0; i < process->max_files; i++) {
 		int fd = msdos_psp_get_file_table(i, current_psp);
 		if(fd < process->max_files) {
 			file_handler[fd].valid++;
@@ -15719,14 +15783,22 @@ inline void msdos_int_21h_62h()
 inline void msdos_int_21h_63h()
 {
 	switch(CPU_AL) {
-	case 0x00:
+	case 0x00: // DOS 3.2+ - Get Double Byte Character Set Lead-Byte Table
 		CPU_LOAD_SREG(CPU_DS_INDEX, DBCS_TABLE >> 4);
 		CPU_SI = (DBCS_TABLE & 0x0f);
 		CPU_AL = 0x00;
 		break;
-	case 0x01: // set korean input mode
-	case 0x02: // get korean input mode
-		CPU_AL = 0xff; // not supported
+	case 0x01: // DOS 2.25, DOS 3.2+ - Set Korean (Hangul) Input Mode
+		if(CPU_DL == 0x00 || CPU_DL == 0x01) {
+			((psp_t *)(mem + (current_psp << 4)))->interim_console_flag = CPU_DL;
+			CPU_AL = 0x00;
+		} else {
+			CPU_AL = 0xff;
+		}
+		break;
+	case 0x02: // DOS 2.25, DOS 3.2+ - Get Korean (Hangul) Input Mode
+		CPU_DL = ((psp_t *)(mem + (current_psp << 4)))->interim_console_flag;
+		CPU_AL = 0x00;
 		break;
 	default:
 		unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -15854,6 +15926,7 @@ inline void msdos_int_21h_65h()
 		my_strupr((char *)(mem + CPU_DS_BASE + CPU_DX));
 		break;
 	case 0x23:
+	case 0xa3:
 		// FIXME: need to check multi-byte (kanji) charactre?
 		if(CPU_DL == 'N' || CPU_DL == 'n' || (CPU_DL == 0x82 && CPU_DH == 0x6d) || (CPU_DL == 0x82 && CPU_DH == 0x8e)) {
 			// 826dh/828eh: multi-byte (kanji) N and n
@@ -15907,7 +15980,19 @@ inline void msdos_int_21h_67h()
 	process_t *process = msdos_process_info_get(current_psp);
 	
 	if(CPU_BX <= MAX_FILES) {
-		process->max_files = max(CPU_BX, 20);
+		int num = max(CPU_BX, 20);
+		for(int i = num; i < process->max_files; i++) {
+			int fd = msdos_psp_get_file_table(i, current_psp);
+			if(fd < process->max_files && file_handler[fd].valid) {
+				CPU_AX = 0x04;
+				CPU_SET_C_FLAG(1);
+				return;
+			}
+		}
+		for(int i = process->max_files; i < num; i++) {
+			process->file_table[i - 20] = 0xff;
+		}
+		process->max_files = num;
 	} else {
 		CPU_AX = 0x08;
 		CPU_SET_C_FLAG(1);
@@ -16920,7 +17005,7 @@ inline void msdos_int_2fh_05h()
 	USHORT lang = get_message_lang();
 	const char *message = NULL;
 #if 0
-	if(dos_major_version < 4 && CPU_AL != 0) {
+	if(((psp_t *)(mem + (current_psp << 4)))->dos_major_version < 4 && CPU_AL != 0) {
 		message = msdos_standard_error_message(CPU_AL);
 		strcpy((char *)(mem + WORK_TOP), message);
 		CPU_LOAD_SREG(CPU_ES_INDEX, WORK_TOP >> 4);
@@ -17264,13 +17349,13 @@ inline void msdos_int_2fh_12h()
 		break;
 	case 0x2f:
 		if(CPU_DX != 0) {
-			dos_major_version = CPU_DL;
-			dos_minor_version = CPU_DH;
+			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = CPU_DL;
+			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = CPU_DH;
 		} else {
-//			dos_major_version = TRUE_MAJOR_VERSION;
-//			dos_minor_version = TRUE_MINOR_VERSION;
-			dos_major_version = DOS_MAJOR_VERSION;
-			dos_minor_version = DOS_MINOR_VERSION;
+//			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = TRUE_MAJOR_VERSION;
+//			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = TRUE_MINOR_VERSION;
+			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = DOS_MAJOR_VERSION;
+			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = DOS_MINOR_VERSION;
 		}
 		break;
 //	case 0x30: // Windows95 - Find SFT Entry in Internal File Tables
@@ -18189,16 +18274,17 @@ inline void msdos_int_2fh_aeh()
 inline void msdos_int_2fh_b7h()
 {
 	switch(CPU_AL) {
-	case 0x00:
+	case 0x00: // Installation Check
+	case 0x02: // Get Version
 		// APPEND is not installed
 //		CPU_AL = 0x00;
 		break;
-	case 0x06:
+	case 0x06: // Get APPEND Function State
 		CPU_BX = 0x0000;
 		break;
-	case 0x07:
-	case 0x11:
-		// COMMAND.COM calls this service without checking APPEND is installed
+	case 0x07: // Set APPEND Function State
+	case 0x11: // Set Return Found Name State
+		// COMMAND.COM calls these services without checking APPEND is installed
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -19646,7 +19732,7 @@ inline void atok_int_6fh_66h()
 			CPU_AL = 0x01;
 		}
 #else
-		CPU_AL = 0x01; // mode = "あ連Ｒ漢"
+		CPU_AL = 0x01; // mode = "??R?"
 #endif
 	} else {
 		CPU_AL = 0x00;
@@ -21600,7 +21686,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		}
 		if(my_strstr(";MSDOS_APPEND;MSDOS_COMSPEC;MSDOS_LASTDRIVE;MSDOS_TEMP;MSDOS_TMP;MSDOS_TZ;", name2) != NULL) {
 			// ignore MSDOS_(APPEND/COMSPEC/LASTDRIVE/TEMP/TMP/TZ)
-		} else if(standard_env && my_strstr(";APPEND;COMSPEC;LASTDRIVE;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name2) == NULL) {
+		} else if(standard_env && my_strstr(";APPEND;COMSPEC;COPYCMD;DIRCMD;NO_SEP;LASTDRIVE;MSDOS_PATH;PATH;PROMPT;TEMP;TMP;TZ;", name2) == NULL) {
 			// ignore non standard environments
 		} else {
 			if(strcmp(name, "APPEND") == 0) {

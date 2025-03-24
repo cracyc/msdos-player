@@ -839,7 +839,13 @@ typedef struct {
 	PAIR32 stack;
 	UINT16 file_table_size;
 	PAIR32 file_table_ptr;
-	UINT8 reserved_2[24];
+	UINT8 interim_console_flag;
+	UINT8 true_name_flag;
+	UINT8 netware_flag;
+	UINT8 netware_task_num;
+	UINT8 dos_major_version;
+	UINT8 dos_minor_version;
+	UINT8 reserved_2[18];
 	UINT8 service[3];
 	UINT8 reserved_3[2];
 	UINT8 ex_fcb[7];
@@ -1172,6 +1178,7 @@ typedef struct {
 	UINT8 switchar;
 	UINT8 verify;
 	int max_files;
+	UINT8 file_table[MAX_FILES - 20];
 	char volume_label[MAX_PATH];
 	bool parent_int_10h_feh_called;
 	bool parent_int_10h_ffh_called;
@@ -1219,7 +1226,8 @@ UINT16 current_psp;
 int retval = 0;
 UINT16 error_code = 0;
 
-file_handler_t file_handler[MAX_FILES];
+file_handler_t file_handler[MAX_FILES] = {0};
+int max_files = 20;
 UINT8 file_buffer[0x100000];
 
 process_t process[MAX_PROCESS];

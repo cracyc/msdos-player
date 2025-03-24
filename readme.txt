@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/9/2025
+								3/23/2025
 
 ----- What's This
 
@@ -43,7 +43,7 @@ In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
 
 Usage:
 
-MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
+MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
       [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-h]
       (command) [options]
 
@@ -52,6 +52,7 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-i] [-m] [-n[L[,C]]]
 	-p	record current code page when convert command file
 	-d	pretend running under straight DOS, not Windows
 	-e	use a reduced environment block
+	-f	set the limit on number of files process can open
 	-i	ignore invalid instructions
 	-m	restrict free memory to 0x7FFF paragraphs
 	-n	create a new buffer (25 lines, 80 columns by default)
@@ -100,6 +101,11 @@ the version number 5.50 and '-v' option is not affected.
 NOTE: Windows version 4.10 is same as Windows 98.
 NOTE: DOS version 5.00 and true DOS version 5.50 are same as NTVDM.
 
+To set the limit on number of files process can open (this is same as FILES=
+in COFIG.SYS), please specify the option '-f'. The limit must be 20 to 128.
+
+	> msdos -f30 command.com
+
 To enable XMS (i286 or later) and LIM EMS, please specify the option '-x'.
 In this time, the memory space 0C0000H-0CFFFFH are used for EMS page frame,
 so the size of UMB is decreased from 224KB to 160KB.
@@ -138,8 +144,8 @@ On the Windows OS, there are too many variables and the environment variable
 table size will be greater than 1024 bytes and it causes an error.
 
 In this case, please specify the option '-e' and only the minimum environment
-variables (APPEND/COMSPEC/LASTDRIVE/MSDOS_PATH/PATH/PROMPT/TEMP/TMP/TZ) are
-copied to the virtual table.
+variables (APPEND/COMSPEC/COPYCMD/DIRCMD/NO_SEP/LASTDRIVE/MSDOS_PATH/PATH/
+PROMPT/TEMP/TMP/TZ) are copied to the virtual table.
 
 	> msdos -e dd.com
 
@@ -788,6 +794,8 @@ INT 21H		MS-DOS System Call
 	61H	Reserved Fnction
 	62H	Get Program Segment Prefix Address
 	6300H	Get DBCS Vector
+	6301H	Set Interim Console Flag
+	6302H	Get Interim Console Flag
 	6500H	Windows95 OSR2 - Set General Internationalization Info
 	6501H	Get General Internationalization Info
 	6502H	Get Upper Case Table
@@ -803,6 +811,7 @@ INT 21H		MS-DOS System Call
 	65A0H	Character Capitalization
 	65A1H	String Capitalization
 	65A2H	ASCIIZ Capitalization
+	65A3H	Determine If Character Represents Yes/No Response
 	6601H	Get Global Code Page Table
 	6602H	Set Global Code Page Table
 	67H	Set Handle Count
