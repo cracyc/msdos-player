@@ -4704,9 +4704,6 @@ bool update_console_input()
 									scn += 0x78 - 0x02;	// 1 to 0 - =
 								}
 								chr = 0x00;
-								enter_key_buf_lock();
-								pcbios_set_key_buffer(0x00, 0x00);
-								leave_key_buf_lock();
 							} else if(ir[i].Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
 								if(scn == 0x0e) {
 									chr = 0x7f;	// Ctrl + Back
