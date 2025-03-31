@@ -1038,9 +1038,9 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 				dwWriteCoord.Y++;
 				nLength -= scr_width - dwWriteCoord.X;
 				pos += scr_width - dwWriteCoord.X;
+				dwWriteCoord.X = 0;
 			}
 			while(nLength > scr_width) {
-				dwWriteCoord.X = 0;
 				WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + pos, scr_width, dwWriteCoord, &written);
 				WriteConsoleOutputAttribute(hConsoleOutput, attributes + pos, scr_width, dwWriteCoord, &written);
 				dwWriteCoord.Y++;
