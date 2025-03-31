@@ -208,7 +208,7 @@ inline char *my_strupr(char *str)
 #else
 #define my_strchr(str, chr) strchr((str), (chr))
 #define my_strrchr(str, chr) strrchr((str), (chr))
-#defube my_strstr(str, search) strstr((str), (search))
+#define my_strstr(str, search) strstr((str), (search))
 #define my_strtok(tok, del) strtok((tok), (del))
 #define my_strtok_s(tok, del, context) strtok_s((tok), (del), (context))
 #define my_strupr(str) _strupr((str))
