@@ -456,7 +456,7 @@ bool glyph_char = false;
 bool is_dbcs_cp = false;
 bool hide_cursor = false;
 
-char devices_to_load[MAX_PATH];
+char devices_to_load[MAX_PATH]= {0};
 
 #define UPDATE_OPS 16384
 #define REQUEST_HARDWRE_UPDATE() { \
@@ -3631,7 +3631,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[18];
+			UINT8 buffer[20];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -3675,8 +3675,14 @@ int main(int argc, char *argv[], char *envp[])
 			if(buffer[12] != 0) {
 				max_files = buffer[12];
 			}
-			int name_len = buffer[13];
-			int file_len = buffer[14] | (buffer[15] << 8) | (buffer[16] << 16) | (buffer[17] << 24);
+			int devices_len = buffer[13] | (buffer[14] << 8);
+			int name_len = buffer[15];
+			int file_len = buffer[16] | (buffer[17] << 8) | (buffer[18] << 16) | (buffer[19] << 24);
+			
+			// restore devices to load
+			if(devices_len) {
+				fread(devices_to_load, devices_len, 1, fp);
+			}
 			
 			// restore command file name
 			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
@@ -4027,6 +4033,11 @@ int main(int argc, char *argv[], char *envp[])
 					fputc((code_page >> 8) & 0xff, fo);
 					fputc(max_files, fo);
 					
+					// store devices to load
+					int devices_len = (int)strlen(devices_to_load);
+					fputc((devices_len >>  0) & 0xff, fo);
+					fputc((devices_len >>  8) & 0xff, fo);
+					
 					// store command file info
 					GetFullPathNameA(argv[arg_offset + 1], MAX_PATH, full, &name);
 					int name_len = (int)strlen(name);
@@ -4038,6 +4049,10 @@ int main(int argc, char *argv[], char *envp[])
 					fputc((file_size >>  8) & 0xff, fo);
 					fputc((file_size >> 16) & 0xff, fo);
 					fputc((file_size >> 24) & 0xff, fo);
+					
+					if(devices_len) {
+						fwrite(devices_to_load, devices_len, 1, fo);
+					}
 					fwrite(name, name_len, 1, fo);
 					
 					// store command file
@@ -5552,7 +5567,7 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	strncpy(tmp_path, path, MAX_PATH);
 	tmp_path[MAX_PATH - 1] = '\0';
 	
-	// fix lack of null terminator (??? VZ Editor)
+	// fix lack of null terminator (高橋版 VZ Editor)
 	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
 		tmp_path[8] = '\0';
 	}
@@ -5643,7 +5658,7 @@ bool msdos_is_device_path(const char *path)
 			   _stricmp(name, "FP$ATOK6") == 0) {
 				return(true);
 			}
-			// Search in the device_t linked list
+			// search in the device_t linked list
 			if(dos_get_device(name).dw){
 				return(true);
 			}
@@ -6003,7 +6018,7 @@ int msdos_open(const char *path, int oflag)
 		disposition = CREATE_ALWAYS;
 		break;
 	}
-
+	
 	HANDLE h = CreateFileA(path, GENERIC_READ | FILE_WRITE_ATTRIBUTES,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, disposition,
 		FILE_ATTRIBUTE_NORMAL, NULL);
@@ -6050,7 +6065,7 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 	} else if((*lpt_port = msdos_is_prn_path(path)) != 0) {
 		fd = msdos_open("NUL", oflag);
 	} else if(dos_get_device(path).dw) {
-		// Create a temporary file to get a valid file descriptor for the device
+		// create a temporary file to get a valid file descriptor for the device
 		fd = _open(path, _O_CREAT | _O_TEMPORARY, _S_IREAD | _S_IWRITE);
 	} else if(msdos_is_device_path(path)) {
 		fd = msdos_open("NUL", oflag);
@@ -6066,7 +6081,7 @@ UINT16 msdos_device_info(const char *path)
 {
 	PAIR32 device;
 	device_t *device_header;
-
+	
 	if(!strnicmp(path, "\\DEV\\", 5)) {
 		path += 5;
 	}
@@ -6091,7 +6106,7 @@ UINT16 msdos_device_info(const char *path)
 //			return(0xc080);
 			return(0x0080);
 		}
-		// Search in the device_t linked list
+		// search in the device_t linked list
 		device = dos_get_device(path);
 		if(device.dw){
 			device_header = (device_t*)FAR_POINTER(device);
@@ -7734,6 +7749,7 @@ psp_t *msdos_psp_create(int psp_seg, UINT16 mcb_seg, UINT16 parent_seg, UINT16 e
 	} else {
 		psp_t *parent_psp = (psp_t *)(mem + (parent_seg << 4));
 		memcpy(psp->file_table, parent_psp->file_table, 20);
+		psp->interim_console_flag = parent_psp->interim_console_flag;
 		psp->dos_major_version = parent_psp->dos_major_version;
 		psp->dos_minor_version = parent_psp->dos_minor_version;
 	}
@@ -12026,9 +12042,9 @@ UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
 	return((hi << 8) + lo);
 }
 
-// AX?????????????? 1989
-// ??10 ?????PRINTER DRIVER NIOS???
-// 6. ????????????
+// AXテクニカルリファレンスガイド 1989
+// 付録10 日本語拡張PRINTER DRIVER NIOS概仕様
+// 6. コントロールコードの解析
 
 void pcbios_printer_out(int c, UINT8 data)
 {
@@ -14442,7 +14458,7 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x03: // Write To Character Device Control Channel
-		// If installed device, send driver request
+		// if installed device, send driver request
 		device = dos_get_device(file_handler[fd].path);
 		if(device.dw && (file_handler[fd].info & DOS_DEVATTR_IOCTL)){
 			PAIR32 buffer;
@@ -14459,7 +14475,7 @@ inline void msdos_int_21h_44h()
 			}
 		}
 		else{
-			// If dummy device, return success
+			// if dummy device, return success
 //			CPU_AX = 0x05;
 //			CPU_SET_C_FLAG(1);
 			CPU_AX = 0x00; // success
@@ -19735,7 +19751,7 @@ inline void atok_int_6fh_66h()
 			CPU_AL = 0x01;
 		}
 #else
-		CPU_AL = 0x01; // mode = "??R?"
+		CPU_AL = 0x01; // mode = "あ連Ｒ漢"
 #endif
 	} else {
 		CPU_AL = 0x00;
@@ -22230,9 +22246,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// NLS stuff
 	msdos_nls_tables_init();
-
-	// Load device drivers specified with -ld
-	load_devices(devices_to_load);
+	
+	// load device drivers specified with -ld
+	load_devices(devices_to_load, env_seg);
 	
 	// execute command
 	try {
@@ -26206,7 +26222,7 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 #endif
 
 // Load device drivers from a list delimited by ";"
-void load_devices(char *device_list)
+void load_devices(char *device_list, int env_seg)
 {
 	char *token;
 	DWORD dwAttrib;
@@ -26222,7 +26238,7 @@ void load_devices(char *device_list)
 				// Handle .sys files only
 				if(check_file_extension(token, ".SYS"))
 				{
-					DosLoadDriver(token);
+					DosLoadDriver(token, env_seg);
 				}
 			}
 			token = my_strtok(NULL, ";");
@@ -26231,43 +26247,68 @@ void load_devices(char *device_list)
 }
 
 // Load a .sys file into memory and install it
-DWORD DosLoadDriver(LPCSTR DriverFile)
+DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg)
 {
-    DWORD Result = ERROR_SUCCESS;
-    HANDLE FileHandle = INVALID_HANDLE_VALUE, FileMapping = NULL;
-    LPBYTE Address = NULL;
-    PAIR32 Driver;
-    device_t *DriverHeader;
-    WORD seg = 0;
-    DWORD FileSize;
-    DOS_INIT_REQUEST Request;
+	DWORD Result = ERROR_SUCCESS;
+	char DriveFilePath[MAX_PATH];
+	HANDLE FileHandle = INVALID_HANDLE_VALUE, FileMapping = NULL;
+	LPBYTE Address = NULL;
+	PAIR32 Driver;
+	device_t *DriverHeader;
+	WORD seg = 0;
+	DWORD FileSize;
+	DOS_INIT_REQUEST Request;
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
 	mcb_t *mcb_driver, *mcb_driver_config;
 	const char *tmp;
- 
-    /* Open a handle to the driver file */
-    FileHandle = CreateFileA(DriverFile,
-                             GENERIC_READ,
-                             FILE_SHARE_READ,
-                             NULL,
-                             OPEN_EXISTING,
-                             FILE_ATTRIBUTE_NORMAL,
-                             NULL);
-    if (FileHandle == INVALID_HANDLE_VALUE)
-    {
-        Result = GetLastError();
-        goto Cleanup;
-    }
- 
-    /* Get the file size */
-    FileSize = GetFileSize(FileHandle, NULL);
- 
-    /* Allocate DOS memory for the driver. Add one paragraph for driver config MCB and one more for rounding paragraph. */
+
+	strcpy(DriveFilePath, DriverFile);
+	if(_access(DriveFilePath, 0) != 0 && my_strchr(DriverFile, ':') == NULL && my_strchr(DriverFile, '\\') == NULL) {
+		// Search path in parent environments
+		const char *env = msdos_env_get(env_seg, "PATH");
+		char token[MAX_PATH];
+		while(env != NULL && *env != '\0') {
+			if((tmp = my_strchr(env, ';')) != NULL) {
+				int len = tmp - env;
+				memcpy(token, env, len);
+				token[len] = '\0';
+				env = tmp + 1;
+			} else {
+				strcpy(token, env);
+				env += strlen(env);
+			}
+			if(token[0] != '\0') {
+				strcpy(DriveFilePath, msdos_combine_path(token, DriverFile));
+				if(_access(DriveFilePath, 0) == 0) {
+					break;
+				}
+			}
+		}
+	}
+
+	/* Open a handle to the driver file */
+	FileHandle = CreateFileA(DriveFilePath,
+	                         GENERIC_READ,
+	                         FILE_SHARE_READ,
+	                         NULL,
+	                         OPEN_EXISTING,
+	                         FILE_ATTRIBUTE_NORMAL,
+	                         NULL);
+	if (FileHandle == INVALID_HANDLE_VALUE)
+	{
+		Result = GetLastError();
+		goto Cleanup;
+	}
+
+	/* Get the file size */
+	FileSize = GetFileSize(FileHandle, NULL);
+
+	/* Allocate DOS memory for the driver. Add one paragraph for driver config MCB and one more for rounding paragraph. */
 	if((seg = msdos_mem_alloc(first_mcb, (FileSize >> 4) + 2)) == -1)
-    {
-        Result = sda->extended_error_code;
-        goto Cleanup;
-    }
+	{
+		Result = sda->extended_error_code;
+		goto Cleanup;
+	}
 
 	/* Set the MCB so MEM.exe will show the driver */
 	mcb_driver = (mcb_t *)(mem + ((seg - 1) << 4));
@@ -26294,40 +26335,40 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
 		}
 	}
 	seg++;
- 
-    /* Create a mapping object for the file */
-    FileMapping = CreateFileMappingA(FileHandle,
-                                    NULL,
-                                    PAGE_READONLY,
-                                    0,
-                                    0,
-                                    NULL);
-    if (FileMapping == NULL)
-    {
-        Result = GetLastError();
-        goto Cleanup;
-    }
- 
-    /* Map the file into memory */
-    Address = (LPBYTE)MapViewOfFile(FileMapping, FILE_MAP_READ, 0, 0, 0);
-    if (Address == NULL)
-    {
-        Result = GetLastError();
-        goto Cleanup;
-    }
- 
-    /* Copy the entire file to the DOS memory */
-    Driver.w.l = 0;
+
+	/* Create a mapping object for the file */
+	FileMapping = CreateFileMappingA(FileHandle,
+	                                NULL,
+	                                PAGE_READONLY,
+	                                0,
+	                                0,
+	                                NULL);
+	if (FileMapping == NULL)
+	{
+		Result = GetLastError();
+		goto Cleanup;
+	}
+
+	/* Map the file into memory */
+	Address = (LPBYTE)MapViewOfFile(FileMapping, FILE_MAP_READ, 0, 0, 0);
+	if (Address == NULL)
+	{
+		Result = GetLastError();
+		goto Cleanup;
+	}
+
+	/* Copy the entire file to the DOS memory */
+	Driver.w.l = 0;
 	Driver.w.h = seg;
 	DriverHeader = (device_t*)FAR_POINTER(Driver);
 	memcpy(DriverHeader, Address, FileSize);
- 
-    /* Loop through all the drivers in this file */
-    while (TRUE)
-    {
-        if (DriverHeader->attributes & DOS_DEVATTR_CHARACTER)
-        {
-            /* Send the driver an init request */
+
+	/* Loop through all the drivers in this file */
+	while (TRUE)
+	{
+		if (DriverHeader->attributes & DOS_DEVATTR_CHARACTER)
+		{
+			/* Send the driver an init request */
 			memset(&Request, 0, sizeof(Request));
 			Request.Header.RequestLength = sizeof(DOS_INIT_REQUEST);
 			Request.Header.CommandCode = DOS_DEVCMD_INIT;
@@ -26339,14 +26380,14 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
 				DosAddDriver(Driver);
 			}
 			else
-        	{
-            fprintf(stderr, "Error loading driver at %04X:%04X: "
-                    "Initialization routine returned error %u.\n",
-                    Driver.w.h,
-                    Driver.w.l,
-                    Request.Header.Status & 0x7F);
-        	}
-        }
+			{
+			fprintf(stderr, "Error loading driver at %04X:%04X: "
+					"Initialization routine returned error %u.\n",
+					Driver.w.h,
+					Driver.w.l,
+					Request.Header.Status & 0x7F);
+			}
+		}
 		else
 		{
 			fprintf(stderr, "Error loading driver at %04X:%04X: "
@@ -26354,47 +26395,47 @@ DWORD DosLoadDriver(LPCSTR DriverFile)
 				Driver.w.h,
 				Driver.w.l);
 		}
- 
+
 		/* Check if this .sys file has more drivers to load */
-        if (DriverHeader->next_driver.w.l == 0xFFFF) break;
-        Driver = DriverHeader->next_driver;
-        DriverHeader = (device_t*)FAR_POINTER(Driver);
-    }
- 
+		if (DriverHeader->next_driver.w.l == 0xFFFF) break;
+		Driver = DriverHeader->next_driver;
+		DriverHeader = (device_t*)FAR_POINTER(Driver);
+	}
+
 Cleanup:
-    if (Result != ERROR_SUCCESS)
-    {
-        /* It was not successful, cleanup the DOS memory */
-        if (seg) msdos_mem_free(seg, false);
-    }
- 
-    /* Unmap the file */
-    if (Address != NULL) UnmapViewOfFile(Address);
- 
-    /* Close the file mapping object */
-    if (FileMapping != NULL) CloseHandle(FileMapping);
- 
-    /* Close the file handle */
-    if (FileHandle != INVALID_HANDLE_VALUE) CloseHandle(FileHandle);
- 
-    return Result;
+	if (Result != ERROR_SUCCESS)
+	{
+		/* It was not successful, cleanup the DOS memory */
+		if (seg) msdos_mem_free(seg, false);
+	}
+
+	/* Unmap the file */
+	if (Address != NULL) UnmapViewOfFile(Address);
+
+	/* Close the file mapping object */
+	if (FileMapping != NULL) CloseHandle(FileMapping);
+
+	/* Close the file handle */
+	if (FileHandle != INVALID_HANDLE_VALUE) CloseHandle(FileHandle);
+
+	return Result;
 }
 
 // Add a driver to the device_t linked list
 static VOID DosAddDriver(PAIR32 Driver)
 {
 	dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
-    device_t *LastDriver = (device_t *)&dos_info->nul_device;
- 
-    /* Find the last driver in the list */
-    while (LastDriver->next_driver.w.l != 0xFFFF)
-    {
-        LastDriver = (device_t *)FAR_POINTER(LastDriver->next_driver);
-    }
- 
-    /* Add the new driver to the list */
-    LastDriver->next_driver = Driver;
-    LastDriver = (device_t *)FAR_POINTER(Driver);
+	device_t *LastDriver = (device_t *)&dos_info->nul_device;
+
+	/* Find the last driver in the list */
+	while (LastDriver->next_driver.w.l != 0xFFFF)
+	{
+		LastDriver = (device_t *)FAR_POINTER(LastDriver->next_driver);
+	}
+
+	/* Add the new driver to the list */
+	LastDriver->next_driver = Driver;
+	LastDriver = (device_t *)FAR_POINTER(Driver);
 }
 
 // Create a request structure and call the driver
@@ -26415,43 +26456,43 @@ static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, 
 // Call a device driver using a request structure
 static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request)
 {
-    device_t *DriverBlock = (device_t*)FAR_POINTER(Driver);
+	device_t *DriverBlock = (device_t*)FAR_POINTER(Driver);
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
 
-    UINT16 tmp_AX = CPU_AX;
-    UINT16 tmp_CX = CPU_CX;
-    UINT16 tmp_DX = CPU_DX;
-    UINT16 tmp_BX = CPU_BX;
-    UINT16 tmp_BP = CPU_BP;
-    UINT16 tmp_SI = CPU_SI;
-    UINT16 tmp_DI = CPU_DI;
-    UINT16 tmp_DS = CPU_DS;
-    UINT16 tmp_ES = CPU_ES;
+	UINT16 tmp_AX = CPU_AX;
+	UINT16 tmp_CX = CPU_CX;
+	UINT16 tmp_DX = CPU_DX;
+	UINT16 tmp_BX = CPU_BX;
+	UINT16 tmp_BP = CPU_BP;
+	UINT16 tmp_SI = CPU_SI;
+	UINT16 tmp_DI = CPU_DI;
+	UINT16 tmp_DS = CPU_DS;
+	UINT16 tmp_ES = CPU_ES;
 
-    // Copy the request structure to the sda
-    memmove(&sda->Request, Request, Request->RequestLength);
+	// Copy the request structure to the sda
+	memmove(&sda->Request, Request, Request->RequestLength);
 
 	// Set ES:BX to the location of the request 
 	CPU_LOAD_SREG(CPU_ES_INDEX, SDA_TOP >> 4);
 	CPU_BX = offsetof(sda_t, Request);
 
-    // Call the strategy routine, and then the interrupt routine
+	// Call the strategy routine, and then the interrupt routine
 	RunCallback16(Driver.w.h, DriverBlock->strategy);
-    RunCallback16(Driver.w.h, DriverBlock->interrupt);
+	RunCallback16(Driver.w.h, DriverBlock->interrupt);
  
-    // Get the request structure from ES:BX
-    memmove(Request, &sda->Request, Request->RequestLength);
+	// Get the request structure from ES:BX
+	memmove(Request, &sda->Request, Request->RequestLength);
  
-    // Restore the registers
-    CPU_AX = tmp_AX;
-    CPU_CX = tmp_CX;
-    CPU_DX = tmp_DX;
-    CPU_BX = tmp_BX;
-    CPU_BP = tmp_BP;
-    CPU_SI = tmp_SI;
-    CPU_DI = tmp_DI;
-    CPU_LOAD_SREG(CPU_DS_INDEX, tmp_DS);
-    CPU_LOAD_SREG(CPU_ES_INDEX, tmp_ES);
+	// Restore the registers
+	CPU_AX = tmp_AX;
+	CPU_CX = tmp_CX;
+	CPU_DX = tmp_DX;
+	CPU_BX = tmp_BX;
+	CPU_BP = tmp_BP;
+	CPU_SI = tmp_SI;
+	CPU_DI = tmp_DI;
+	CPU_LOAD_SREG(CPU_DS_INDEX, tmp_DS);
+	CPU_LOAD_SREG(CPU_ES_INDEX, tmp_ES);
 }
 
 void RunCallback16(UINT16 segment, UINT16 offset)
@@ -26459,9 +26500,9 @@ void RunCallback16(UINT16 segment, UINT16 offset)
 	UINT16 tmp_cs = CPU_CS;
 	UINT32 tmp_eip = CPU_EIP;
 
-	// set instruction pointer
+	// Set instruction pointer
 	CPU_CALL_FAR(segment, offset);
-	// run cpu until routine is done
+	// Run cpu until routine is done
 	while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
 		try {
 			hardware_run_cpu();
@@ -26479,12 +26520,12 @@ PAIR32 dos_get_device(const char* name)
 
 	// Skip dummy devices, return 0
 	if(_stricmp(name, "CLOCK$"  ) == 0 ||
-		_stricmp(name, "CONFIG$" ) == 0 ||
-		_stricmp(name, "EMMXXXX0") == 0 ||
-		_stricmp(name, "$IBMAFNT") == 0 ||
-		_stricmp(name, "$IBMADSP") == 0 ||
-		_stricmp(name, "$IBMAIAS") == 0 ||
-		_stricmp(name, "FP$ATOK6") == 0) {
+	   _stricmp(name, "CONFIG$" ) == 0 ||
+	   _stricmp(name, "EMMXXXX0") == 0 ||
+	   _stricmp(name, "$IBMAFNT") == 0 ||
+	   _stricmp(name, "$IBMADSP") == 0 ||
+	   _stricmp(name, "$IBMAIAS") == 0 ||
+	   _stricmp(name, "FP$ATOK6") == 0) {
 		Driver.dw = 0;
 		return(Driver);
 	}

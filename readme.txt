@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/23/2025
+								3/27/2025
 
 ----- What's This
 
@@ -1267,7 +1267,8 @@ INT 2FH AX=1613H (MS-DOS 7 kernel - Get SYSTEM.DAT PathName)
 INT 2FH AX=1614H (MS-DOS 7 kernel - Set SYSTEM.DAT PathName)
 are based on DOSBox-X.
 
-VDD are based on Mr.cracyc's fork and ReactOS.
+VDD is based on Mr. cracyc's fork and ReactOS.
+Device driver loading is based on Mr. N2583ZYOB6's fork and ReactOS.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player

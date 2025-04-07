@@ -580,6 +580,7 @@ UINT8 vga_gfx_addr = 0;
 UINT8 vga_gfx_regs[16] = {0};
 UINT8 vga_ctrl = 0x01;
 
+
 /* ----------------------------------------------------------------------------
 	Device Drivers from ReactOS
 ---------------------------------------------------------------------------- */
@@ -650,8 +651,8 @@ typedef struct _DOS_RW_REQUEST
 } DOS_RW_REQUEST;
 #pragma pack()
 
-void load_devices(char *device_list);
-DWORD DosLoadDriver(LPCSTR DriverFile);
+void load_devices(char *device_list, int env_seg);
+DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg);
 static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode);
 static VOID DosAddDriver(PAIR32 Driver);
 static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request);
@@ -1039,7 +1040,7 @@ typedef struct {
 	// swappable data area
 	UINT8 printer_cho_flag;		// -34
 	UINT16 int21h_5d0ah_dx;		// -33
-	UINT8 switchar;				// -31 current switch character
+	UINT8 switchar;			// -31 current switch character
 	UINT8 malloc_strategy;		// -30 current memory allocation strategy
 	UINT8 int21h_5d0ah_cl;		// -29
 	UINT8 int21h_5e01h_counter;	// -28
@@ -1048,20 +1049,20 @@ typedef struct {
 	UINT8 int21h_5d0ah_called;	// -1
 	// ----- from DOSBox -----
 	UINT8 crit_error_flag;		// 0x00 Critical Error Flag
-	UINT8 indos_flag;			// 0x01 InDOS flag (count of active INT 21 calls)
+	UINT8 indos_flag;		// 0x01 InDOS flag (count of active INT 21 calls)
 	UINT8 drive_crit_error;		// 0x02 Drive on which current critical error occurred or FFh
 	UINT8 locus_of_last_error;	// 0x03 locus of last error
 	UINT16 extended_error_code;	// 0x04 extended error code of last error
 	UINT8 suggested_action;		// 0x06 suggested action for last error
-	UINT8 error_class;			// 0x07 class of last error
+	UINT8 error_class;		// 0x07 class of last error
 	PAIR32 last_error_pointer; 	// 0x08 ES:DI pointer for last error
-	PAIR32 current_dta;			// 0x0C current DTA (Disk Transfer Address)
+	PAIR32 current_dta;		// 0x0C current DTA (Disk Transfer Address)
 	UINT16 current_psp; 		// 0x10 current PSP
-	UINT16 sp_int_23;			// 0x12 stores SP across an INT 23
-	UINT16 return_code;			// 0x14 return code from last process termination (zerod after reading with AH=4Dh)
+	UINT16 sp_int_23;		// 0x12 stores SP across an INT 23
+	UINT16 return_code;		// 0x14 return code from last process termination (zerod after reading with AH=4Dh)
 	UINT8 current_drive;		// 0x16 current drive
 	UINT8 extended_break_flag; 	// 0x17 extended break flag
-	UINT8 fill[2];				// 0x18 flag: code page switching || flag: copy of previous byte in case of INT 24 Abort
+	UINT8 fill[2];			// 0x18 flag: code page switching || flag: copy of previous byte in case of INT 24 Abort
 	UINT8 unimplemented[24];	// 0x20 not implemented yet (padding)
 	DOS_RW_REQUEST Request;		// 0x38 device driver request header
 } sda_t;
