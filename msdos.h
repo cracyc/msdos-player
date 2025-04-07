@@ -589,6 +589,84 @@ static void vga_write(UINT32 addr, UINT32 data, int size);
 #endif
 
 /* ----------------------------------------------------------------------------
+	Device Drivers from ReactOS
+---------------------------------------------------------------------------- */
+#define MAX_DEVICE_NAME 8
+
+#define DOS_DEVATTR_STDIN       (1 << 0)
+#define DOS_DEVATTR_STDOUT      (1 << 1)
+#define DOS_DEVATTR_NUL         (1 << 2)
+#define DOS_DEVATTR_CLOCK       (1 << 3)
+#define DOS_DEVATTR_CON         (1 << 4)
+#define DOS_DEVATTR_OPENCLOSE   (1 << 11)
+#define DOS_DEVATTR_SPECIAL     (1 << 13)
+#define DOS_DEVATTR_IOCTL       (1 << 14)
+#define DOS_DEVATTR_CHARACTER   (1 << 15)
+
+#define DOS_DEVCMD_INIT         0
+#define DOS_DEVCMD_MEDIACHK     1
+#define DOS_DEVCMD_BUILDBPB     2
+#define DOS_DEVCMD_IOCTL_READ   3
+#define DOS_DEVCMD_READ         4
+#define DOS_DEVCMD_PEEK         5
+#define DOS_DEVCMD_INSTAT       6
+#define DOS_DEVCMD_FLUSH_INPUT  7
+#define DOS_DEVCMD_WRITE        8
+#define DOS_DEVCMD_WRITE_VERIFY 9
+#define DOS_DEVCMD_OUTSTAT      10
+#define DOS_DEVCMD_FLUSH_OUTPUT 11
+#define DOS_DEVCMD_IOCTL_WRITE  12
+#define DOS_DEVCMD_OPEN         13
+#define DOS_DEVCMD_CLOSE        14
+#define DOS_DEVCMD_REMOVABLE    15
+#define DOS_DEVCMD_OUTPUT_BUSY  16
+
+#define DOS_DEVSTAT_ERROR	(1 << 15)
+
+#define FAR_POINTER(_addr) (mem + ((_addr).w.h << 4) + (_addr).w.l)
+
+#pragma pack(1)
+typedef struct _DOS_REQUEST_HEADER
+{
+    BYTE RequestLength;
+    BYTE UnitNumber;
+    BYTE CommandCode;
+    WORD Status;
+    BYTE Reserved[8];
+} DOS_REQUEST_HEADER;
+#pragma pack()
+ 
+#pragma pack(1)
+typedef struct _DOS_INIT_REQUEST
+{
+    DOS_REQUEST_HEADER Header;
+    BYTE  UnitsInitialized;
+    DWORD ReturnBreakAddress;
+    DWORD DeviceString;
+} DOS_INIT_REQUEST;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct _DOS_RW_REQUEST
+{
+    DOS_REQUEST_HEADER Header;
+    BYTE  MediaDescriptorByte;
+    PAIR32 BufferPointer;
+    WORD  Length;
+    WORD  StartingBlock;
+    PAIR32 VolumeLabelPtr;
+} DOS_RW_REQUEST;
+#pragma pack()
+
+void load_devices(char *device_list, int env_seg);
+DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg);
+static inline WORD DosDriverRequest(PAIR32 Driver, PAIR32 Buffer, PWORD Length, BYTE CommandCode);
+static VOID DosAddDriver(PAIR32 Driver);
+static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request);
+void RunCallback16(UINT16 segment, UINT16 offset);
+PAIR32 dos_get_device(const char* name);
+
+/* ----------------------------------------------------------------------------
 	MS-DOS virtual machine
 ---------------------------------------------------------------------------- */
 
@@ -998,6 +1076,8 @@ typedef struct {
 	UINT8 current_drive;		// 0x16 current drive
 	UINT8 extended_break_flag; 	// 0x17 extended break flag
 	UINT8 fill[2];			// 0x18 flag: code page switching || flag: copy of previous byte in case of INT 24 Abort
+	UINT8 unimplemented[24];	// 0x20 not implemented yet (padding)
+	DOS_RW_REQUEST Request;		// 0x38 device driver request header
 } sda_t;
 #pragma pack()
 

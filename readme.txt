@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/23/2025
+								3/27/2025
 
 ----- What's This
 
@@ -44,8 +44,8 @@ In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
 Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
-      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a] [-l] [-h]
-      (command) [options]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]
+      [-ld[(drivers)]] [-l] [-h] (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -63,6 +63,7 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
 	-a	disable ANSI.SYS
+	-ld	load device drivers
 	-l	draw box lines with ank characters
 	-h	allow making cursor invisible
 
@@ -128,6 +129,13 @@ RTS pin of the host's COM port is always active.
 
 NOTE: The maximum baud rate is limited to 9600bps.
 
+To load device drivers, please specify the option '-ld'.
+This is intended for VDD drivers that use NTVDM.
+Drivers made for real DOS may not all work as expected.
+Only character devices from .sys files are supported at the moment.
+You can load multiple drivers by using a ';' delimiter.
+
+	> msdos -ld"device1.sys;device2.sys" command.com
 
 ----- Environment Variable Table
 
@@ -1257,7 +1265,8 @@ INT 2FH AX=1613H (MS-DOS 7 kernel - Get SYSTEM.DAT PathName)
 INT 2FH AX=1614H (MS-DOS 7 kernel - Set SYSTEM.DAT PathName)
 are based on DOSBox-X.
 
-VDD are based on Mr.cracyc's fork and ReactOS.
+VDD is based on Mr. cracyc's fork and ReactOS.
+Device driver loading is based on Mr. N2583ZYOB6's fork and ReactOS.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player
