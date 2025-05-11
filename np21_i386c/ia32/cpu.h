@@ -41,6 +41,32 @@
 
 #include "../../common.h"
 
+//#define SUPPORT_FPU_DOSBOX
+//#define SUPPORT_FPU_DOSBOX2
+#define SUPPORT_FPU_SOFTFLOAT
+#define USE_FPU
+#define USE_MMX
+#define USE_3DNOW
+#define USE_SSE
+#define USE_SSE2
+#define USE_SSE3
+#define USE_SSSE3
+#define USE_SSE4_1
+#define USE_SSE4_2
+#define USE_SSE4A
+#define USE_TSC
+#define USE_PAGING
+#define USE_FASTPAGING
+#define USE_VME
+//#define USE_CPU_MODRMPREFETCH
+#define USE_CPU_PLATFORMINT
+#define USE_CPU_INLINEINST
+#define USE_CPU_DIRECTREG
+#define USE_CPU_EIPMASK
+//#define USE_CLOCK
+//#define USE_DMA
+#define IA32_REBOOT_ON_PANIC
+
 #ifdef __BIG_ENDIAN__
 	#define BYTESEX_BIG
 #else
@@ -87,6 +113,17 @@
 #define	REG16		UINT16
 #endif
 
+#if defined(USE_CPU_PLATFORMINT)
+// プラットフォームネイティブの整数型を使用
+typedef  UINT32	PF_UINT8;
+typedef  UINT32	PF_UINT16;
+typedef  UINT32	PF_UINT32;
+#else
+typedef  UINT8	PF_UINT8;
+typedef  UINT16	PF_UINT16;
+typedef  UINT32	PF_UINT32;
+#endif
+
 #ifndef LOW16
 #define	LOW16(a)	((UINT16)(a))
 #endif
@@ -118,27 +155,6 @@
 #define	DMACCALL	__fastcall
 #define	IOOUTCALL	__fastcall
 #define	IOINPCALL	__fastcall
-
-#define SUPPORT_FPU_DOSBOX
-#define SUPPORT_FPU_DOSBOX2
-#define SUPPORT_FPU_SOFTFLOAT
-#define USE_FPU
-#define USE_MMX
-#define USE_3DNOW
-#define USE_SSE
-#define USE_SSE2
-#define USE_SSE3
-#define USE_SSSE3
-#define USE_SSE4_1
-#define USE_SSE4_2
-#define USE_SSE4A
-#define USE_TSC
-#define USE_PAGING
-#define USE_FASTPAGING
-#define USE_VME
-//#define USE_CLOCK
-//#define USE_DMA
-#define IA32_REBOOT_ON_PANIC
 
 enum {
 	FPU_TYPE_SOFTFLOAT	= 0, /* Berkeley SoftFloat */
@@ -531,6 +547,10 @@ typedef struct {
 extern I386CORE		i386core;
 extern I386CPUID	i386cpuid;
 extern I386MSR		i386msr;
+
+#if defined(USE_CPU_MODRMPREFETCH)
+extern UINT32		opCache;
+#endif
 
 #define	CPU_STATSAVE	i386core.s
 
@@ -1098,6 +1118,28 @@ extern sigjmp_buf	exec_1step_jmpbuf;
 #define	CPU_REGS_DWORD(n)	CPU_STATSAVE.cpu_regs.reg[(n)].d
 #define	CPU_REGS_SREG(n)	CPU_STATSAVE.cpu_regs.sreg[(n)]
 
+#if defined(USE_CPU_DIRECTREG)
+#define	CPU_REG16_B53_V(n)	CPU_REGS_WORD(((n) >> 3) & 7)
+#define	CPU_REG16_B20_V(n)	CPU_REGS_WORD((n) & 7)
+#define	CPU_REG32_B53_V(n)	CPU_REGS_DWORD(((n) >> 3) & 7)
+#define	CPU_REG32_B20_V(n)	CPU_REGS_DWORD((n) & 7)
+
+#define	CPU_REG16_B53(n)	(&CPU_REG16_B53_V(n))
+#define	CPU_REG16_B20(n)	(&CPU_REG16_B20_V(n))
+#define	CPU_REG32_B53(n)	(&CPU_REG32_B53_V(n))
+#define	CPU_REG32_B20(n)	(&CPU_REG32_B20_V(n))
+#else
+#define	CPU_REG16_B53_V(n)	(*CPU_REG16_B53(n))
+#define	CPU_REG16_B20_V(n)	(*CPU_REG16_B20(n))
+#define	CPU_REG32_B53_V(n)	(*CPU_REG32_B53(n))
+#define	CPU_REG32_B20_V(n)	(*CPU_REG32_B20(n))
+
+#define	CPU_REG16_B53(n)	reg16_b53[n]
+#define	CPU_REG16_B20(n)	reg16_b20[n]
+#define	CPU_REG32_B53(n)	reg32_b53[n]
+#define	CPU_REG32_B20(n)	reg32_b20[n]
+#endif
+
 #define	CPU_STAT_SREG(n)	CPU_STATSAVE.cpu_stat.sreg[(n)]
 #define	CPU_STAT_SREGBASE(n)	CPU_STAT_SREG((n)).u.seg.segbase
 #define	CPU_STAT_SREGLIMIT(n)	CPU_STAT_SREG((n)).u.seg.limit
@@ -1131,6 +1173,9 @@ extern sigjmp_buf	exec_1step_jmpbuf;
 #define	CPU_ESI		CPU_REGS_DWORD(CPU_ESI_INDEX)
 #define	CPU_EDI		CPU_REGS_DWORD(CPU_EDI_INDEX)
 #define CPU_EIP		CPU_STATSAVE.cpu_regs.eip.d
+#if defined(USE_CPU_EIPMASK)
+#define CPU_EIPMASK		cpu_eipMask
+#endif
 #define CPU_PREV_EIP	CPU_STATSAVE.cpu_regs.prev_eip.d
 #define CPU_PREV_ESP	CPU_STATSAVE.cpu_regs.prev_esp.d
 
@@ -1406,12 +1451,18 @@ extern const UINT8 iflags[];
 #define	szpcflag	iflags
 extern UINT8 szpflag_w[0x10000];
 
+#if defined(USE_CPU_EIPMASK)
+extern UINT32 cpu_eipMask;
+#endif
+
 extern UINT8 *reg8_b20[0x100];
 extern UINT8 *reg8_b53[0x100];
+#if !defined(USE_CPU_DIRECTREG)
 extern UINT16 *reg16_b20[0x100];
 extern UINT16 *reg16_b53[0x100];
 extern UINT32 *reg32_b20[0x100];
 extern UINT32 *reg32_b53[0x100];
+#endif
 
 extern const char *reg8_str[CPU_REG_NUM];
 extern const char *reg16_str[CPU_REG_NUM];

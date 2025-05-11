@@ -95,7 +95,7 @@ static INLINE void SSE_PART_GETDATA1DATA2_PD(double **data1, double **data2, dou
 	SSE4a_check_NM_EXCEPTION();
 	SSE4a_setTag();
 	CPU_SSE4AWORKCLOCK;
-	GET_PCBYTE((op));
+	GET_MODRM_PCBYTE((op));
 	idx = (op >> 3) & 7;
 	sub = (op & 7);
 	*data1 = (double*)(&(FPU_STAT.xmm_reg[idx]));
@@ -117,7 +117,7 @@ static INLINE void MMX_PART_GETDATA1DATA2_PD(float **data1, float **data2, float
 	SSE4a_check_NM_EXCEPTION();
 	SSE4a_setTag();
 	CPU_SSE4AWORKCLOCK;
-	GET_PCBYTE((op));
+	GET_MODRM_PCBYTE((op));
 	idx = (op >> 3) & 7;
 	sub = (op & 7);
 	*data1 = (float*)(&(FPU_STAT.reg[idx]));
@@ -143,7 +143,7 @@ void SSE4a_MOVNTSD(void)
 	SSE4a_check_NM_EXCEPTION();
 	SSE4a_setTag();
 	CPU_SSE4AWORKCLOCK;
-	GET_PCBYTE((op));
+	GET_MODRM_PCBYTE((op));
 	idx = (op >> 3) & 7;
 	sub = (op & 7);
 	data1 = (float*)(&(FPU_STAT.xmm_reg[idx]));
@@ -176,7 +176,7 @@ void SSE4a_MOVNTSS(void)
 	SSE4a_check_NM_EXCEPTION();
 	SSE4a_setTag();
 	CPU_SSE4AWORKCLOCK;
-	GET_PCBYTE((op));
+	GET_MODRM_PCBYTE((op));
 	idx = (op >> 3) & 7;
 	sub = (op & 7);
 	data1 = (float*)(&(FPU_STAT.xmm_reg[idx]));

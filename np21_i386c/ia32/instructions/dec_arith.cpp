@@ -375,7 +375,7 @@ AAM(void)
 //	UINT8 al;
 
 	CPU_WORKCLOCK(16);
-	GET_PCBYTE(base);
+	GET_MODRM_PCBYTE(base);
 	if (base != 0) {
 #if 0
 		al = CPU_AL;
@@ -404,7 +404,7 @@ AAD(void)
 	UINT32 base;
 
 	CPU_WORKCLOCK(14);
-	GET_PCBYTE(base);
+	GET_MODRM_PCBYTE(base);
 #if 0
 	CPU_AL += (UINT8)(CPU_AH * base);
 	CPU_AH = 0;

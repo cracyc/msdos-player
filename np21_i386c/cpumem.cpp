@@ -52,13 +52,13 @@ UINT32 MEMCALL memp_read32(UINT32 address) {
 }
 
 // ----
-REG8 MEMCALL memp_read8_codefetch(UINT32 address) {
+PF_UINT8 MEMCALL memp_read8_codefetch(UINT32 address) {
 	
 	codefetch_address = address & CPU_ADRSMASK;
 	return read_byte(codefetch_address);
 }
 
-REG16 MEMCALL memp_read16_codefetch(UINT32 address) {
+PF_UINT16 MEMCALL memp_read16_codefetch(UINT32 address) {
 
 	address = address & CPU_ADRSMASK;
 	return read_word(address);
@@ -71,18 +71,22 @@ UINT32 MEMCALL memp_read32_codefetch(UINT32 address) {
 }
 
 // ----
-REG8 MEMCALL memp_read8_paging(UINT32 address) {
+PF_UINT8 MEMCALL memp_read8_paging(UINT32 address) {
 	
-	return memp_read8_codefetch(address);
-}
-REG16 MEMCALL memp_read16_paging(UINT32 address) {
-	
-	return memp_read16_codefetch(address);
+	address = address & CPU_ADRSMASK;
+	return read_byte(address);
 }
 
-UINT32 MEMCALL memp_read32_paging(UINT32 address) {
+PF_UINT16 MEMCALL memp_read16_paging(UINT32 address) {
 	
-	return memp_read32_codefetch(address);
+	address = address & CPU_ADRSMASK;
+	return read_word(address);
+}
+
+PF_UINT32 MEMCALL memp_read32_paging(UINT32 address) {
+	
+	address = address & CPU_ADRSMASK;
+	return read_dword(address);
 }
 
 void MEMCALL memp_write8(UINT32 address, REG8 value) {

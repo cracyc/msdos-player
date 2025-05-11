@@ -1194,19 +1194,17 @@ typedef struct {
 
 #if 1
 // NTVDM
-#define TRUE_MAJOR_VERSION	5	// 5.50
-#define TRUE_MINOR_VERSION	50
-#define DOS_MAJOR_VERSION	5	// 5.00
-#define DOS_MINOR_VERSION	0
+UINT8 true_major_version = 5;
+UINT8 true_minor_version = 50;
+UINT8 dos_major_version = 5;
+UINT8 dos_minor_version = 0;
 #else
 // Windows 98
-#define TRUE_MAJOR_VERSION	7	// 7.10
-#define TRUE_MINOR_VERSION	10
-#define DOS_MAJOR_VERSION	7	// 7.10
-#define DOS_MINOR_VERSION	10
+UINT8 true_major_version = 7;
+UINT8 true_minor_version = 10;
+UINT8 dos_major_version = 7;
+UINT8 dos_minor_version = 10;
 #endif
-UINT8 dos_major_version = DOS_MAJOR_VERSION;
-UINT8 dos_minor_version = DOS_MINOR_VERSION;
 bool dos_version_specified = false;
 UINT8 win_major_version = 4;
 UINT8 win_minor_version = 10;

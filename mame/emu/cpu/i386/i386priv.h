@@ -782,10 +782,14 @@ INLINE UINT32 FETCH32()
 	UINT32 address = m_pc, error;
 
 	if( !DWORD_ALIGNED(m_pc) ) {      /* Unaligned read */
-		value = (FETCH() << 0);
-		value |= (FETCH() << 8);
-		value |= (FETCH() << 16);
-		value |= (FETCH() << 24);
+		if( !WORD_ALIGNED(m_pc) ) {
+			value = (FETCH() << 0);
+			value |= (FETCH16() << 8);
+			value |= (FETCH() << 24);
+		} else {
+			value = (FETCH16() << 0);
+			value |= (FETCH16() << 16);
+		}
 	} else {
 		if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
 			PF_THROW(error);
@@ -831,10 +835,14 @@ INLINE UINT32 READ32(UINT32 ea)
 	UINT32 address = ea, error;
 
 	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned read */
-		value = (READ8( address+0 ) << 0);
-		value |= (READ8( address+1 ) << 8);
-		value |= (READ8( address+2 ) << 16),
-		value |= (READ8( address+3 ) << 24);
+		if( !WORD_ALIGNED(ea) ) {
+			value = (READ8( address+0 ) << 0);
+			value |= (READ16( address+1 ) << 8);
+			value |= (READ8( address+3 ) << 24);
+		} else {
+			value = (READ16( address+0 ) << 0);
+			value |= (READ16( address+2 ) << 16);
+		}
 	} else {
 		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
 			PF_THROW(error);
@@ -851,14 +859,30 @@ INLINE UINT64 READ64(UINT32 ea)
 	UINT32 address = ea, error;
 
 	if( !QWORD_ALIGNED(ea) ) {        /* Unaligned read */
-		value = (((UINT64) READ8( address+0 )) << 0);
-		value |= (((UINT64) READ8( address+1 )) << 8);
-		value |= (((UINT64) READ8( address+2 )) << 16);
-		value |= (((UINT64) READ8( address+3 )) << 24);
-		value |= (((UINT64) READ8( address+4 )) << 32);
-		value |= (((UINT64) READ8( address+5 )) << 40);
-		value |= (((UINT64) READ8( address+6 )) << 48);
-		value |= (((UINT64) READ8( address+7 )) << 56);
+		switch(ea & 3)
+		{
+		case 0:
+			value = (((UINT64) READ32( address+0 )) << 0);
+			value |= (((UINT64) READ32( address+4 )) << 32);
+			break;
+		case 1:
+			value = (((UINT64) READ8( address+0 )) << 0);
+			value |= (((UINT64) READ16( address+1 )) << 8);
+			value |= (((UINT64) READ32( address+3 )) << 24);
+			value |= (((UINT64) READ8( address+7 )) << 56);
+			break;
+		case 2:
+			value = (((UINT64) READ16( address+0 )) << 0);
+			value |= (((UINT64) READ32( address+2 )) << 16);
+			value |= (((UINT64) READ16( address+6 )) << 48);
+			break;
+		case 3:
+			value = (((UINT64) READ8( address+0 )) << 0);
+			value |= (((UINT64) READ32( address+1 )) << 8);
+			value |= (((UINT64) READ16( address+5 )) << 40);
+			value |= (((UINT64) READ8( address+7 )) << 56);
+			break;
+		}
 	} else {
 		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
 			PF_THROW(error);
@@ -903,10 +927,14 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 	UINT32 address = ea, error;
 
 	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned read */
-		value = (READ8PL0( address+0 ) << 0);
-		value |= (READ8PL0( address+1 ) << 8);
-		value |= (READ8PL0( address+2 ) << 16);
-		value |= (READ8PL0( address+3 ) << 24);
+		if( !WORD_ALIGNED(ea) ) {
+			value = (READ8PL0( address+0 ) << 0);
+			value |= (READ16PL0( address+1 ) << 8);
+			value |= (READ8PL0( address+3 ) << 24);
+		} else {
+			value = (READ16PL0( address+0 ) << 0);
+			value |= (READ16PL0( address+2 ) << 16);
+		}
 	} else {
 		if(!translate_address(0,TRANSLATE_READ,&address,&error))
 			PF_THROW(error);
@@ -954,10 +982,14 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 	UINT32 address = ea, error;
 
 	if( !DWORD_ALIGNED(ea) ) {        /* Unaligned write */
-		WRITE8( address+0, value & 0xff );
-		WRITE8( address+1, (value >> 8) & 0xff );
-		WRITE8( address+2, (value >> 16) & 0xff );
-		WRITE8( address+3, (value >> 24) & 0xff );
+		if( !WORD_ALIGNED(ea) ) {
+			WRITE8( address+0, value & 0xff );
+			WRITE16( address+1, (value >> 8) & 0xffff );
+			WRITE8( address+3, (value >> 24) & 0xff );
+		} else {
+			WRITE16( address+0, value & 0xffff );
+			WRITE16( address+2, (value >> 16) & 0xffff );
+		}
 	} else {
 		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
 			PF_THROW(error);
@@ -972,14 +1004,30 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 	UINT32 address = ea, error;
 
 	if( !QWORD_ALIGNED(ea) ) {        /* Unaligned write */
-		WRITE8( address+0, value & 0xff );
-		WRITE8( address+1, (value >> 8) & 0xff );
-		WRITE8( address+2, (value >> 16) & 0xff );
-		WRITE8( address+3, (value >> 24) & 0xff );
-		WRITE8( address+4, (value >> 32) & 0xff );
-		WRITE8( address+5, (value >> 40) & 0xff );
-		WRITE8( address+6, (value >> 48) & 0xff );
-		WRITE8( address+7, (value >> 56) & 0xff );
+		switch(ea & 3)
+		{
+		case 0:
+			WRITE32( address+0, value & 0xffffffff );
+			WRITE32( address+4, (value >> 32) & 0xffffffff );
+			break;
+		case 1:
+			WRITE8( address+0, value & 0xff );
+			WRITE16( address+1, (value >> 8) & 0xffff );
+			WRITE32( address+3, (value >> 24) & 0xffffffff );
+			WRITE8( address+7, (value >> 56) & 0xff );
+			break;
+		case 2:
+			WRITE16( address+0, value & 0xffff );
+			WRITE32( address+2, (value >> 16) & 0xffffffff );
+			WRITE16( address+6, (value >> 48) & 0xffff );
+			break;
+		case 3:
+			WRITE8( address+0, value & 0xff );
+			WRITE32( address+1, (value >> 8) & 0xffffffff );
+			WRITE16( address+5, (value >> 40) & 0xffff );
+			WRITE8( address+7, (value >> 56) & 0xff );
+			break;
+		}
 	} else {
 		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
 			PF_THROW(error);

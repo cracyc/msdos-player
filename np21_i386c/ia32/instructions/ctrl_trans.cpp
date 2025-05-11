@@ -79,7 +79,7 @@ JMP_Ew(UINT32 op)
 
 	if (op >= 0xc0) {
 		CPU_WORKCLOCK(7);
-		new_ip = *(reg16_b20[op]);
+		new_ip = *(CPU_REG16_B20(op));
 	} else {
 		CPU_WORKCLOCK(11);
 		madr = calc_ea_dst(op);
@@ -99,7 +99,7 @@ JMP_Ed(UINT32 op)
 
 	if (op >= 0xc0) {
 		CPU_WORKCLOCK(7);
-		new_ip = *(reg32_b20[op]);
+		new_ip = *(CPU_REG32_B20(op));
 	} else {
 		CPU_WORKCLOCK(11);
 		madr = calc_ea_dst(op);
@@ -915,7 +915,7 @@ CALL_Ew(UINT32 op)
 	CPU_SET_PREV_ESP();
 	if (op >= 0xc0) {
 		CPU_WORKCLOCK(7);
-		new_ip = *(reg16_b20[op]);
+		new_ip = *(CPU_REG16_B20(op));
 	} else {
 		CPU_WORKCLOCK(11);
 		madr = calc_ea_dst(op);
@@ -938,7 +938,7 @@ CALL_Ed(UINT32 op)
 	CPU_SET_PREV_ESP();
 	if (op >= 0xc0) {
 		CPU_WORKCLOCK(7);
-		new_ip = *(reg32_b20[op]);
+		new_ip = *(CPU_REG32_B20(op));
 	} else {
 		CPU_WORKCLOCK(11);
 		madr = calc_ea_dst(op);
@@ -1403,7 +1403,7 @@ INT_Ib(void)
 
 	CPU_WORKCLOCK(37);
 	if (!CPU_STAT_PM || !CPU_STAT_VM86 || (CPU_STAT_IOPL == CPU_IOPL3)) {
-		GET_PCBYTE(vect);
+		GET_MODRM_PCBYTE(vect);
 #if defined(ENABLE_TRAP)
 		softinttrap(CPU_CS, CPU_EIP - 2, vect);
 #endif
@@ -1425,9 +1425,9 @@ BOUND_GwMa(void)
 	UINT16 reg;
 
 	CPU_WORKCLOCK(13);
-	GET_PCBYTE(op);
+	GET_MODRM_PCBYTE(op);
 	if (op < 0xc0) {
-		reg = *(reg16_b53[op]);
+		reg = *(CPU_REG16_B53(op));
 		madr = calc_ea_dst(op);
 		if (reg >= cpu_vmemoryread_w(CPU_INST_SEGREG_INDEX, madr) &&
 		    reg <= cpu_vmemoryread_w(CPU_INST_SEGREG_INDEX, madr + 2)) {
@@ -1446,9 +1446,9 @@ BOUND_GdMa(void)
 	UINT32 reg;
 
 	CPU_WORKCLOCK(13);
-	GET_PCBYTE(op);
+	GET_MODRM_PCBYTE(op);
 	if (op < 0xc0) {
-		reg = *(reg32_b53[op]);
+		reg = *(CPU_REG32_B53(op));
 		madr = calc_ea_dst(op);
 		if (reg >= cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, madr) &&
 		    reg <= cpu_vmemoryread_d(CPU_INST_SEGREG_INDEX, madr + 4)) {

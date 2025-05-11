@@ -89,6 +89,14 @@ ia32_initreg(void)
 
 	tlb_init();
 	fpu_initialize();
+
+#if defined(USE_CPU_EIPMASK)
+	CPU_EIPMASK = CPU_STATSAVE.cpu_inst_default.op_32 ? 0xffffffff : 0xffff;
+#endif
+
+#if defined(USE_CPU_MODRMPREFETCH)
+	opCache = 0;
+#endif
 }
 
 void

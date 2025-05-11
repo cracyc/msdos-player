@@ -682,7 +682,7 @@ static BYTE *get_virtual_memory(UINT32 byteaddress)
 void vram_flush();
 
 // read accessors
-UINT8 read_byte(UINT32 byteaddress)
+UINT32 read_byte(UINT32 byteaddress)
 {
 	UINT8 ret;
 	check_bp(byteaddress, &rd_break_point, 1);
@@ -703,7 +703,7 @@ UINT8 read_byte(UINT32 byteaddress)
 	return ret;
 }
 
-UINT16 read_word(UINT32 byteaddress)
+UINT32 read_word(UINT32 byteaddress)
 {
 	UINT16 ret;
 	check_bp(byteaddress, &rd_break_point, 2);
@@ -3661,8 +3661,8 @@ int main(int argc, char *argv[], char *envp[])
 				buf_height = buffer[4] | (buffer[5] << 8);
 			}
 			if(buffer[6] != 0) {
-				dos_major_version = buffer[6];
-				dos_minor_version = buffer[7];
+				dos_major_version = true_major_version = buffer[6];
+				dos_minor_version = true_minor_version = buffer[7];
 				dos_version_specified = true;
 			}
 			if(buffer[8] != 0) {
@@ -3813,8 +3813,8 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
-				dos_major_version = argv[i][2] - '0';
-				dos_minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
+				dos_major_version = true_major_version = argv[i][2] - '0';
+				dos_minor_version = true_minor_version = (argv[i][4] - '0') * 10 + (argv[i][5] ? (argv[i][5] - '0') : 0);
 				dos_version_specified = true;
 			}
 			arg_offset++;
@@ -8523,16 +8523,16 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			char *s = (char *)&file_buffer[p];
 			bool found = false;
 			if(strncmp(s, "Microsoft(R) Windows 95", 23) == 0) {
-				parent_psp->dos_major_version = 7;
-				parent_psp->dos_minor_version = 0;
+				dos_major_version = true_major_version = 7;
+				dos_minor_version = true_minor_version = 0;
 				break;
 			} else if(strncmp(s, "Microsoft(R) Windows 98", 23) == 0) {
-				parent_psp->dos_major_version = 7;
-				parent_psp->dos_minor_version = 10;
+				dos_major_version = true_major_version = 7;
+				dos_minor_version = true_minor_version = 10;
 				break;
 			} else if(strncmp(s, "Microsoft(R) Windows Millennium", 31) == 0) {
-				parent_psp->dos_major_version = 8;
-				parent_psp->dos_minor_version = 0;
+				dos_major_version = true_major_version = 8;
+				dos_minor_version = true_minor_version = 0;
 				break;
 			} else if(strncmp(s, "MS-DOS", 6) == 0) {
 				s += 6;
@@ -8553,8 +8553,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					}
 					if(found && strncmp(s, "6.21", 4) == 0) {
 						// MS-DOS Version 6.21
-						parent_psp->dos_major_version = 6;
-						parent_psp->dos_minor_version = 20;
+						dos_major_version = true_major_version = 6;
+						dos_minor_version = true_minor_version = 20;
 						break;
 					}
 				}
@@ -8563,8 +8563,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				while((*s++) != ' ');
 				if(strncmp(s, "3.22", 4) == 0) {
 					// IBM JX PC-DOS Version 3.22
-					parent_psp->dos_major_version = 3;
-					parent_psp->dos_minor_version = 20;
+					dos_major_version = true_major_version = 3;
+					dos_minor_version = true_minor_version = 20;
 					break;
 				}
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
@@ -8580,8 +8580,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
 				if(strncmp(s, "6.10", 4) == 0) {
 					// PC-DOS Version 6.10
-					parent_psp->dos_major_version = 6;
-					parent_psp->dos_minor_version = 0;
+					dos_major_version = true_major_version = 6;
+					dos_minor_version = true_minor_version = 0;
 					break;
 				}
 				found = true;
@@ -8589,8 +8589,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				s += 21;
 				if(strncmp(s, "2.22", 4) == 0) {
 					// IBM JX PC-DOS Version 2.22
-					parent_psp->dos_major_version = 2;
-					parent_psp->dos_minor_version = 1;
+					dos_major_version = true_major_version = 2;
+					dos_minor_version = true_minor_version = 1;
 					break;
 				}
 				if(*s == 'J' || *s == 'K') s++;
@@ -8601,23 +8601,27 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				found = true;
 			}
 			if(found && *s >= '1' && *s <= '9') {
-				parent_psp->dos_major_version = (*s++) - '0';
-				parent_psp->dos_minor_version = 0;
+				dos_major_version = (*s++) - '0';
+				dos_minor_version = 0;
 				if(*s++ == '.') {
 					if(*s >= '0' && *s <= '9') {
-						parent_psp->dos_minor_version = ((*s++) - '0') * 10;
+						dos_minor_version = ((*s++) - '0') * 10;
 						if(*s >= '0' && *s <= '9') {
-							parent_psp->dos_minor_version += *s - '0';
+							dos_minor_version += *s - '0';
 						}
 					}
 				}
 				// 4.01 -> 4.00
-				if(parent_psp->dos_major_version == 4 && parent_psp->dos_minor_version == 1) {
-					parent_psp->dos_minor_version = 0;
+				if(dos_major_version == 4 && dos_minor_version == 1) {
+					dos_minor_version = 0;
 				}
+				true_major_version = dos_major_version;
+				true_minor_version = dos_minor_version;
 				break;
 			}
 		}
+		parent_psp->dos_major_version = dos_major_version;
+		parent_psp->dos_minor_version = dos_minor_version;
 	}
 	
 	// check if this is Win32 program
@@ -13561,8 +13565,8 @@ inline void msdos_int_21h_33h()
 		break;
 	case 0x06:
 		// True MS-DOS version
-		CPU_BL = TRUE_MAJOR_VERSION;
-		CPU_BH = TRUE_MINOR_VERSION;
+		CPU_BL = true_major_version;
+		CPU_BH = true_minor_version;
 		CPU_DL = 0;
 #ifdef SUPPORT_HMA
 		CPU_DH = 0x00;
@@ -17371,10 +17375,10 @@ inline void msdos_int_2fh_12h()
 			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = CPU_DL;
 			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = CPU_DH;
 		} else {
-//			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = TRUE_MAJOR_VERSION;
-//			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = TRUE_MINOR_VERSION;
-			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = DOS_MAJOR_VERSION;
-			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = DOS_MINOR_VERSION;
+//			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = true_major_version;
+//			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = true_minor_version;
+			((psp_t *)(mem + (current_psp << 4)))->dos_major_version = dos_major_version;
+			((psp_t *)(mem + (current_psp << 4)))->dos_minor_version = dos_minor_version;
 		}
 		break;
 //	case 0x30: // Windows95 - Find SFT Entry in Internal File Tables

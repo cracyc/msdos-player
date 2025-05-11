@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								3/27/2025
+								5/2/2025
 
 ----- What's This
 
@@ -45,7 +45,7 @@ Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
       [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]
-      [-ld[(drivers)]] [-l] [-vt] [-g] [-h] (command) [options]
+      [-ld[(drivers)]] [-l] [-h] (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -65,8 +65,6 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-a	disable ANSI.SYS
 	-ld	load device drivers
 	-l	draw box lines with ank characters
-	-vt	toggle vt mode, default is on for win10 and above
-	-g	use cp437 glyphs for code points 0-31, always enabled in cp437
 	-h	allow making cursor invisible
 
 ISH.COM contains any invalid instructions and it cause an error.
@@ -91,15 +89,13 @@ Or if you want to pretend that Windows is not running, specify the option '-d'.
 	> msdos -d command.com
 
 "Get Version Number" API (INT 21H, AH=30H) returns the version number 5.00.
+"Get True Version Number" API (INT 21H, AX=3306H) returns 5.50.
 If you want to change the version number, please specify the option '-vX.XX'.
 
 	> msdos -v3.30 command.com
 
 If '-vX.XX' option is missing and you start COMMAND.COM, MS-DOS Player tries
 to get DOS version from COMMAND.COM of MS-DOS, PC-DOS, or Windows 95/98/Me.
-
-NOTE: "Get True Version Number" API (INT 21H, AX=3306H) always returns
-the version number 5.50 and '-v' option is not affected.
 
 NOTE: Windows version 4.10 is same as Windows 98.
 NOTE: DOS version 5.00 and true DOS version 5.50 are same as NTVDM.

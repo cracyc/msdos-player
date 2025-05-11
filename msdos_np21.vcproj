@@ -1013,46 +1013,6 @@
 								</FileConfiguration>
 							</File>
 							<File
-								RelativePath="np21_i386c\ia32\instructions\fpu\fpemul_dosbox.cpp"
-								>
-								<FileConfiguration
-									Name="Debug|Win32"
-									>
-									<Tool
-										Name="VCCLCompilerTool"
-										PreprocessorDefinitions=""
-									/>
-								</FileConfiguration>
-								<FileConfiguration
-									Name="Release|Win32"
-									>
-									<Tool
-										Name="VCCLCompilerTool"
-										PreprocessorDefinitions=""
-									/>
-								</FileConfiguration>
-							</File>
-							<File
-								RelativePath="np21_i386c\ia32\instructions\fpu\fpemul_dosbox2.cpp"
-								>
-								<FileConfiguration
-									Name="Debug|Win32"
-									>
-									<Tool
-										Name="VCCLCompilerTool"
-										PreprocessorDefinitions=""
-									/>
-								</FileConfiguration>
-								<FileConfiguration
-									Name="Release|Win32"
-									>
-									<Tool
-										Name="VCCLCompilerTool"
-										PreprocessorDefinitions=""
-									/>
-								</FileConfiguration>
-							</File>
-							<File
 								RelativePath="np21_i386c\ia32\instructions\fpu\fpemul_softfloat.cpp"
 								>
 								<FileConfiguration

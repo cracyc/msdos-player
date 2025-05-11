@@ -301,7 +301,7 @@ cpu_linear_memory_read_b(UINT32 laddr, int ucrw)
 {
 	return cpu_memoryread(paging(laddr, ucrw));
 }
-UINT8 MEMCALL
+PF_UINT8 MEMCALL
 cpu_linear_memory_read_b_codefetch(UINT32 laddr, int ucrw)
 {
 	return cpu_memoryread_codefetch(paging(laddr, ucrw));
@@ -322,19 +322,19 @@ cpu_linear_memory_read_w(UINT32 laddr, int ucrw)
 	value |= (UINT16)cpu_memoryread_b(paddr[1]) << 8;
 	return value;
 }
-UINT16 MEMCALL
+PF_UINT16 MEMCALL
 cpu_linear_memory_read_w_codefetch(UINT32 laddr, int ucrw)
 {
 	UINT32 paddr[2];
-	UINT16 value;
-
+	PF_UINT16 value;
+	
 	paddr[0] = paging(laddr, ucrw);
 	if ((laddr + 1) & CPU_PAGE_MASK)
 		return cpu_memoryread_w_codefetch(paddr[0]);
 
 	paddr[1] = paging(laddr + 1, ucrw);
 	value = cpu_memoryread_b_codefetch(paddr[0]);
-	value |= (UINT16)cpu_memoryread_b_codefetch(paddr[1]) << 8;
+	value |= (PF_UINT16)cpu_memoryread_b_codefetch(paddr[1]) << 8;
 	return value;
 }
 
@@ -377,7 +377,7 @@ cpu_linear_memory_read_d(UINT32 laddr, int ucrw)
 	}
 	return value;
 }
-UINT32 MEMCALL
+PF_UINT32 MEMCALL
 cpu_linear_memory_read_d_codefetch(UINT32 laddr, int ucrw)
 {
 	UINT32 paddr[2];
