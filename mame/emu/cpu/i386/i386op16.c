@@ -3790,6 +3790,7 @@ static bool I386OP(load_far_pointer16)(int s)
 {
 	UINT8 modrm = FETCH();
 	UINT16 selector;
+	bool fault = false;
 
 	if( modrm >= 0xc0 ) {
 		//logerror("i386: load_far_pointer16 NYI\n"); // don't log, NT will use this a lot
@@ -3797,11 +3798,13 @@ static bool I386OP(load_far_pointer16)(int s)
 		return false;
 	} else {
 		UINT32 ea = GetEA(modrm,0,4);
-		STORE_REG16(modrm, READ16(ea + 0));
+		UINT16 val = READ16(ea + 0);
 		selector = READ16(ea + 2);
-		i386_sreg_load(selector,s,NULL);
+		i386_sreg_load(selector,s,&fault);
+		if(!fault)
+			STORE_REG16(modrm, val);
 	}
-	return true;
+	return !fault;
 }
 
 static void I386OP(lds16)()             // Opcode 0xc5
