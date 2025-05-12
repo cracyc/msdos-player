@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/2/2025
+								5/11/2025
 
 ----- What's This
 
@@ -523,7 +523,6 @@ INT 10H		PC BIOS - Video
 	1114H	Load ROM 8x16 Character Set
 	1118H	Set V-TEXT Vertically Long Mode
 	1130H	Get Font Information
-	12H	Alternate Function Select - Get EGA Info (BL=10H)
 	12H	Alternate Function Select - Select Vertical Resolution (BL=30H)
 	130*H	Write String
 	1310H	Read Characters And Standard Attributes
