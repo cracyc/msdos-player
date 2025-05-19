@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/11/2025
+								5/18/2025
 
 ----- What's This
 
@@ -44,7 +44,7 @@ In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
 Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
-      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vm|vc] [-vX.XX] [-wX.XX] [-x] [-a]
       [-ld[(drivers)]] [-l] [-h] (command) [options]
 
 	-b	stay busy during keyboard polling
@@ -59,6 +59,8 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-s	enable serial I/O and set host's COM port numbers
 	-sd	enable DTR/DSR flow control
 	-sc	enable RTS/CTS flow control
+	-vm	enable MDA only
+	-vc	enable CGA text mode only
 	-v	set the DOS version
 	-w	set the Windows version
 	-x	enable XMS and LIM EMS
@@ -126,6 +128,15 @@ Otherwise, virtual RTS pin is internally connected to virtual CTS pin, and
 RTS pin of the host's COM port is always active.
 
 NOTE: The maximum baud rate is limited to 9600bps.
+
+MS-DOS Player pretents EGA/VGA exists even though supports only text mode.
+Lotus 1-2-3 R2.4 detects EGA is existing and tries to use graphic screen.
+To make EGA/VGA not existing, please specify the option '-vm' or '-vc'.
+
+	> msdos -vc 123.exe
+
+If you specify '-vm', MS-DOS Player pretents only MDA exists.
+If you specify '-vc', MS-DOS Player pretents only CGA exists.
 
 To load device drivers, please specify the option '-ld'.
 This is intended for VDD drivers that use NTVDM.
@@ -523,6 +534,7 @@ INT 10H		PC BIOS - Video
 	1114H	Load ROM 8x16 Character Set
 	1118H	Set V-TEXT Vertically Long Mode
 	1130H	Get Font Information
+	12H	Alternate Function Select - Get EGA Info (BL=10H)
 	12H	Alternate Function Select - Select Vertical Resolution (BL=30H)
 	130*H	Write String
 	1310H	Read Characters And Standard Attributes

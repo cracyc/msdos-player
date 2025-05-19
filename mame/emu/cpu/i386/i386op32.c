@@ -3564,7 +3564,7 @@ static bool I386OP(load_far_pointer32)(int s)
 {
 	UINT8 modrm = FETCH();
 	UINT16 selector;
-	bool fault;
+	bool fault = false;
 
 	if( modrm >= 0xc0 ) {
 		report_invalid_modrm("load_far_pointer32", modrm);
@@ -3574,38 +3574,44 @@ static bool I386OP(load_far_pointer32)(int s)
 		UINT32 val = READ32(ea + 0);
 		selector = READ16(ea + 4);
 		i386_sreg_load(selector,s,&fault);
-		if(!fault)
+		if(!fault) {
 			STORE_REG32(modrm, val);
+		}
 	}
 	return !fault;
 }
 
 static void I386OP(lds32)()             // Opcode 0xc5
 {
-	if(I386OP(load_far_pointer32)(DS))
+	if(I386OP(load_far_pointer32)(DS)) {
 		CYCLES(CYCLES_LDS);
+	}
 }
 
 static void I386OP(lss32)()             // Opcode 0x0f 0xb2
 {
-	if(I386OP(load_far_pointer32)(SS))
+	if(I386OP(load_far_pointer32)(SS)) {
 		CYCLES(CYCLES_LSS);
+	}
 }
 
 static void I386OP(les32)()             // Opcode 0xc4
 {
-	if(I386OP(load_far_pointer32)(ES))
+	if(I386OP(load_far_pointer32)(ES)) {
 		CYCLES(CYCLES_LES);
+	}
 }
 
 static void I386OP(lfs32)()             // Opcode 0x0f 0xb4
 {
-	if(I386OP(load_far_pointer32)(FS))
+	if(I386OP(load_far_pointer32)(FS)) {
 		CYCLES(CYCLES_LFS);
+	}
 }
 
 static void I386OP(lgs32)()             // Opcode 0x0f 0xb5
 {
-	if(I386OP(load_far_pointer32)(GS))
+	if(I386OP(load_far_pointer32)(GS)) {
 		CYCLES(CYCLES_LGS);
+	}
 }

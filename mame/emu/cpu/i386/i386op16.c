@@ -3801,8 +3801,9 @@ static bool I386OP(load_far_pointer16)(int s)
 		UINT16 val = READ16(ea + 0);
 		selector = READ16(ea + 2);
 		i386_sreg_load(selector,s,&fault);
-		if(!fault)
+		if(!fault) {
 			STORE_REG16(modrm, val);
+		}
 	}
 	return !fault;
 }

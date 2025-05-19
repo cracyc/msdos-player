@@ -563,6 +563,13 @@ void beep_update();
 
 // CRTC
 
+#define VIDEO_CARD_MDA	0
+#define VIDEO_CARD_CGA	1
+#define VIDEO_CARD_EGA	2
+#define VIDEO_CARD_VGA	3
+
+UINT8 video_card_type = VIDEO_CARD_VGA;
+
 UINT8 crtc_addr = 0;
 UINT8 crtc_regs[32] = {0};
 UINT8 crtc_changed[32] = {0};

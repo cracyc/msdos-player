@@ -3631,7 +3631,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[20];
+			UINT8 buffer[21];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -3675,9 +3675,12 @@ int main(int argc, char *argv[], char *envp[])
 			if(buffer[12] != 0) {
 				max_files = buffer[12];
 			}
-			int devices_len = buffer[13] | (buffer[14] << 8);
-			int name_len = buffer[15];
-			int file_len = buffer[16] | (buffer[17] << 8) | (buffer[18] << 16) | (buffer[19] << 24);
+			if(buffer[13] >= VIDEO_CARD_MDA && buffer[13] <= VIDEO_CARD_VGA) {
+				video_card_type = buffer[13];
+			}
+			int devices_len = buffer[14] | (buffer[15] << 8);
+			int name_len = buffer[16];
+			int file_len = buffer[17] | (buffer[18] << 8) | (buffer[19] << 16) | (buffer[20] << 24);
 			
 			// restore devices to load
 			if(devices_len) {
@@ -3811,6 +3814,16 @@ int main(int argc, char *argv[], char *envp[])
 		} else if(_strnicmp(argv[i], "-vt", 3) == 0) {
 			use_vt = !use_vt;
 			arg_offset++;
+		} else if(_strnicmp(argv[i], "-vm", 3) == 0) {
+			video_card_type = VIDEO_CARD_MDA;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-vc", 3) == 0) {
+			video_card_type = VIDEO_CARD_CGA;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-ve", 3) == 0) {
+			// hidden option
+			video_card_type = VIDEO_CARD_EGA;
+			arg_offset++;
 		} else if(_strnicmp(argv[i], "-v", 2) == 0) {
 			if(strlen(argv[i]) >= 5 && IS_NUMERIC(argv[i][2]) && argv[i][3] == '.' && IS_NUMERIC(argv[i][4]) && (argv[i][5] == '\0' || IS_NUMERIC(argv[i][5]))) {
 				dos_major_version = true_major_version = argv[i][2] - '0';
@@ -3867,7 +3880,7 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr,
 			"Usage:\n\n"
 			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]\n"
-			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vX.XX] [-wX.XX] [-x] [-a]\n"
+			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vm|vc] [-vX.XX] [-wX.XX] [-x] [-a]\n"
 			"      [-ld[(drivers)]] [-l] [-vt] [-g] [-h] (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
@@ -3886,6 +3899,8 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
 			"\t-sd\tenable DTR/DSR flow control\n"
 			"\t-sc\tenable RTS/CTS flow control\n"
+			"\t-vm\tenable MDA only\n"
+			"\t-vc\tenable CGA text mode only\n"
 			"\t-v\tset the DOS version\n"
 			"\t-w\tset the Windows version\n"
 #if defined(SUPPORT_VCPI)
@@ -4032,6 +4047,7 @@ int main(int argc, char *argv[], char *envp[])
 					fputc((code_page >> 0) & 0xff, fo);
 					fputc((code_page >> 8) & 0xff, fo);
 					fputc(max_files, fo);
+					fputc(video_card_type, fo);
 					
 					// store devices to load
 					int devices_len = (int)strlen(devices_to_load);
@@ -9269,6 +9285,18 @@ int get_scan_lines()
 
 inline void pcbios_int_10h_00h()
 {
+	if(video_card_type == VIDEO_CARD_MDA) {
+		if((CPU_AL & 0x7f) != 0x07) {
+			return;
+		}
+	} else if(video_card_type == VIDEO_CARD_CGA) {
+		if((CPU_AL & 0x7f) != 0x00 &&
+		   (CPU_AL & 0x7f) != 0x01 &&
+		   (CPU_AL & 0x7f) != 0x02 &&
+		   (CPU_AL & 0x7f) != 0x03) {
+			return;
+		}
+	}
 	switch(CPU_AL & 0x7f) {
 	case 0x70: // V-Text Mode
 	case 0x71: // Extended CGA V-Text Mode
@@ -9280,8 +9308,6 @@ inline void pcbios_int_10h_00h()
 		pcbios_set_console_size(80, get_scan_lines() / 16, !(CPU_AL & 0x80));
 		break;
 	case 0x73: // Extended CGA Text Mode
-	case 0x64: // J-3100 DCGA (mono)
-	case 0x65: // J-3100 DCGA
 	case 0x74: // J-3100 DCGA (mono)
 	case 0x75: // J-3100 DCGA
 	case 0x02: // CGA Text Mode (gray)
@@ -9289,6 +9315,12 @@ inline void pcbios_int_10h_00h()
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
 		pcbios_set_console_size(80, 25, !(CPU_AL & 0x80));
+		break;
+	case 0x64: // J-3100 DCGA (mono)
+	case 0x65: // J-3100 DCGA
+		change_console_size(80, 20); // for Windows10
+		pcbios_set_font_size(font_width, font_height);
+		pcbios_set_console_size(80, 20, !(CPU_AL & 0x80));
 		break;
 	case 0x00: // CGA Text Mode (gray)
 	case 0x01: // CGA Text Mode
@@ -9833,6 +9865,18 @@ inline void pcbios_int_10h_12h()
 	UINT8 modebits;
 	
 	switch(CPU_BL) {
+	case 0x10:
+		if(video_card_type >= VIDEO_CARD_EGA) {
+			if((CPU_AL & 0x7f) == 0x07) {
+				CPU_BH = 0x01;
+			} else {
+				CPU_BH = 0x00;
+			}
+			CPU_BL = 0x03;
+			CPU_CH = mem[0x488] >> 4;
+			CPU_CL = mem[0x488] & 0x0f;
+		}
+		break;
 	case 0x30:
 		modebits = mem[0x489] & 0x90;
 		switch(CPU_AL) {
@@ -10019,10 +10063,11 @@ inline void pcbios_int_10h_1ah()
 {
 	switch(CPU_AL) {
 	case 0x00:
-		CPU_AL = 0x1a;
-//		CPU_BL = 0x01; // MDA
-		CPU_BL = 0x02; // CGA
-		CPU_BH = 0x00;
+		if(video_card_type == VIDEO_CARD_VGA) {
+			CPU_AL = 0x1a;
+			CPU_BL = 0x08; // VGA
+			CPU_BH = 0x00;
+		}
 		break;
 	default:
 		unimplemented_10h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x10, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -10230,7 +10275,15 @@ inline void pcbios_int_10h_90h()
 
 inline void pcbios_int_10h_91h()
 {
-	CPU_AL = 0x04; // VGA
+	if(video_card_type == VIDEO_CARD_MDA) {
+		CPU_AL = 0x00;
+	} else if(video_card_type == VIDEO_CARD_CGA) {
+		CPU_AL = 0x02;
+	} else if(video_card_type == VIDEO_CARD_EGA) {
+		CPU_AL = 0x03;
+	} else if(video_card_type == VIDEO_CARD_VGA) {
+		CPU_AL = 0x04;
+	}
 }
 
 inline void pcbios_int_10h_efh()
@@ -13239,6 +13292,8 @@ inline void msdos_int_21h_26h()
 	psp->int_23h.dw = *(UINT32 *)(mem + 4 * 0x23);
 	psp->int_24h.dw = *(UINT32 *)(mem + 4 * 0x24);
 	psp->parent_psp = 0;
+	
+	CPU_AL = 0xf0; // AL is destroyed
 }
 
 inline void msdos_int_21h_27h()
@@ -13645,9 +13700,11 @@ inline void msdos_int_21h_37h()
 		}
 		break;
 	case 0x02:
+		CPU_AL = 0x00;
 		CPU_DL = dev_flag;
 		break;
 	case 0x03:
+		CPU_AL = 0x00;
 		dev_flag = CPU_DL;
 		break;
 	case 0xd0:
@@ -13714,6 +13771,8 @@ int get_country_info(country_info_t *ci, USHORT usPrimaryLanguage, USHORT usSubL
 
 void set_country_info(country_info_t *ci, int size)
 {
+#if 0
+	// locale information should not be modified in user application
 	char LCdata[80];
 	
 	if(size >= 0x00 + 2) {
@@ -13773,29 +13832,37 @@ void set_country_info(country_info_t *ci, int size)
 		*LCdata = *ci->list_sep;
 		SetLocaleInfoA(LOCALE_USER_DEFAULT, LOCALE_SLIST, LCdata);
 	}
+#endif
 }
 
 inline void msdos_int_21h_38h()
 {
-	switch(CPU_AL) {
-	case 0x00:
+	if(CPU_AL == 0x00) {
 		CPU_BX = get_country_info((country_info_t *)(mem + CPU_DS_BASE + CPU_DX));
-		break;
-	default:
+		CPU_AL = CPU_BX < 0xff ? CPU_BL : 0xff;
+	} else if(CPU_DX != 0xffff) {
 		for(int i = 0;; i++) {
 			if(country_table[i].code == (CPU_AL != 0xff ? CPU_AL : CPU_BX)) {
 				CPU_BX = get_country_info((country_info_t *)(mem + CPU_DS_BASE + CPU_DX), country_table[i].usPrimaryLanguage, country_table[i].usSubLanguage);
 				break;
 			} else if(country_table[i].code == -1) {
-//				unimplemented_21h("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x21, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
-//				CPU_AX = 2;
-//				CPU_SET_C_FLAG(1);
 				// get current coutry info
 				CPU_BX = get_country_info((country_info_t *)(mem + CPU_DS_BASE + CPU_DX));
 				break;
 			}
 		}
-		break;
+		CPU_AL = CPU_BX < 0xff ? CPU_BL : 0xff;
+	} else {
+		for(int i = 0;; i++) {
+			if(country_table[i].code == (CPU_AL != 0xff ? CPU_AL : CPU_BX)) {
+				country_info_t ci;
+				get_country_info(&ci, country_table[i].usPrimaryLanguage, country_table[i].usSubLanguage);
+				set_country_info(&ci, sizeof(ci));
+				break;
+			} else if(country_table[i].code == -1) {
+				break;
+			}
+		}
 	}
 }
 
@@ -13804,6 +13871,8 @@ inline void msdos_int_21h_39h(int lfn)
 	if(_mkdir(msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn, 1))) {
 		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
+	} else {
+		CPU_AX = lfn ? 0x00 : 0x05; // AX is destroyed
 	}
 }
 
@@ -13812,6 +13881,8 @@ inline void msdos_int_21h_3ah(int lfn)
 	if(_rmdir(msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn, 1))) {
 		CPU_AX = msdos_error_code(_doserrno);
 		CPU_SET_C_FLAG(1);
+	} else {
+		CPU_AX = lfn ? 0x00 : 0x05; // AX is destroyed
 	}
 }
 
@@ -13832,6 +13903,8 @@ inline void msdos_int_21h_3bh(int lfn)
 			}
 		}
 		msdos_cds_update(drv, path);
+		
+		CPU_AX = 0x00; // AX isdestroyed
 	}
 }
 
@@ -13905,6 +13978,14 @@ inline void msdos_int_21h_3eh()
 	int fd = msdos_psp_get_file_table(CPU_BX, current_psp);
 	
 	if(fd < process->max_files && file_handler[fd].valid) {
+		// AL is destroyed with pre-close refcount from sft
+		// AH is preserved because some versions of Multiplan had a bug which depended on AH being preserved
+		CPU_AL = 0;
+		for(int i = 0; i < process->max_files; i++) {
+			if(msdos_psp_get_file_table(i, current_psp) == CPU_BX) {
+				CPU_AL++;
+			}
+		}
 		if(!msdos_file_handler_close(fd)) {
 			_close(fd);
 		}
@@ -14155,6 +14236,7 @@ inline void msdos_int_21h_43h(int lfn)
 	case 0x00:
 		if((attr = GetFileAttributesA(path)) != -1) {
 			CPU_CX = (UINT16)msdos_file_attribute_create((UINT16)attr);
+			CPU_AX = lfn ? 0x00 : CPU_CX; // undocumented
 		} else {
 			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
@@ -14162,10 +14244,7 @@ inline void msdos_int_21h_43h(int lfn)
 		break;
 	case 0x01:
 		if(SetFileAttributesA(path, msdos_file_attribute_create(CPU_CX))) {
-			// from DOSBox, AX should be destroyed
-			if(!lfn) {
-				CPU_AX = 0x0202;
-			}
+			CPU_AX = lfn ? 0x00 : 0x0202; // AX is destroyed
 		} else {
 			CPU_AX = msdos_error_code(GetLastError());
 			CPU_SET_C_FLAG(1);
@@ -15346,6 +15425,8 @@ inline void msdos_int_21h_55h()
 			file_handler[fd].valid++;
 		}
 	}
+	
+	CPU_AL = 0xf0; // AL is destroyed
 }
 
 inline void msdos_int_21h_56h(int lfn)
@@ -17213,8 +17294,9 @@ inline void msdos_int_2fh_12h()
 			// update system file table
 			UINT8* sft = mem + SFT_TOP + 6 + 0x3b * CPU_BX;
 			if(file_handler[CPU_BX].valid) {
+				process_t *process = msdos_process_info_get(current_psp);
 				int count = 0;
-				for(int i = 0; i < 20; i++) {
+				for(int i = 0; i < process->max_files; i++) {
 					if(msdos_psp_get_file_table(i, current_psp) == CPU_BX) {
 						count++;
 					}
@@ -21503,7 +21585,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 //	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
-	text_vram_top_address = TEXT_VRAM_TOP;
+	if(video_card_type == VIDEO_CARD_MDA) {
+		text_vram_top_address = MDA_VRAM_TOP;
+	} else {
+		text_vram_top_address = TEXT_VRAM_TOP;
+	}
 	text_vram_end_address = text_vram_top_address + regen;
 	shadow_buffer_top_address = SHADOW_BUF_TOP;
 	shadow_buffer_end_address = shadow_buffer_top_address + regen;
@@ -21537,8 +21623,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT16 *)(mem + 0x413) = MEMORY_END >> 10;
 	*(UINT16 *)(mem + 0x41a) = 0x1e;
 	*(UINT16 *)(mem + 0x41c) = 0x1e;
-//	*(UINT8  *)(mem + 0x449) = 0x07; // MDA Text Mode
-	*(UINT8  *)(mem + 0x449) = 0x03; // CGA Text Mode
+	if(video_card_type == VIDEO_CARD_MDA) {
+		*(UINT8  *)(mem + 0x449) = 0x07; // MDA Text Mode
+	} else {
+		*(UINT8  *)(mem + 0x449) = 0x03; // CGA Text Mode
+	}
 	*(UINT16 *)(mem + 0x44a) = csbi.dwSize.X;
 	*(UINT16 *)(mem + 0x44c) = regen;
 	*(UINT16 *)(mem + 0x44e) = 0;
@@ -21547,8 +21636,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x460) = 7;
 	*(UINT8  *)(mem + 0x461) = 7;
 	*(UINT8  *)(mem + 0x462) = 0;
-//	*(UINT16 *)(mem + 0x463) = 0x3b4; // MDA
-	*(UINT16 *)(mem + 0x463) = 0x3d4; // CGA/EGA/VGA
+	if(video_card_type == VIDEO_CARD_MDA) {
+		*(UINT16 *)(mem + 0x463) = 0x3b4; // MDA
+	} else {
+		*(UINT16 *)(mem + 0x463) = 0x3d4; // CGA/EGA/VGA
+	}
 	*(UINT8  *)(mem + 0x465) = 0x09;
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
 	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
@@ -21564,6 +21656,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x484) = csbi.srWindow.Bottom - csbi.srWindow.Top;
 	*(UINT16 *)(mem + 0x485) = font_height;
 	*(UINT8  *)(mem + 0x487) = 0x60;
+	if(video_card_type >= VIDEO_CARD_EGA) {
+		*(UINT8  *)(mem + 0x488) = 0xf9; // EGA/VGA
+	}
 	*(UINT8  *)(mem + 0x489) = 0x10; // 400 line mode
 	*(UINT8  *)(mem + 0x496) = 0x10; // enhanced keyboard installed
 	// put ROM configuration table for INT 15h, AH=C0h (Get Configuration) in reserved area
