@@ -3296,14 +3296,19 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 						{  // check if conforming, these are always readable, regardless of privilege
 							if(!(seg.flags & 0x04))
 							{
-								// if not conforming, then we must check privilege levels (TODO: current privilege level check)
-								if(((seg.flags >> 5) & 0x03) < (address & 0x03))
+								// if not conforming, then we must check privilege levels
+								if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
 									result = 0;
 							}
 						}
 					}
+					else
+					{
+						if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+							result = 0;
+					}
+
 				}
-				// check that the descriptor privilege is greater or equal to the selector's privilege level and the current privilege (TODO)
 				SetZF(result);
 			}
 			else
@@ -3344,8 +3349,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 							result = 0;
 					}
 				}
-				// check that the descriptor privilege is greater or equal to the selector's privilege level and the current privilege (TODO)
-				if(((seg.flags >> 5) & 0x03) < (address & 0x03))
+				if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
 					result = 0;
 				SetZF(result);
 			}
