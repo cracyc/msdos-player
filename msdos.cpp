@@ -333,10 +333,14 @@ void KeyOnOff(UINT vk)
 
 bool check_file_extension(const char *file_path, const char *ext)
 {
-	int nam_len = (int)strlen(file_path);
-	int ext_len = (int)strlen(ext);
-	
-	return (nam_len >= ext_len && _strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
+	if(ext) {
+		int nam_len = (int)strlen(file_path);
+		int ext_len = (int)strlen(ext);
+		return (nam_len >= ext_len && _strnicmp(&file_path[nam_len - ext_len], ext, ext_len) == 0);
+	} else {
+		const char *name = my_strrchr(file_path, '\\');
+		return (my_strrchr(name ? name + 1 : file_path, '.') == NULL);
+	}
 }
 
 // IBM5550 Taiwan
@@ -1203,6 +1207,35 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 #define MySetConsoleTextAttribute SetConsoleTextAttribute
 #define MyGetConsoleScreenBufferInfo GetConsoleScreenBufferInfo
 #endif
+
+__int64 time_offset = 0;
+
+void MyGetLocalTime(LPSYSTEMTIME lpSystemTime)
+{
+	FILETIME ftime;
+	
+	GetLocalTime(lpSystemTime);
+	if(time_offset != 0) {
+		SystemTimeToFileTime(lpSystemTime, &ftime);
+		*((__int64 *)&ftime) += time_offset;
+		FileTimeToSystemTime(&ftime, lpSystemTime);
+	}
+}
+
+BOOL MySetLocalTime(const SYSTEMTIME *lpSystemTime)
+{
+	SYSTEMTIME time;
+	FILETIME ftime;
+	
+	if(SystemTimeToFileTime(lpSystemTime, &ftime)) {
+		time_offset = *((__int64 *)&ftime);
+		GetLocalTime(&time);
+		SystemTimeToFileTime(&time, &ftime);
+		time_offset -= *((__int64 *)&ftime);
+		return TRUE;
+	}
+	return FALSE;
+}
 
 void vram_flush()
 {
@@ -7534,12 +7567,17 @@ const char *msdos_comspec_path(int env_seg)
 	return(tmp);
 }
 
-bool msdos_search_command_file(const char *command, int env_seg, char *dest_path)
+bool msdos_search_command_file(const char *command, int env_seg, char *dest_path, bool first_process)
 {
 	char path[MAX_PATH], token[MAX_PATH];
 	const char *sep = NULL;
 	
-	if(check_file_extension(command, ".COM") || check_file_extension(command, ".EXE") || check_file_extension(command, ".BAT")) {
+	if(!check_file_extension(command, NULL)) {
+		// first process must be COM/EXE/BAT file, but child process may be not
+		// for example XCOPY/XCOPY32 starts XCOPY32.MOD as child process
+		if(first_process && !check_file_extension(command, ".COM") && !check_file_extension(command, ".EXE") && !check_file_extension(command, ".BAT")) {
+			return false;
+		}
 		strcpy(path, command);
 		if(_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 			// search path in parent environments
@@ -7562,7 +7600,8 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 				}
 			}
 		}
-	} else if(my_strchr(command, '.') == NULL) {
+	} else {
+		// no file extension specified, expect COM/EXE/BAT extension is omitted
 		sprintf(path, "%s.COM", command);
 		if(_access(path, 0) != 0) {
 			sprintf(path, "%s.EXE", command);
@@ -7599,8 +7638,6 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 				}
 			}
 		}
-	} else {
-		return(false);
 	}
 	if(_access(path, 0) == 0) {
 		strcpy(dest_path, path);
@@ -7893,7 +7930,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
 		// redirect C:\COMMAND.COM to comspec_path
 		strcpy(path, msdos_comspec_path(parent_psp->env_seg));
-	} else if(!msdos_search_command_file(cmd, parent_psp->env_seg, path)) {
+	} else if(!msdos_search_command_file(cmd, parent_psp->env_seg, path, first_process)) {
 		if(_stricmp(cmd, "COMMAND.COM") == 0 || _stricmp(cmd, "COMMAND") == 0) {
 			// COMMAND.COM not found in the path, so open comspec_path
 			strcpy(path, msdos_comspec_path(parent_psp->env_seg));
@@ -8055,7 +8092,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			}
 		}
 		if(command[0] != '\0') {
-			if(msdos_search_command_file(command, parent_psp->env_seg, path)) {
+			if(msdos_search_command_file(command, parent_psp->env_seg, path, first_process)) {
 				if(check_file_extension(path, ".COM") || check_file_extension(path, ".EXE")) {
 					// found target program that is not batch file
 					if(_access(path_tmp, 0) != 0) {
@@ -9150,7 +9187,7 @@ UINT32 get_ticks_since_midnight(UINT32 cur_msec)
 	
 	if(start_msec_since_midnight == 0) {
 		SYSTEMTIME time;
-		GetLocalTime(&time);
+		MyGetLocalTime(&time);
 		start_msec_since_midnight = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
 		start_msec_since_hostboot = cur_msec;
 	}
@@ -12390,26 +12427,53 @@ inline int to_bcd(int t)
 	return (u << 4) | (t % 10);
 }
 
+inline int from_bcd(int t)
+{
+	return (t >> 4) * 10 + (t & 0x0f);
+}
+
 inline void pcbios_int_1ah_02h()
 {
 	SYSTEMTIME time;
 	
-	GetLocalTime(&time);
+	MyGetLocalTime(&time);
 	CPU_CH = to_bcd(time.wHour);
 	CPU_CL = to_bcd(time.wMinute);
 	CPU_DH = to_bcd(time.wSecond);
 	CPU_DL = 0x00;
 }
 
+inline void pcbios_int_1ah_03h()
+{
+	SYSTEMTIME time;
+	
+	MyGetLocalTime(&time);
+	time.wHour = from_bcd(CPU_CH);
+	time.wMinute = from_bcd(CPU_CL);
+	time.wSecond = from_bcd(CPU_DH);
+	MySetLocalTime(&time);
+}
+
 inline void pcbios_int_1ah_04h()
 {
 	SYSTEMTIME time;
 	
-	GetLocalTime(&time);
+	MyGetLocalTime(&time);
 	CPU_CH = to_bcd(time.wYear / 100);
-	CPU_CL = to_bcd(time.wYear);
+	CPU_CL = to_bcd(time.wYear % 100);
 	CPU_DH = to_bcd(time.wMonth);
 	CPU_DL = to_bcd(time.wDay);
+}
+
+inline void pcbios_int_1ah_05h()
+{
+	SYSTEMTIME time;
+	
+	MyGetLocalTime(&time);
+	time.wYear = from_bcd(CPU_CH) * 100 + from_bcd(CPU_CL);
+	time.wMonth = from_bcd(CPU_DH);
+	time.wDay = from_bcd(CPU_DL);
+	MySetLocalTime(&time);
 }
 
 inline void pcbios_int_1ah_0ah()
@@ -12418,7 +12482,7 @@ inline void pcbios_int_1ah_0ah()
 	FILETIME file_time;
 	WORD dos_date, dos_time;
 	
-	GetLocalTime(&time);
+	MyGetLocalTime(&time);
 	SystemTimeToFileTime(&time, &file_time);
 	FileTimeToDosDateTime(&file_time, &dos_date, &dos_time);
 	CPU_CX = dos_date;
@@ -13494,7 +13558,7 @@ inline void msdos_int_21h_2ah()
 {
 	SYSTEMTIME sTime;
 	
-	GetLocalTime(&sTime);
+	MyGetLocalTime(&sTime);
 	CPU_CX = sTime.wYear;
 	CPU_DH = (UINT8)sTime.wMonth;
 	CPU_DL = (UINT8)sTime.wDay;
@@ -13503,14 +13567,25 @@ inline void msdos_int_21h_2ah()
 
 inline void msdos_int_21h_2bh()
 {
-	CPU_AL = 0xff;
+	SYSTEMTIME sTime;
+	
+	MyGetLocalTime(&sTime);
+	sTime.wYear = CPU_CX;
+	sTime.wMonth = CPU_DH;
+	sTime.wDay = CPU_DL;
+	
+	if(MySetLocalTime(&sTime)) {
+		CPU_AL = 0x00;
+	} else {
+		CPU_AL = 0xff;
+	}
 }
 
 inline void msdos_int_21h_2ch()
 {
 	SYSTEMTIME sTime;
 	
-	GetLocalTime(&sTime);
+	MyGetLocalTime(&sTime);
 	CPU_CH = (UINT8)sTime.wHour;
 	CPU_CL = (UINT8)sTime.wMinute;
 	CPU_DH = (UINT8)sTime.wSecond;
@@ -13519,7 +13594,19 @@ inline void msdos_int_21h_2ch()
 
 inline void msdos_int_21h_2dh()
 {
-	CPU_AL = 0x00;
+	SYSTEMTIME sTime;
+	
+	MyGetLocalTime(&sTime);
+	sTime.wHour = CPU_CH;
+	sTime.wMinute = CPU_CL;
+	sTime.wSecond = CPU_DH;
+	sTime.wMilliseconds = CPU_DL * 10;
+	
+	if(MySetLocalTime(&sTime)) {
+		CPU_AL = 0x00;
+	} else {
+		CPU_AL = 0xff;
+	}
 }
 
 inline void msdos_int_21h_2eh()
@@ -17249,7 +17336,7 @@ inline void msdos_int_2fh_12h()
 			SYSTEMTIME time;
 			FILETIME file_time;
 			WORD dos_date, dos_time;
-			GetLocalTime(&time);
+			MyGetLocalTime(&time);
 			SystemTimeToFileTime(&time, &file_time);
 			FileTimeToDosDateTime(&file_time, &dos_date, &dos_time);
 			CPU_AX = dos_date;
@@ -20799,9 +20886,9 @@ void msdos_syscall(unsigned num)
 		case 0x00: pcbios_int_1ah_00h(); break;
 		case 0x01: break;
 		case 0x02: pcbios_int_1ah_02h(); break;
-		case 0x03: break;
+		case 0x03: pcbios_int_1ah_03h(); break;
 		case 0x04: pcbios_int_1ah_04h(); break;
-		case 0x05: break;
+		case 0x05: pcbios_int_1ah_05h(); break;
 		case 0x0a: pcbios_int_1ah_0ah(); break;
 		case 0x0b: break;
 		case 0x35: break; // Word Perfect Third Party Interface?
@@ -24340,7 +24427,7 @@ void cmos_write(int addr, UINT8 val)
 #define CMOS_GET_TIME() { \
 	UINT32 cur_sec = timeGetTime() / 1000 ; \
 	if(prev_sec != cur_sec) { \
-		GetLocalTime(&time); \
+		MyGetLocalTime(&time); \
 		prev_sec = cur_sec; \
 	} \
 }

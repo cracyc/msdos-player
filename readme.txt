@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								5/18/2025
+								5/31/2025
 
 ----- What's This
 
@@ -663,10 +663,12 @@ INT 17H		PC BIOS - Printer
 
 INT 1AH		PC BIOS - Timer
 
-	1A00H	Get System Timer
-	1A02H	Get Real Time Clock Time
-	1A04H	Get Real Time Clock Date
-	1A0AH	Read System-Timer Day Counter
+	00H	Get System Timer
+	02H	Get Real Time Clock Time
+	03H	Set Real Time Clock Time
+	04H	Get Real Time Clock Date
+	05H	Set Real Time Clock Date
+	0AH	Read System-Timer Day Counter
 
 INT 20H		Program Terminate
 
