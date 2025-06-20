@@ -3552,6 +3552,8 @@ void hit_key(BYTE bVirtualKey)
 
 BOOL get_ime_open_status()
 {
+	if(use_vt)
+		return FALSE;
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
 	
 	if(hWnd != NULL) {
@@ -3562,6 +3564,8 @@ BOOL get_ime_open_status()
 
 void set_ime_open_status(BOOL value)
 {
+	if(use_vt)
+		return FALSE;
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
 	
 	if(hWnd != NULL) {
