@@ -132,9 +132,19 @@ errno_t my_wcscpy_s(wchar_t *dest, rsize_t dest_size, const wchar_t *src)
 	dest[dest_size - 1] = L'\0';
 	return 0;
 }
+
+errno_t my_strcat_s(char *dest, rsize_t dest_size, const char *src)
+{
+	size_t len = strlen(dest);
+	if(len < dest_size) {
+		my_strcpy_s(dest + len, dest_size - len, src);
+	}
+	return 0;
+}
 #else
 #define my_strcpy_s(dest, dest_size, src) strcpy_s((dest), (dest_size), (src))
 #define my_wcscpy_s(dest, dest_size, src) wcscpy_s((dest), (dest_size), (src))
+#define my_strcat_s(dest, dest_size, src) strcat_s((dest), (dest_size), (src))
 #endif
 
 size_t my_strlcpy(char *dst, const char *src, size_t size)
@@ -215,6 +225,12 @@ inline char *my_strupr(char *str)
 #endif
 #define array_length(array) (sizeof(array) / sizeof(array[0]))
 
+inline bool my_str_endswith(const char *str, int chr)
+{
+	const char *ptr = my_strrchr(str, chr);
+	return (ptr != NULL && *(ptr + 1) == '\0');
+}
+
 UINT MyGetDriveType(int drv)
 {
 	if(drv >= 0 && drv < 26) {
@@ -287,6 +303,34 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	}
 	my_strlcpy(lpszLongPath, szLongPath, cchBuffer);
 	return dwLength;
+}
+
+DWORD MyGetShortPathNameA(LPCSTR lpszLongPath, LPSTR lpszShortPath, DWORD cchBuffer)
+{
+	char szTempPath[1024], szShortPath[1024];
+	LPSTR lpSeparator;
+	
+	if(_access(lpszLongPath, 0) == 0) {
+		return GetShortPathNameA(lpszLongPath, lpszShortPath, cchBuffer);
+	}
+	my_strcpy_s(szTempPath, 1024, lpszLongPath);
+	lpSeparator = my_strrchr(szTempPath, '\\');
+	if(lpSeparator != NULL && *(lpSeparator + 1) == '\0') {
+		LPSTR lpTemp = lpSeparator;
+		*lpSeparator = '\0';
+		lpSeparator = my_strrchr(szTempPath, '\\');
+		*lpTemp = '\\';
+	}
+	if(lpSeparator != NULL) {
+		*lpSeparator = '\0';
+		if(MyGetShortPathNameA(szTempPath, szShortPath, 1024)) {
+			my_strcpy_s(lpszShortPath, cchBuffer, szShortPath);
+			my_strcat_s(lpszShortPath, cchBuffer, "\\");
+			my_strcat_s(lpszShortPath, cchBuffer, lpSeparator + 1);
+			return (DWORD)strlen(lpszShortPath);
+		}
+	}
+	return 0;
 }
 
 HWND MyImmGetDefaultIMEWnd(HWND hWnd)
@@ -3227,10 +3271,10 @@ HWND get_console_window_handle()
 		
 		GetConsoleTitleA(pszOldWindowTitle, 1024);
 		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
-		MySetConsoleTitleA(pszNewWindowTitle);
+		SetConsoleTitleA(pszNewWindowTitle);
 		Sleep(100);
 		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
-		MySetConsoleTitleA(pszOldWindowTitle);
+		SetConsoleTitleA(pszOldWindowTitle);
 	}
 	return hwndFound;
 }
@@ -3881,7 +3925,7 @@ int main(int argc, char *argv[], char *envp[])
 			ansi_sys = false;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-ld", 3) == 0) {
-			strcpy_s(devices_to_load, MAX_PATH, &argv[i][3]);
+			my_strcpy_s(devices_to_load, MAX_PATH, &argv[i][3]);
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-l", 2) == 0) {
 			box_line = true;
@@ -5273,7 +5317,7 @@ const char *msdos_remove_double_quote(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
-	if(strlen(path) >= 2 && path[0] == '"' && path[strlen(path) - 1] == '"') {
+	if(strlen(path) >= 2 && path[0] == '"' && my_str_endswith(path, '"')) {
 //		memset(tmp, 0, sizeof(tmp));
 //		memcpy(tmp, path + 1, strlen(path) - 2);
 		strcpy(tmp, path + 1);
@@ -5291,7 +5335,7 @@ const char *msdos_remove_end_separator(const char *path)
 	strcpy(tmp, path);
 	
 	// for example "C:\" case, the end separator should not be removed
-	if(strlen(tmp) > 3 && tmp[strlen(tmp) - 1] == '\\') {
+	if(strlen(tmp) > 3 && my_str_endswith(tmp, '\\')) {
 		tmp[strlen(tmp) - 1] = '\0';
 	}
 	return(tmp);
@@ -5304,7 +5348,7 @@ const char *msdos_combine_path(const char *dir, const char *file)
 	
 	if(strlen(tmp_dir) == 0) {
 		strcpy(tmp, file);
-	} else if(tmp_dir[strlen(tmp_dir) - 1] == '\\') {
+	} else if(my_str_endswith(tmp_dir, '\\')) {
 		sprintf(tmp, "%s%s", tmp_dir, file);
 	} else {
 		sprintf(tmp, "%s\\%s", tmp_dir, file);
@@ -5413,7 +5457,7 @@ const char *msdos_get_multiple_short_path(const char *src)
 				if(env_path[0] != '\0') {
 					strcat(env_path, ";");
 				}
-				if(GetShortPathNameA(path, short_path, MAX_PATH) == 0) {
+				if(MyGetShortPathNameA(path, short_path, MAX_PATH) == 0) {
 					path = msdos_remove_end_separator(path);
 				} else {
 					my_strupr(short_path);
@@ -5550,7 +5594,7 @@ const char *msdos_short_path(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
-	if(GetShortPathNameA(path, tmp, MAX_PATH) == 0) {
+	if(MyGetShortPathNameA(path, tmp, MAX_PATH) == 0) {
 		strcpy(tmp, path);
 	}
 	my_strupr(tmp);
@@ -5577,16 +5621,8 @@ const char *msdos_short_full_path(const char *path)
 	
 	// Full works with non-existent files, but Short does not
 	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
-		if(GetShortPathNameA(full, tmp, MAX_PATH) == 0) {
+		if(MyGetShortPathNameA(full, tmp, MAX_PATH) == 0) {
 			strcpy(tmp, full);
-			if(name != NULL && name > full) {
-				name[-1] = '\0';
-				DWORD len = GetShortPathNameA(full, tmp, MAX_PATH);
-				if(len != 0) {
-					tmp[len++] = '\\';
-					strcpy(tmp + len, name);
-				}
-			}
 		}
 	} else {
 		strcpy(tmp, path);
@@ -15952,7 +15988,7 @@ inline void msdos_int_21h_60h(int lfn)
 		GetFullPathNameA((char *)(mem + CPU_DS_BASE + CPU_SI), MAX_PATH, full, &name);
 		switch(CPU_CL) {
 		case 1:
-			GetShortPathNameA(full, full, MAX_PATH);
+			MyGetShortPathNameA(full, full, MAX_PATH);
 			my_strupr(full);
 			break;
 		case 2:

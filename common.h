@@ -162,8 +162,14 @@
 #define IMAGE_FILE_MACHINE_AMD64        0x8664  // AMD64 (K8)
 #endif
 
+#ifndef INVALID_FILE_SIZE
+#define INVALID_FILE_SIZE               ((DWORD)0xFFFFFFFF)
+#endif
 #ifndef INVALID_SET_FILE_POINTER
 #define INVALID_SET_FILE_POINTER        ((DWORD)-1)
+#endif
+#ifndef INVALID_FILE_ATTRIBUTES
+#define INVALID_FILE_ATTRIBUTES         ((DWORD)-1)
 #endif
 
 #ifndef LANG_AMHARIC
