@@ -1215,12 +1215,11 @@ PS	CS
 SS	SS
 DS0	DS
 */
-#define I8080_AF	m_regs.w[AX]
 #define I8080_HL	m_regs.w[BX]
 #define I8080_BC	m_regs.w[CX]
 #define I8080_DE	m_regs.w[DX]
 
-#define I8080_F		m_regs.b[AH]
+#define I8080_F		m_80flags
 #define I8080_A		m_regs.b[AL]
 
 #define I8080_H		m_regs.b[BH]
@@ -1806,8 +1805,9 @@ static void PREFIX80(_27h)()
 	if(I8080_F & I8080_CF) tmp16 |= 0x100;
 	if(I8080_F & I8080_HF) tmp16 |= 0x200;
 	if(I8080_F & I8080_NF) tmp16 |= 0x400;
-	I8080_AF = I8080_DAA[tmp16];
-	I8080_F &= 0xd5;
+	tmp16 = I8080_DAA[tmp16];
+	I8080_A = tmp16 >> 8;
+	I8080_F = tmp16 & 0xd5;
 }
 
 static void PREFIX80(_28h)()
@@ -3041,7 +3041,9 @@ static void PREFIX80(_f0h)()
 static void PREFIX80(_f1h)()
 {
 	// POP A
-	I8080_AF = I8080_POP();
+	UINT16 tmp16 = I8080_POP();
+	I8080_A = tmp16 >> 8;
+	I8080_F = tmp16 & 0xff;
 }
 
 static void PREFIX80(_f2h)()
@@ -3064,7 +3066,8 @@ static void PREFIX80(_f4h)()
 static void PREFIX80(_f5h)()
 {
 	// PUSH A
-	I8080_PUSH(I8080_AF);
+	UINT16 tmp16 = (I8080_A << 8) | (I8080_F & 0xd5) | 0x02;
+	I8080_PUSH(tmp16);
 }
 
 static void PREFIX80(_f6h)()

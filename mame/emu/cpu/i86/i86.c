@@ -45,6 +45,7 @@ union i8086basicregs
 	UINT8 m_TF, m_IF;                  /* 0 or 1 valued flags */
 	UINT8 m_MF, m_MF_WriteDisabled;    /* V30 mode flag */
 	UINT8 m_NF;                        /* 8080 N flag */
+	UINT8 m_80flags;                   /* 8080 flags */
 
 	UINT8 m_int_vector;
 	INT8 m_nmi_state;
@@ -178,6 +179,7 @@ static CPU_RESET( v30 )
 	CPU_RESET_CALL(i8086);
 	m_MF = m_MF_WriteDisabled = 1;
 	m_NF = 0; /* is this correct ? */
+	m_80flags = 0;
 }
 
 /* ASG 971222 -- added these interface functions */

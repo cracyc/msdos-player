@@ -3292,7 +3292,7 @@ HDC get_console_window_device_context()
 #ifdef LANG_TAIWANESE
 #undef LANG_TAIWANESE
 #endif
-#define LANG_TAIWANESE MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED)
+#define LANG_TAIWANESE MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL)
 
 #ifdef LANG_TAIWANESE_IBM5550
 #undef LANG_TAIWANESE_IBM5550
@@ -3311,13 +3311,23 @@ USHORT get_message_lang()
 		return LANG_TAIWANESE;
 	} else if(active_code_page == 938) {
 		return LANG_TAIWANESE_IBM5550;
-	} else if(active_code_page == 850 || active_code_page == 860) {
+	} else if(active_code_page == 850 || active_code_page == 860 || active_code_page == 865) {
 		LANGID langID = GetUserDefaultLangID();
 		switch(PRIMARYLANGID(langID)) {
 		case LANG_FRENCH:
 			return LANG_FRENCH;
 		case LANG_GERMAN:
 			return LANG_GERMAN;
+		case LANG_ITALIAN:
+			return LANG_ITALIAN;
+		case LANG_DUTCH:
+			return LANG_DUTCH;
+		case LANG_DANISH:
+			return LANG_DANISH;
+		case LANG_SWEDISH:
+			return LANG_SWEDISH;
+		case LANG_FINNISH:
+			return LANG_FINNISH;
 		case LANG_SPANISH:
 			return LANG_SPANISH;
 		case LANG_PORTUGUESE:
@@ -3325,6 +3335,12 @@ USHORT get_message_lang()
 				return LANG_BRAZILIAN;
 			}
 			return LANG_PORTUGUESE;
+		}
+	} else if(active_code_page == 866) {
+		LANGID langID = GetUserDefaultLangID();
+		switch(PRIMARYLANGID(langID)) {
+		case LANG_RUSSIAN:
+			return LANG_RUSSIAN;
 		}
 	}
 	return LANG_ENGLISH;
@@ -7710,6 +7726,18 @@ const char *msdos_standard_error_message(UINT16 code)
 				return (const char *)standard_error_table[i].message_french;
 			} else if(lang == LANG_GERMAN) {
 				return (const char *)standard_error_table[i].message_german;
+			} else if(lang == LANG_ITALIAN) {
+				return (const char *)standard_error_table[i].message_italian;
+			} else if(lang == LANG_DUTCH) {
+				return (const char *)standard_error_table[i].message_dutch;
+			} else if(lang == LANG_DANISH) {
+				return (const char *)standard_error_table[i].message_danish;
+			} else if(lang == LANG_SWEDISH) {
+				return (const char *)standard_error_table[i].message_swedish;
+			} else if(lang == LANG_FINNISH) {
+				return (const char *)standard_error_table[i].message_finnish;
+			} else if(lang == LANG_RUSSIAN) {
+				return (const char *)standard_error_table[i].message_russian;
 			} else if(lang == LANG_SPANISH) {
 				return (const char *)standard_error_table[i].message_spanish;
 			} else if(lang == LANG_PORTUGUESE) {
@@ -7745,6 +7773,18 @@ const char *msdos_critical_error_message(UINT16 code)
 				return (const char *)critical_error_table[i].message_french;
 			} else if(lang == LANG_GERMAN) {
 				return (const char *)critical_error_table[i].message_german;
+			} else if(lang == LANG_ITALIAN) {
+				return (const char *)critical_error_table[i].message_italian;
+			} else if(lang == LANG_DUTCH) {
+				return (const char *)critical_error_table[i].message_dutch;
+			} else if(lang == LANG_DANISH) {
+				return (const char *)critical_error_table[i].message_danish;
+			} else if(lang == LANG_SWEDISH) {
+				return (const char *)critical_error_table[i].message_swedish;
+			} else if(lang == LANG_FINNISH) {
+				return (const char *)critical_error_table[i].message_finnish;
+			} else if(lang == LANG_RUSSIAN) {
+				return (const char *)critical_error_table[i].message_russian;
 			} else if(lang == LANG_SPANISH) {
 				return (const char *)critical_error_table[i].message_spanish;
 			} else if(lang == LANG_PORTUGUESE) {
@@ -7780,6 +7820,18 @@ const char *msdos_param_error_message(UINT16 code)
 				return (const char *)param_error_table[i].message_french;
 			} else if(lang == LANG_GERMAN) {
 				return (const char *)param_error_table[i].message_german;
+			} else if(lang == LANG_ITALIAN) {
+				return (const char *)param_error_table[i].message_italian;
+			} else if(lang == LANG_DUTCH) {
+				return (const char *)param_error_table[i].message_dutch;
+			} else if(lang == LANG_DANISH) {
+				return (const char *)param_error_table[i].message_danish;
+			} else if(lang == LANG_SWEDISH) {
+				return (const char *)param_error_table[i].message_swedish;
+			} else if(lang == LANG_FINNISH) {
+				return (const char *)param_error_table[i].message_finnish;
+			} else if(lang == LANG_RUSSIAN) {
+				return (const char *)param_error_table[i].message_russian;
 			} else if(lang == LANG_SPANISH) {
 				return (const char *)param_error_table[i].message_spanish;
 			} else if(lang == LANG_PORTUGUESE) {
@@ -8199,6 +8251,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_chdir_french);
 						} else if(lang == LANG_GERMAN) {
 							msdos_printf(fstdout, (const char*)help_chdir_german);
+						} else if(lang == LANG_ITALIAN) {
+							msdos_printf(fstdout, (const char*)help_chdir_italian);
+						} else if(lang == LANG_DUTCH) {
+							msdos_printf(fstdout, (const char*)help_chdir_dutch);
+						} else if(lang == LANG_DANISH) {
+							msdos_printf(fstdout, (const char*)help_chdir_danish);
+						} else if(lang == LANG_SWEDISH) {
+							msdos_printf(fstdout, (const char*)help_chdir_swedish);
+						} else if(lang == LANG_FINNISH) {
+							msdos_printf(fstdout, (const char*)help_chdir_finnish);
+						} else if(lang == LANG_RUSSIAN) {
+							msdos_printf(fstdout, (const char*)help_chdir_russian);
 						} else if(lang == LANG_SPANISH) {
 							msdos_printf(fstdout, (const char*)help_chdir_spanish);
 						} else if(lang == LANG_PORTUGUESE) {
@@ -8287,6 +8351,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_path_french);
 						} else if(lang == LANG_GERMAN) {
 							msdos_printf(fstdout, (const char*)help_path_german);
+						} else if(lang == LANG_ITALIAN) {
+							msdos_printf(fstdout, (const char*)help_path_italian);
+						} else if(lang == LANG_DUTCH) {
+							msdos_printf(fstdout, (const char*)help_path_dutch);
+						} else if(lang == LANG_DANISH) {
+							msdos_printf(fstdout, (const char*)help_path_danish);
+						} else if(lang == LANG_SWEDISH) {
+							msdos_printf(fstdout, (const char*)help_path_swedish);
+						} else if(lang == LANG_FINNISH) {
+							msdos_printf(fstdout, (const char*)help_path_finnish);
+						} else if(lang == LANG_RUSSIAN) {
+							msdos_printf(fstdout, (const char*)help_path_russian);
 						} else if(lang == LANG_SPANISH) {
 							msdos_printf(fstdout, (const char*)help_path_spanish);
 						} else if(lang == LANG_PORTUGUESE) {
@@ -8359,6 +8435,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							msdos_printf(fstdout, (const char*)help_set_french);
 						} else if(lang == LANG_GERMAN) {
 							msdos_printf(fstdout, (const char*)help_set_german);
+						} else if(lang == LANG_ITALIAN) {
+							msdos_printf(fstdout, (const char*)help_set_italian);
+						} else if(lang == LANG_DUTCH) {
+							msdos_printf(fstdout, (const char*)help_set_dutch);
+						} else if(lang == LANG_DANISH) {
+							msdos_printf(fstdout, (const char*)help_set_danish);
+						} else if(lang == LANG_SWEDISH) {
+							msdos_printf(fstdout, (const char*)help_set_swedish);
+						} else if(lang == LANG_FINNISH) {
+							msdos_printf(fstdout, (const char*)help_set_finnish);
+						} else if(lang == LANG_RUSSIAN) {
+							msdos_printf(fstdout, (const char*)help_set_russian);
 						} else if(lang == LANG_SPANISH) {
 							msdos_printf(fstdout, (const char*)help_set_spanish);
 						} else if(lang == LANG_PORTUGUESE) {
@@ -8424,6 +8512,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 								msdos_printf(fstdout, (const char*)help_truename_french);
 							} else if(lang == LANG_GERMAN) {
 								msdos_printf(fstdout, (const char*)help_truename_german);
+							} else if(lang == LANG_ITALIAN) {
+								msdos_printf(fstdout, (const char*)help_truename_italian);
+							} else if(lang == LANG_DUTCH) {
+								msdos_printf(fstdout, (const char*)help_truename_dutch);
+							} else if(lang == LANG_DANISH) {
+								msdos_printf(fstdout, (const char*)help_truename_danish);
+							} else if(lang == LANG_SWEDISH) {
+								msdos_printf(fstdout, (const char*)help_truename_swedish);
+							} else if(lang == LANG_FINNISH) {
+								msdos_printf(fstdout, (const char*)help_truename_finnish);
+							} else if(lang == LANG_RUSSIAN) {
+								msdos_printf(fstdout, (const char*)help_truename_russian);
 							} else if(lang == LANG_SPANISH) {
 								msdos_printf(fstdout, (const char*)help_truename_spanish);
 							} else if(lang == LANG_PORTUGUESE) {
@@ -8478,6 +8578,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 								msdos_printf(fstdout, (const char*)help_type_french);
 							} else if(lang == LANG_GERMAN) {
 								msdos_printf(fstdout, (const char*)help_type_german);
+							} else if(lang == LANG_ITALIAN) {
+								msdos_printf(fstdout, (const char*)help_type_italian);
+							} else if(lang == LANG_DUTCH) {
+								msdos_printf(fstdout, (const char*)help_type_dutch);
+							} else if(lang == LANG_DANISH) {
+								msdos_printf(fstdout, (const char*)help_type_danish);
+							} else if(lang == LANG_SWEDISH) {
+								msdos_printf(fstdout, (const char*)help_type_swedish);
+							} else if(lang == LANG_FINNISH) {
+								msdos_printf(fstdout, (const char*)help_type_finnish);
+							} else if(lang == LANG_RUSSIAN) {
+								msdos_printf(fstdout, (const char*)help_type_russian);
 							} else if(lang == LANG_SPANISH) {
 								msdos_printf(fstdout, (const char*)help_type_spanish);
 							} else if(lang == LANG_PORTUGUESE) {
@@ -8537,6 +8649,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 								msdos_printf(fstdout, (const char*)help_ver_french);
 							} else if(lang == LANG_GERMAN) {
 								msdos_printf(fstdout, (const char*)help_ver_german);
+							} else if(lang == LANG_ITALIAN) {
+								msdos_printf(fstdout, (const char*)help_ver_italian);
+							} else if(lang == LANG_DUTCH) {
+								msdos_printf(fstdout, (const char*)help_ver_dutch);
+							} else if(lang == LANG_DANISH) {
+								msdos_printf(fstdout, (const char*)help_ver_danish);
+							} else if(lang == LANG_SWEDISH) {
+								msdos_printf(fstdout, (const char*)help_ver_swedish);
+							} else if(lang == LANG_FINNISH) {
+								msdos_printf(fstdout, (const char*)help_ver_finnish);
+							} else if(lang == LANG_RUSSIAN) {
+								msdos_printf(fstdout, (const char*)help_ver_russian);
 							} else if(lang == LANG_SPANISH) {
 								msdos_printf(fstdout, (const char*)help_ver_spanish);
 							} else if(lang == LANG_PORTUGUESE) {
@@ -16872,6 +16996,18 @@ inline void msdos_int_24h()
 				fprintf(stderr, " %s %c", (const char*)writing_drive_french, 'A' + CPU_AL);
 			} else if(lang == LANG_GERMAN) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_german, 'A' + CPU_AL);
+			} else if(lang == LANG_ITALIAN) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_italian, 'A' + CPU_AL);
+			} else if(lang == LANG_DUTCH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_dutch, 'A' + CPU_AL);
+			} else if(lang == LANG_DANISH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_danish, 'A' + CPU_AL);
+			} else if(lang == LANG_SWEDISH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_swedish, 'A' + CPU_AL);
+			} else if(lang == LANG_FINNISH) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_finnish, 'A' + CPU_AL);
+			} else if(lang == LANG_RUSSIAN) {
+				fprintf(stderr, " %s %c", (const char*)writing_drive_russian, 'A' + CPU_AL);
 			} else if(lang == LANG_SPANISH) {
 				fprintf(stderr, " %s %c", (const char*)writing_drive_spanish, 'A' + CPU_AL);
 			} else if(lang == LANG_PORTUGUESE) {
@@ -16896,6 +17032,18 @@ inline void msdos_int_24h()
 				fprintf(stderr, " %s %c", (const char*)reading_drive_french, 'A' + CPU_AL);
 			} else if(lang == LANG_GERMAN) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_german, 'A' + CPU_AL);
+			} else if(lang == LANG_ITALIAN) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_italian, 'A' + CPU_AL);
+			} else if(lang == LANG_DUTCH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_dutch, 'A' + CPU_AL);
+			} else if(lang == LANG_DANISH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_danish, 'A' + CPU_AL);
+			} else if(lang == LANG_SWEDISH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_swedish, 'A' + CPU_AL);
+			} else if(lang == LANG_FINNISH) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_finnish, 'A' + CPU_AL);
+			} else if(lang == LANG_RUSSIAN) {
+				fprintf(stderr, " %s %c", (const char*)reading_drive_russian, 'A' + CPU_AL);
 			} else if(lang == LANG_SPANISH) {
 				fprintf(stderr, " %s %c", (const char*)reading_drive_spanish, 'A' + CPU_AL);
 			} else if(lang == LANG_PORTUGUESE) {
@@ -16924,6 +17072,18 @@ inline void msdos_int_24h()
 			fprintf(stderr, "%s", (const char*)abort_french);
 		} else if(lang == LANG_GERMAN) {
 			fprintf(stderr, "%s", (const char*)abort_german);
+		} else if(lang == LANG_ITALIAN) {
+			fprintf(stderr, "%s", (const char*)abort_italian);
+		} else if(lang == LANG_DUTCH) {
+			fprintf(stderr, "%s", (const char*)abort_dutch);
+		} else if(lang == LANG_DANISH) {
+			fprintf(stderr, "%s", (const char*)abort_danish);
+		} else if(lang == LANG_SWEDISH) {
+			fprintf(stderr, "%s", (const char*)abort_swedish);
+		} else if(lang == LANG_FINNISH) {
+			fprintf(stderr, "%s", (const char*)abort_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			fprintf(stderr, "%s", (const char*)abort_russian);
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, "%s", (const char*)abort_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
@@ -16949,6 +17109,18 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)retry_french);
 		} else if(lang == LANG_GERMAN) {
 			fprintf(stderr, ", %s", (const char*)retry_german);
+		} else if(lang == LANG_ITALIAN) {
+			fprintf(stderr, ", %s", (const char*)retry_italian);
+		} else if(lang == LANG_DUTCH) {
+			fprintf(stderr, ", %s", (const char*)retry_dutch);
+		} else if(lang == LANG_DANISH) {
+			fprintf(stderr, ", %s", (const char*)retry_danish);
+		} else if(lang == LANG_SWEDISH) {
+			fprintf(stderr, ", %s", (const char*)retry_swedish);
+		} else if(lang == LANG_FINNISH) {
+			fprintf(stderr, ", %s", (const char*)retry_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			fprintf(stderr, ", %s", (const char*)retry_russian);
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)retry_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
@@ -16974,6 +17146,18 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)ignore_french);
 		} else if(lang == LANG_GERMAN) {
 			fprintf(stderr, ", %s", (const char*)ignore_german);
+		} else if(lang == LANG_ITALIAN) {
+			fprintf(stderr, ", %s", (const char*)ignore_italian);
+		} else if(lang == LANG_DUTCH) {
+			fprintf(stderr, ", %s", (const char*)ignore_dutch);
+		} else if(lang == LANG_DANISH) {
+			fprintf(stderr, ", %s", (const char*)ignore_danish);
+		} else if(lang == LANG_SWEDISH) {
+			fprintf(stderr, ", %s", (const char*)ignore_swedish);
+		} else if(lang == LANG_FINNISH) {
+			fprintf(stderr, ", %s", (const char*)ignore_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			fprintf(stderr, ", %s", (const char*)ignore_russian);
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)ignore_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
@@ -16999,6 +17183,18 @@ inline void msdos_int_24h()
 			fprintf(stderr, ", %s", (const char*)fail_french);
 		} else if(lang == LANG_GERMAN) {
 			fprintf(stderr, ", %s", (const char*)fail_german);
+		} else if(lang == LANG_ITALIAN) {
+			fprintf(stderr, ", %s", (const char*)fail_italian);
+		} else if(lang == LANG_DUTCH) {
+			fprintf(stderr, ", %s", (const char*)fail_dutch);
+		} else if(lang == LANG_DANISH) {
+			fprintf(stderr, ", %s", (const char*)fail_danish);
+		} else if(lang == LANG_SWEDISH) {
+			fprintf(stderr, ", %s", (const char*)fail_swedish);
+		} else if(lang == LANG_FINNISH) {
+			fprintf(stderr, ", %s", (const char*)fail_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			fprintf(stderr, ", %s", (const char*)fail_russian);
 		} else if(lang == LANG_SPANISH) {
 			fprintf(stderr, ", %s", (const char*)fail_spanish);
 		} else if(lang == LANG_PORTUGUESE) {
