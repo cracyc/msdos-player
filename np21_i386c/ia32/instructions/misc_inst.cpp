@@ -117,6 +117,10 @@ _CPUID(void)
 		CPU_EAX = (((i386cpuid.cpu_family >> 4) & 0xff) << 20) | (((i386cpuid.cpu_model >> 4) & 0xf) << 16) | 
 			((i386cpuid.cpu_family & 0xf) << 8) | ((i386cpuid.cpu_model & 0xf) << 4) | (i386cpuid.cpu_stepping & 0xf);
 		CPU_EBX = i386cpuid.cpu_brandid;
+		if (i386cpuid.cpu_feature & CPU_FEATURE_CLFSH)
+		{
+			CPU_EBX |= (8) << 8; // キャッシュラインサイズ
+		}
 		CPU_ECX = i386cpuid.cpu_feature_ecx & CPU_FEATURES_ECX_ALL;
 		CPU_EDX = i386cpuid.cpu_feature & CPU_FEATURES_ALL;
 		break;

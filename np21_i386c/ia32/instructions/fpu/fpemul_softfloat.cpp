@@ -854,13 +854,14 @@ void SF_FPU_FXSAVERSTOR(void) {
 	idx = (op >> 3) & 7;
 	sub = (op & 7);
 
-	fpu_check_NM_EXCEPTION2(); // XXX: ç™ãíñ≥Çµ
 	switch (idx) {
 	case 0: // FXSAVE
+		fpu_check_NM_EXCEPTION2(); // XXX: ç™ãíñ≥Çµ
 		maddr = calc_ea_dst(op);
 		FPU_FXSAVE(maddr);
 		break;
 	case 1: // FXRSTOR
+		fpu_check_NM_EXCEPTION2(); // XXX: ç™ãíñ≥Çµ
 		maddr = calc_ea_dst(op);
 		FPU_FXRSTOR(maddr);
 		break;

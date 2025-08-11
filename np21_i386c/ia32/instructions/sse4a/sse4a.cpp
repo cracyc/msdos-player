@@ -208,7 +208,7 @@ void SSE4a_INSERTQimm(void)
 	GET_PCBYTE((op2));
 	GET_PCBYTE((op3));
 	bitrangedx = ((op2 & 63) == 0) ? ((UINT64)0xffffffffffffffff) : ((UINT64)((((SINT64)1) << (op2 & 63)) - ((SINT64)1)));
-	data1[0] = (data1[0] & (~(bitrangedx << (op3 & 63)))) | ((data2buf[0] & bitrangedx) << (op3 & 63));
+	data1[0] = (data1[0] & (~(bitrangedx << (op3 & 63)))) | ((data2[0] & bitrangedx) << (op3 & 63));
 
 	TRACEOUT(("SSE4a_INSERTQimm"));
 }
@@ -220,10 +220,10 @@ void SSE4a_INSERTQxmm(void)
 	UINT64 bitrangedx;
 
 	SSE_PART_GETDATA1DATA2_PD((double**)(&data1), (double**)(&data2), (double*)data2buf);
-	op2 = ((data2buf[1] >> (8 * 0)) & 63);
-	op3 = ((data2buf[1] >> (8 * 1)) & 63);
+	op2 = ((data2[1] >> (8 * 0)) & 63);
+	op3 = ((data2[1] >> (8 * 1)) & 63);
 	bitrangedx = ((op2 & 63) == 0) ? ((UINT64)0xffffffffffffffff) : ((UINT64)((((SINT64)1) << (op2 & 63)) - ((SINT64)1)));
-	data1[0] = (data1[0] & (~(bitrangedx << (op3 & 63)))) | ((data2buf[0] & bitrangedx) << (op3 & 63));
+	data1[0] = (data1[0] & (~(bitrangedx << (op3 & 63)))) | ((data2[0] & bitrangedx) << (op3 & 63));
 
 	TRACEOUT(("SSE4a_INSERTQxmm"));
 }
@@ -250,8 +250,8 @@ void SSE4a_EXTRQxmm(void)
 	UINT64 bitrangedx;
 
 	SSE_PART_GETDATA1DATA2_PD((double**)(&data1), (double**)(&data2), (double*)data2buf);
-	op2 = ((data2buf[0] >> (8 * 0)) & 63);
-	op3 = ((data2buf[0] >> (8 * 1)) & 63);
+	op2 = ((data2[0] >> (8 * 0)) & 63);
+	op3 = ((data2[0] >> (8 * 1)) & 63);
 	bitrangedx = ((op2 & 63) == 0) ? ((UINT64)0xffffffffffffffff) : ((UINT64)((((SINT64)1) << (op2 & 63)) - ((SINT64)1)));
 	data1[0] = (data1[0] & (~(bitrangedx))) | ((data1[0] >> (op3 & 63)) & bitrangedx);
 

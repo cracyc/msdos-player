@@ -141,10 +141,20 @@ errno_t my_strcat_s(char *dest, rsize_t dest_size, const char *src)
 	}
 	return 0;
 }
+
+errno_t my_wcscat_s(wchar_t *dest, rsize_t dest_size, const wchar_t *src)
+{
+	size_t len = wcslen(dest);
+	if(len < dest_size) {
+		my_wcscpy_s(dest + len, dest_size - len, src);
+	}
+	return 0;
+}
 #else
 #define my_strcpy_s(dest, dest_size, src) strcpy_s((dest), (dest_size), (src))
 #define my_wcscpy_s(dest, dest_size, src) wcscpy_s((dest), (dest_size), (src))
 #define my_strcat_s(dest, dest_size, src) strcat_s((dest), (dest_size), (src))
+#define my_wcscat_s(dest, dest_size, src) wcscat_s((dest), (dest_size), (src))
 #endif
 
 size_t my_strlcpy(char *dst, const char *src, size_t size)
@@ -231,6 +241,12 @@ inline bool my_str_endswith(const char *str, int chr)
 	return (ptr != NULL && *(ptr + 1) == '\0');
 }
 
+inline bool my_wcstr_endswith(const wchar_t *str, wchar_t chr)
+{
+	const wchar_t *ptr = wcsrchr(str, chr);
+	return (ptr != NULL && *(ptr + 1) == L'\0');
+}
+
 UINT MyGetDriveType(int drv)
 {
 	if(drv >= 0 && drv < 26) {
@@ -249,23 +265,37 @@ UINT MyGetDriveType(int drv)
 	return DRIVE_NO_ROOT_DIR;
 }
 
-DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuffer)
+HANDLE MyFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 {
-	if(is_win2k_or_later) {
-		HMODULE hLibrary = NULL;
-		typedef DWORD (WINAPI* GetLongPathNameFunction)(LPCSTR, LPSTR, DWORD);
-		GetLongPathNameFunction lpfnGetLongPathNameA = NULL;
-		
-		if((hLibrary = LoadLibraryA("Kernel32.dll")) != NULL) {
-			if((lpfnGetLongPathNameA = reinterpret_cast<GetLongPathNameFunction>(::GetProcAddress(hLibrary, "GetLongPathNameA"))) != NULL) {
-				DWORD result = lpfnGetLongPathNameA(lpszShortPath, lpszLongPath, cchBuffer);
-				FreeLibrary(hLibrary);
-				return result;
+	HANDLE hFind;
+	
+	if((hFind = FindFirstFileA(lpFileName, lpFindFileData)) != INVALID_HANDLE_VALUE) {
+		// Check if cFileName contains non-ANSI characters
+		if(lpFindFileData->cAlternateFileName[0]) {
+			if(my_strchr(lpFindFileData->cFileName, '?')) {
+				strcpy(lpFindFileData->cFileName, lpFindFileData->cAlternateFileName);
 			}
-			FreeLibrary(hLibrary);
 		}
 	}
-	
+	return hFind;
+}
+
+BOOL MyFindNextFileA(HANDLE hFindFile, LPWIN32_FIND_DATAA lpFindFileData)
+{
+	if(FindNextFileA(hFindFile, lpFindFileData)) {
+		// Check if cFileName contains non-ANSI characters
+		if(lpFindFileData->cAlternateFileName[0]) {
+			if(my_strchr(lpFindFileData->cFileName, '?')) {
+				strcpy(lpFindFileData->cFileName, lpFindFileData->cAlternateFileName);
+			}
+		}
+		return TRUE;
+	}
+	return FALSE;
+}
+
+DWORD MyOldGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuffer)
+{
 	// Windows NT 4 does not support GetLongPathNameA
 	// http://www.expertmg.co.jp/html/cti/vctips/file.htm
 	
@@ -278,7 +308,11 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	
 	my_strlcpy(szTempShortPath, lpszShortPath, sizeof(szTempShortPath));
 	
-	if(FindFirstFileA(szTempShortPath, &ffd) == INVALID_HANDLE_VALUE) {
+	while((lpSeparator = my_strstr(szTempShortPath, "\\.\\")) != NULL) {
+		strcpy(szTempPath, lpSeparator + 2);
+		strcpy(lpSeparator, szTempPath);
+	}
+	if(MyFindFirstFileA(szTempShortPath, &ffd) == INVALID_HANDLE_VALUE) {
 		return 0;
 	}
 	do {
@@ -291,7 +325,7 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 				my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
 			}
 			szTempShortPath[nPos] = '\0';
-			FindFirstFileA(szTempShortPath ,&ffd);
+			MyFindFirstFileA(szTempShortPath ,&ffd);
 		} else {
 			_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempShortPath, szLongPath);
 			my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
@@ -303,6 +337,31 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 	}
 	my_strlcpy(lpszLongPath, szLongPath, cchBuffer);
 	return dwLength;
+}
+
+DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuffer)
+{
+	char szTempPath[1024];
+	
+	if(is_win2k_or_later) {
+		HMODULE hLibrary = NULL;
+		typedef DWORD (WINAPI* GetLongPathNameFunction)(LPCSTR, LPSTR, DWORD);
+		GetLongPathNameFunction lpfnGetLongPathNameA = NULL;
+		
+		if((hLibrary = LoadLibraryA("Kernel32.dll")) != NULL) {
+			DWORD dwResult = 0;
+			my_strcpy_s(szTempPath, 1024, lpszShortPath);
+			if((lpfnGetLongPathNameA = reinterpret_cast<GetLongPathNameFunction>(::GetProcAddress(hLibrary, "GetLongPathNameA"))) != NULL) {
+				dwResult = lpfnGetLongPathNameA(szTempPath, szTempPath, cchBuffer);
+			}
+			FreeLibrary(hLibrary);
+			if(dwResult != 0 && my_strchr(szTempPath, '?') == NULL) {
+				my_strlcpy(lpszLongPath, szTempPath, cchBuffer);
+				return dwResult;
+			}
+		}
+	}
+	return MyOldGetLongPathNameA(lpszShortPath, lpszLongPath, cchBuffer);
 }
 
 DWORD MyGetShortPathNameA(LPCSTR lpszLongPath, LPSTR lpszShortPath, DWORD cchBuffer)
@@ -331,6 +390,134 @@ DWORD MyGetShortPathNameA(LPCSTR lpszLongPath, LPSTR lpszShortPath, DWORD cchBuf
 		}
 	}
 	return 0;
+}
+
+DWORD MyGetShortPathNameW(LPCWSTR lpszLongPath, LPWSTR lpszShortPath, DWORD cchBuffer)
+{
+	wchar_t szTempPath[1024], szShortPath[1024];
+	LPWSTR lpSeparator;
+	
+	if(_waccess(lpszLongPath, 0) == 0) {
+		return GetShortPathNameW(lpszLongPath, lpszShortPath, cchBuffer);
+	}
+	my_wcscpy_s(szTempPath, 1024, lpszLongPath);
+	lpSeparator = wcsrchr(szTempPath, L'\\');
+	if(lpSeparator != NULL && *(lpSeparator + 1) == L'\0') {
+		LPWSTR lpTemp = lpSeparator;
+		*lpSeparator = L'\0';
+		lpSeparator = wcsrchr(szTempPath, L'\\');
+		*lpTemp = L'\\';
+	}
+	if(lpSeparator != NULL) {
+		*lpSeparator = L'\0';
+		if(MyGetShortPathNameW(szTempPath, szShortPath, 1024)) {
+			my_wcscpy_s(lpszShortPath, cchBuffer, szShortPath);
+			my_wcscat_s(lpszShortPath, cchBuffer, L"\\");
+			my_wcscat_s(lpszShortPath, cchBuffer, lpSeparator + 1);
+			return (DWORD)wcslen(lpszShortPath);
+		}
+	}
+	return 0;
+}
+
+DWORD MyGetFullPathNameA(LPCSTR lpFileName, DWORD nBufferLength, LPSTR lpBuffer, LPSTR *lpFilePart)
+{
+	DWORD dwResult = GetFullPathNameA(lpFileName, nBufferLength, lpBuffer, lpFilePart);
+	
+	if(dwResult != 0 && my_strchr(lpBuffer, '?') != NULL) {
+		wchar_t wcFileName[MAX_PATH];
+		wchar_t wcBuffer[MAX_PATH];
+		wchar_t wcShortPath[MAX_PATH];
+		char szShortPath[MAX_PATH];
+		
+		MultiByteToWideChar(CP_ACP, 0, lpFileName, -1, wcFileName, MAX_PATH);
+		if(GetFullPathNameW(wcFileName, MAX_PATH, wcBuffer, NULL) != 0 && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
+			WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+			if((dwResult = MyOldGetLongPathNameA(szShortPath, lpBuffer, nBufferLength)) == 0) {
+				my_strlcpy(lpBuffer, szShortPath, nBufferLength);
+				dwResult = (DWORD)strlen(lpBuffer);
+			}
+			if(lpFilePart) {
+				*lpFilePart = my_strrchr(lpBuffer, '\\') + 1;
+			}
+		}
+	}
+	return dwResult;
+}
+
+DWORD MyGetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
+{
+	DWORD dwResult = GetModuleFileNameA(hModule, lpFilename, nSize);
+	
+	if(dwResult != 0) {
+		if(my_strchr(lpFilename, '?') == NULL) {
+			char tmp[MAX_PATH], *p;
+			while((p = my_strstr(lpFilename, "\\.\\")) != NULL) {
+				strcpy(tmp, p + 2);
+				strcpy(p, tmp);
+			}
+		} else {
+			wchar_t wcFilename[MAX_PATH];
+			wchar_t wcShortPath[MAX_PATH];
+			wchar_t *p;
+			char szShortPath[MAX_PATH];
+			
+			if(GetModuleFileNameW(hModule, wcFilename, MAX_PATH) != 0) {
+				while((p = wcsstr(wcFilename, L"\\.\\")) != NULL) {
+					wcscpy(wcShortPath, p + 2);
+					wcscpy(p, wcShortPath);
+				}
+				if(MyGetShortPathNameW(wcFilename, wcShortPath, MAX_PATH) != 0) {
+					WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+					if((dwResult = MyOldGetLongPathNameA(szShortPath, lpFilename, nSize)) == 0) {
+						my_strlcpy(lpFilename, szShortPath, nSize);
+						dwResult = (DWORD)strlen(lpFilename);
+					}
+				}
+			}
+		}
+	}
+	return dwResult;
+}
+
+char *my_getdcwd(int drive, char *buffer, int maxlen)
+{
+	if(_getdcwd(drive, buffer, maxlen) != NULL) {
+		if(my_strchr(buffer, '?') != NULL) {
+			wchar_t wcBuffer[MAX_PATH];
+			wchar_t wcShortPath[MAX_PATH];
+			char szShortPath[MAX_PATH];
+			
+			if(_wgetdcwd(drive, wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
+				WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+				if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
+					my_strlcpy(buffer, szShortPath, maxlen);
+				}
+			}
+		}
+		return buffer;
+	}
+	return NULL;
+}
+
+char *my_getcwd(char *buffer,int maxlen)
+{
+	if(_getcwd(buffer, maxlen) != NULL) {
+		if(my_strchr(buffer, '?') != NULL) {
+			wchar_t wcBuffer[MAX_PATH];
+			wchar_t wcShortPath[MAX_PATH];
+			char szShortPath[MAX_PATH];
+			
+			if(_wgetcwd(wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
+				WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+				if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
+					my_strlcpy(buffer, szShortPath, maxlen);
+				}
+			}
+		}
+		return buffer;
+	}
+	return NULL;
 }
 
 HWND MyImmGetDefaultIMEWnd(HWND hWnd)
@@ -3719,9 +3906,9 @@ int main(int argc, char *argv[], char *envp[])
 	if(!is_win2k_or_later) {
 		old_error_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
 	}
-	GetModuleFileNameA(NULL, path, MAX_PATH);
-	GetFullPathNameA(path, MAX_PATH, full, &name);
-	
+	if(MyGetModuleFileNameA(NULL, path, MAX_PATH) != 0) {
+		MyGetFullPathNameA(path, MAX_PATH, full, &name);
+	}
 	if(name != NULL && _stricmp(name, "msdos.exe") != 0) {
 		// check if command file is embedded to this execution file
 		// if this execution file name is msdos.exe, don't check
@@ -3819,7 +4006,7 @@ int main(int argc, char *argv[], char *envp[])
 			}
 			fclose(fo);
 			
-			GetFullPathNameA(dummy_argv_1, MAX_PATH, temp_file_path, NULL);
+			MyGetFullPathNameA(dummy_argv_1, MAX_PATH, temp_file_path, NULL);
 			temp_file_created = true;
 			SetFileAttributesA(temp_file_path, FILE_ATTRIBUTE_HIDDEN);
 			
@@ -4152,7 +4339,7 @@ int main(int argc, char *argv[], char *envp[])
 					fputc((devices_len >>  8) & 0xff, fo);
 					
 					// store command file info
-					GetFullPathNameA(argv[arg_offset + 1], MAX_PATH, full, &name);
+					MyGetFullPathNameA(argv[arg_offset + 1], MAX_PATH, full, &name);
 					int name_len = (int)strlen(name);
 					fseek(fs, 0, SEEK_END);
 					long file_size = ftell(fs);
@@ -5082,7 +5269,7 @@ bool msdos_cds_update(int drv)
 		} else {
 			cds->drive_attrib = 0x4000;	// physical drive
 		}
-		if(_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
+		if(my_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
 			my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 		}
 	}
@@ -5097,13 +5284,6 @@ bool msdos_cds_update(int drv)
 	cds->bs_offset = 2;
 	
 	return(need_to_chdir);
-}
-
-void msdos_cds_update(int drv, const char *path)
-{
-	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
-	
-	my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(path));
 }
 
 // NLS information tables
@@ -5338,12 +5518,23 @@ const char *msdos_remove_double_quote(const char *path)
 	static char tmp[MAX_PATH];
 	
 	if(strlen(path) >= 2 && path[0] == '"' && my_str_endswith(path, '"')) {
-//		memset(tmp, 0, sizeof(tmp));
-//		memcpy(tmp, path + 1, strlen(path) - 2);
 		strcpy(tmp, path + 1);
 		tmp[strlen(tmp) - 1] = '\0';
 	} else {
 		strcpy(tmp, path);
+	}
+	return(tmp);
+}
+
+const wchar_t *msdos_remove_double_quote(const wchar_t *path)
+{
+	static wchar_t tmp[MAX_PATH];
+	
+	if(wcslen(path) >= 2 && path[0] == L'"' && my_wcstr_endswith(path, L'"')) {
+		wcscpy(tmp, path + 1);
+		tmp[wcslen(tmp) - 1] = L'\0';
+	} else {
+		wcscpy(tmp, path);
 	}
 	return(tmp);
 }
@@ -5357,6 +5548,19 @@ const char *msdos_remove_end_separator(const char *path)
 	// for example "C:\" case, the end separator should not be removed
 	if(strlen(tmp) > 3 && my_str_endswith(tmp, '\\')) {
 		tmp[strlen(tmp) - 1] = '\0';
+	}
+	return(tmp);
+}
+
+const wchar_t *msdos_remove_end_separator(const wchar_t *path)
+{
+	static wchar_t tmp[MAX_PATH];
+	
+	wcscpy(tmp, path);
+	
+	// for example "C:\" case, the end separator should not be removed
+	if(wcslen(tmp) > 3 && my_wcstr_endswith(tmp, L'\\')) {
+		tmp[wcslen(tmp) - 1] = L'\0';
 	}
 	return(tmp);
 }
@@ -5411,7 +5615,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 		char temp[MAX_PATH], name[MAX_PATH], *name_temp = NULL;
 		dos_info_t *dos_info = (dos_info_t *)(mem + DOS_INFO_TOP);
 		
-		if(GetFullPathNameA(tmp, MAX_PATH, temp, &name_temp) != 0 &&
+		if(MyGetFullPathNameA(tmp, MAX_PATH, temp, &name_temp) != 0 &&
 		   name_temp != NULL && my_strstr(name_temp, "?") == NULL && my_strstr(name_temp, "*") == NULL) {
 			strcpy(name, name_temp);
 			name_temp[0] = '\0';
@@ -5640,7 +5844,7 @@ const char *msdos_short_full_path(const char *path)
 	char full[MAX_PATH], *name = NULL;
 	
 	// Full works with non-existent files, but Short does not
-	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
+	if(MyGetFullPathNameA(path, MAX_PATH, full, &name) != 0) {
 		if(MyGetShortPathNameA(full, tmp, MAX_PATH) == 0) {
 			strcpy(tmp, full);
 		}
@@ -5669,8 +5873,7 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	static char trimmed[MAX_PATH];
 	char tmp_path[MAX_PATH];
 	
-	strncpy(tmp_path, path, MAX_PATH);
-	tmp_path[MAX_PATH - 1] = '\0';
+	my_strlcpy(tmp_path, path, MAX_PATH);
 	
 	// fix lack of null terminator (‚‹´”Å VZ Editor)
 	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
@@ -5912,7 +6115,7 @@ bool msdos_is_existing_file(const char *path)
 	WIN32_FIND_DATAA fd;
 	HANDLE hFind;
 	
-	if((hFind = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+	if((hFind = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		FindClose(hFind);
 		return((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0);
 	}
@@ -5925,7 +6128,7 @@ bool msdos_is_existing_dir(const char *path)
 	WIN32_FIND_DATAA fd;
 	HANDLE hFind;
 	
-	if((hFind = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+	if((hFind = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		FindClose(hFind);
 		return((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
 	}
@@ -5939,7 +6142,7 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	const char *sep = NULL;
 	
 	// check if COMMAND.COM is in the same directory as the target program file
-	if(GetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0) {
+	if(MyGetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0) {
 		sprintf(file_name, "COMMAND.COM");
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
@@ -5947,7 +6150,7 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	}
 	
 	// check if COMMAND.COM is in the same directory as the running msdos.exe
-	if(GetModuleFileNameA(NULL, path, MAX_PATH) != 0 && GetFullPathNameA(path, MAX_PATH, tmp, &file_name) != 0) {
+	if(MyGetModuleFileNameA(NULL, path, MAX_PATH) != 0 && MyGetFullPathNameA(path, MAX_PATH, tmp, &file_name) != 0) {
 		sprintf(file_name, "COMMAND.COM");
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
@@ -5955,7 +6158,7 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	}
 	
 	// check if COMMAND.COM is in the current directory
-	if(GetFullPathNameA("COMMAND.COM", MAX_PATH, tmp, &file_name) != 0) {
+	if(MyGetFullPathNameA("COMMAND.COM", MAX_PATH, tmp, &file_name) != 0) {
 		if(_access(tmp, 0) == 0) {
 			return(tmp);
 		}
@@ -5986,7 +6189,7 @@ int msdos_drive_number(const char *path)
 {
 	char tmp[MAX_PATH], *name;
 	
-	if(GetFullPathNameA(path, MAX_PATH, tmp, &name) >= 2 && tmp[1] == ':') {
+	if(MyGetFullPathNameA(path, MAX_PATH, tmp, &name) >= 2 && tmp[1] == ':') {
 		if(tmp[0] >= 'a' && tmp[0] <= 'z') {
 			return(tmp[0] - 'a');
 		} else if(tmp[0] >= 'A' && tmp[0] <= 'Z') {
@@ -6228,7 +6431,7 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	static int id = 0;
 	char full[MAX_PATH], *name;
 	
-	if(GetFullPathNameA(path, MAX_PATH, full, &name) != 0 && !(info & DOS_DEVATTR_IOCTL)) {
+	if(MyGetFullPathNameA(path, MAX_PATH, full, &name) != 0 && !(info & DOS_DEVATTR_IOCTL)) {
 		strcpy(file_handler[fd].path, full);
 	} else {
 		strcpy(file_handler[fd].path, path);
@@ -8297,7 +8500,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						CLOSE_STDOUT();
 						retval = 0x00;
 					} else if(opt[0] == '\0') {
-						if(_getcwd(path, MAX_PATH) != NULL) {
+						if(my_getcwd(path, MAX_PATH) != NULL) {
 							OPEN_STDOUT();
 							msdos_printf(fstdout, "%s\n", path);
 							CLOSE_STDOUT();
@@ -8310,7 +8513,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						}
 					} else if(((opt[0] >= 'a' && opt[0] <= 'z') || (opt[0] >= 'A' && opt[0] <= 'Z')) && opt[1] == ':' && opt[2] == '\0') {
 						int drv = opt[0] - ((opt[0] >= 'a' && opt[0] <= 'z') ? 'a' : 'A');
-						if(_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
+						if(my_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
 							OPEN_STDOUT();
 							msdos_printf(fstdout, "%s\n", path);
 							CLOSE_STDOUT();
@@ -8550,7 +8753,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							CLOSE_STDOUT();
 							retval = 0x00;
 						} else if(opt[0] == '\0') {
-							if(_getcwd(path, MAX_PATH) != NULL) {
+							if(my_getcwd(path, MAX_PATH) != NULL) {
 								OPEN_STDOUT();
 								msdos_printf(fstdout, "%s\n", msdos_short_full_path(path));
 								CLOSE_STDOUT();
@@ -13022,10 +13225,10 @@ inline void msdos_int_21h_11h()
 	if((dtainfo->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
 		dtainfo->allowable_mask &= ~8;
 	}
-	if(!label_only && (dtainfo->find_handle = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+	if(!label_only && (dtainfo->find_handle = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, 0) ||
 		      !msdos_find_file_has_8dot3name(&fd)) {
-			if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+			if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 				FindClose(dtainfo->find_handle);
 				dtainfo->find_handle = INVALID_HANDLE_VALUE;
 				break;
@@ -13094,10 +13297,10 @@ inline void msdos_int_21h_12h()
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, dta_laddr);
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
-		if(FindNextFileA(dtainfo->find_handle, &fd)) {
+		if(MyFindNextFileA(dtainfo->find_handle, &fd)) {
 			while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, 0) ||
 			      !msdos_find_file_has_8dot3name(&fd)) {
-				if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+				if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 					FindClose(dtainfo->find_handle);
 					dtainfo->find_handle = INVALID_HANDLE_VALUE;
 					break;
@@ -13165,7 +13368,7 @@ inline void msdos_int_21h_13h()
 	
 	CPU_AL = 0xff;
 	
-	if((hFind = FindFirstFileA(msdos_fcb_path((fcb_t *)(mem + CPU_DS_BASE + CPU_DX)), &fd)) != INVALID_HANDLE_VALUE) {
+	if((hFind = MyFindFirstFileA(msdos_fcb_path((fcb_t *)(mem + CPU_DS_BASE + CPU_DX)), &fd)) != INVALID_HANDLE_VALUE) {
 		do {
 			if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 				if(!remove(fd.cFileName)) {
@@ -13174,7 +13377,7 @@ inline void msdos_int_21h_13h()
 					error = _doserrno;
 				}
 			}
-		} while(FindNextFileA(hFind, &fd) != 0);
+		} while(MyFindNextFileA(hFind, &fd) != 0);
 		FindClose(hFind);
 	} else {
 		error = GetLastError();
@@ -13278,7 +13481,7 @@ inline void msdos_int_21h_17h()
 	
 	CPU_AL = 0xff;
 	
-	if((hFind = FindFirstFileA(msdos_fcb_path(fcb_src), &fd)) != INVALID_HANDLE_VALUE) {
+	if((hFind = MyFindFirstFileA(msdos_fcb_path(fcb_src), &fd)) != INVALID_HANDLE_VALUE) {
 		do {
 			if(!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 				char path[MAX_PATH], *ext = NULL;
@@ -13310,7 +13513,7 @@ inline void msdos_int_21h_17h()
 					error = _doserrno;
 				}
 			}
-		} while(FindNextFileA(hFind, &fd) != 0);
+		} while(MyFindNextFileA(hFind, &fd) != 0);
 		FindClose(hFind);
 	} else {
 		error = GetLastError();
@@ -14153,8 +14356,13 @@ inline void msdos_int_21h_3bh(int lfn)
 				drv = path[0] - 'a';
 			}
 		}
-		msdos_cds_update(drv, path);
-		
+		cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
+		char cur_path[MAX_PATH];
+		if(my_getdcwd(drv + 1, cur_path, MAX_PATH) != NULL) {
+			my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(cur_path));
+		} else {
+			sprintf(cds->path_name, "%c:\\", 'A' + drv);
+		}
 		CPU_AX = 0x00; // AX isdestroyed
 	}
 }
@@ -15304,7 +15512,7 @@ inline void msdos_int_21h_47h(int lfn)
 {
 	char path[MAX_PATH];
 	
-	if(_getdcwd(CPU_DL, path, MAX_PATH) != NULL) {
+	if(my_getdcwd(CPU_DL, path, MAX_PATH) != NULL) {
 		if(!lfn) {
 			strcpy(path, msdos_short_path(path));
 		} else {
@@ -15509,10 +15717,10 @@ inline void msdos_int_21h_4eh()
 	if((dtainfo->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
 		dtainfo->allowable_mask &= ~8;
 	}
-	if(!label_only && (dtainfo->find_handle = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+	if(!label_only && (dtainfo->find_handle = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, 0) ||
 		      !msdos_find_file_has_8dot3name(&fd)) {
-			if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+			if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 				FindClose(dtainfo->find_handle);
 				dtainfo->find_handle = INVALID_HANDLE_VALUE;
 				break;
@@ -15552,10 +15760,10 @@ inline void msdos_int_21h_4fh()
 	}
 	dtainfo_t *dtainfo = &dtalist[find->dta_index];
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
-		if(FindNextFileA(dtainfo->find_handle, &fd)) {
+		if(MyFindNextFileA(dtainfo->find_handle, &fd)) {
 			while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, 0) ||
 			      !msdos_find_file_has_8dot3name(&fd)) {
-				if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+				if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 					FindClose(dtainfo->find_handle);
 					dtainfo->find_handle = INVALID_HANDLE_VALUE;
 					break;
@@ -16113,7 +16321,7 @@ inline void msdos_int_21h_60h(int lfn)
 	if(lfn) {
 		char *name;
 		*full = '\0';
-		GetFullPathNameA((char *)(mem + CPU_DS_BASE + CPU_SI), MAX_PATH, full, &name);
+		MyGetFullPathNameA((char *)(mem + CPU_DS_BASE + CPU_SI), MAX_PATH, full, &name);
 		switch(CPU_CL) {
 		case 1:
 			MyGetShortPathNameA(full, full, MAX_PATH);
@@ -16594,7 +16802,7 @@ inline void msdos_int_21h_7141h()
 	}
 	
 	WIN32_FIND_DATAA fd;
-	HANDLE fh = FindFirstFileA(tmp, &fd);
+	HANDLE fh = MyFindFirstFileA(tmp, &fd);
 	if(fh == INVALID_HANDLE_VALUE) {
 		CPU_AX = 2;
 		CPU_SET_C_FLAG(1);
@@ -16609,7 +16817,7 @@ inline void msdos_int_21h_7141h()
 				break;
 			}
 		}
-	} while(FindNextFileA(fh, &fd));
+	} while(MyFindNextFileA(fh, &fd));
 	if(!CPU_C_FLAG) {
 		if(GetLastError() != ERROR_NO_MORE_FILES) {
 			CPU_SET_C_FLAG(1);
@@ -16643,9 +16851,9 @@ inline void msdos_int_21h_714eh()
 	if((dtainfo->allowable_mask & 8) && !msdos_match_volume_label(path, msdos_short_volume_label(process->volume_label))) {
 		dtainfo->allowable_mask &= ~8;
 	}
-	if(!label_only && (dtainfo->find_handle = FindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
+	if(!label_only && (dtainfo->find_handle = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
 		while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, dtainfo->required_mask)) {
-			if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+			if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 				FindClose(dtainfo->find_handle);
 				dtainfo->find_handle = INVALID_HANDLE_VALUE;
 				break;
@@ -16699,9 +16907,9 @@ inline void msdos_int_21h_714fh()
 	}
 	dtainfo_t *dtainfo = &dtalist[CPU_BX - 1];
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
-		if(FindNextFileA(dtainfo->find_handle, &fd)) {
+		if(MyFindNextFileA(dtainfo->find_handle, &fd)) {
 			while(!msdos_find_file_check_attribute(fd.dwFileAttributes, dtainfo->allowable_mask, dtainfo->required_mask)) {
-				if(!FindNextFileA(dtainfo->find_handle, &fd)) {
+				if(!MyFindNextFileA(dtainfo->find_handle, &fd)) {
 					FindClose(dtainfo->find_handle);
 					dtainfo->find_handle = INVALID_HANDLE_VALUE;
 					break;
@@ -17662,7 +17870,7 @@ inline void msdos_int_2fh_12h()
 				}
 				strcpy(full, path);
 				strcpy(path, full + 2);
-			} else if(GetFullPathNameA(path, MAX_PATH, full, NULL) != 0 && full[1] == ':') {
+			} else if(MyGetFullPathNameA(path, MAX_PATH, full, NULL) != 0 && full[1] == ':') {
 				if(full[0] >= 'a' && full[0] <= 'z') {
 					CPU_AL = full[0] - 'a' + 1;
 				} else if(full[0] >= 'A' && full[0] <= 'Z') {
@@ -17687,7 +17895,7 @@ inline void msdos_int_2fh_12h()
 		{
 			char *path_1st = (char *)(mem + CPU_DS_BASE + CPU_SI), full_1st[MAX_PATH];
 			char *path_2nd = (char *)(mem + CPU_ES_BASE + CPU_DI), full_2nd[MAX_PATH];
-			if(GetFullPathNameA(path_1st, MAX_PATH, full_1st, NULL) != 0 && GetFullPathNameA(path_2nd, MAX_PATH, full_2nd, NULL) != 0) {
+			if(MyGetFullPathNameA(path_1st, MAX_PATH, full_1st, NULL) != 0 && MyGetFullPathNameA(path_2nd, MAX_PATH, full_2nd, NULL) != 0) {
 				CPU_SET_Z_FLAG(strcmp(full_1st, full_2nd) == 0);
 			} else {
 				CPU_SET_Z_FLAG(strcmp(path_1st, path_2nd) == 0);

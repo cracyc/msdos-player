@@ -139,15 +139,19 @@ void SSSE3_PSHUFB(void)
 {
 	int i;
 
+	UINT8 dstbuf[16];
 	UINT8 data2buf[16];
 	UINT8 *data1, *data2;
 	SSE_PART_GETDATA1DATA2_PD((double**)(&data1), (double**)(&data2), (double*)data2buf);
 	for(i=0;i<16;i++){
-		if (data2[i]&128){
-			data1[i] = 0;
+		if (data2[i] & 0x80){
+			dstbuf[i] = 0;
 		} else {
-			data1[i] = data2buf[data2[i]&7];
+			dstbuf[i] = data1[data2[i] & 0xf];
 		}
+	}
+	for(i=0;i<16;i++){
+		data1[i] = dstbuf[i];
 	}
 	TRACEOUT(("SSSE3_PSHUFB"));
 }
@@ -156,15 +160,19 @@ void SSSE3_PSHUFB_MM(void)
 {
 	int i;
 
+	UINT8 dstbuf[8];
 	UINT8 data2buf[8];
 	UINT8 *data1, *data2;
 	MMX_PART_GETDATA1DATA2_PD((float**)(&data1), (float**)(&data2), (float*)data2buf);
 	for(i=0;i<8;i++){
 		if (data2[i]&128){
-			data1[i] = 0;
+			dstbuf[i] = 0;
 		} else {
-			data1[i] = data2buf[data2[i]&7];
+			dstbuf[i] = data1[data2[i] & 0x7];
 		}
+	}
+	for(i=0;i<8;i++){
+		data1[i] = dstbuf[i];
 	}
 	TRACEOUT(("SSSE3_PSHUFB"));
 }

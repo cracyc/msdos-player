@@ -2777,9 +2777,12 @@ void SSE2_MOVNTI(void)
 	UINT32 op;
 	UINT idx, sub;
 	UINT32 *data1;
-	
-	SSE2_check_NM_EXCEPTION();
-	SSE2_setTag();
+
+	// SSE2なしならUD(無効オペコード例外)を発生させる
+	if (!(i386cpuid.cpu_feature & CPU_FEATURE_SSE2))
+	{
+		EXCEPTION(UD_EXCEPTION, 0);
+	}
 	CPU_SSE2WORKCLOCK;
 	GET_MODRM_PCBYTE((op));
 	idx = (op >> 3) & 7;
