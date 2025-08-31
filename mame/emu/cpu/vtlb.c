@@ -186,7 +186,7 @@ int vtlb_fill(vtlb_state *vtlb, offs_t address, int intention)
 	}
 
 	/* add the intention to the list of valid intentions and store */
-	entry |= 1 << (intention & (TRANSLATE_TYPE_MASK | TRANSLATE_USER_MASK));
+	entry |= 1 << (intention & (TR_TYPE | TR_USER));
 	vtlb->table[tableindex] = entry;
 	return TRUE;
 }

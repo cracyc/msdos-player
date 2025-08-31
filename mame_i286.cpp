@@ -17,6 +17,7 @@
 #ifndef INLINE
 #define INLINE inline
 #endif
+#define S64(v) INT64(v)
 #define U64(v) UINT64(v)
 
 #ifdef _MSC_VC6
@@ -75,8 +76,9 @@ void popmessage(const char *format, ...)
 const UINT32 DASMFLAG_SUPPORTED     = 0x80000000;   // are disassembly flags supported?
 const UINT32 DASMFLAG_STEP_OUT      = 0x40000000;   // this instruction should be the end of a step out sequence
 const UINT32 DASMFLAG_STEP_OVER     = 0x20000000;   // this instruction should be stepped over by setting a breakpoint afterwards
-const UINT32 DASMFLAG_OVERINSTMASK  = 0x18000000;   // number of extra instructions to skip when stepping over
-const UINT32 DASMFLAG_OVERINSTSHIFT = 27;           // bits to shift after masking to get the value
+const UINT32 DASMFLAG_STEP_COND     = 0x10000000;   // this instruction should be stepped over by setting a breakpoint afterwards
+const UINT32 DASMFLAG_OVERINSTMASK  = 0x0c000000;   // number of extra instructions to skip when stepping over
+const UINT32 DASMFLAG_OVERINSTSHIFT = 26;           // bits to shift after masking to get the value
 const UINT32 DASMFLAG_LENGTHMASK    = 0x0000ffff;   // the low 16-bits contain the actual length
 
 /*****************************************************************************/
@@ -97,24 +99,6 @@ enum
 	INPUT_LINE_IRQ = 0,
 	INPUT_LINE_NMI
 };
-
-/*****************************************************************************/
-/* src/emu/dimemory.h */
-
-// Translation intentions
-const int TRANSLATE_TYPE_MASK       = 0x03;     // read write or fetch
-const int TRANSLATE_USER_MASK       = 0x04;     // user mode or fully privileged
-const int TRANSLATE_DEBUG_MASK      = 0x08;     // debug mode (no side effects)
-
-const int TRANSLATE_READ            = 0;        // translate for read
-const int TRANSLATE_WRITE           = 1;        // translate for write
-const int TRANSLATE_FETCH           = 2;        // translate for instruction fetch
-const int TRANSLATE_READ_USER       = (TRANSLATE_READ | TRANSLATE_USER_MASK);
-const int TRANSLATE_WRITE_USER      = (TRANSLATE_WRITE | TRANSLATE_USER_MASK);
-const int TRANSLATE_FETCH_USER      = (TRANSLATE_FETCH | TRANSLATE_USER_MASK);
-const int TRANSLATE_READ_DEBUG      = (TRANSLATE_READ | TRANSLATE_DEBUG_MASK);
-const int TRANSLATE_WRITE_DEBUG     = (TRANSLATE_WRITE | TRANSLATE_DEBUG_MASK);
-const int TRANSLATE_FETCH_DEBUG     = (TRANSLATE_FETCH | TRANSLATE_DEBUG_MASK);
 
 /*****************************************************************************/
 /* src/emu/emucore.h */

@@ -64,15 +64,23 @@ static UINT32 I386OP(shift_rotate32)(UINT8 modrm, UINT32 value, UINT8 shift)
 		switch( (modrm >> 3) & 0x7 )
 		{
 			case 0:         /* ROL rm32, i8 */
+#if 0
+				dst = rotl_32(src, shift);
+#else
 				dst = ((src & ((UINT32)0xffffffff >> shift)) << shift) |
 						((src & ((UINT32)0xffffffff << (32-shift))) >> (32-shift));
+#endif
 				m_CF = dst & 0x1;
 				m_OF = (dst & 1) ^ (dst >> 31);
 				CYCLES_RM(modrm, CYCLES_ROTATE_REG, CYCLES_ROTATE_MEM);
 				break;
 			case 1:         /* ROR rm32, i8 */
+#if 0
+				dst = rotr_32(src, shift);
+#else
 				dst = ((src & ((UINT32)0xffffffff << shift)) >> shift) |
 						((src & ((UINT32)0xffffffff >> (32-shift))) << (32-shift));
+#endif
 				m_CF = (dst >> 31) & 0x1;
 				m_OF = ((dst >> 31) ^ (dst >> 30)) & 1;
 				CYCLES_RM(modrm, CYCLES_ROTATE_REG, CYCLES_ROTATE_MEM);
@@ -769,6 +777,7 @@ static void I386OP(iret32)()            // Opcode 0xcf
 		i386_load_segment_descriptor(CS);
 		CHANGE_PC(m_eip);
 	}
+	m_auto_clear_RF = false;
 	CYCLES(CYCLES_IRET);
 
 	// Emulate system call on MS-DOS Player
@@ -1542,9 +1551,9 @@ static void I386OP(pop_rm32)()          // Opcode 0x8f
 		if( modrm >= 0xc0 ) {
 			STORE_RM32(modrm, value);
 		} else {
-			ea = GetEA(modrm,1,4);
 			try
 			{
+				ea = GetEA(modrm,1,4);
 				WRITE32(ea, value);
 			}
 			catch(UINT64 e)
@@ -2750,14 +2759,14 @@ static void I386OP(groupF7_32)()        // Opcode 0xf7
 				if( src ) {
 					remainder = quotient % (UINT64)src;
 					result = quotient / (UINT64)src;
-					if( result > 0xffffffff ) {
+					if( result > U64(0xffffffff) ) {
 						/* TODO: Divide error */
 					} else {
 						REG32(EDX) = (UINT32)remainder;
 						REG32(EAX) = (UINT32)result;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -2778,14 +2787,14 @@ static void I386OP(groupF7_32)()        // Opcode 0xf7
 				if( src ) {
 					remainder = quotient % (INT64)(INT32)src;
 					result = quotient / (INT64)(INT32)src;
-					if( result > 0xffffffff ) {
+					if( result > S64(0x7fffffff) || result < -S64(0x80000000) ) {
 						/* TODO: Divide error */
 					} else {
 						REG32(EDX) = (UINT32)remainder;
 						REG32(EAX) = (UINT32)result;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -2961,7 +2970,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 		case 1:         /* STR */
@@ -2978,7 +2987,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 		case 2:         /* LLDT */
@@ -3004,7 +3013,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 
@@ -3027,7 +3036,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 				i386_load_protected_mode_segment(&seg,NULL);
 
 				UINT32 addr = ((seg.selector & 4) ? m_ldtr.base : m_gdtr.base) + (seg.selector & ~7) + 5;
-				i386_translate_address(TRANSLATE_READ, &addr, NULL);
+				i386_translate_address(TR_READ, false, &addr, NULL);
 				write_byte(addr, (seg.flags & 0xff) | 2);
 
 				m_task.limit = seg.limit;
@@ -3036,7 +3045,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 
@@ -3071,14 +3080,14 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 							if(!(seg.flags & 0x04))
 							{
 								// if not conforming, then we must check privilege levels
-								if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+								if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 									result = 0;
 							}
 						}
 					}
 					else
 					{
-						if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+						if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 							result = 0;
 					}
 				}
@@ -3086,7 +3095,7 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 				logerror("i386: VERR: Exception - Running in real mode or virtual 8086 mode.\n");
 			}
 			break;
@@ -3121,13 +3130,13 @@ static void I386OP(group0F00_32)()          // Opcode 0x0f 00
 							result = 0;
 					}
 				}
-				if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+				if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 					result = 0;
 				SetZF(result);
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 				logerror("i386: VERW: Exception - Running in real mode or virtual 8086 mode.\n");
 			}
 			break;
@@ -3428,7 +3437,7 @@ static void I386OP(lar_r32_rm32)()  // Opcode 0x0f 0x02
 	else
 	{
 		// illegal opcode
-		i386_trap(6,0, 0);
+		i386_trap(6,0);
 		logerror("i386: LAR: Exception - running in real mode or virtual 8086 mode.\n");
 	}
 }
@@ -3493,7 +3502,7 @@ static void I386OP(lsl_r32_rm32)()  // Opcode 0x0f 0x03
 		}
 	}
 	else
-		i386_trap(6, 0, 0);
+		i386_trap(6, 0);
 }
 
 static void I386OP(bound_r32_m32_m32)() // Opcode 0x62
@@ -3518,7 +3527,7 @@ static void I386OP(bound_r32_m32_m32)() // Opcode 0x62
 	if ((val < low) || (val > high))
 	{
 		CYCLES(CYCLES_BOUND_OUT_RANGE);
-		i386_trap(5, 0, 0);
+		i386_trap(5, 0);
 	}
 	else
 	{

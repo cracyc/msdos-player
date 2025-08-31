@@ -19,6 +19,7 @@
 #define PENTIUMOP(XX)   pentium_##XX
 #define MMXOP(XX)       mmx_##XX
 #define SSEOP(XX)       sse_##XX
+#define PENTIUM3OP(XX)  pentium3_##XX
 
 extern int i386_dasm_one(char *buffer, UINT32 pc, const UINT8 *oprom, int mode);
 extern int x87_mf_fault();
@@ -174,14 +175,14 @@ enum
 enum
 {
 	/* mmx registers aliased to x87 ones */
-	MMX_MM0=X87_ST0,
-	MMX_MM1=X87_ST1,
-	MMX_MM2=X87_ST2,
-	MMX_MM3=X87_ST3,
-	MMX_MM4=X87_ST4,
-	MMX_MM5=X87_ST5,
-	MMX_MM6=X87_ST6,
-	MMX_MM7=X87_ST7
+	MMX_MM0 = X87_ST0,
+	MMX_MM1 = X87_ST1,
+	MMX_MM2 = X87_ST2,
+	MMX_MM3 = X87_ST3,
+	MMX_MM4 = X87_ST4,
+	MMX_MM5 = X87_ST5,
+	MMX_MM6 = X87_ST6,
+	MMX_MM7 = X87_ST7
 };
 
 enum smram
@@ -215,7 +216,7 @@ enum smram
 	SMRAM_EIP    = 0x1F0,
 	SMRAM_EFLAGS = 0x1F4,
 	SMRAM_CR3    = 0x1F8,
-	SMRAM_CR0    = 0x1FC,
+	SMRAM_CR0    = 0x1FC
 };
 
 enum smram_intel_p5
@@ -251,36 +252,42 @@ enum smram_intel_p5
 	SMRAM_IP5_IDTACC  = 0x198,
 	SMRAM_IP5_TRLIM   = 0x19C,
 	SMRAM_IP5_TRBASE  = 0x1A0,
-	SMRAM_IP5_TRACC   = 0x1A4,
+	SMRAM_IP5_TRACC   = 0x1A4
 };
 
 /* Protected mode exceptions */
-#define FAULT_UD 6   // Invalid Opcode
-#define FAULT_NM 7   // Coprocessor not available
-#define FAULT_DF 8   // Double Fault
-#define FAULT_TS 10  // Invalid TSS
-#define FAULT_NP 11  // Segment or Gate not present
-#define FAULT_SS 12  // Stack fault
-#define FAULT_GP 13  // General Protection Fault
-#define FAULT_PF 14  // Page Fault
-#define FAULT_MF 16  // Match (Coprocessor) Fault
+enum pm_faults
+{
+	FAULT_UD = 6,  // Invalid Opcode
+	FAULT_NM = 7,  // Coprocessor not available
+	FAULT_DF = 8,  // Double Fault
+	FAULT_TS = 10, // Invalid TSS
+	FAULT_NP = 11, // Segment or Gate not present
+	FAULT_SS = 12, // Stack fault
+	FAULT_GP = 13, // General Protection Fault
+	FAULT_PF = 14, // Page Fault
+	FAULT_MF = 16  // Match (Coprocessor) Fault
+};
 
 /* MXCSR Control and Status Register */
-#define MXCSR_IE  (1<<0)  // Invalid Operation Flag
-#define MXCSR_DE  (1<<1)  // Denormal Flag
-#define MXCSR_ZE  (1<<2)  // Divide-by-Zero Flag
-#define MXCSR_OE  (1<<3)  // Overflow Flag
-#define MXCSR_UE  (1<<4)  // Underflow Flag
-#define MXCSR_PE  (1<<5)  // Precision Flag
-#define MXCSR_DAZ (1<<6)  // Denormals Are Zeros
-#define MXCSR_IM  (1<<7)  // Invalid Operation Mask
-#define MXCSR_DM  (1<<8)  // Denormal Operation Mask
-#define MXCSR_ZM  (1<<9)  // Divide-by-Zero Mask
-#define MXCSR_OM  (1<<10) // Overflow Mask
-#define MXCSR_UM  (1<<11) // Underflow Mask
-#define MXCSR_PM  (1<<12) // Precision Mask
-#define MXCSR_RC  (3<<13) // Rounding Control
-#define MXCSR_FZ  (1<<15) // Flush to Zero
+enum mxcsr_bits
+{
+	MXCSR_IE  = 1 << 0,  // Invalid Operation Flag
+	MXCSR_DE  = 1 << 1,  // Denormal Flag
+	MXCSR_ZE  = 1 << 2,  // Divide-by-Zero Flag
+	MXCSR_OE  = 1 << 3,  // Overflow Flag
+	MXCSR_UE  = 1 << 4,  // Underflow Flag
+	MXCSR_PE  = 1 << 5,  // Precision Flag
+	MXCSR_DAZ = 1 << 6,  // Denormals Are Zeros
+	MXCSR_IM  = 1 << 7,  // Invalid Operation Mask
+	MXCSR_DM  = 1 << 8,  // Denormal Operation Mask
+	MXCSR_ZM  = 1 << 9,  // Divide-by-Zero Mask
+	MXCSR_OM  = 1 << 10, // Overflow Mask
+	MXCSR_UM  = 1 << 11, // Underflow Mask
+	MXCSR_PM  = 1 << 12, // Precision Mask
+	MXCSR_RC  = 3 << 13, // Rounding Control
+	MXCSR_FZ  = 1 << 15  // Flush to Zero
+};
 
 struct I386_SREG {
 	UINT16 selector;
@@ -345,6 +352,110 @@ union XMM_REG {
 	double  f64[2];
 };
 
+enum FEATURE_FLAGS {
+	// returned in the EDX register
+	FF_PBE = (UINT32)1 << 31, // Pend. Brk. EN.
+	FF_TM = 1 << 29,       // Thermal Monitor
+	FF_HTT = 1 << 28,      // Multi-threading
+	FF_SS = 1 << 27,       // Self Snoop
+	FF_SSE2 = 1 << 26,     // SSE2 Extensions
+	FF_SSE = 1 << 25,      // SSE Extensions
+	FF_FXSR = 1 << 24,     // FXSAVE/FXRSTOR
+	FF_MMX = 1 << 23,      // MMX Technology
+	FF_ACPI = 1 << 22,     // Thermal Monitor and Clock Ctrl
+	FF_DS = 1 << 21,       // Debug Store
+	FF_CLFSH = 1 << 19,    // CLFLUSH instruction
+	FF_PSN = 1 << 18,      // Processor Serial Number
+	FF_PSE36 = 1 << 17,    // 36 Bit Page Size Extension
+	FF_PAT = 1 << 16,      // Page Attribute Table
+	FF_CMOV = 1 << 15,     // Conditional Move/Compare Instruction
+	FF_MCA = 1 << 14,      // Machine Check Architecture
+	FF_PGE = 1 << 13,      // PTE Global Bit
+	FF_MTRR = 1 << 12,     // Memory Type Range Registers
+	FF_SEP = 1 << 11,      // SYSENTER and SYSEXIT
+	FF_APIC = 1 << 9,      // APIC on Chip
+	FF_CX8 = 1 << 8,       // CMPXCHG8B Inst.
+	FF_MCE = 1 << 7,       // Machine Check Exception
+	FF_PAE = 1 << 6,       // Physical Address Extensions
+	FF_MSR = 1 << 5,       // RDMSR and WRMSR Support
+	FF_TSC = 1 << 4,       // Time Stamp Counter
+	FF_PSE = 1 << 3,       // Page Size Extensions
+	FF_DE = 1 << 2,        // Debugging Extensions
+	FF_VME = 1 << 1,       // Virtual-8086 Mode Enhancement
+	FF_FPU = 1 << 0,       // x87 FPU on Chip
+	// retuned in the ECX register
+	FF_RDRAND = 1 << 30,
+	FF_F16C = 1 << 29,
+	FF_AVX = 1 << 28,
+	FF_OSXSAVE = 1 << 27,
+	FF_XSAVE = 1 << 26,
+	FF_AES = 1 << 25,
+	FF_TSCD = 1 << 24,     // Deadline
+	FF_POPCNT = 1 << 23,
+	FF_MOVBE = 1 << 22,
+	FF_x2APIC = 1 << 21,
+	FF_SSE4_2 = 1 << 20,   // SSE4.2
+	FF_SSE4_1 = 1 << 19,   // SSE4.1
+	FF_DCA = 1 << 18,      // Direct Cache Access
+	FF_PCID = 1 << 17,     // Process-context Identifiers
+	FF_PDCM = 1 << 15,     // Perf/Debug Capability MSR
+	FF_xTPR = 1 << 14,     // Update Control
+	FF_CMPXCHG16B = 1 << 13,
+	FF_FMA = 1 << 12,      // Fused Multiply Add
+	FF_SDBG = 1 << 11,
+	FF_CNXT_ID = 1 << 10,  // L1 Context ID
+	FF_SSSE3 = 1 << 9,     // SSSE3 Extensions
+	FF_TM2 = 1 << 8,       // Thermal Monitor 2
+	FF_EIST = 1 << 7,      // Enhanced Intel SpeedStep Technology
+	FF_SMX = 1 << 6,       // Safer Mode Extensions
+	FF_VMX = 1 << 5,       // Virtual Machine Extensions
+	FF_DS_CPL = 1 << 4,    // CPL Qualified Debug Store
+	FF_MONITOR = 1 << 3,   // MONITOR/MWAIT
+	FF_DTES64 = 1 << 2,    // 64 Bit DS Area
+	FF_PCLMULQDQ = 1 << 1, // Carryless Multiplication
+	FF_SSE3 = 1 << 0,      // SSE3 Extensions
+};
+
+enum CR0_BITS {
+	CR0_PG = (UINT32)1 << 31, // Paging
+	CR0_CD = 1 << 30,      // Cache disable
+	CR0_NW = 1 << 29,      // Not writethrough
+	CR0_AM = 1 << 18,      // Alignment mask
+	CR0_WP = 1 << 16,      // Write protect
+	CR0_NE = 1 << 5,       // Numeric error
+	CR0_ET = 1 << 4,       // Extension type
+	CR0_TS = 1 << 3,       // Task switched
+	CR0_EM = 1 << 2,       // Emulation
+	CR0_MP = 1 << 1,       // Monitor coprocessor
+	CR0_PE = 1 << 0,       // Protection enabled
+};
+
+enum CR3_BITS {
+	CR3_PCD = 1 << 4,
+	CR3_PWT = 1 << 3,
+};
+
+enum CR4_BITS {
+	CR4_SMAP = 1 << 21,
+	CR4_SMEP = 1 << 20,
+	CR4_OSXSAVE = 1 << 18,
+	CR4_PCIDE = 1 << 17,
+	CR4_FSGSBASE = 1 << 16,
+	CR4_SMXE = 1 << 14,
+	CR4_VMXE = 1 << 13,
+	CR4_OSXMMEXCPT = 1 << 10,
+	CR4_OSFXSR = 1 << 9,
+	CR4_PCE = 1 << 8,
+	CR4_PGE = 1 << 7,
+	CR4_MCE = 1 << 6,
+	CR4_PAE = 1 << 5,
+	CR4_PSE = 1 << 4,
+	CR4_DE = 1 << 3,
+	CR4_TSD = 1 << 2,
+	CR4_PVI = 1 << 1,
+	CR4_VME = 1 << 0,
+};
+
 //struct i386_state
 //{
 	I386_GPR m_reg;
@@ -379,12 +490,15 @@ union XMM_REG {
 
 	UINT8 m_CPL;  // current privilege level
 
+	bool m_auto_clear_RF;
 	UINT8 m_performed_intersegment_jump;
 	UINT8 m_delayed_interrupt_enable;
 
 	UINT32 m_cr[5];       // Control registers
 	UINT32 m_dr[8];       // Debug registers
 	UINT32 m_tr[8];       // Test registers
+
+//	bool m_dri_changed_active;
 
 	I386_SYS_TABLE m_gdtr;    // Global Descriptor Table Register
 	I386_SYS_TABLE m_idtr;    // Interrupt Descriptor Table Register
@@ -411,7 +525,7 @@ union XMM_REG {
 	UINT8 m_irq_state;
 	UINT32 m_a20_mask;
 
-	int m_cpuid_max_input_value_eax;
+	int m_cpuid_max_input_value_eax; // Highest CPUID standard function available
 	UINT32 m_cpuid_id0, m_cpuid_id1, m_cpuid_id2;
 	UINT32 m_cpu_version;
 	UINT32 m_feature_flags;
@@ -426,9 +540,9 @@ union XMM_REG {
 	UINT16 m_x87_sw;
 	UINT16 m_x87_tw;
 	UINT16 m_x87_ds;
-	UINT64 m_x87_data_ptr;
+	UINT32 m_x87_data_ptr;
 	UINT16 m_x87_cs;
-	UINT64 m_x87_inst_ptr;
+	UINT32 m_x87_inst_ptr;
 	UINT16 m_x87_opcode;
 
 	void (*m_opcode_table_x87_d8[256])(UINT8 modrm);
@@ -471,8 +585,10 @@ union XMM_REG {
 
 	bool m_lock_table[2][256];
 
+#ifdef SUPPORT_RDTSC
 	UINT8 *m_cycle_table_pm;
 	UINT8 *m_cycle_table_rm;
+#endif
 
 	vtlb_state *m_vtlb;
 
@@ -482,7 +598,8 @@ union XMM_REG {
 	bool m_nmi_masked;
 	bool m_nmi_latched;
 	UINT32 m_smbase;
-//	devcb_resolved_write_line m_smiact;
+//	devcb_write_line m_smiact;
+//	devcb_write_line m_ferr_handler;
 	bool m_lock;
 
 	// bytes in current opcode, debug only
@@ -490,20 +607,24 @@ union XMM_REG {
 	UINT8 m_opcode_bytes[16];
 	UINT32 m_opcode_pc;
 	int m_opcode_bytes_length;
+	offs_t m_opcode_addrs[16];
+	UINT32 m_opcode_addrs_index;
 #endif
+
+//	UINT64 m_debugger_temp;
 //};
 
 extern int i386_parity_table[256];
-static int i386_limit_check(int seg, UINT32 offset, UINT32 size);
+static int i386_limit_check(int seg, UINT32 offset, int size);
 
 #define FAULT_THROW(fault,error) { throw (UINT64)(fault | (UINT64)error << 32); }
 #define PF_THROW(error) { m_cr[2] = address; FAULT_THROW(FAULT_PF,error); }
 
-#define PROTECTED_MODE      (m_cr[0] & 0x1)
+#define PROTECTED_MODE      (m_cr[0] & CR0_PE)
 #define STACK_32BIT         (m_sreg[SS].d)
 #define V8086_MODE          (m_VM)
 #define NESTED_TASK         (m_NT)
-#define WP                  (m_cr[0] & 0x10000)
+#define WP                  (m_cr[0] & CR0_WP)
 
 #define SetOF_Add32(r,s,d)  (m_OF = (((r) ^ (s)) & ((r) ^ (d)) & 0x80000000) ? 1: 0)
 #define SetOF_Add16(r,s,d)  (m_OF = (((r) ^ (s)) & ((r) ^ (d)) & 0x8000) ? 1 : 0)
@@ -568,18 +689,18 @@ extern MODRM_TABLE i386_MODRM_table[256];
 
 /***********************************************************************************/
 
-INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn, UINT32 size)
+INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn, int size)
 {
 	// TODO: segment limit access size, execution permission, handle exception thrown from exception handler
-	if(PROTECTED_MODE && !V8086_MODE && (rwn != -1))
+	if (PROTECTED_MODE && !V8086_MODE && (rwn != -1))
 	{
-		if(!(m_sreg[segment].valid))
-			FAULT_THROW((segment==SS)?FAULT_SS:FAULT_GP, 0);
-		if(i386_limit_check(segment, ip, size))
-			FAULT_THROW((segment==SS)?FAULT_SS:FAULT_GP, 0);
-		if((rwn == 0) && ((m_sreg[segment].flags & 8) && !(m_sreg[segment].flags & 2)))
+		if (!(m_sreg[segment].valid))
+			FAULT_THROW((segment == SS) ? FAULT_SS : FAULT_GP, 0);
+		if (i386_limit_check(segment, ip, size))
+			FAULT_THROW((segment == SS) ? FAULT_SS : FAULT_GP, 0);
+		if ((rwn == 0) && ((m_sreg[segment].flags & 8) && !(m_sreg[segment].flags & 2)))
 			FAULT_THROW(FAULT_GP, 0);
-		if((rwn == 1) && ((m_sreg[segment].flags & 8) || !(m_sreg[segment].flags & 2)))
+		if ((rwn == 1) && ((m_sreg[segment].flags & 8) || !(m_sreg[segment].flags & 2)))
 			FAULT_THROW(FAULT_GP, 0);
 	}
 	return m_sreg[segment].base + ip;
@@ -590,144 +711,145 @@ INLINE UINT32 i386_translate(int segment, UINT32 ip, int rwn, UINT32 size)
 INLINE vtlb_entry get_permissions(UINT32 pte, int wp)
 {
 	vtlb_entry ret = VTLB_READ_ALLOWED | ((pte & 4) ? VTLB_USER_READ_ALLOWED : 0);
-	if(!wp)
+	if (!wp)
 		ret |= VTLB_WRITE_ALLOWED;
-	if(pte & 2)
+	if (pte & 2)
 		ret |= VTLB_WRITE_ALLOWED | ((pte & 4) ? VTLB_USER_WRITE_ALLOWED : 0);
 	return ret;
 }
 
-static int i386_translate_address(int intention, offs_t *address, vtlb_entry *entry)
+static bool i386_translate_address(int intention, bool debug, offs_t *address, vtlb_entry *entry)
 {
 	UINT32 a = *address;
 	UINT32 pdbr = m_cr[3] & 0xfffff000;
 	UINT32 directory = (a >> 22) & 0x3ff;
 	UINT32 table = (a >> 12) & 0x3ff;
 	vtlb_entry perm = 0;
-	int ret = FALSE;
-	bool user = (intention & TRANSLATE_USER_MASK) ? true : false;
-	bool write = (intention & TRANSLATE_WRITE) ? true : false;
-	bool debug = (intention & TRANSLATE_DEBUG_MASK) ? true : false;
+	bool ret = false;
+	bool user = (intention & TR_USER) ? true : false;
+	bool write = (intention & TR_WRITE) ? true : false;
 
-	if(!(m_cr[0] & 0x80000000))
+	if (!(m_cr[0] & CR0_PG))
 	{
-		if(entry)
+		if (entry)
 			*entry = 0x77;
-		return TRUE;
+		return true;
 	}
 
 	UINT32 page_dir = read_dword(pdbr + directory * 4);
-	if(page_dir & 1)
+	if (page_dir & 1)
 	{
-		if ((page_dir & 0x80) && (m_cr[4] & 0x10))
+		if ((page_dir & 0x80) && (m_cr[4] & CR4_PSE))
 		{
 			a = (page_dir & 0xffc00000) | (a & 0x003fffff);
-			if(debug)
+			if (debug)
 			{
 				*address = a;
-				return TRUE;
+				return true;
 			}
 			perm = get_permissions(page_dir, WP);
 			if(write && (!(perm & VTLB_WRITE_ALLOWED) || (user && !(perm & VTLB_USER_WRITE_ALLOWED))))
-				ret = FALSE;
+				ret = false;
 			else if(user && !(perm & VTLB_USER_READ_ALLOWED))
-				ret = FALSE;
+				ret = false;
 			else
 			{
-				if(write)
+				if (write)
 					perm |= VTLB_FLAG_DIRTY;
-				if(!(page_dir & 0x40) && write)
+				if (!(page_dir & 0x40) && write)
 					write_dword(pdbr + directory * 4, page_dir | 0x60);
-				else if(!(page_dir & 0x20))
+				else if (!(page_dir & 0x20))
 					write_dword(pdbr + directory * 4, page_dir | 0x20);
-				ret = TRUE;
+				ret = true;
 			}
 		}
 		else
 		{
 			UINT32 page_entry = read_dword((page_dir & 0xfffff000) + (table * 4));
-			if(!(page_entry & 1))
-				ret = FALSE;
+			if (!(page_entry & 1))
+				ret = false;
 			else
 			{
 				a = (page_entry & 0xfffff000) | (a & 0xfff);
-				if(debug)
+				if (debug)
 				{
 					*address = a;
-					return TRUE;
+					return true;
 				}
 				perm = get_permissions(page_entry, WP);
 				if(write && (!(perm & VTLB_WRITE_ALLOWED) || (user && !(perm & VTLB_USER_WRITE_ALLOWED))))
-					ret = FALSE;
+					ret = false;
 				else if(user && !(perm & VTLB_USER_READ_ALLOWED))
-					ret = FALSE;
+					ret = false;
 				else
 				{
-					if(write)
+					if (write)
 						perm |= VTLB_FLAG_DIRTY;
-					if(!(page_dir & 0x20))
+					if (!(page_dir & 0x20))
 						write_dword(pdbr + directory * 4, page_dir | 0x20);
-					if(!(page_entry & 0x40) && write)
+					if (!(page_entry & 0x40) && write)
 						write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x60);
-					else if(!(page_entry & 0x20))
+					else if (!(page_entry & 0x20))
 						write_dword((page_dir & 0xfffff000) + (table * 4), page_entry | 0x20);
-					ret = TRUE;
+					ret = true;
 				}
 			}
 		}
 	}
 	else
-		ret = FALSE;
-	if(entry)
+		ret = false;
+	if (entry)
 		*entry = perm;
-	if(ret)
+	if (ret)
 		*address = a;
 	return ret;
 }
 
 //#define TEST_TLB
 
-INLINE int translate_address(int pl, int type, UINT32 *address, UINT32 *error)
+INLINE bool translate_address(int pl, int type, UINT32 *address, UINT32 *error)
 {
-	if(!(m_cr[0] & 0x80000000)) // Some (very few) old OS's won't work with this
-		return TRUE;
+	if (!(m_cr[0] & CR0_PG)) // Some (very few) old OS's won't work with this
+		return true;
 
 	const vtlb_entry *table = vtlb_table(m_vtlb);
 	UINT32 index = *address >> 12;
 	vtlb_entry entry = table[index];
-	if(type == TRANSLATE_FETCH)
-		type = TRANSLATE_READ;
-	if(pl == 3)
-		type |= TRANSLATE_USER_MASK;
+	if (type == TR_FETCH)
+		type = TR_READ;
+	if (pl == 3)
+		type |= TR_USER;
 #ifdef TEST_TLB
 	UINT32 test_addr = *address;
 #endif
 
-	if(!(entry & VTLB_FLAG_VALID) || ((type & TRANSLATE_WRITE) && !(entry & VTLB_FLAG_DIRTY)))
+	if(!(entry & VTLB_FLAG_VALID) || ((type & TR_WRITE) && !(entry & VTLB_FLAG_DIRTY)))
 	{
-		if(!i386_translate_address(type, address, &entry))
+		if (!i386_translate_address(type, false, address, &entry))
 		{
-			*error = ((type & TRANSLATE_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0);
-			if(entry)
+			*error = ((type & TR_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0);
+			if (entry)
 				*error |= 1;
-			return FALSE;
+			return false;
 		}
 		vtlb_dynload(m_vtlb, index, *address, entry);
-		return TRUE;
+		return true;
 	}
-	if(!(entry & (1 << type)))
+	if (!(entry & (1 << type)))
 	{
-		*error = ((type & TRANSLATE_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0) | 1;
-		return FALSE;
+		*error = ((type & TR_WRITE) ? 2 : 0) | ((m_CPL == 3) ? 4 : 0) | 1;
+		return false;
 	}
 	*address = (entry & 0xfffff000) | (*address & 0xfff);
 #ifdef TEST_TLB
-	int test_ret = i386_translate_address(type | TRANSLATE_DEBUG_MASK, &test_addr, NULL);
-	if(!test_ret || (test_addr != *address))
+	int test_ret = i386_translate_address(type, true, &test_addr, NULL);
+	if (!test_ret || (test_addr != *address))
 		logerror("TLB-PTE mismatch! %06X %06X %06x\n", *address, test_addr, m_pc);
 #endif
-	return TRUE;
+	return true;
 }
+
+/***********************************************************************************/
 
 INLINE void CHANGE_PC(UINT32 pc)
 {
@@ -746,7 +868,7 @@ INLINE UINT8 FETCH()
 	UINT8 value;
 	UINT32 address = m_pc, error;
 
-	if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+	if(!translate_address(m_CPL,TR_FETCH,&address,&error))
 		PF_THROW(error);
 
 	value = read_decrypted_byte(address & m_a20_mask);
@@ -767,7 +889,7 @@ INLINE UINT16 FETCH16()
 		value = (FETCH() << 0);
 		value |= (FETCH() << 8);
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+		if(!translate_address(m_CPL,TR_FETCH,&address,&error))
 			PF_THROW(error);
 		address &= m_a20_mask;
 		value = read_decrypted_word(address);
@@ -791,7 +913,7 @@ INLINE UINT32 FETCH32()
 			value |= (FETCH16() << 16);
 		}
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_FETCH,&address,&error))
+		if(!translate_address(m_CPL,TR_FETCH,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -806,7 +928,7 @@ INLINE UINT8 READ8(UINT32 ea)
 {
 	UINT32 address = ea, error;
 
-	if(!translate_address(m_CPL,TRANSLATE_READ,&address, &error))
+	if(!translate_address(m_CPL,TR_READ,&address, &error))
 		PF_THROW(error);
 
 	address &= m_a20_mask;
@@ -821,7 +943,7 @@ INLINE UINT16 READ16(UINT32 ea)
 		value = (READ8( address+0 ) << 0);
 		value |= (READ8( address+1 ) << 8);
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+		if(!translate_address(m_CPL,TR_READ,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -844,7 +966,7 @@ INLINE UINT32 READ32(UINT32 ea)
 			value |= (READ16( address+2 ) << 16);
 		}
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+		if(!translate_address(m_CPL,TR_READ,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -884,7 +1006,7 @@ INLINE UINT64 READ64(UINT32 ea)
 			break;
 		}
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_READ,&address,&error))
+		if(!translate_address(m_CPL,TR_READ,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -897,7 +1019,7 @@ INLINE UINT8 READ8PL0(UINT32 ea)
 {
 	UINT32 address = ea, error;
 
-	if(!translate_address(0,TRANSLATE_READ,&address,&error))
+	if(!translate_address(0,TR_READ,&address,&error))
 		PF_THROW(error);
 
 	address &= m_a20_mask;
@@ -912,7 +1034,7 @@ INLINE UINT16 READ16PL0(UINT32 ea)
 		value = (READ8PL0( address+0 ) << 0);
 		value |= (READ8PL0( address+1 ) << 8);
 	} else {
-		if(!translate_address(0,TRANSLATE_READ,&address,&error))
+		if(!translate_address(0,TR_READ,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -936,7 +1058,7 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 			value |= (READ16PL0( address+2 ) << 16);
 		}
 	} else {
-		if(!translate_address(0,TRANSLATE_READ,&address,&error))
+		if(!translate_address(0,TR_READ,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -948,7 +1070,7 @@ INLINE UINT32 READ32PL0(UINT32 ea)
 INLINE void WRITE_TEST(UINT32 ea)
 {
 	UINT32 address = ea, error;
-	if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+	if(!translate_address(m_CPL,TR_WRITE,&address,&error))
 		PF_THROW(error);
 }
 
@@ -956,7 +1078,7 @@ INLINE void WRITE8(UINT32 ea, UINT8 value)
 {
 	UINT32 address = ea, error;
 
-	if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+	if(!translate_address(m_CPL,TR_WRITE,&address,&error))
 		PF_THROW(error);
 
 	address &= m_a20_mask;
@@ -970,7 +1092,7 @@ INLINE void WRITE16(UINT32 ea, UINT16 value)
 		WRITE8( address+0, value & 0xff );
 		WRITE8( address+1, (value >> 8) & 0xff );
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+		if(!translate_address(m_CPL,TR_WRITE,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -991,7 +1113,7 @@ INLINE void WRITE32(UINT32 ea, UINT32 value)
 			WRITE16( address+2, (value >> 16) & 0xffff );
 		}
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+		if(!translate_address(m_CPL,TR_WRITE,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -1029,7 +1151,7 @@ INLINE void WRITE64(UINT32 ea, UINT64 value)
 			break;
 		}
 	} else {
-		if(!translate_address(m_CPL,TRANSLATE_WRITE,&address,&error))
+		if(!translate_address(m_CPL,TR_WRITE,&address,&error))
 			PF_THROW(error);
 
 		address &= m_a20_mask;
@@ -1468,22 +1590,24 @@ INLINE void WRITEPORT32(offs_t port, UINT32 value)
 ***********************************************************************************/
 
 // Pentium MSR handling
-UINT64 pentium_msr_read(UINT32 offset,UINT8 *valid_msr)
+UINT64 pentium_msr_read(bool &valid_msr)
 {
-	switch(offset)
+	UINT32 offset = REG32(ECX);
+
+	switch (offset)
 	{
 	// Machine Check Exception (TODO)
 	case 0x00:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading P5_MC_ADDR");
 		return 0;
 	case 0x01:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading P5_MC_TYPE");
 		return 0;
 	// Time Stamp Counter
 	case 0x10:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading TSC");
 #ifdef SUPPORT_RDTSC
 		return m_tsc;
@@ -1492,41 +1616,43 @@ UINT64 pentium_msr_read(UINT32 offset,UINT8 *valid_msr)
 #endif
 	// Event Counters (TODO)
 	case 0x11:  // CESR
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading CESR");
 		return 0;
 	case 0x12:  // CTR0
-		*valid_msr = 1;
+		valid_msr = true;
 		return m_perfctr[0];
 	case 0x13:  // CTR1
-		*valid_msr = 1;
+		valid_msr = true;
 		return m_perfctr[1];
 	default:
-		if(!(offset & ~0xf)) // 2-f are test registers
+		if (!(offset & ~0xf)) // 2-f are test registers
 		{
-			*valid_msr = 1;
-			logerror("RDMSR: Reading test MSR %x", offset);
+			valid_msr = true;
+			logerror("RDMSR: Reading test MSR %x\n", offset);
 			return 0;
 		}
-		logerror("RDMSR: invalid P5 MSR read %08x at %08x\n",offset,m_pc-2);
-		*valid_msr = 0;
+		logerror("RDMSR: invalid P5 MSR read %08x at %08x\n", offset, m_pc - 2);
+		valid_msr = false;
 		return 0;
 	}
 	return -1;
 }
 
-void pentium_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
+void pentium_msr_write(UINT64 data, bool &valid_msr)
 {
-	switch(offset)
+	UINT32 offset = REG32(ECX);
+
+	switch (offset)
 	{
 	// Machine Check Exception (TODO)
 	case 0x00:
 		popmessage("WRMSR: Writing P5_MC_ADDR");
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	case 0x01:
 		popmessage("WRMSR: Writing P5_MC_TYPE");
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	// Time Stamp Counter
 	case 0x10:
@@ -1535,51 +1661,53 @@ void pentium_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 		m_rdtsc = __rdtsc();
 #endif
 		popmessage("WRMSR: Writing to TSC");
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	// Event Counters (TODO)
 	case 0x11:  // CESR
 		popmessage("WRMSR: Writing to CESR");
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	case 0x12:  // CTR0
 		m_perfctr[0] = data;
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	case 0x13:  // CTR1
 		m_perfctr[1] = data;
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	default:
-		if(!(offset & ~0xf)) // 2-f are test registers
+		if (!(offset & ~0xf)) // 2-f are test registers
 		{
-			*valid_msr = 1;
-			logerror("WRMSR: Writing test MSR %x", offset);
+			valid_msr = true;
+			logerror("WRMSR: Writing test MSR %x\n", offset);
 			break;
 		}
-		logerror("WRMSR: invalid MSR write %08x (%08x%08x) at %08x\n",offset,(UINT32)(data >> 32),(UINT32)data,m_pc-2);
-		*valid_msr = 0;
+		logerror("WRMSR: invalid MSR write %08x (%08x%08x) at %08x\n", offset, (UINT32)(data >> 32), (UINT32)data, m_pc - 2);
+		valid_msr = false;
 		break;
 	}
 }
 
 // P6 (Pentium Pro, Pentium II, Pentium III) MSR handling
-UINT64 p6_msr_read(UINT32 offset,UINT8 *valid_msr)
+UINT64 pentium_pro_rdmsr(bool &valid_msr)
 {
-	switch(offset)
+	UINT32 offset = REG32(ECX);
+
+	switch (offset)
 	{
 	// Machine Check Exception (TODO)
 	case 0x00:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading P5_MC_ADDR");
 		return 0;
 	case 0x01:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading P5_MC_TYPE");
 		return 0;
 	// Time Stamp Counter
 	case 0x10:
-		*valid_msr = 1;
+		valid_msr = true;
 		popmessage("RDMSR: Reading TSC");
 #ifdef SUPPORT_RDTSC
 		return m_tsc;
@@ -1588,22 +1716,24 @@ UINT64 p6_msr_read(UINT32 offset,UINT8 *valid_msr)
 #endif
 	// Performance Counters (TODO)
 	case 0xc1:  // PerfCtr0
-		*valid_msr = 1;
+		valid_msr = true;
 		return m_perfctr[0];
 	case 0xc2:  // PerfCtr1
-		*valid_msr = 1;
+		valid_msr = true;
 		return m_perfctr[1];
 	default:
-		logerror("RDMSR: unimplemented register called %08x at %08x\n",offset,m_pc-2);
-		*valid_msr = 1;
+		logerror("RDMSR: unimplemented register called %08x at %08x\n", offset, m_pc - 2);
+		valid_msr = true;
 		return 0;
 	}
 	return -1;
 }
 
-void p6_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
+void pentium_pro_wrmsr(UINT64 data, bool &valid_msr)
 {
-	switch(offset)
+	UINT32 offset = REG32(ECX);
+
+	switch (offset)
 	{
 	// Time Stamp Counter
 	case 0x10:
@@ -1612,65 +1742,55 @@ void p6_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
 		m_rdtsc = __rdtsc();
 #endif
 		popmessage("WRMSR: Writing to TSC");
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	// Performance Counters (TODO)
 	case 0xc1:  // PerfCtr0
 		m_perfctr[0] = data;
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	case 0xc2:  // PerfCtr1
 		m_perfctr[1] = data;
-		*valid_msr = 1;
+		valid_msr = true;
 		break;
 	default:
-		logerror("WRMSR: unimplemented register called %08x (%08x%08x) at %08x\n",offset,(UINT32)(data >> 32),(UINT32)data,m_pc-2);
-		*valid_msr = 1;
+		logerror("WRMSR: unimplemented register called %08x (%08x%08x) at %08x\n", offset, (UINT32)(data >> 32), (UINT32)data, m_pc - 2);
+		valid_msr = true;
 		break;
 	}
 }
 
 // PIV (Pentium 4+)
-UINT64 piv_msr_read(UINT32 offset,UINT8 *valid_msr)
+UINT64 pentium4_rdmsr(bool &valid_msr)
 {
-	switch(offset)
-	{
-	default:
-		logerror("RDMSR: unimplemented register called %08x at %08x\n",offset,m_pc-2);
-		*valid_msr = 1;
-		return 0;
-	}
-	return -1;
+	logerror("RDMSR: unimplemented register called %08x at %08x\n", REG32(ECX), m_pc - 2);
+	valid_msr = true;
+	return 0;
 }
 
-void piv_msr_write(UINT32 offset, UINT64 data, UINT8 *valid_msr)
+void pentium4_wrmsr(UINT64 data, bool &valid_msr)
 {
-	switch(offset)
-	{
-	default:
-		logerror("WRMSR: unimplemented register called %08x (%08x%08x) at %08x\n",offset,(UINT32)(data >> 32),(UINT32)data,m_pc-2);
-		*valid_msr = 1;
-		break;
-	}
+	logerror("WRMSR: unimplemented register called %08x (%08x%08x) at %08x\n", REG32(ECX), (UINT32)(data >> 32), (UINT32)data, m_pc - 2);
+	valid_msr = true;
 }
 
-INLINE UINT64 MSR_READ(UINT32 offset,UINT8 *valid_msr)
+INLINE UINT64 opcode_rdmsr(bool &valid_msr)
 {
 	UINT64 res;
 	UINT8 cpu_type = (m_cpu_version >> 8) & 0x0f;
 
-	*valid_msr = 0;
+	valid_msr = false;
 
 	switch(cpu_type)
 	{
 	case 5:  // Pentium
-		res = pentium_msr_read(offset,valid_msr);
+		res = pentium_msr_read(valid_msr);
 		break;
 	case 6:  // Pentium Pro, Pentium II, Pentium III
-		res = p6_msr_read(offset,valid_msr);
+		res = pentium_pro_rdmsr(valid_msr);
 		break;
 	case 15:  // Pentium 4+
-		res = piv_msr_read(offset,valid_msr);
+		res = pentium4_rdmsr(valid_msr);
 		break;
 	default:
 		res = 0;
@@ -1680,21 +1800,21 @@ INLINE UINT64 MSR_READ(UINT32 offset,UINT8 *valid_msr)
 	return res;
 }
 
-INLINE void MSR_WRITE(UINT32 offset, UINT64 data, UINT8 *valid_msr)
+INLINE void opcode_wrmsr(UINT64 data, bool &valid_msr)
 {
-	*valid_msr = 0;
+	valid_msr = false;
 	UINT8 cpu_type = (m_cpu_version >> 8) & 0x0f;
 
 	switch(cpu_type)
 	{
 	case 5:  // Pentium
-		pentium_msr_write(offset,data,valid_msr);
+		pentium_msr_write(data,valid_msr);
 		break;
 	case 6:  // Pentium Pro, Pentium II, Pentium III
-		p6_msr_write(offset,data,valid_msr);
+		pentium_pro_wrmsr(data,valid_msr);
 		break;
 	case 15:  // Pentium 4+
-		piv_msr_write(offset,data,valid_msr);
+		pentium4_wrmsr(data,valid_msr);
 		break;
 	}
 }

@@ -34,6 +34,7 @@
 extern bool now_debugging;
 extern bool now_suspended;
 extern int_break_point_t int_break_point;
+extern bool in_iret_table(int num);
 #endif
 extern UINT32 msdos_int6h_eip;
 
@@ -247,7 +248,7 @@ interrupt(int num, int intrtype, int errorp, int error_code)
 	VERBOSE(("interrupt: num = 0x%02x, intrtype = %s, errorp = %s, error_code = %08x", num, (intrtype == INTR_TYPE_EXTINTR) ? "external" : (intrtype == INTR_TYPE_EXCEPTION ? "exception" : "softint"), errorp ? "on" : "off", error_code));
 
 #ifdef USE_DEBUGGER
-	if(now_debugging) {
+	if(now_debugging && !in_iret_table(num)) {
 		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 			if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == num) {
 				if((int_break_point.table[i].ah == CPU_AH || int_break_point.table[i].ah_registered == 0) &&

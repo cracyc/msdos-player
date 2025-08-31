@@ -8,7 +8,7 @@ static void I486OP(cpuid)()             // Opcode 0x0F A2
 	{
 		// this 486 doesn't support the CPUID instruction
 		logerror("CPUID not supported at %08x!\n", m_eip);
-		i386_trap(6, 0, 0);
+		i386_trap(6, 0);
 	}
 	else
 	{
@@ -35,15 +35,54 @@ static void I486OP(cpuid)()             // Opcode 0x0F A2
 	}
 }
 
+static void PENTIUM3OP(cpuid)()         // Opcode 0x0F A2
+{
+	switch (REG32(EAX))
+	{
+		case 0:
+		{
+			REG32(EAX) = m_cpuid_max_input_value_eax;
+			REG32(EBX) = m_cpuid_id0;
+			REG32(ECX) = m_cpuid_id2;
+			REG32(EDX) = m_cpuid_id1;
+			CYCLES(CYCLES_CPUID);
+			break;
+		}
+
+		case 1:
+		{
+			REG32(EAX) = m_cpu_version;
+			REG32(EDX) = m_feature_flags;
+			CYCLES(CYCLES_CPUID_EAX1);
+			break;
+		}
+
+		case 3:
+		{
+			// TODO: lower part of 96 bits s/n for Pentium III processors only (ditched in 4)
+			// (upper 32-bits part is in EAX=1 EAX return)
+			// NB: if this is triggered from an Arcade system then there's a very good chance
+			// that is trying to tie the serial as a form of copy protection cfr. gamecstl
+			logerror("CPUID with EAX=00000003 (Pentium III PSN?) at %08x!\n", m_eip);
+			REG32(EAX) = 0x00000000;
+			REG32(EBX) = 0x00000000;
+			REG32(ECX) = 0x01234567;
+			REG32(EDX) = 0x89abcdef;
+			CYCLES(CYCLES_CPUID);
+			break;
+		}
+	}
+}
+
 static void I486OP(invd)()              // Opcode 0x0f 08
 {
-	// Nothing to do ?
+	// TODO: manage the cache if present
 	CYCLES(CYCLES_INVD);
 }
 
 static void I486OP(wbinvd)()            // Opcode 0x0f 09
 {
-	// Nothing to do ?
+	// TODO: manage the cache if present
 }
 
 static void I486OP(cmpxchg_rm8_r8)()    // Opcode 0x0f b0
@@ -226,6 +265,8 @@ static void I486OP(group0F01_16)()      // Opcode 0x0f 01
 					ea = GetEA(modrm,1,6);
 				}
 				WRITE16(ea, m_gdtr.limit);
+				// Win32s requires all 32 bits to be stored here, despite various Intel docs
+				// claiming that the upper 8 bits are either zeroed or undefined in 16-bit mode
 				WRITE32(ea + 2, m_gdtr.base);
 				CYCLES(CYCLES_SGDT);
 				break;
@@ -505,7 +546,7 @@ static void I486OP(mov_cr_r32)()        // Opcode 0x0f 22
 	{
 		case 0:
 			CYCLES(CYCLES_MOV_REG_CR0);
-			if((oldcr ^ m_cr[cr]) & 0x80010000)
+			if((oldcr ^ m_cr[cr]) & (CR0_PG | CR0_WP))
 				vtlb_flush_dynamic(m_vtlb);
 //			if (PROTECTED_MODE != BIT(data, 0))
 //				debugger_privilege_hook();
@@ -525,9 +566,9 @@ static void I486OP(mov_cr_r32)()        // Opcode 0x0f 22
 
 void I486OP(wait)()
 {
-	if ((m_cr[0] & 0xa) == 0xa)
+	if ((m_cr[0] & (CR0_TS | CR0_MP)) == (CR0_TS | CR0_MP))
 	{
-		i386_trap(FAULT_NM, 0, 0);
+		i386_trap(FAULT_NM, 0);
 		return;
 	}
 	x87_mf_fault();

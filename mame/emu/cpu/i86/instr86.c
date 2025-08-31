@@ -2619,6 +2619,7 @@ static void PREFIX86(_f6pre)()
 	case 0x18:  /* NEG Eb */
 		tmp2=0;
 		SUBB(tmp2,tmp);
+		SetCFB(tmp2);
 		PutbackRMByte(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AL, Eb */
@@ -2655,21 +2656,20 @@ static void PREFIX86(_f6pre)()
 		break;
 	case 0x30:  /* DIV AL, Ew */
 		{
-			UINT16 result;
-
-			result = m_regs.w[AX];
-
 			if (tmp)
 			{
-				if ((result / tmp) > 0xff)
+				UINT32 uresult = m_regs.w[AX];
+				UINT32 uresult2 = uresult % tmp;
+				uresult /= tmp;
+				if (uresult > 0xff)
 				{
 					PREFIX(_interrupt)(0);
 					break;
 				}
 				else
 				{
-					m_regs.b[AH] = result % tmp;
-					m_regs.b[AL] = result / tmp;
+					m_regs.b[AL] = uresult;
+					m_regs.b[AH] = uresult2;
 				}
 			}
 			else
@@ -2681,15 +2681,13 @@ static void PREFIX86(_f6pre)()
 		break;
 	case 0x38:  /* IDIV AL, Ew */
 		{
-			INT16 result;
-
-			result = m_regs.w[AX];
-
 			if (tmp)
 			{
-				tmp2 = result % (INT16)((INT8)tmp);
-
-				if ((result /= (INT16)((INT8)tmp)) > 0xff)
+				INT32 result = (INT16)m_regs.w[AX];
+				INT32 result2 = result % (INT16)((INT8)tmp);
+				result /= (INT16)((INT8)tmp);
+				INT32 lower_bound = m_MF ? -0x7f : -0x80;
+				if (result > 0xff || result < lower_bound)
 				{
 					PREFIX(_interrupt)(0);
 					break;
@@ -2697,7 +2695,7 @@ static void PREFIX86(_f6pre)()
 				else
 				{
 					m_regs.b[AL] = result;
-					m_regs.b[AH] = tmp2;
+					m_regs.b[AH] = result2;
 				}
 			}
 			else
@@ -2740,6 +2738,7 @@ static void PREFIX86(_f7pre)()
 	case 0x18:  /* NEG Ew */
 		tmp2 = 0;
 		SUBW(tmp2,tmp);
+		SetCFW(tmp2);
 		PutbackRMWord(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AX, Ew */
@@ -2781,23 +2780,20 @@ static void PREFIX86(_f7pre)()
 		break;
 	case 0x30:  /* DIV AX, Ew */
 		{
-			UINT32 result;
-
-			result = (m_regs.w[DX] << 16) + m_regs.w[AX];
-
 			if (tmp)
 			{
-				tmp2 = result % tmp;
-				if ((result / tmp) > 0xffff)
+				UINT32 uresult = (((UINT32)m_regs.w[DX]) << 16) | m_regs.w[AX];
+				UINT32 uresult2 = uresult % tmp;
+				uresult /= tmp;
+				if (uresult > 0xffff)
 				{
 					PREFIX(_interrupt)(0);
 					break;
 				}
 				else
 				{
-					m_regs.w[DX]=tmp2;
-					result /= tmp;
-					m_regs.w[AX]=result;
+					m_regs.w[AX] = uresult;
+					m_regs.w[DX] = uresult2;
 				}
 			}
 			else
@@ -2809,22 +2805,21 @@ static void PREFIX86(_f7pre)()
 		break;
 	case 0x38:  /* IDIV AX, Ew */
 		{
-			INT32 result;
-
-			result = (m_regs.w[DX] << 16) + m_regs.w[AX];
-
 			if (tmp)
 			{
-				tmp2 = result % (INT32)((INT16)tmp);
-				if ((result /= (INT32)((INT16)tmp)) > 0xffff)
+				INT32 result = ((UINT32)m_regs.w[DX] << 16) + m_regs.w[AX];
+				INT32 result2 = result % (INT32)((INT16)tmp);
+				result /= (INT32)((INT16)tmp);
+				INT32 lower_bound = m_MF ? -0x7fff : -0x8000;
+				if (result > 0x7fff || result < lower_bound)
 				{
 					PREFIX(_interrupt)(0);
 					break;
 				}
 				else
 				{
-					m_regs.w[AX]=result;
-					m_regs.w[DX]=tmp2;
+					m_regs.w[AX] = result;
+					m_regs.w[DX] = result2;
 				}
 			}
 			else

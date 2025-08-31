@@ -1205,7 +1205,7 @@ typedef struct {
 	HANDLE find_handle;
 } dtainfo_t;
 
-#if 1
+#ifdef SUPPORT_VDD
 // NTVDM
 UINT8 true_major_version = 5;
 UINT8 true_minor_version = 50;

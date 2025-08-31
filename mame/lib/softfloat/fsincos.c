@@ -39,38 +39,34 @@ static const floatx80 floatx80_default_nan = packFloatx80(0, 0xffff, U64(0xfffff
 
 #define EXP_BIAS 0x3FFF
 
+#if 0
 /*----------------------------------------------------------------------------
 | Returns the fraction bits of the extended double-precision floating-point
 | value `a'.
 *----------------------------------------------------------------------------*/
 
-#if 0
 INLINE bits64 extractFloatx80Frac( floatx80 a )
 {
 	return a.low;
 
 }
-#endif
 
 /*----------------------------------------------------------------------------
 | Returns the exponent bits of the extended double-precision floating-point
 | value `a'.
 *----------------------------------------------------------------------------*/
 
-#if 0
 INLINE int32 extractFloatx80Exp(floatx80 a)
 {
 	return a.high & 0x7FFF;
 
 }
-#endif
 
 /*----------------------------------------------------------------------------
 | Returns the sign bit of the extended double-precision floating-point value
 | `a'.
 *----------------------------------------------------------------------------*/
 
-#if 0
 INLINE flag extractFloatx80Sign(floatx80 a)
 {
 	return a.high>>15;
@@ -94,6 +90,7 @@ INLINE floatx80 propagateFloatx80NaNOneArg(floatx80 a)
 	return a;
 }
 
+#if 0
 /*----------------------------------------------------------------------------
 | Normalizes the subnormal extended double-precision floating-point value
 | represented by the denormalized significand `aSig'.  The normalized exponent
@@ -101,7 +98,6 @@ INLINE floatx80 propagateFloatx80NaNOneArg(floatx80 a)
 | `zSigPtr', respectively.
 *----------------------------------------------------------------------------*/
 
-#if 0
 void normalizeFloatx80Subnormal(UINT64 aSig, INT32 *zExpPtr, UINT64 *zSigPtr)
 {
 	int shiftCount = countLeadingZeros64(aSig);

@@ -37,10 +37,11 @@ static void i286_task_switch(UINT16 selector, UINT8 nested);
 static void i386_task_switch(UINT16 selector, UINT8 nested);
 static void build_opcode_table(UINT32 features);
 static void zero_state();
-static void pentium_smi();
+static void enter_smm();
+static void leave_smm();
 
-#define FAULT(fault,error) {m_ext = 1; i386_trap_with_error(fault,0,0,error); return;}
-#define FAULT_EXP(fault,error) {m_ext = 1; i386_trap_with_error(fault,0,trap_level+1,error); return;}
+#define FAULT(fault,error)  {m_ext = 1; i386_trap_with_error(fault,0,0,error); return;}
+#define FAULT_EXP(fault,error) {m_ext = 1; FAULT_THROW(fault, (error)); return;}
 
 /*************************************************************************/
 
@@ -134,7 +135,7 @@ static void i386_set_descriptor_accessed(UINT16 selector)
 		base = m_gdtr.base;
 
 	addr = base + (selector & ~7) + 5;
-	i386_translate_address(TRANSLATE_READ, &addr, NULL);
+	i386_translate_address(TR_READ, false, &addr, NULL);
 	rights = read_byte(addr);
 	// Should a fault be thrown if the table is read only?
 	write_byte(addr, rights | 1);
@@ -147,8 +148,8 @@ static void i386_load_segment_descriptor(int segment )
 		UINT16 old_flags = m_sreg[segment].flags;
 		if (!V8086_MODE)
 		{
-			i386_load_protected_mode_segment(&m_sreg[segment], NULL );
-			if(m_sreg[segment].selector)
+			i386_load_protected_mode_segment(&m_sreg[segment], NULL);
+			if (m_sreg[segment].selector)
 			{
 				i386_set_descriptor_accessed(m_sreg[segment].selector);
 				m_sreg[segment].flags |= 0x0001;
@@ -172,11 +173,11 @@ static void i386_load_segment_descriptor(int segment )
 		m_sreg[segment].d = 0;
 		m_sreg[segment].valid = true;
 
-		if( segment == CS )
+		if (segment == CS)
 		{
-			if( !m_performed_intersegment_jump )
+			if (!m_performed_intersegment_jump)
 				m_sreg[segment].base |= 0xfff00000;
-			if(m_cpu_version < 0x5000)
+			if (m_cpu_version < 0x500)
 				m_sreg[segment].flags = 0x93;
 		}
 	}
@@ -238,7 +239,7 @@ static UINT32 get_flags()
 
 static void set_flags(UINT32 f )
 {
-	f &= m_eflags_mask;;
+	f &= m_eflags_mask;
 	m_CF = (f & 0x1) ? 1 : 0;
 	m_PF = (f & 0x4) ? 1 : 0;
 	m_AF = (f & 0x10) ? 1 : 0;
@@ -259,6 +260,8 @@ static void set_flags(UINT32 f )
 	m_ID = (f & 0x200000) ? 1 : 0;
 	m_eflags = f;
 }
+
+/***********************************************************************************/
 
 static void sib_byte(UINT8 mod, UINT32* out_ea, UINT8* out_segment)
 {
@@ -398,7 +401,7 @@ static UINT32 GetNonTranslatedEA(UINT8 modrm,UINT8 *seg)
 	return ea;
 }
 
-static UINT32 GetEA(UINT8 modrm, int rwn, UINT32 size)
+static UINT32 GetEA(UINT8 modrm, int rwn, int size)
 {
 	UINT8 segment;
 	UINT32 ea;
@@ -454,7 +457,7 @@ static void i386_check_sreg_validity(int reg)
 	}
 }
 
-static int i386_limit_check(int seg, UINT32 offset, UINT32 size)
+static int i386_limit_check(int seg, UINT32 offset, int size)
 {
 	if(PROTECTED_MODE && !V8086_MODE)
 	{
@@ -609,7 +612,7 @@ static void i386_sreg_load(UINT16 selector, UINT8 reg, bool *fault)
 	if(fault) *fault = false;
 }
 
-static void i386_trap(int irq, int irq_gate, int trap_level)
+static void i386_trap(int irq, int irq_gate)
 {
 	/*  I386 Interrupts/Traps/Faults:
 	 *
@@ -656,6 +659,10 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 		msdos_int6h_eip = m_eip;
 	}
 
+#ifdef SUPPORT_RDTSC
+	m_cycles -= 4; // TODO: subtract correct number of cycles
+#endif
+
 	if( !(PROTECTED_MODE) )
 	{
 		/* 16-bit */
@@ -686,26 +693,6 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 		segment = (v1 >> 16) & 0xffff;
 		type = (v2>>8) & 0x1F;
 		flags = (v2>>8) & 0xf0ff;
-
-		if(trap_level == 2)
-		{
-			logerror("IRQ: Double fault.\n");
-			FAULT_EXP(FAULT_DF,0);
-		}
-		if(trap_level >= 3)
-		{
-//			UINT16 offset = READ16(0x467);
-//			UINT16 selector = READ16(0x469);
-			logerror("IRQ: Triple fault. CPU reset.\n");
-//			CPU_RESET_CALL(CPU_MODEL);
-//			m_sreg[CS].selector = selector;
-//			m_performed_intersegment_jump = 1;
-//			m_eip = offset;
-//			i386_load_segment_descriptor(CS);
-//			CHANGE_PC(m_eip);
-			kbd_reset();
-			return;
-		}
 
 		/* segment privilege checks */
 		if(entry >= m_idtr.limit)
@@ -1006,7 +993,7 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 			}
 			else
 			{
-				PUSH32(oldflags & 0x00ffffff );
+				PUSH32((oldflags & 0x00ffffff) | (1 << 16) ); //386 faults always have the RF bit set in the saved flags register.
 				PUSH32SEG(m_sreg[CS].selector );
 				if(irq == 3 || irq == 4 || irq == 9 || irq_gate == 1)
 					PUSH32(m_eip );
@@ -1037,30 +1024,51 @@ static void i386_trap(int irq, int irq_gate, int trap_level)
 
 static void i386_trap_with_error(int irq, int irq_gate, int trap_level, UINT32 error)
 {
-	i386_trap(irq,irq_gate,trap_level);
-	if(irq == 8 || irq == 10 || irq == 11 || irq == 12 || irq == 13 || irq == 14)
+	try
 	{
-		// for these exceptions, an error code is pushed onto the stack by the processor.
-		// no error code is pushed for software interrupts, either.
-		if(PROTECTED_MODE)
+		i386_trap(irq,irq_gate);
+		if(irq == 8 || irq == 10 || irq == 11 || irq == 12 || irq == 13 || irq == 14)
 		{
-			UINT32 entry = irq * 8;
-			UINT32 v2,type;
-			v2 = READ32PL0(m_idtr.base + entry + 4 );
-			type = (v2>>8) & 0x1F;
-			if(type == 5)
+			// for these exceptions, an error code is pushed onto the stack by the processor.
+			// no error code is pushed for software interrupts, either.
+			if(PROTECTED_MODE)
 			{
-				v2 = READ32PL0(m_idtr.base + entry);
-				v2 = READ32PL0(m_gdtr.base + ((v2 >> 16) & 0xfff8) + 4);
+				UINT32 entry = irq * 8;
+				UINT32 v2,type;
+				v2 = READ32PL0(m_idtr.base + entry + 4 );
 				type = (v2>>8) & 0x1F;
+				if(type == 5)
+				{
+					v2 = READ32PL0(m_idtr.base + entry);
+					v2 = READ32PL0(m_gdtr.base + ((v2 >> 16) & 0xfff8) + 4);
+					type = (v2>>8) & 0x1F;
+				}
+				if(type >= 9)
+					PUSH32(error);
+				else
+					PUSH16(error);
 			}
-			if(type >= 9)
-				PUSH32(error);
 			else
 				PUSH16(error);
 		}
-		else
-			PUSH16(error);
+	}
+	catch(UINT64 e)
+	{
+		trap_level++;
+		if(trap_level == 1)
+		{
+			m_ext = 1;
+			logerror("IRQ: Double fault.\n");
+			i386_trap_with_error(FAULT_DF,0,trap_level,0);
+			return;
+		}
+		if(trap_level >= 2)
+		{
+			logerror("IRQ: Triple fault. CPU reset.\n");
+//			pulse_input_line(INPUT_LINE_RESET, attotime::zero);
+			kbd_reset();
+			return;
+		}
 	}
 }
 
@@ -1118,7 +1126,7 @@ static void i286_task_switch(UINT16 selector, UINT8 nested)
 	m_task.flags = seg.flags;
 
 	/* Set TS bit in CR0 */
-	m_cr[0] |= 0x08;
+	m_cr[0] |= CR0_TS;
 
 	/* Load incoming task state from the new task's TSS */
 	tss = m_task.base;
@@ -1169,6 +1177,8 @@ static void i286_task_switch(UINT16 selector, UINT8 nested)
 	CHANGE_PC(m_eip);
 
 	m_CPL = (m_sreg[SS].flags >> 5) & 3;
+
+	m_auto_clear_RF = false;
 //  printf("286 Task Switch from selector %04x to %04x\n",old_task,selector);
 }
 
@@ -1229,7 +1239,7 @@ static void i386_task_switch(UINT16 selector, UINT8 nested)
 	m_task.flags = seg.flags;
 
 	/* Set TS bit in CR0 */
-	m_cr[0] |= 0x08;
+	m_cr[0] |= CR0_TS;
 
 	/* Load incoming task state from the new task's TSS */
 	tss = m_task.base;
@@ -1287,6 +1297,13 @@ static void i386_task_switch(UINT16 selector, UINT8 nested)
 	CHANGE_PC(m_eip);
 
 	m_CPL = (m_sreg[SS].flags >> 5) & 3;
+
+	int t_bit = READ32(tss+0x64) & 1;
+	if(t_bit) m_dr[6] |= (1 << 15); //If the T bit of the new TSS is set, set the BT bit of DR6.
+
+	m_dr[7] &= ~(0x155); //Clear all of the local enable bits from DR7.
+
+	m_auto_clear_RF = false;
 //  printf("386 Task Switch from selector %04x to %04x\n",old_task,selector);
 }
 
@@ -1294,7 +1311,7 @@ static void i386_check_irq_line()
 {
 	if(!m_smm && m_smi)
 	{
-		pentium_smi();
+		enter_smm();
 		return;
 	}
 
@@ -1304,7 +1321,7 @@ static void i386_check_irq_line()
 #ifdef SUPPORT_RDTSC
 		m_cycles -= 2;
 #endif
-		i386_trap(pic_ack(), 1, 0);
+		i386_trap(pic_ack(), 1);
 		m_irq_state = CLEAR_LINE;
 	}
 }
@@ -2145,7 +2162,7 @@ static void i386_protected_mode_retf(UINT8 count, UINT8 operand32)
 		if(STACK_32BIT)
 			REG32(ESP) += (operand32 ? 8 : 4) + count;
 		else
-			REG16(SP) += (operand32 ? 8 : 4) + count;
+			REG16(SP) +=  (operand32 ? 8 : 4) + count;
 	}
 	else if(RPL > CPL)
 	{
@@ -2402,7 +2419,7 @@ static void i386_protected_mode_iret(int operand32)
 			newESP = READ32(ea+12);
 			newSS = READ32(ea+16) & 0xffff;
 			/* Return to v86 mode */
-			//logerror("IRET (%08x): Returning to Virtual 8086 mode.\n",m_pc);
+			logerror("IRET (%08x): Returning to Virtual 8086 mode.\n",m_pc);
 			if(CPL != 0)
 			{
 				UINT32 oldflags = get_flags();
@@ -2745,12 +2762,12 @@ static void i386_protected_mode_iret(int operand32)
 	CHANGE_PC(m_eip);
 }
 
+#ifdef SUPPORT_RDTSC
+
 #include "cycles.h"
 
 static UINT8 cycle_table_rm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
 static UINT8 cycle_table_pm[X86_NUM_CPUS][CYCLES_NUM_OPCODES];
-
-#ifdef SUPPORT_RDTSC
 
 #define CYCLES_NUM(x)   (m_cycles -= (x))
 
@@ -2792,15 +2809,6 @@ INLINE void CYCLES_RM(int modrm, int r, int m)
 	}
 }
 
-#else
-
-/* i386/i486: we don't need to update cycles for rdtsc */
-#define CYCLES_NUM(x)
-#define CYCLES(x)
-#define CYCLES_RM(modrm, r, m)
-
-#endif
-
 static void build_cycle_table()
 {
 	int i, j;
@@ -2818,15 +2826,27 @@ static void build_cycle_table()
 	}
 }
 
+#else
+
+/* i386/i486: we don't need to update cycles for rdtsc */
+#define CYCLES_NUM(x)
+#define CYCLES(x)
+#define CYCLES_RM(modrm, r, m)
+
+#endif
+
 static void report_invalid_opcode()
 {
 #ifndef DEBUG_MISSING_OPCODE
 	logerror("i386: Invalid opcode %02X at %08X %s\n", m_opcode, m_pc - 1, m_lock ? "with lock" : "");
 #else
-	logerror("i386: Invalid opcode");
+	logerror("Invalid opcode");
 	for (int a = 0; a < m_opcode_bytes_length; a++)
 		logerror(" %02X", m_opcode_bytes[a]);
-	logerror(" at %08X\n", m_opcode_pc);
+	logerror(" at %08X %s\n", m_opcode_pc, m_lock ? "with lock" : "");
+	logerror("Backtrace:\n");
+	for (UINT32 i = 1; i < 16; i++)
+		logerror("  %08X\n", m_opcode_addrs[(m_opcode_addrs_index - i) & 15]);
 #endif
 }
 
@@ -2835,12 +2855,15 @@ static void report_invalid_modrm(const char* opcode, UINT8 modrm)
 #ifndef DEBUG_MISSING_OPCODE
 	logerror("i386: Invalid %s modrm %01X at %08X\n", opcode, modrm, m_pc - 2);
 #else
-	logerror("i386: Invalid %s modrm %01X", opcode, modrm);
+	logerror("Invalid %s modrm %01X", opcode, modrm);
 	for (int a = 0; a < m_opcode_bytes_length; a++)
 		logerror(" %02X", m_opcode_bytes[a]);
-	logerror(" at %08X\n", m_opcode_pc);
+	logerror(" at %08X %s\n", m_opcode_pc, m_lock ? "with lock" : "");
+	logerror("Backtrace:\n");
+	for (UINT32 i = 1; i < 16; i++)
+		logerror("  %08X\n", m_opcode_addrs[(m_opcode_addrs_index - i) & 15]);
 #endif
-	i386_trap(6, 0, 0);
+	i386_trap(6, 0);
 }
 
 /* Forward declarations */
@@ -2863,8 +2886,8 @@ static void I386OP(decode_four_byte38f3)();
 #include "i386op16.c"
 #include "i386op32.c"
 #include "i486ops.c"
-#include "pentops.c"
 #include "x87ops.c"
+#include "pentops.c"
 #include "i386ops.h"
 
 static void I386OP(decode_opcode)()
@@ -3020,7 +3043,9 @@ static void i386_common_init(int tlbsize)
 
 	assert((sizeof(XMM_REG)/sizeof(double)) == 2);
 
+#ifdef SUPPORT_RDTSC
 	build_cycle_table();
+#endif
 
 	for( i=0; i < 256; i++ ) {
 		int c=0;
@@ -3043,6 +3068,7 @@ static void i386_common_init(int tlbsize)
 
 	m_vtlb = vtlb_alloc(AS_PROGRAM, 0, tlbsize);
 	m_smi = false;
+//	m_debugger_temp = 0;
 	m_lock = false;
 
 //	i386_interface *intf = (i386_interface *) device->static_config();
@@ -3053,6 +3079,8 @@ static void i386_common_init(int tlbsize)
 //		memset(&m_smiact, 0, sizeof(m_smiact));
 
 	zero_state();
+
+//	m_ferr_handler(0);
 }
 
 CPU_INIT( i386 )
@@ -3060,8 +3088,10 @@ CPU_INIT( i386 )
 	i386_common_init(32);
 
 	build_opcode_table(OP_I386);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_I386];
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_I386];
+#endif
 }
 
 static void build_opcode_table(UINT32 features)
@@ -3240,7 +3270,10 @@ static void zero_state()
 	memset( m_opcode_bytes, 0, sizeof(m_opcode_bytes) );
 	m_opcode_pc = 0;
 	m_opcode_bytes_length = 0;
+	memset(m_opcode_addrs, 0, sizeof(m_opcode_addrs));
+	m_opcode_addrs_index = 0;
 #endif
+//	m_dri_changed_active = false;
 }
 
 static CPU_RESET( i386 )
@@ -3283,85 +3316,84 @@ static CPU_RESET( i386 )
 
 	m_CPL = 0;
 
+	m_auto_clear_RF = true;
+
 	CHANGE_PC(m_eip);
 }
 
-static void pentium_smi()
+static void enter_smm()
 {
 	UINT32 smram_state = m_smbase + 0xfe00;
 	UINT32 old_cr0 = m_cr[0];
 	UINT32 old_flags = get_flags();
 
-	if(m_smm)
-		return;
-
 	m_cr[0] &= ~(0x8000000d);
 	set_flags(2);
-//	if(!m_smiact.isnull())
-//		m_smiact(true);
+//	m_smiact(true);
 	m_smm = true;
 	m_smi_latched = false;
 
 	// save state
-	WRITE32(m_cr[4], smram_state+SMRAM_IP5_CR4);
-	WRITE32(m_sreg[ES].limit, smram_state+SMRAM_IP5_ESLIM);
-	WRITE32(m_sreg[ES].base, smram_state+SMRAM_IP5_ESBASE);
-	WRITE32(m_sreg[ES].flags, smram_state+SMRAM_IP5_ESACC);
-	WRITE32(m_sreg[CS].limit, smram_state+SMRAM_IP5_CSLIM);
-	WRITE32(m_sreg[CS].base, smram_state+SMRAM_IP5_CSBASE);
-	WRITE32(m_sreg[CS].flags, smram_state+SMRAM_IP5_CSACC);
-	WRITE32(m_sreg[SS].limit, smram_state+SMRAM_IP5_SSLIM);
-	WRITE32(m_sreg[SS].base, smram_state+SMRAM_IP5_SSBASE);
-	WRITE32(m_sreg[SS].flags, smram_state+SMRAM_IP5_SSACC);
-	WRITE32(m_sreg[DS].limit, smram_state+SMRAM_IP5_DSLIM);
-	WRITE32(m_sreg[DS].base, smram_state+SMRAM_IP5_DSBASE);
-	WRITE32(m_sreg[DS].flags, smram_state+SMRAM_IP5_DSACC);
-	WRITE32(m_sreg[FS].limit, smram_state+SMRAM_IP5_FSLIM);
-	WRITE32(m_sreg[FS].base, smram_state+SMRAM_IP5_FSBASE);
-	WRITE32(m_sreg[FS].flags, smram_state+SMRAM_IP5_FSACC);
-	WRITE32(m_sreg[GS].limit, smram_state+SMRAM_IP5_GSLIM);
-	WRITE32(m_sreg[GS].base, smram_state+SMRAM_IP5_GSBASE);
-	WRITE32(m_sreg[GS].flags, smram_state+SMRAM_IP5_GSACC);
-	WRITE32(m_ldtr.flags, smram_state+SMRAM_IP5_LDTACC);
-	WRITE32(m_ldtr.limit, smram_state+SMRAM_IP5_LDTLIM);
-	WRITE32(m_ldtr.base, smram_state+SMRAM_IP5_LDTBASE);
-	WRITE32(m_gdtr.limit, smram_state+SMRAM_IP5_GDTLIM);
-	WRITE32(m_gdtr.base, smram_state+SMRAM_IP5_GDTBASE);
-	WRITE32(m_idtr.limit, smram_state+SMRAM_IP5_IDTLIM);
-	WRITE32(m_idtr.base, smram_state+SMRAM_IP5_IDTBASE);
-	WRITE32(m_task.limit, smram_state+SMRAM_IP5_TRLIM);
-	WRITE32(m_task.base, smram_state+SMRAM_IP5_TRBASE);
-	WRITE32(m_task.flags, smram_state+SMRAM_IP5_TRACC);
+	WRITE32(smram_state + SMRAM_SMBASE, m_smbase);
+	WRITE32(smram_state + SMRAM_IP5_CR4, m_cr[4]);
+	WRITE32(smram_state + SMRAM_IP5_ESLIM, m_sreg[ES].limit);
+	WRITE32(smram_state + SMRAM_IP5_ESBASE, m_sreg[ES].base);
+	WRITE32(smram_state + SMRAM_IP5_ESACC, m_sreg[ES].flags);
+	WRITE32(smram_state + SMRAM_IP5_CSLIM, m_sreg[CS].limit);
+	WRITE32(smram_state + SMRAM_IP5_CSBASE, m_sreg[CS].base);
+	WRITE32(smram_state + SMRAM_IP5_CSACC, m_sreg[CS].flags);
+	WRITE32(smram_state + SMRAM_IP5_SSLIM, m_sreg[SS].limit);
+	WRITE32(smram_state + SMRAM_IP5_SSBASE, m_sreg[SS].base);
+	WRITE32(smram_state + SMRAM_IP5_SSACC, m_sreg[SS].flags);
+	WRITE32(smram_state + SMRAM_IP5_DSLIM, m_sreg[DS].limit);
+	WRITE32(smram_state + SMRAM_IP5_DSBASE, m_sreg[DS].base);
+	WRITE32(smram_state + SMRAM_IP5_DSACC, m_sreg[DS].flags);
+	WRITE32(smram_state + SMRAM_IP5_FSLIM, m_sreg[FS].limit);
+	WRITE32(smram_state + SMRAM_IP5_FSBASE, m_sreg[FS].base);
+	WRITE32(smram_state + SMRAM_IP5_FSACC, m_sreg[FS].flags);
+	WRITE32(smram_state + SMRAM_IP5_GSLIM, m_sreg[GS].limit);
+	WRITE32(smram_state + SMRAM_IP5_GSBASE, m_sreg[GS].base);
+	WRITE32(smram_state + SMRAM_IP5_GSACC, m_sreg[GS].flags);
+	WRITE32(smram_state + SMRAM_IP5_LDTACC, m_ldtr.flags);
+	WRITE32(smram_state + SMRAM_IP5_LDTLIM, m_ldtr.limit);
+	WRITE32(smram_state + SMRAM_IP5_LDTBASE, m_ldtr.base);
+	WRITE32(smram_state + SMRAM_IP5_GDTLIM, m_gdtr.limit);
+	WRITE32(smram_state + SMRAM_IP5_GDTBASE, m_gdtr.base);
+	WRITE32(smram_state + SMRAM_IP5_IDTLIM, m_idtr.limit);
+	WRITE32(smram_state + SMRAM_IP5_IDTBASE, m_idtr.base);
+	WRITE32(smram_state + SMRAM_IP5_TRLIM, m_task.limit);
+	WRITE32(smram_state + SMRAM_IP5_TRBASE, m_task.base);
+	WRITE32(smram_state + SMRAM_IP5_TRACC, m_task.flags);
 
-	WRITE32(m_sreg[ES].selector, smram_state+SMRAM_ES);
-	WRITE32(m_sreg[CS].selector, smram_state+SMRAM_CS);
-	WRITE32(m_sreg[SS].selector, smram_state+SMRAM_SS);
-	WRITE32(m_sreg[DS].selector, smram_state+SMRAM_DS);
-	WRITE32(m_sreg[FS].selector, smram_state+SMRAM_FS);
-	WRITE32(m_sreg[GS].selector, smram_state+SMRAM_GS);
-	WRITE32(m_ldtr.segment, smram_state+SMRAM_LDTR);
-	WRITE32(m_task.segment, smram_state+SMRAM_TR);
+	WRITE32(smram_state + SMRAM_ES, m_sreg[ES].selector);
+	WRITE32(smram_state + SMRAM_CS, m_sreg[CS].selector);
+	WRITE32(smram_state + SMRAM_SS, m_sreg[SS].selector);
+	WRITE32(smram_state + SMRAM_DS, m_sreg[DS].selector);
+	WRITE32(smram_state + SMRAM_FS, m_sreg[FS].selector);
+	WRITE32(smram_state + SMRAM_GS, m_sreg[GS].selector);
+	WRITE32(smram_state + SMRAM_LDTR, m_ldtr.segment);
+	WRITE32(smram_state + SMRAM_TR, m_task.segment);
 
-	WRITE32(m_dr[7], smram_state+SMRAM_DR7);
-	WRITE32(m_dr[6], smram_state+SMRAM_DR6);
-	WRITE32(REG32(EAX), smram_state+SMRAM_EAX);
-	WRITE32(REG32(ECX), smram_state+SMRAM_ECX);
-	WRITE32(REG32(EDX), smram_state+SMRAM_EDX);
-	WRITE32(REG32(EBX), smram_state+SMRAM_EBX);
-	WRITE32(REG32(ESP), smram_state+SMRAM_ESP);
-	WRITE32(REG32(EBP), smram_state+SMRAM_EBP);
-	WRITE32(REG32(ESI), smram_state+SMRAM_ESI);
-	WRITE32(REG32(EDI), smram_state+SMRAM_EDI);
-	WRITE32(m_eip, smram_state+SMRAM_EIP);
-	WRITE32(old_flags, smram_state+SMRAM_EFLAGS);
-	WRITE32(m_cr[3], smram_state+SMRAM_CR3);
-	WRITE32(old_cr0, smram_state+SMRAM_CR0);
+	WRITE32(smram_state + SMRAM_DR7, m_dr[7]);
+	WRITE32(smram_state + SMRAM_DR6, m_dr[6]);
+	WRITE32(smram_state + SMRAM_EAX, REG32(EAX));
+	WRITE32(smram_state + SMRAM_ECX, REG32(ECX));
+	WRITE32(smram_state + SMRAM_EDX, REG32(EDX));
+	WRITE32(smram_state + SMRAM_EBX, REG32(EBX));
+	WRITE32(smram_state + SMRAM_ESP, REG32(ESP));
+	WRITE32(smram_state + SMRAM_EBP, REG32(EBP));
+	WRITE32(smram_state + SMRAM_ESI, REG32(ESI));
+	WRITE32(smram_state + SMRAM_EDI, REG32(EDI));
+	WRITE32(smram_state + SMRAM_EIP, m_eip);
+	WRITE32(smram_state + SMRAM_EFLAGS, old_flags);
+	WRITE32(smram_state + SMRAM_CR3, m_cr[3]);
+	WRITE32(smram_state + SMRAM_CR0, old_cr0);
 
 	m_sreg[DS].selector = m_sreg[ES].selector = m_sreg[FS].selector = m_sreg[GS].selector = m_sreg[SS].selector = 0;
 	m_sreg[DS].base = m_sreg[ES].base = m_sreg[FS].base = m_sreg[GS].base = m_sreg[SS].base = 0x00000000;
 	m_sreg[DS].limit = m_sreg[ES].limit = m_sreg[FS].limit = m_sreg[GS].limit = m_sreg[SS].limit = 0xffffffff;
 	m_sreg[DS].flags = m_sreg[ES].flags = m_sreg[FS].flags = m_sreg[GS].flags = m_sreg[SS].flags = 0x8093;
-	m_sreg[DS].valid = m_sreg[ES].valid = m_sreg[FS].valid = m_sreg[GS].valid = m_sreg[SS].valid =true;
+	m_sreg[DS].valid = m_sreg[ES].valid = m_sreg[FS].valid = m_sreg[GS].valid = m_sreg[SS].valid = true;
 	m_sreg[CS].selector = 0x3000; // pentium only, ppro sel = smbase >> 4
 	m_sreg[CS].base = m_smbase;
 	m_sreg[CS].limit = 0xffffffff;
@@ -3373,6 +3405,86 @@ static void pentium_smi()
 
 	m_nmi_masked = true;
 	CHANGE_PC(m_eip);
+}
+
+static void leave_smm()
+{
+	UINT32 smram_state = m_smbase + 0xfe00;
+
+	// load state, no sanity checks anywhere
+	m_smbase = READ32(smram_state + SMRAM_SMBASE);
+	m_cr[4] = READ32(smram_state + SMRAM_IP5_CR4);
+	m_sreg[ES].limit = READ32(smram_state + SMRAM_IP5_ESLIM);
+	m_sreg[ES].base = READ32(smram_state + SMRAM_IP5_ESBASE);
+	m_sreg[ES].flags = READ32(smram_state + SMRAM_IP5_ESACC);
+	m_sreg[CS].limit = READ32(smram_state + SMRAM_IP5_CSLIM);
+	m_sreg[CS].base = READ32(smram_state + SMRAM_IP5_CSBASE);
+	m_sreg[CS].flags = READ32(smram_state + SMRAM_IP5_CSACC);
+	m_sreg[SS].limit = READ32(smram_state + SMRAM_IP5_SSLIM);
+	m_sreg[SS].base = READ32(smram_state + SMRAM_IP5_SSBASE);
+	m_sreg[SS].flags = READ32(smram_state + SMRAM_IP5_SSACC);
+	m_sreg[DS].limit = READ32(smram_state + SMRAM_IP5_DSLIM);
+	m_sreg[DS].base = READ32(smram_state + SMRAM_IP5_DSBASE);
+	m_sreg[DS].flags = READ32(smram_state + SMRAM_IP5_DSACC);
+	m_sreg[FS].limit = READ32(smram_state + SMRAM_IP5_FSLIM);
+	m_sreg[FS].base = READ32(smram_state + SMRAM_IP5_FSBASE);
+	m_sreg[FS].flags = READ32(smram_state + SMRAM_IP5_FSACC);
+	m_sreg[GS].limit = READ32(smram_state + SMRAM_IP5_GSLIM);
+	m_sreg[GS].base = READ32(smram_state + SMRAM_IP5_GSBASE);
+	m_sreg[GS].flags = READ32(smram_state + SMRAM_IP5_GSACC);
+	m_ldtr.flags = READ32(smram_state + SMRAM_IP5_LDTACC);
+	m_ldtr.limit = READ32(smram_state + SMRAM_IP5_LDTLIM);
+	m_ldtr.base = READ32(smram_state + SMRAM_IP5_LDTBASE);
+	m_gdtr.limit = READ32(smram_state + SMRAM_IP5_GDTLIM);
+	m_gdtr.base = READ32(smram_state + SMRAM_IP5_GDTBASE);
+	m_idtr.limit = READ32(smram_state + SMRAM_IP5_IDTLIM);
+	m_idtr.base = READ32(smram_state + SMRAM_IP5_IDTBASE);
+	m_task.limit = READ32(smram_state + SMRAM_IP5_TRLIM);
+	m_task.base = READ32(smram_state + SMRAM_IP5_TRBASE);
+	m_task.flags = READ32(smram_state + SMRAM_IP5_TRACC);
+
+	m_sreg[ES].selector = READ32(smram_state + SMRAM_ES);
+	m_sreg[CS].selector = READ32(smram_state + SMRAM_CS);
+	m_sreg[SS].selector = READ32(smram_state + SMRAM_SS);
+	m_sreg[DS].selector = READ32(smram_state + SMRAM_DS);
+	m_sreg[FS].selector = READ32(smram_state + SMRAM_FS);
+	m_sreg[GS].selector = READ32(smram_state + SMRAM_GS);
+	m_ldtr.segment = READ32(smram_state + SMRAM_LDTR);
+	m_task.segment = READ32(smram_state + SMRAM_TR);
+
+	m_dr[7] = READ32(smram_state + SMRAM_DR7);
+	m_dr[6] = READ32(smram_state + SMRAM_DR6);
+	REG32(EAX) = READ32(smram_state + SMRAM_EAX);
+	REG32(ECX) = READ32(smram_state + SMRAM_ECX);
+	REG32(EDX) = READ32(smram_state + SMRAM_EDX);
+	REG32(EBX) = READ32(smram_state + SMRAM_EBX);
+	REG32(ESP) = READ32(smram_state + SMRAM_ESP);
+	REG32(EBP) = READ32(smram_state + SMRAM_EBP);
+	REG32(ESI) = READ32(smram_state + SMRAM_ESI);
+	REG32(EDI) = READ32(smram_state + SMRAM_EDI);
+	m_eip = READ32(smram_state + SMRAM_EIP);
+	m_eflags = READ32(smram_state + SMRAM_EFLAGS);
+	m_cr[3] = READ32(smram_state + SMRAM_CR3);
+	m_cr[0] = READ32(smram_state + SMRAM_CR0);
+
+	m_CPL = (m_sreg[SS].flags >> 13) & 3; // cpl == dpl of ss
+
+	for (int i = 0; i <= GS; i++)
+	{
+		if (PROTECTED_MODE && !V8086_MODE)
+		{
+			m_sreg[i].valid = m_sreg[i].selector ? true : false;
+			m_sreg[i].d = (m_sreg[i].flags & 0x4000) ? 1 : 0;
+		}
+		else
+			m_sreg[i].valid = true;
+	}
+
+//	m_smiact(false);
+	m_smm = false;
+
+	CHANGE_PC(m_eip);
+	m_nmi_masked = false;
 }
 
 static void i386_set_irq_line(int irqline, int state)
@@ -3391,7 +3503,7 @@ static void i386_set_irq_line(int irqline, int state)
 			return;
 		}
 		if ( state )
-			i386_trap(2, 1, 0);
+			i386_trap(2, 1);
 	}
 	else
 	{
@@ -3451,6 +3563,38 @@ static CPU_EXECUTE( i386 )
 		}
 #endif
 		i386_check_irq_line();
+
+#if 0
+		// The LE and GE bits of DR7 aren't currently implemented because they could potentially require cycle-accurate emulation.
+		if((m_dr[7] & 0xff) != 0) // If all of the breakpoints are disabled, skip checking for instruction breakpoint hitting entirely.
+		for(int i = 0; i < 4; i++)
+		{
+			bool dri_enabled = (m_dr[7] & (1 << ((i << 1) + 1))) || (m_dr[7] & (1 << (i << 1))); // Check both local AND global enable bits for this breakpoint.
+			if(dri_enabled && !m_RF)
+			{
+				int breakpoint_type = (m_dr[7] >> (i << 2)) & 3;
+				int breakpoint_length = (m_dr[7] >> ((i << 2) + 2)) & 3;
+				if(breakpoint_type == 0)
+				{
+					UINT32 phys_addr = 0;
+					UINT32 error;
+					phys_addr = (m_cr[0] & CR0_PG) ? translate_address(m_CPL, TR_FETCH, &m_dr[i], &error) : m_dr[i];
+					if(breakpoint_length != 0) // Not one byte in length? logerror it, I have no idea how this works on real processors.
+					{
+						logerror("i386: Breakpoint length not 1 byte on an instruction breakpoint\n");
+					}
+					if(m_pc == phys_addr)
+					{
+						// The processor never automatically clears bits in DR6. It only sets them.
+						m_dr[6] |= 1 << i;
+						i386_trap(1,0);
+						break;
+					}
+				}
+			}
+		}
+#endif
+
 		m_operand_size = m_sreg[CS].d;
 		m_xmm_operand_size = 0;
 		m_address_size = m_sreg[CS].d;
@@ -3463,14 +3607,14 @@ static CPU_EXECUTE( i386 )
 		m_segment_prefix = 0;
 #ifdef USE_DEBUGGER
 		UINT32 address = m_pc;
-		translate_address(m_CPL, TRANSLATE_FETCH, &address, NULL);
+		translate_address(m_CPL, TR_FETCH, &address, NULL);
 		add_cpu_trace(address, m_sreg[CS].selector, m_eip, m_operand_size);
 		m_prev_pc = m_pc;
 		m_prev_cs = m_sreg[CS].selector;
 #endif
 		m_prev_eip = m_eip;
 
-//		debugger_instruction_hook(device, m_pc);
+//		debugger_instruction_hook(m_pc);
 
 		if(m_delayed_interrupt_enable != 0)
 		{
@@ -3480,6 +3624,8 @@ static CPU_EXECUTE( i386 )
 #ifdef DEBUG_MISSING_OPCODE
 		m_opcode_bytes_length = 0;
 		m_opcode_pc = m_pc;
+		m_opcode_addrs[m_opcode_addrs_index] = m_opcode_pc;
+		m_opcode_addrs_index = (m_opcode_addrs_index + 1) & 15;
 #endif
 		try
 		{
@@ -3491,7 +3637,8 @@ static CPU_EXECUTE( i386 )
 #endif
 				m_prev_eip = m_eip;
 				m_ext = 1;
-				i386_trap(1,0,0);
+				m_dr[6] |= (1 << 14); //Set BS bit of DR6.
+				i386_trap(1,0);
 			}
 			if(m_lock && (m_opcode != 0xf0))
 				m_lock = false;
@@ -3501,6 +3648,8 @@ static CPU_EXECUTE( i386 )
 			m_ext = 1;
 			i386_trap_with_error(e&0xffffffff,0,0,e>>32);
 		}
+		if(m_RF && m_auto_clear_RF) m_RF = 0;
+		if(!m_auto_clear_RF) m_auto_clear_RF = true;
 #ifdef USE_DEBUGGER
 		if(now_debugging) {
 			if(!now_going) {
@@ -3520,7 +3669,7 @@ static CPU_TRANSLATE( i386 )
 {
 	int ret = TRUE;
 	if(space == AS_PROGRAM)
-		ret = i386_translate_address(intention, address, NULL);
+		ret = i386_translate_address(intention, false, address, NULL);
 	*address &= m_a20_mask;
 	return ret;
 }
@@ -3535,8 +3684,10 @@ static CPU_INIT( i486 )
 
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486);
 	build_x87_opcode_table();
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_I486];
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_I486];
+#endif
 }
 
 static CPU_RESET( i486 )
@@ -3591,8 +3742,10 @@ static CPU_INIT( pentium )
 
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM);
 	build_x87_opcode_table();
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];
+#endif
 }
 
 static CPU_RESET( pentium )
@@ -3663,8 +3816,10 @@ static CPU_INIT( mediagx )
 
 	build_x87_opcode_table();
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_CYRIX);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_MEDIAGX];
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_MEDIAGX];
+#endif
 }
 
 static CPU_RESET( mediagx )
@@ -3727,8 +3882,10 @@ static CPU_INIT( pentium_pro )
 
 	build_x87_opcode_table();
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_PPRO);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
+#endif
 }
 
 static CPU_RESET( pentium_pro )
@@ -3800,8 +3957,10 @@ static CPU_INIT( pentium_mmx )
 
 	build_x87_opcode_table();
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_MMX);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
+#endif
 }
 
 static CPU_RESET( pentium_mmx )
@@ -3872,8 +4031,10 @@ static CPU_INIT( pentium2 )
 
 	build_x87_opcode_table();
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_PPRO | OP_MMX);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
+#endif
 }
 
 static CPU_RESET( pentium2 )
@@ -3937,9 +4098,11 @@ static CPU_INIT( pentium3 )
 	i386_common_init(96);
 
 	build_x87_opcode_table();
-	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_PPRO | OP_MMX | OP_SSE);
+	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_PPRO | OP_MMX | OP_SSE | OP_PENTIUM3);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
+#endif
 }
 
 static CPU_RESET( pentium3 )
@@ -3990,8 +4153,11 @@ static CPU_RESET( pentium3 )
 
 	// [ 0:0] FPU on chip
 	// [ 4:4] Time Stamp Counter
+	// [ 8:8] CMPXCHG8B instruction
 	// [ D:D] PTE Global Bit
-	m_feature_flags = 0x00002011;       // TODO: enable relevant flags here
+	// [15:15] CMOV and FCMOV
+	// [18:18] PSN (Processor Serial Number, P3 only)
+	m_feature_flags = 0x0004a111;       // TODO: enable relevant flags here
 
 	CHANGE_PC(m_eip);
 }
@@ -4006,8 +4172,10 @@ static CPU_INIT( pentium4 )
 
 	build_x87_opcode_table();
 	build_opcode_table(OP_I386 | OP_FPU | OP_I486 | OP_PENTIUM | OP_PPRO | OP_MMX | OP_SSE | OP_SSE2);
+#ifdef SUPPORT_RDTSC
 	m_cycle_table_rm = cycle_table_rm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
 	m_cycle_table_pm = cycle_table_pm[CPU_CYCLES_PENTIUM];  // TODO: generate own cycle tables
+#endif
 }
 
 static CPU_RESET( pentium4 )
@@ -4060,7 +4228,9 @@ static CPU_RESET( pentium4 )
 	m_cpu_version = REG32(EDX);
 
 	// [ 0:0] FPU on chip
-	m_feature_flags = 0x00000001;       // TODO: enable relevant flags here
+	// [ 8:8] CMPXCHG8B instruction
+	// [15:15] CMOV and FCMOV
+	m_feature_flags = 0x00008101;       // TODO: enable relevant flags here
 
 	CHANGE_PC(m_eip);
 }

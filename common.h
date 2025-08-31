@@ -498,6 +498,7 @@ typedef struct {
 } cpu_trace_t;
 
 void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32);
+bool in_iret_table(int num);
 #endif
 
 #endif

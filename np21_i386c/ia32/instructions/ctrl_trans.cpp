@@ -41,6 +41,11 @@
 /*
  * MS-DOS Player
  */
+#ifdef USE_DEBUGGER
+extern bool now_debugging;
+extern bool now_suspended;
+extern int_break_point_t int_break_point;
+#endif
 extern UINT32 CPU_PREV_PC;
 extern UINT32 IRET_TOP;
 extern unsigned msdos_stat;
@@ -1347,6 +1352,20 @@ IRET(void)
 		msdos_int_num = (CPU_PREV_PC - IRET_TOP);
 //		msdos_stat |= REQ_SYSCALL;
 		msdos_stat |= 2;
+#ifdef USE_DEBUGGER
+		if(now_debugging) {
+			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+				if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == msdos_int_num) {
+					if((int_break_point.table[i].ah == CPU_AH || int_break_point.table[i].ah_registered == 0) &&
+					   (int_break_point.table[i].al == CPU_AL || int_break_point.table[i].al_registered == 0)) {
+						int_break_point.hit = i + 1;
+						now_suspended = true;
+						break;
+					}
+				}
+			}
+		}
+#endif
 	}
 }
 

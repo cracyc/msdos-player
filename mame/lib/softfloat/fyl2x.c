@@ -34,14 +34,15 @@ these four paragraphs for those parts of this code that are retained.
 
 static const floatx80 floatx80_log10_2 = packFloatx80(0, 0x3ffd, U64(0x9a209a84fbcff798));
 static const floatx80 floatx80_ln_2 = packFloatx80(0, 0x3ffe, U64(0xb17217f7d1cf79ac));
-static const floatx80 floatx80_one = packFloatx80(0, 0x3fff, U64(0x8000000000000000));
-static const floatx80 floatx80_default_nan = packFloatx80(0, 0xffff, U64(0xffffffffffffffff));
+//static const floatx80 floatx80_one = packFloatx80(0, 0x3fff, U64(0x8000000000000000));
+//static const floatx80 floatx80_default_nan = packFloatx80(0, 0xffff, U64(0xffffffffffffffff));
 
 #define packFloat_128(zHi, zLo) {(zHi), (zLo)}
-#define PACK_FLOAT_128(hi,lo) packFloat_128(LIT64(hi),LIT64(lo))
+//#define PACK_FLOAT_128(hi,lo) packFloat_128(LIT64(hi),LIT64(lo))
 
 #define EXP_BIAS 0x3FFF
 
+#if 0
 /*----------------------------------------------------------------------------
 | Returns the fraction bits of the extended double-precision floating-point
 | value `a'.
@@ -115,6 +116,7 @@ INLINE int floatx80_is_nan(floatx80 a)
 {
 	return ((a.high & 0x7FFF) == 0x7FFF) && (INT64) (a.low<<1);
 }
+#endif
 
 /*----------------------------------------------------------------------------
 | Takes two extended double-precision floating-point values `a' and `b', one
@@ -122,7 +124,7 @@ INLINE int floatx80_is_nan(floatx80 a)
 | `b' is a signaling NaN, the invalid exception is raised.
 *----------------------------------------------------------------------------*/
 
-static floatx80 propagateFloatx80NaN(floatx80 a, floatx80 b)
+static floatx80 propagateFloatx80NaN_fyl2x(floatx80 a, floatx80 b)
 {
 	int aIsNaN = floatx80_is_nan(a);
 	int aIsSignalingNaN = floatx80_is_signaling_nan(a);
@@ -147,8 +149,8 @@ static floatx80 propagateFloatx80NaN(floatx80 a, floatx80 b)
 	}
 }
 
-static const float128 float128_one =
-	packFloat_128(U64(0x3fff000000000000), U64(0x0000000000000000));
+//static const float128 float128_one =
+//	packFloat_128(U64(0x3fff000000000000), U64(0x0000000000000000));
 static const float128 float128_two =
 	packFloat_128(U64(0x4000000000000000), U64(0x0000000000000000));
 
@@ -249,7 +251,7 @@ static float128 poly_l2p1(float128 x)
 //       1-u             3     5     7           2n+1
 //
 
-static floatx80 fyl2x(floatx80 a, floatx80 b)
+floatx80 fyl2x(floatx80 a, floatx80 b)
 {
 	UINT64 aSig = extractFloatx80Frac(a);
 	INT32 aExp = extractFloatx80Exp(a);
@@ -264,7 +266,7 @@ static floatx80 fyl2x(floatx80 a, floatx80 b)
 		if ((UINT64) (aSig<<1)
 				|| ((bExp == 0x7FFF) && (UINT64) (bSig<<1)))
 		{
-			return propagateFloatx80NaN(a, b);
+			return propagateFloatx80NaN_fyl2x(a, b);
 		}
 		if (aSign)
 		{
@@ -282,7 +284,7 @@ invalid:
 	}
 	if (bExp == 0x7FFF)
 	{
-		if ((UINT64) (bSig<<1)) return propagateFloatx80NaN(a, b);
+		if ((UINT64) (bSig<<1)) return propagateFloatx80NaN_fyl2x(a, b);
 		if (aSign && (UINT64)(aExp | aSig)) goto invalid;
 		if (aSig && (aExp == 0))
 			float_raise(float_flag_denormal);
@@ -378,7 +380,7 @@ floatx80 fyl2xp1(floatx80 a, floatx80 b)
 		if ((UINT64) (aSig<<1)
 				|| ((bExp == 0x7FFF) && (UINT64) (bSig<<1)))
 		{
-			return propagateFloatx80NaN(a, b);
+			return propagateFloatx80NaN_fyl2x(a, b);
 		}
 		if (aSign)
 		{
@@ -397,7 +399,7 @@ invalid:
 	if (bExp == 0x7FFF)
 	{
 		if ((UINT64) (bSig<<1))
-			return propagateFloatx80NaN(a, b);
+			return propagateFloatx80NaN_fyl2x(a, b);
 
 		if (aExp == 0) {
 			if (aSig == 0) goto invalid;

@@ -801,6 +801,7 @@ static void I386OP(iret16)()            // Opcode 0xcf
 		i386_load_segment_descriptor(CS);
 		CHANGE_PC(m_eip);
 	}
+	m_auto_clear_RF = false;
 	CYCLES(CYCLES_IRET);
 
 	// Emulate system call on MS-DOS Player
@@ -1232,9 +1233,9 @@ static void I386OP(lodsw)()             // Opcode 0xad
 {
 	UINT32 eas;
 	if( m_segment_prefix ) {
-		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
+		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2);
 	} else {
-		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
+		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2);
 	}
 	REG16(AX) = READ16(eas);
 	BUMP_SI(2);
@@ -1431,11 +1432,11 @@ static void I386OP(movsw)()             // Opcode 0xa5
 	UINT32 eas, ead;
 	UINT16 v;
 	if( m_segment_prefix ) {
-		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
+		eas = i386_translate(m_segment_override, m_address_size ? REG32(ESI) : REG16(SI), 0, 2);
 	} else {
-		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2 );
+		eas = i386_translate(DS, m_address_size ? REG32(ESI) : REG16(SI), 0, 2);
 	}
-	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1, 2 );
+	ead = i386_translate(ES, m_address_size ? REG32(EDI) : REG16(DI), 1, 2);
 	v = READ16(eas);
 	WRITE16(ead, v);
 	BUMP_SI(2);
@@ -1689,9 +1690,9 @@ static void I386OP(pop_rm16)()          // Opcode 0x8f
 		if( modrm >= 0xc0 ) {
 			STORE_RM16(modrm, value);
 		} else {
-			ea = GetEA(modrm,1,2);
 			try
 			{
+				ea = GetEA(modrm,1,2);
 				WRITE16(ea, value);
 			}
 			catch(UINT64 e)
@@ -1760,6 +1761,8 @@ static void I386OP(popf)()              // Opcode 0x9d
 	else
 		FAULT(FAULT_SS,0)
 	CYCLES(CYCLES_POPF);
+
+	m_auto_clear_RF = false;
 }
 
 static void I386OP(push_ax)()           // Opcode 0x50
@@ -2099,12 +2102,18 @@ static void I386OP(shld16_i8)()         // Opcode 0x0f a4
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
+			// ppro and above should be (dst >> (32-shift))
+			dst = (upper << (shift-16)) | (upper >> (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & 1) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
 			}
 			dst = (upper << (shift-16)) | (dst >> (32-shift));
+#endif
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2123,12 +2132,17 @@ static void I386OP(shld16_i8)()         // Opcode 0x0f a4
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
+			dst = (upper << (shift-16)) | (upper >> (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & 1) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
 			}
 			dst = (upper << (shift-16)) | (dst >> (32-shift));
+#endif
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2152,12 +2166,17 @@ static void I386OP(shld16_cl)()         // Opcode 0x0f a5
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
+			dst = (upper << (shift-16)) | (upper >> (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & 1) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
 			}
 			dst = (upper << (shift-16)) | (dst >> (32-shift));
+#endif
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2176,12 +2195,17 @@ static void I386OP(shld16_cl)()         // Opcode 0x0f a5
 		shift &= 31;
 		if( shift == 0 ) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (16-shift))) ? 1 : 0;
+			dst = (upper << (shift-16)) | (upper >> (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & 1) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (32-shift))) ? 1 : 0;
 			}
 			dst = (upper << (shift-16)) | (dst >> (32-shift));
+#endif
 			m_OF = m_CF ^ (dst >> 15);
 			SetSZPF16(dst);
 		} else {
@@ -2205,12 +2229,17 @@ static void I386OP(shrd16_i8)()         // Opcode 0x0f ac
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
+			dst = (upper >> (shift-16)) | (upper << (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & (1 << 15)) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
 			}
 			dst = (upper >> (shift-16)) | (dst << (32-shift));
+#endif
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2229,12 +2258,17 @@ static void I386OP(shrd16_i8)()         // Opcode 0x0f ac
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
+			dst = (upper >> (shift-16)) | (upper << (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & (1 << 15)) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
 			}
 			dst = (upper >> (shift-16)) | (dst << (32-shift));
+#endif
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2258,12 +2292,17 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
+			dst = (upper >> (shift-16)) | (upper << (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & (1 << 15)) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
 			}
 			dst = (upper >> (shift-16)) | (dst << (32-shift));
+#endif
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2282,12 +2321,17 @@ static void I386OP(shrd16_cl)()         // Opcode 0x0f ad
 		shift &= 31;
 		if( shift == 0) {
 		} else if( shift > 15 ) {
+#if 0
+			m_CF = (upper & (1 << (shift-1))) ? 1 : 0;
+			dst = (upper >> (shift-16)) | (upper << (32-shift));
+#else
 			if( shift == 16 ) {
 				m_CF = (dst & (1 << 15)) ? 1 : 0;
 			} else {
 				m_CF = (upper & (1 << (shift-17))) ? 1 : 0;
 			}
 			dst = (upper >> (shift-16)) | (dst << (32-shift));
+#endif
 			m_OF = ((dst >> 15) ^ (dst >> 14)) & 1;
 			SetSZPF16(dst);
 		} else {
@@ -2980,7 +3024,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 							m_CF = 1;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -3001,7 +3045,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 				if( src ) {
 					remainder = quotient % (INT32)(INT16)src;
 					result = quotient / (INT32)(INT16)src;
-					if( result > 0xffff ) {
+					if( result > 0x7fff || result < -0x8000 ) {
 						/* TODO: Divide error */
 					} else {
 						REG16(DX) = (UINT16)remainder;
@@ -3012,7 +3056,7 @@ static void I386OP(groupF7_16)()        // Opcode 0xf7
 							m_CF = 1;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -3186,7 +3230,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 		case 1:         /* STR */
@@ -3203,7 +3247,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 		case 2:         /* LLDT */
@@ -3229,7 +3273,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 
@@ -3252,7 +3296,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 				i386_load_protected_mode_segment(&seg,NULL);
 
 				UINT32 addr = ((seg.selector & 4) ? m_ldtr.base : m_gdtr.base) + (seg.selector & ~7) + 5;
-				i386_translate_address(TRANSLATE_READ, &addr, NULL);
+				i386_translate_address(TR_READ, false, &addr, NULL);
 				write_byte(addr, (seg.flags & 0xff) | 2);
 
 				m_task.limit = seg.limit;
@@ -3261,7 +3305,7 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 			}
 			break;
 
@@ -3297,23 +3341,22 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 							if(!(seg.flags & 0x04))
 							{
 								// if not conforming, then we must check privilege levels
-								if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+								if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 									result = 0;
 							}
 						}
 					}
 					else
 					{
-						if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+						if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 							result = 0;
 					}
-
 				}
 				SetZF(result);
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 				logerror("i386: VERR: Exception - Running in real mode or virtual 8086 mode.\n");
 			}
 			break;
@@ -3349,13 +3392,13 @@ static void I386OP(group0F00_16)()          // Opcode 0x0f 00
 							result = 0;
 					}
 				}
-				if(((seg.flags >> 5) & 0x03) < max(m_CPL, address & 0x03))
+				if(((seg.flags >> 5) & 0x03) < max(m_CPL, (UINT8)(address & 0x03)))
 					result = 0;
 				SetZF(result);
 			}
 			else
 			{
-				i386_trap(6, 0, 0);
+				i386_trap(6, 0);
 				logerror("i386: VERW: Exception - Running in real mode or virtual 8086 mode.\n");
 			}
 			break;
@@ -3655,7 +3698,7 @@ static void I386OP(lar_r16_rm16)()  // Opcode 0x0f 0x02
 	else
 	{
 		// illegal opcode
-		i386_trap(6,0, 0);
+		i386_trap(6,0);
 		logerror("i386: LAR: Exception - running in real mode or virtual 8086 mode.\n");
 	}
 }
@@ -3720,7 +3763,7 @@ static void I386OP(lsl_r16_rm16)()  // Opcode 0x0f 0x03
 		}
 	}
 	else
-		i386_trap(6, 0, 0);
+		i386_trap(6, 0);
 }
 
 static void I386OP(bound_r16_m16_m16)() // Opcode 0x62
@@ -3745,7 +3788,7 @@ static void I386OP(bound_r16_m16_m16)() // Opcode 0x62
 	if ((val < low) || (val > high))
 	{
 		CYCLES(CYCLES_BOUND_OUT_RANGE);
-		i386_trap(5, 0, 0);
+		i386_trap(5, 0);
 	}
 	else
 	{
@@ -3798,7 +3841,7 @@ static bool I386OP(load_far_pointer16)(int s)
 
 	if( modrm >= 0xc0 ) {
 		//logerror("i386: load_far_pointer16 NYI\n"); // don't log, NT will use this a lot
-		i386_trap(6, 0, 0);
+		i386_trap(6, 0);
 		return false;
 	} else {
 		UINT32 ea = GetEA(modrm,0,4);

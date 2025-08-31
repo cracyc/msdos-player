@@ -17,6 +17,7 @@
 #ifndef INLINE
 #define INLINE inline
 #endif
+#define S64(v) INT64(v)
 #define U64(v) UINT64(v)
 
 #ifdef _MSC_VC6
@@ -75,8 +76,9 @@ void popmessage(const char *format, ...)
 const UINT32 DASMFLAG_SUPPORTED     = 0x80000000;   // are disassembly flags supported?
 const UINT32 DASMFLAG_STEP_OUT      = 0x40000000;   // this instruction should be the end of a step out sequence
 const UINT32 DASMFLAG_STEP_OVER     = 0x20000000;   // this instruction should be stepped over by setting a breakpoint afterwards
-const UINT32 DASMFLAG_OVERINSTMASK  = 0x18000000;   // number of extra instructions to skip when stepping over
-const UINT32 DASMFLAG_OVERINSTSHIFT = 27;           // bits to shift after masking to get the value
+const UINT32 DASMFLAG_STEP_COND     = 0x10000000;   // this instruction should be stepped over by setting a breakpoint afterwards
+const UINT32 DASMFLAG_OVERINSTMASK  = 0x0c000000;   // number of extra instructions to skip when stepping over
+const UINT32 DASMFLAG_OVERINSTSHIFT = 26;           // bits to shift after masking to get the value
 const UINT32 DASMFLAG_LENGTHMASK    = 0x0000ffff;   // the low 16-bits contain the actual length
 
 /*****************************************************************************/
@@ -100,21 +102,25 @@ enum
 
 /*****************************************************************************/
 /* src/emu/dimemory.h */
+/* src/emu/divtlb.h */
 
 // Translation intentions
-const int TRANSLATE_TYPE_MASK       = 0x03;     // read write or fetch
-const int TRANSLATE_USER_MASK       = 0x04;     // user mode or fully privileged
-const int TRANSLATE_DEBUG_MASK      = 0x08;     // debug mode (no side effects)
+enum
+{
+	TR_READ  = 0,	// translate for read
+	TR_WRITE = 1,	// translate for write
+	TR_FETCH = 2	// translate for instruction fetch
+};
 
-const int TRANSLATE_READ            = 0;        // translate for read
-const int TRANSLATE_WRITE           = 1;        // translate for write
-const int TRANSLATE_FETCH           = 2;        // translate for instruction fetch
-const int TRANSLATE_READ_USER       = (TRANSLATE_READ | TRANSLATE_USER_MASK);
-const int TRANSLATE_WRITE_USER      = (TRANSLATE_WRITE | TRANSLATE_USER_MASK);
-const int TRANSLATE_FETCH_USER      = (TRANSLATE_FETCH | TRANSLATE_USER_MASK);
-const int TRANSLATE_READ_DEBUG      = (TRANSLATE_READ | TRANSLATE_DEBUG_MASK);
-const int TRANSLATE_WRITE_DEBUG     = (TRANSLATE_WRITE | TRANSLATE_DEBUG_MASK);
-const int TRANSLATE_FETCH_DEBUG     = (TRANSLATE_FETCH | TRANSLATE_DEBUG_MASK);
+enum
+{
+	TR_UREAD  = 4,	// TR_USER | TR_READ
+	TR_UWRITE = 5,	// TR_USER | TR_WRITE
+	TR_UFETCH = 6,	// TR_USER | TR_FETCH
+
+	TR_TYPE   = 3,	// read write or fetch
+	TR_USER   = 4	// user mode or fully privileged
+};
 
 /*****************************************************************************/
 /* src/emu/emucore.h */
@@ -193,6 +199,9 @@ typedef UINT32	offs_t;
 static CPU_TRANSLATE(i386);
 #include "mame/lib/softfloat/softfloat.c"
 #include "mame/lib/softfloat/fsincos.c"
+#include "mame/lib/softfloat/fpatan.c"
+#include "mame/lib/softfloat/f2xm1.c"
+#include "mame/lib/softfloat/fyl2x.c"
 #include "mame/emu/cpu/i386/i386.c"
 #include "mame/emu/cpu/vtlb.c"
 
@@ -462,7 +471,7 @@ void CPU_EXECUTE()
 void CPU_SOFT_INTERRUPT(int irq)
 {
 	m_ext = 0; // not an external interrupt
-	i386_trap(irq, 1, 0);
+	i386_trap(irq, 1);
 	m_ext = 1;
 }
 
@@ -566,7 +575,7 @@ void CPU_LOAD_TR(UINT16 selector)
 
 UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 {
-	translate_address(0, TRANSLATE_READ, &addr, NULL);
+	translate_address(0, TR_READ, &addr, NULL);
 	return addr;
 }
 
@@ -578,7 +587,7 @@ UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 		desc.selector = seg;
 		i386_load_protected_mode_segment(&desc, NULL);
 		UINT32 addr = desc.base + ofs;
-		translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+		translate_address(m_CPL, TR_FETCH, &addr, NULL);
 		return addr;
 	}
 	return (seg << 4) + ofs;
@@ -588,14 +597,14 @@ UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 UINT32 CPU_GET_PREV_PC()
 {
 	UINT32 addr = m_prev_pc;
-	translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+	translate_address(m_CPL, TR_FETCH, &addr, NULL);
 	return addr;
 }
 
 UINT32 CPU_GET_NEXT_PC()
 {
 	UINT32 addr = m_pc;
-	translate_address(m_CPL, TRANSLATE_FETCH, &addr, NULL);
+	translate_address(m_CPL, TR_FETCH, &addr, NULL);
 	return addr;
 }
 #endif

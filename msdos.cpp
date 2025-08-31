@@ -853,6 +853,18 @@ void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32)
 		cpu_trace_ptr = (cpu_trace_ptr + 1) & (MAX_CPU_TRACE - 1);
 	}
 }
+
+bool in_iret_table(int num)
+{
+	// check if interrupt vector aims iret in the table
+	for(int i = 0; i < 256; i++) {
+		if(*(UINT16 *)(mem + 4 * num + 0) == (num <= 0x3f || (num >= 0x70 && num <= 0x77)) ? (IRET_SIZE + 5 * num) : num &&
+		   *(UINT16 *)(mem + 4 * num + 2) == (IRET_TOP >> 4)) {
+			return true;
+		}
+	}
+	return false;
+}
 #endif
 
 #ifdef LITTLEENDIAN
@@ -3084,9 +3096,13 @@ void debugger_main()
 const char *debugger_get_ttermpro_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("ProgramFiles");
 	
-	if(getenv("ProgramFiles")) {
-		sprintf(path, "%s\\teraterm\\ttermpro.exe", getenv("ProgramFiles"));
+	if(env != NULL) {
+		sprintf(path, "%s\\teraterm5\\ttermpro.exe", env);
+		if(_access(path, 0) != 0) {
+			sprintf(path, "%s\\teraterm\\ttermpro.exe", env);
+		}
 	}
 	return(path);
 }
@@ -3094,9 +3110,13 @@ const char *debugger_get_ttermpro_path()
 const char *debugger_get_ttermpro_x86_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("ProgramFiles(x86)");
 	
-	if(getenv("ProgramFiles(x86)")) {
-		sprintf(path, "%s\\teraterm\\ttermpro.exe", getenv("ProgramFiles(x86)"));
+	if(env != NULL) {
+		sprintf(path, "%s\\teraterm5\\ttermpro.exe", env);
+		if(_access(path, 0) != 0) {
+			sprintf(path, "%s\\teraterm\\ttermpro.exe", env);
+		}
 	}
 	return(path);
 }
@@ -3104,9 +3124,10 @@ const char *debugger_get_ttermpro_x86_path()
 const char *debugger_get_putty_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("ProgramFiles");
 	
-	if(getenv("ProgramFiles")) {
-		sprintf(path, "%s\\PuTTY\\putty.exe", getenv("ProgramFiles"));
+	if(env != NULL) {
+		sprintf(path, "%s\\PuTTY\\putty.exe", env);
 	}
 	return(path);
 }
@@ -3114,9 +3135,10 @@ const char *debugger_get_putty_path()
 const char *debugger_get_putty_x86_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("ProgramFiles(x86)");
 	
-	if(getenv("ProgramFiles(x86)")) {
-		sprintf(path, "%s\\PuTTY\\putty.exe", getenv("ProgramFiles(x86)"));
+	if(env != NULL) {
+		sprintf(path, "%s\\PuTTY\\putty.exe", env);
 	}
 	return(path);
 }
@@ -3124,13 +3146,14 @@ const char *debugger_get_putty_x86_path()
 const char *debugger_get_telnet_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("windir");
 	
-	if(getenv("windir") != NULL) {
+	if(env != NULL) {
 #ifdef _WIN64
-		sprintf(path, "%s\\System32\\telnet.exe", getenv("windir"));
+		sprintf(path, "%s\\System32\\telnet.exe", env);
 #else
 		// prevent System32 is redirected to SysWOW64 in 32bit process on Windows x64
-		sprintf(path, "%s\\Sysnative\\telnet.exe", getenv("windir"));
+		sprintf(path, "%s\\Sysnative\\telnet.exe", env);
 #endif
 	}
 	return(path);
@@ -3139,13 +3162,14 @@ const char *debugger_get_telnet_path()
 const char *debugger_get_telnet_x86_path()
 {
 	static char path[MAX_PATH] = {0};
+	char *env = getenv("windir");
 	
-	if(getenv("windir") != NULL) {
+	if(env != NULL) {
 #ifdef _WIN64
-		sprintf(path, "%s\\SysWOW64\\telnet.exe", getenv("windir"));
+		sprintf(path, "%s\\SysWOW64\\telnet.exe", env);
 #else
 		// System32 will be redirected to SysWOW64 in 32bit process on Windows x64
-		sprintf(path, "%s\\System32\\telnet.exe", getenv("windir"));
+		sprintf(path, "%s\\System32\\telnet.exe", env);
 #endif
 	}
 	return(path);
@@ -3183,22 +3207,23 @@ DWORD WINAPI debugger_thread(LPVOID)
 			
 			listen(svr_socket, 1);
 			
+			const char *path = NULL;
 			char command[MAX_PATH] = {0};
 			STARTUPINFOA si;
 			PROCESS_INFORMATION pi;
 			
-			if(_access(debugger_get_ttermpro_path(), 0) == 0) {
-				sprintf(command, "%s localhost:%d /T=1", debugger_get_ttermpro_path(), port);
-			} else if(_access(debugger_get_ttermpro_x86_path(), 0) == 0) {
-				sprintf(command, "%s localhost:%d /T=1", debugger_get_ttermpro_x86_path(), port);
-			} else if(_access(debugger_get_putty_path(), 0) == 0) {
-				sprintf(command, "%s -telnet localhost %d", debugger_get_putty_path(), port);
-			} else if(_access(debugger_get_putty_x86_path(), 0) == 0) {
-				sprintf(command, "%s -telnet localhost %d", debugger_get_putty_x86_path(), port);
-			} else if(_access(debugger_get_telnet_path(), 0) == 0) {
-				sprintf(command, "%s -t vt100 localhost %d", debugger_get_telnet_path(), port);
-			} else if(_access(debugger_get_telnet_x86_path(), 0) == 0) {
-				sprintf(command, "%s -t vt100 localhost %d", debugger_get_telnet_x86_path(), port);
+			if((path = debugger_get_ttermpro_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s localhost:%d /T=1", path, port);
+			} else if((path = debugger_get_ttermpro_x86_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s localhost:%d /T=1", path, port);
+			} else if((path = debugger_get_putty_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s -telnet localhost %d", path, port);
+			} else if((path = debugger_get_putty_x86_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s -telnet localhost %d", path, port);
+			} else if((path = debugger_get_telnet_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s -t vt100 localhost %d", path, port);
+			} else if((path = debugger_get_telnet_x86_path()) != NULL && _access(path, 0) == 0) {
+				sprintf(command, "%s -t vt100 localhost %d", path, port);
 			}
 			if(command[0] != '\0') {
 				memset(&si, 0, sizeof(STARTUPINFOA));
@@ -8148,14 +8173,14 @@ int win32_exec(char *command)
 {
 	HANDLE hstdout_r;
 	HANDLE hstdout_w;
-	STARTUPINFO si = {0};
+	STARTUPINFOA si = {0};
 	SECURITY_ATTRIBUTES sa = {0};
 	PROCESS_INFORMATION pi = {0};
 	DWORD retcode = 0;
 	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
 	sa.bInheritHandle = TRUE;
 	if(CreatePipe(&hstdout_r, &hstdout_w, &sa, 0)) {
-		si.cb = sizeof(STARTUPINFO);
+		si.cb = sizeof(STARTUPINFOA);
 		si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 		si.hStdOutput = hstdout_w;
 		si.hStdError = hstdout_w;
@@ -9350,6 +9375,13 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	
 	psp_t *psp = (psp_t *)(mem + (psp_seg << 4));
 	
+	if(psp->int_22h.dw == 0) {
+		// jump to ffff:0000 to exit MS-DOS Player if int 22h address is null
+		// this situation may occur if the current psp address was changed
+		// but int 22h address in the new psp may not have been set
+		psp->int_22h.w.l = 0x0000;
+		psp->int_22h.w.h = 0xffff;
+	}
 	*(UINT32 *)(mem + 4 * 0x22) = psp->int_22h.dw;
 	*(UINT32 *)(mem + 4 * 0x23) = psp->int_23h.dw;
 	*(UINT32 *)(mem + 4 * 0x24) = psp->int_24h.dw;

@@ -720,19 +720,28 @@ static void I386OP(mov_dr_r32)()        // Opcode 0x0f 23
 	UINT8 modrm = FETCH();
 	UINT8 dr = (modrm >> 3) & 0x7;
 
-	m_dr[dr] = LOAD_RM32(modrm);
+	UINT32 rm32 = LOAD_RM32(modrm);
 	switch(dr)
 	{
 		case 0:
 		case 1:
 		case 2:
 		case 3:
+		{
+			m_dr[dr] = rm32;
+//			dri_changed();
 			CYCLES(CYCLES_MOV_DR0_3_REG);
 			break;
-		case 6:
+		}
+		case 6: CYCLES(CYCLES_MOV_DR6_7_REG); m_dr[dr] = LOAD_RM32(modrm); break;
 		case 7:
+		{
+			UINT32 old_dr7 = m_dr[7];
+			m_dr[dr] = rm32;
+//			dr7_changed(old_dr7, m_dr[7]);
 			CYCLES(CYCLES_MOV_DR6_7_REG);
 			break;
+		}
 		default:
 			logerror("i386: mov_dr_r32 DR%d!\n", dr);
 			return;
@@ -981,7 +990,7 @@ static void I386OP(arpl)()           // Opcode 0x63
 		SetZF(flag);
 	}
 	else
-		i386_trap(6, 0, 0);  // invalid opcode in real mode or v8086 mode
+		i386_trap(6, 0);  // invalid opcode in real mode or v8086 mode
 }
 
 static void I386OP(push_i8)()           // Opcode 0x6a
@@ -1135,11 +1144,19 @@ static void I386OP(repeat)(int invert_flag)
 		m_segment_prefix=1;
 		break;
 		case 0x66:
-		m_operand_size ^= 1;
-		m_xmm_operand_size ^= 1;
+		if(!m_operand_prefix)
+		{
+			m_operand_size ^= 1;
+			m_xmm_operand_size ^= 1;
+			m_operand_prefix = 1;
+		}
 		break;
 		case 0x67:
-		m_address_size ^= 1;
+		if(!m_address_prefix)
+		{
+			m_address_size ^= 1;
+			m_address_prefix = 1;
+		}
 		break;
 		default:
 		prefix_flag=0;
@@ -1261,7 +1278,7 @@ static void I386OP(repeat)(int invert_flag)
 			count = --REG32(ECX);
 		else
 			count = --REG16(CX);
-//		if (m_cycles <= 0)
+//		if (count && (m_cycles <= 0))
 //			goto outofcycles;
 	}
 	while( count && (!flag || (invert_flag ? !*flag : *flag)) );
@@ -2139,7 +2156,7 @@ static void I386OP(groupF6_8)()         // Opcode 0xf6
 							m_CF = 1;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -2160,7 +2177,7 @@ static void I386OP(groupF6_8)()         // Opcode 0xf6
 				if( src ) {
 					remainder = quotient % (INT16)(INT8)src;
 					result = quotient / (INT16)(INT8)src;
-					if( result > 0xff ) {
+					if( result > 0x7f || result < -0x80 ) {
 						/* TODO: Divide error */
 					} else {
 						REG8(AH) = (UINT8)remainder & 0xff;
@@ -2171,7 +2188,7 @@ static void I386OP(groupF6_8)()         // Opcode 0xf6
 							m_CF = 1;
 					}
 				} else {
-					i386_trap(0, 0, 0);
+					i386_trap(0, 0);
 				}
 			}
 			break;
@@ -2324,7 +2341,7 @@ static void I386OP(int3)()              // Opcode 0xcc
 {
 	CYCLES(CYCLES_INT3);
 	m_ext = 0; // not an external interrupt
-	i386_trap(3, 1, 0);
+	i386_trap(3, 1);
 	m_ext = 1;
 }
 
@@ -2333,7 +2350,7 @@ static void I386OP(int)()               // Opcode 0xcd
 	int interrupt = FETCH();
 	CYCLES(CYCLES_INT);
 	m_ext = 0; // not an external interrupt
-	i386_trap(interrupt, 1, 0);
+	i386_trap(interrupt, 1);
 	m_ext = 1;
 }
 
@@ -2341,7 +2358,7 @@ static void I386OP(into)()              // Opcode 0xce
 {
 	if( m_OF ) {
 		m_ext = 0;
-		i386_trap(4, 1, 0);
+		i386_trap(4, 1);
 		m_ext = 1;
 		CYCLES(CYCLES_INTO_OF1);
 	}
@@ -2569,7 +2586,7 @@ static void I386OP(aam)()               // Opcode 0xd4
 
 	if(!i)
 	{
-		i386_trap(0, 0, 0);
+		i386_trap(0, 0);
 		return;
 	}
 	REG8(AH) = tempAL / i;
@@ -2585,15 +2602,15 @@ static void I386OP(clts)()              // Opcode 0x0f 0x06
 	// Privileged instruction, CPL must be zero.  Can be used in real or v86 mode.
 	if(PROTECTED_MODE && m_CPL != 0)
 		FAULT(FAULT_GP,0)
-	m_cr[0] &= ~0x08;   /* clear TS bit */
+	m_cr[0] &= ~CR0_TS;   /* clear TS bit */
 	CYCLES(CYCLES_CLTS);
 }
 
 static void I386OP(wait)()              // Opcode 0x9B
 {
-	if ((m_cr[0] & 0xa) == 0xa)
+	if ((m_cr[0] & (CR0_TS | CR0_MP)) == (CR0_TS | CR0_MP))
 	{
-		i386_trap(FAULT_NM, 0, 0);
+		i386_trap(FAULT_NM, 0);
 		return;
 	}
 	// TODO
@@ -2624,6 +2641,7 @@ static void I386OP(loadall)()       // Opcode 0x0f 0x07 (0x0f 0x05 on 80286), un
 	if(PROTECTED_MODE && (m_CPL != 0))
 		FAULT(FAULT_GP,0)
 	UINT32 ea = i386_translate(ES, REG32(EDI), 0, 204);
+	UINT32 old_dr7 = m_dr[7];
 	m_cr[0] = READ32(ea) & 0xfffeffff; // wp not supported on 386
 	set_flags(READ32(ea + 0x04));
 	m_eip = READ32(ea + 0x08);
@@ -2680,13 +2698,15 @@ static void I386OP(loadall)()       // Opcode 0x0f 0x07 (0x0f 0x05 on 80286), un
 		m_sreg[i].valid = (m_sreg[i].flags & 0x80) ? true : false;
 		m_sreg[i].d = (m_sreg[i].flags & 0x4000) ? 1 : 0;
 	}
+
+//	dr7_changed(old_dr7, m_dr[7]);
 	CHANGE_PC(m_eip);
 }
 
 static void I386OP(invalid)()
 {
 	report_invalid_opcode();
-	i386_trap(6, 0, 0);
+	i386_trap(6, 0);
 }
 
 static void I386OP(xlat)()          // Opcode 0xd7
