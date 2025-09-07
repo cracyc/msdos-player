@@ -642,7 +642,7 @@ static void i386_trap(int irq, int irq_gate)
 	m_lock = false;
 
 #ifdef USE_DEBUGGER
-	if(now_debugging) {
+	if(now_debugging && !in_iret_table(irq)) {
 		for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 			if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == irq) {
 				if((int_break_point.table[i].ah == REG8(AH) || int_break_point.table[i].ah_registered == 0) &&

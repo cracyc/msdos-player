@@ -1007,7 +1007,7 @@ __declspec(dllexport) UCHAR WINAPI demGetPhysicalDriveType(IN UCHAR DriveNumber)
 	return 0;
 }
 
-#ifdef _MBCS
+#if 1
 static __inline  char *my_strchr(char *str, int chr)
 {
 	return (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr));

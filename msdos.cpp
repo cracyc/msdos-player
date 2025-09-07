@@ -117,6 +117,7 @@ BOOL is_winxp_or_later;
 BOOL is_xp_64_or_later;
 BOOL is_vista_or_later;
 BOOL is_win10_or_later;
+BOOL is_windows_x64;
 
 #if 1
 errno_t my_strcpy_s(char *dest, rsize_t dest_size, const char *src)
@@ -164,27 +165,7 @@ size_t my_strlcpy(char *dst, const char *src, size_t size)
 	return strlen(src);
 }
 
-#if 0
-char *my_getenv(const char *varname)
-{
-	char tmp[ENV_SIZE];
-
-	if(GetEnvironmentVariableA(varname, tmp, ENV_SIZE) != 0) {
-		static char result[8][ENV_SIZE];
-		static unsigned int table_index = 0;
-		unsigned int output_index = (table_index++) & 7;
-
-//		strcpy(result[output_index], tmp);
-		my_strcpy_s(result[output_index], ENV_SIZE, tmp);
-		return result[output_index];
-	}
-	return NULL;
-}
-#else
-#define my_getenv(varname) getenv(varname)
-#endif
-
-#ifdef _MBCS
+#if 1
 inline char *my_strchr(char *str, int chr)
 {
 	return (char *)_mbschr((unsigned char *)(str), (unsigned int)(chr));
@@ -1480,6 +1461,24 @@ BOOL MySetLocalTime(const SYSTEMTIME *lpSystemTime)
 	return FALSE;
 }
 
+#ifndef _WIN64
+BOOL MyIsWow64Process(HANDLE hProcess, PBOOL Wow64Process)
+{
+	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
+	BOOL result = FALSE;
+	
+	if(hLibrary) {
+		typedef BOOL(WINAPI *IsWow64ProcessFunction)(HANDLE, PBOOL);
+		IsWow64ProcessFunction lpfnIsWow64Process = reinterpret_cast<IsWow64ProcessFunction>(::GetProcAddress(hLibrary, "IsWow64Process"));
+		if(lpfnIsWow64Process) {
+			result = lpfnIsWow64Process(hProcess, Wow64Process);
+		}
+		FreeLibrary(hLibrary);
+	}
+	return result;
+}
+#endif
+
 void vram_flush()
 {
 	if(vram_length != 0) {
@@ -1676,6 +1675,18 @@ void debugger_init()
 	memset(&int_break_point, 0, sizeof(int_break_point_t));
 }
 
+void telnet_send(const char *buffer, int len)
+{
+	const char *ptr = buffer;
+	int res;
+	while(len > 0) {
+		if((res = send(cli_socket, ptr, len, 0)) > 0) {
+			len -= res;
+			ptr += res;
+		}
+	}
+}
+
 void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
@@ -1686,15 +1697,7 @@ void telnet_send(const char *string)
 		sprintf(tmp, "%s\033E%s", buffer, ptr + 1);
 		strcpy(buffer, tmp);
 	}
-	
-	int len = (int)strlen(buffer), res;
-	ptr = buffer;
-	while(len > 0) {
-		if((res = send(cli_socket, ptr, len, 0)) > 0) {
-			len -= res;
-			ptr += res;
-		}
-	}
+	telnet_send(buffer, (int)strlen(buffer));
 }
 
 void telnet_command(const char *format, ...)
@@ -1996,6 +1999,13 @@ UINT16 debugger_hexatow(char *value)
 
 void debugger_main()
 {
+	char buffer[8192];
+	
+	buffer[0] = 0xff; // IAC
+	buffer[1] = 0xfb; // WILL
+	buffer[2] = 0x01; // ECHO
+	telnet_send(buffer, 3);
+	
 	telnet_command("\033[20h"); // cr-lf
 	
 	force_suspend = true;
@@ -2013,8 +2023,6 @@ void debugger_main()
 		}
 		Sleep(10);
 	}
-	
-	char buffer[8192];
 	
 	telnet_set_color(TELNET_RED | TELNET_GREEN | TELNET_BLUE | TELNET_INTENSITY);
 	debugger_process_info(buffer);
@@ -2881,12 +2889,12 @@ void debugger_main()
 						CPU_PREV_CS, CPU_PREV_EIP);
 					} else if(int_break_point.hit) {
 						telnet_set_color(TELNET_RED | TELNET_INTENSITY);
-						telnet_printf("breaked at %08X(%04X:%04X): INT %02x", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
+						telnet_printf("breaked at %08X(%04X:%04X): INT %02X", CPU_GET_NEXT_PC(), CPU_CS, CPU_EIP, int_break_point.table[int_break_point.hit - 1].int_num);
 						if(int_break_point.table[int_break_point.hit - 1].ah_registered) {
-							telnet_printf(" AH=%02x", int_break_point.table[int_break_point.hit - 1].ah);
+							telnet_printf(" AH=%02X", int_break_point.table[int_break_point.hit - 1].ah);
 						}
 						if(int_break_point.table[int_break_point.hit - 1].al_registered) {
-							telnet_printf(" AL=%02x", int_break_point.table[int_break_point.hit - 1].al);
+							telnet_printf(" AL=%02X", int_break_point.table[int_break_point.hit - 1].al);
 						}
 						telnet_printf(" is raised at %08X(%04X:%04X)\n", CPU_GET_PREV_PC(), CPU_PREV_CS, CPU_PREV_EIP);
 					} else {
@@ -3785,7 +3793,7 @@ BOOL get_ime_open_status()
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
 	
 	if(hWnd != NULL) {
-		return (SendMessage(hWnd, WM_IME_CONTROL, IMC_GETOPENSTATUS, 0) != 0);
+		return (SendMessageA(hWnd, WM_IME_CONTROL, IMC_GETOPENSTATUS, 0) != 0);
 	}
 	return FALSE;
 }
@@ -3797,7 +3805,7 @@ void set_ime_open_status(BOOL value)
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
 	
 	if(hWnd != NULL) {
-		SendMessage(hWnd, WM_IME_CONTROL, IMC_SETOPENSTATUS, value);
+		SendMessageA(hWnd, WM_IME_CONTROL, IMC_SETOPENSTATUS, value);
 	}
 }
 
@@ -3808,7 +3816,7 @@ DWORD get_ime_conversion_mode()
 	
 	if(hWnd != NULL) {
 		hit_key(0); // update conversion mode
-		return SendMessage(hWnd, WM_IME_CONTROL, IMC_GETCONVERSIONMODE, 0);
+		return SendMessageA(hWnd, WM_IME_CONTROL, IMC_GETCONVERSIONMODE, 0);
 	}
 	return 0;
 }
@@ -3818,7 +3826,7 @@ void set_ime_conversion_mode(DWORD value)
 	HWND hWnd = MyImmGetDefaultIMEWnd(get_console_window_handle());
 	
 	if(hWnd != NULL) {
-		SendMessage(hWnd, WM_IME_CONTROL, IMC_SETCONVERSIONMODE, value);
+		SendMessageA(hWnd, WM_IME_CONTROL, IMC_SETCONVERSIONMODE, value);
 	}
 }
 #endif
@@ -3895,6 +3903,11 @@ int main(int argc, char *argv[], char *envp[])
 	is_xp_64_or_later = is_greater_windows_version( 5, 2, 0, 0);
 	is_vista_or_later = is_greater_windows_version( 6, 0, 0, 0);
 	is_win10_or_later = is_greater_windows_version(10, 0, 0, 0);
+#ifdef _WIN64
+	is_windows_x64 = TRUE;
+#else
+	MyIsWow64Process(GetCurrentProcess(), &is_windows_x64);
+#endif
 	
 	use_service_thread = use_vram_thread = is_nt_40_or_later;
 	
@@ -5679,14 +5692,14 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 	return(tmp);
 }
 
-const char *msdos_get_multiple_short_path(const char *src)
+const char *msdos_get_multiple_short_path(const char *src, bool only_existing_path)
 {
 	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
 	static char env_path[ENV_SIZE];
 	const char *sep = NULL;
 	char token[MAX_PATH];
+	char temp_path[MAX_PATH];
 	char short_path[MAX_PATH];
-	struct _stat s;
 	
 	env_path[0] = '\0';
 	
@@ -5702,26 +5715,93 @@ const char *msdos_get_multiple_short_path(const char *src)
 		}
 		if(token[0] != '\0') {
 			const char *path = msdos_remove_double_quote(token);
-			if(path != NULL && *path != '\0' && !_stat(path, &s) && (s.st_mode & _S_IFDIR)) {
+			if(path != NULL && *path != '\0') {
+				if(is_windows_x64 && _strnicmp(path + 1, ":\\Windows\\System32", 18) == 0) {
+					sprintf(temp_path, "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
+					if(_access(temp_path, 0) == 0) {
+						path = temp_path;
+					}
+				}
+				if(_access(path, 0) == 0) {
+					if(MyGetShortPathNameA(path, short_path, MAX_PATH) == 0) {
+						path = msdos_remove_end_separator(path);
+					} else {
+						my_strupr(short_path);
+						path = msdos_remove_end_separator(short_path);
+					}
+				} else if(only_existing_path) {
+					continue;
+				}
 				if(env_path[0] != '\0') {
 					strcat(env_path, ";");
 				}
-				if(MyGetShortPathNameA(path, short_path, MAX_PATH) == 0) {
-					path = msdos_remove_end_separator(path);
-				} else {
-					my_strupr(short_path);
-					path = msdos_remove_end_separator(short_path);
-				}
-#ifdef _WIN64
-				if(_strnicmp(path + 1, ":\\Windows\\System32", 18) == 0) {
-					sprintf(env_path + strlen(env_path), "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
-				} else
-#endif
 				strcat(env_path, path);
 			}
 		}
 	}
 	return(env_path);
+}
+
+const char *msdos_get_multiple_short_path(const char *src)
+{
+	return msdos_get_multiple_short_path(src, true);
+}
+
+const char *msdos_get_multiple_short_path(const wchar_t *src, bool only_existing_path)
+{
+	// "LONGPATH\";"LONGPATH\";"LONGPATH\" to SHORTPATH;SHORTPATH;SHORTPATH
+	static char env_path[ENV_SIZE];
+	const wchar_t *sep = NULL;
+	wchar_t token[MAX_PATH];
+	wchar_t temp_path[MAX_PATH];
+	wchar_t short_path[MAX_PATH];
+	char ansi_path[MAX_PATH];
+	
+	env_path[0] = '\0';
+	
+	while(src != NULL && *src != L'\0') {
+		if((sep = wcschr(src, L';')) != NULL) {
+			int len = sep - src;
+			memcpy(token, src, sizeof(wchar_t) * len);
+			token[len] = L'\0';
+			src = sep + 1;
+		} else {
+			wcscpy(token, src);
+			src += wcslen(src);
+		}
+		if(token[0] != L'\0') {
+			const wchar_t *path = msdos_remove_double_quote(token);
+			if(path != NULL && *path != L'\0') {
+				if(is_windows_x64 && _wcsnicmp(path + 1, L":\\Windows\\System32", 18) == 0) {
+					swprintf(temp_path, L"%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
+					if(_waccess(temp_path, 0) == 0) {
+						path = temp_path;
+					}
+				}
+				if(_waccess(path, 0) == 0) {
+					if(MyGetShortPathNameW(path, short_path, MAX_PATH) == 0) {
+						path = msdos_remove_end_separator(path);
+					} else {
+						_wcsupr(short_path);
+						path = msdos_remove_end_separator(short_path);
+					}
+				} else if(only_existing_path) {
+					continue;
+				}
+				if(env_path[0] != '\0') {
+					strcat(env_path, ";");
+				}
+				WideCharToMultiByte(CP_ACP, 0, path, -1, ansi_path, MAX_PATH, NULL, NULL);
+				strcat(env_path, ansi_path);
+			}
+		}
+	}
+	return(env_path);
+}
+
+const char *msdos_get_multiple_short_path(const wchar_t *src)
+{
+	return msdos_get_multiple_short_path(src, true);
 }
 
 bool match(const char *text, const char *pattern)
@@ -5846,6 +5926,19 @@ const char *msdos_short_path(const char *path)
 	if(MyGetShortPathNameA(path, tmp, MAX_PATH) == 0) {
 		strcpy(tmp, path);
 	}
+	my_strupr(tmp);
+	return(tmp);
+}
+
+const char *msdos_short_path(const wchar_t *path)
+{
+	static char tmp[MAX_PATH];
+	wchar_t wc_tmp[MAX_PATH];
+	
+	if(MyGetShortPathNameW(path, wc_tmp, MAX_PATH) == 0) {
+		wcscpy(wc_tmp, path);
+	}
+	WideCharToMultiByte(CP_ACP, 0, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL);
 	my_strupr(tmp);
 	return(tmp);
 }
@@ -22300,31 +22393,32 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	char env_temp[MAX_PATH], temp_added = 0, tmp_added = 0;
 	char tz_added = 0;
 	const char *path, *short_path;
+	wchar_t wc_path[ENV_SIZE];
 	
 	env_append[0] = env_msdos_path[0] = env_path[0] = env_temp[0] = '\0';
 	
-	if((path = getenv("MSDOS_APPEND")) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+	if(GetEnvironmentVariableW(L"MSDOS_APPEND", wc_path, ENV_SIZE) != 0)  {
+		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			strcpy(env_append, short_path);
 		}
 	}
-	if((path = getenv("APPEND")) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+	if(GetEnvironmentVariableW(L"APPEND", wc_path, ENV_SIZE) != 0)  {
+		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_append[0] != '\0') {
 				strcat(env_append, ";");
 			}
 			strcat(env_append, short_path);
+			strcpy(env_append, short_path);
 		}
 	}
-	
-	if((path = getenv("MSDOS_PATH")) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+	if(GetEnvironmentVariableW(L"MSDOS_PATH", wc_path, ENV_SIZE) != 0)  {
+		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			strcpy(env_msdos_path, short_path);
 			strcpy(env_path, short_path);
 		}
 	}
-	if((path = getenv("PATH")) != NULL) {
-		if((short_path = msdos_get_multiple_short_path(path)) != NULL && short_path[0] != '\0') {
+	if(GetEnvironmentVariableW(L"PATH", wc_path, ENV_SIZE) != 0)  {
+		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_path[0] != '\0') {
 				strcat(env_path, ";");
 			}
@@ -22337,19 +22431,19 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			strcpy(comspec_path, short_path);
 		}
 	}
-	if((path = getenv("MSDOS_COMSPEC")) != NULL && _access(path, 0) == 0) {
-		if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
+	if(GetEnvironmentVariableW(L"MSDOS_COMSPEC", wc_path, ENV_SIZE) != 0 && _waccess(wc_path, 0) == 0)  {
+		if((short_path = msdos_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			strcpy(comspec_path, short_path);
 		}
 	}
 	
-	if(GetTempPathA(MAX_PATH, env_temp) != 0) {
-		strcpy(env_temp, msdos_short_path(env_temp));
+	if(GetTempPathW(ENV_SIZE, wc_path) != 0) {
+		strcpy(env_temp, msdos_short_path(wc_path));
 	}
 	for(int i = 0; i < 4; i++) {
-		static const char *name[4] = {"MSDOS_TEMP", "MSDOS_TMP", "TEMP", "TMP"};
-		if((path = getenv(name[i])) != NULL && _access(path, 0) == 0) {
-			if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
+		static const wchar_t *name[4] = {L"MSDOS_TEMP", L"MSDOS_TMP", L"TEMP", L"TMP"};
+		if(GetEnvironmentVariableW(name[i], wc_path, ENV_SIZE) != 0 && _waccess(wc_path, 0) == 0)  {
+			if((short_path = msdos_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 				strcpy(env_temp, short_path);
 				break;
 			}
@@ -22359,8 +22453,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	for(char **p = envp; p != NULL && *p != NULL; p++) {
 		// lower to upper
 		char *tmp = *p;
-		char *value = NULL;
+		const char *value = NULL;
 		char name[128], name2[130];
+		wchar_t wc_name[128];
 		
 		for(int i = 0; i < 128; i++) {
 			if(tmp[i] == '=') {
@@ -22438,6 +22533,15 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 					sprintf((char *)(mem + (env_seg << 4) + ofs), "TZ=%s", value);
 				}
 				tz_added = 1;
+			} else if(((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) && value[1] == ':' && value[2] == '\\') {
+				// may be single/multiple absolute path
+				MultiByteToWideChar(CP_ACP, 0, name, -1, wc_name, 128);
+				if(GetEnvironmentVariableW(wc_name, wc_path, ENV_SIZE) != 0) {
+					if((short_path = msdos_get_multiple_short_path(wc_path, false)) != NULL && short_path[0] != '\0') {
+						value = short_path;
+					}
+				}
+				sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value);
 			} else {
 				sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value);
 			}

@@ -41,7 +41,7 @@ static void PREFIX86(_interrupt)(unsigned int_num)
 	} else {
 #endif
 #ifdef USE_DEBUGGER
-		if(now_debugging) {
+		if(now_debugging && !in_iret_table(int_num)) {
 			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
 				if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == int_num) {
 					if((int_break_point.table[i].ah == m_regs.b[AH] || int_break_point.table[i].ah_registered == 0) &&
@@ -2177,6 +2177,20 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
 		msdos_int_num = (old - IRET_TOP);
 		msdos_stat |= REQ_SYSCALL;
+#ifdef USE_DEBUGGER
+		if(now_debugging) {
+			for(int i = 0; i < MAX_BREAK_POINTS; i++) {
+				if(int_break_point.table[i].status == 1 && int_break_point.table[i].int_num == msdos_int_num) {
+					if((int_break_point.table[i].ah == m_regs.b[AH] || int_break_point.table[i].ah_registered == 0) &&
+					   (int_break_point.table[i].al == m_regs.b[AL] || int_break_point.table[i].al_registered == 0)) {
+						int_break_point.hit = i + 1;
+						now_suspended = true;
+						break;
+					}
+				}
+			}
+		}
+#endif
 	}
 }
 #endif
