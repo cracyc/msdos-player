@@ -234,19 +234,58 @@ static void FPU_FST_F80(UINT32 addr) {
 
 static void FPU_FST_I16(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
+#if 1
+	// from mame i386 core
+	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
+	floatx80 lowerLim = int32_to_floatx80(-32768);
+	floatx80 upperLim = int32_to_floatx80(32767);
+	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
+		fpu_memorywrite_w(addr, (UINT16)((SINT16)floatx80_to_int32(fx80)));
+	} else {
+		fpu_memorywrite_w(addr, (UINT16)((SINT16)-32768));
+		float_exception_flags = float_flag_invalid;
+	}
+#else
 	fpu_memorywrite_w(addr, (UINT16)((SINT16)floatx80_to_int32(FPU_STAT.reg[FPU_STAT_TOP].d)));
+#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
 static void FPU_FST_I32(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
+#if 1
+	// from mame i386 core
+	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
+	floatx80 lowerLim = int32_to_floatx80(0x80000000);
+	floatx80 upperLim = int32_to_floatx80(0x7fffffff);
+	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
+		fpu_memorywrite_d(addr, (UINT32)floatx80_to_int32(fx80));
+	} else {
+		fpu_memorywrite_d(addr, (UINT32)0x80000000);
+		float_exception_flags = float_flag_invalid;
+	}
+#else
 	fpu_memorywrite_d(addr, (UINT32)floatx80_to_int32(FPU_STAT.reg[FPU_STAT_TOP].d));
+#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
 static void FPU_FST_I64(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
+#if 1
+	// from mame i386 core
+	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
+	floatx80 lowerLim = int64_to_floatx80((UINT64)0x8000000000000000);
+	floatx80 upperLim = int64_to_floatx80((UINT64)0x7fffffffffffffff);
+	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
+		fpu_memorywrite_q(addr, (UINT64)floatx80_to_int64(fx80));
+	} else {
+		fpu_memorywrite_q(addr, (UINT64)0x8000000000000000);
+		float_exception_flags = float_flag_invalid;
+	}
+#else
 	fpu_memorywrite_q(addr, (UINT64)floatx80_to_int64(FPU_STAT.reg[FPU_STAT_TOP].d));
+#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
@@ -443,6 +482,7 @@ static void FPU_FMUL(UINT st, UINT other) {
 static void FPU_FSUB(UINT st, UINT other) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
 	FPU_STAT.reg[st].d = floatx80_sub(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d);
+	FPU_STATUSWORD |= float_exception_flags;
 	return;
 }
 static void FPU_FSUBR(UINT st, UINT other) {

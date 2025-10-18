@@ -306,6 +306,8 @@
     <ClCompile Include="np21_i386c\ia32\instructions\string_inst.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\system_inst.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpdummy.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox.cpp" />
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox2.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_softfloat.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\fpu\softfloat\softfloat.cpp" />
     <ClCompile Include="np21_i386c\ia32\instructions\mmx\3dnow.cpp" />

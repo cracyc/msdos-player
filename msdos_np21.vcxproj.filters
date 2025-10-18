@@ -173,6 +173,12 @@
     <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpdummy.cpp">
       <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
     </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_dosbox2.cpp">
+      <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
+    </ClCompile>
     <ClCompile Include="np21_i386c\ia32\instructions\fpu\fpemul_softfloat.cpp">
       <Filter>Source Files\np21w i386c Source Files\ia32\instructions\fpu</Filter>
     </ClCompile>

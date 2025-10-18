@@ -190,6 +190,30 @@ inline const char *my_strstr(const char *str, const char *search)
 {
 	return (const char *)_mbsstr((const unsigned char *)(str), (const unsigned char *)(search));
 }
+inline char *my_strcasestr(char *str, const char *search)
+{
+	int len1 = (int)_mbstrlen(str);
+	int len2 = (int)_mbstrlen(search);
+	
+	for(int pos = 0; pos < len1 - len2 + 1; pos++) {
+		if(_mbsnicmp((unsigned char *)str + pos, (const unsigned char *)search, len2) == 0) {
+			return str + pos;
+		}
+	}
+	return NULL;
+}
+inline const char *my_strcasestr(const char *str, const char *search)
+{
+	int len1 = (int)_mbstrlen(str);
+	int len2 = (int)_mbstrlen(search);
+	
+	for(int pos = 0; pos < len1 - len2 + 1; pos++) {
+		if(_mbsnicmp((const unsigned char *)str + pos, (const unsigned char *)search, len2) == 0) {
+			return str + pos;
+		}
+	}
+	return NULL;
+}
 inline char *my_strtok(char *tok, const char *del)
 {
 	return (char *)_mbstok((unsigned char *)(tok), (const unsigned char *)(del));
@@ -210,6 +234,7 @@ inline char *my_strupr(char *str)
 #define my_strchr(str, chr) strchr((str), (chr))
 #define my_strrchr(str, chr) strrchr((str), (chr))
 #define my_strstr(str, search) strstr((str), (search))
+#define my_strcasestr(str, search) strcasestr((str), (search))
 #define my_strtok(tok, del) strtok((tok), (del))
 #define my_strtok_s(tok, del, context) strtok_s((tok), (del), (context))
 #define my_strupr(str) _strupr((str))
@@ -7811,7 +7836,6 @@ int msdos_hma_mem_get_free(int *available_offset)
 
 void msdos_env_set_argv(int env_seg, const char *argv)
 {
-	int env_size = ((mcb_t *)(mem + ((env_seg - 1) << 4)))->paragraphs * 16;
 	char *env = (char *)(mem + (env_seg << 4));
 	char *dst = env;
 	
@@ -7870,7 +7894,6 @@ const char *msdos_env_get(int env_seg, const char *name)
 
 void msdos_env_set(int env_seg, const char *name, const char *value)
 {
-	int env_size = ((mcb_t *)(mem + ((env_seg - 1) << 4)))->paragraphs * 16;
 	char *buf = (char *)malloc(env_size + 1);
 	char *src = buf;
 	char *env = (char *)(mem + (env_seg << 4));
@@ -9188,28 +9211,24 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	}
 	
 	// copy environment
-	int parent_env_seg, parent_env_size;
 	int umb_linked, env_seg, psp_seg;
-	
-	if(param->env_seg == 0) {
-		parent_env_seg = parent_psp->env_seg;
-	} else {
-		parent_env_seg = param->env_seg;
-	}
-	parent_env_size = ((mcb_t *)(mem + ((parent_env_seg - 1) << 4)))->paragraphs * 16;
 	
 	if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
 		msdos_mem_unlink_umb();
 	}
-	if((env_seg = msdos_mem_alloc(first_mcb, parent_env_size >> 4)) == -1) {
-		if((env_seg = msdos_mem_alloc(UMB_TOP >> 4, parent_env_size >> 4)) == -1) {
+	if((env_seg = msdos_mem_alloc(first_mcb, env_size >> 4)) == -1) {
+		if((env_seg = msdos_mem_alloc(UMB_TOP >> 4, env_size >> 4)) == -1) {
 			if(umb_linked != 0) {
 				msdos_mem_link_umb();
 			}
 			return(-1);
 		}
 	}
-	memcpy(mem + (env_seg << 4), mem + (parent_env_seg << 4), parent_env_size);
+	if(param->env_seg == 0) {
+		memcpy(mem + (env_seg << 4), mem + (parent_psp->env_seg << 4), env_size);
+	} else {
+		memcpy(mem + (env_seg << 4), mem + (param->env_seg << 4), env_size);
+	}
 	msdos_env_set_argv(env_seg, msdos_short_full_path(path));
 	
 	// check exe header
@@ -22395,6 +22414,16 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	const char *path, *short_path;
 	wchar_t wc_path[ENV_SIZE];
 	
+	env_size = standard_env ? 2048 : 8192;
+	
+	if(argc > 1 && (_stricmp(argv[0], "COMMAND.COM") == 0 || _stricmp(argv[0], "COMMAND") == 0)) {
+		for(int i = 1; i < argc; i++) {
+			if(_strnicmp(argv[i], "/E:", 3) == 0) {
+				env_size = ((atoi(&argv[i][3]) + 15) >> 4) << 4;
+				env_size = max(160, min(32768, env_size));
+			}
+		}
+	}
 	env_append[0] = env_msdos_path[0] = env_path[0] = env_temp[0] = '\0';
 	
 	if(GetEnvironmentVariableW(L"MSDOS_APPEND", wc_path, ENV_SIZE) != 0)  {
@@ -22545,13 +22574,21 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			} else {
 				sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value);
 			}
-			ofs += (int)strlen((char *)(mem + (env_seg << 4) + ofs)) + 1;
+			int len = (int)strlen((char *)(mem + (env_seg << 4) + ofs));
+			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > env_size) {
+				fatalerror("too many environments\n");
+			}
+			ofs += len + 1;
 		}
 	}
 	if(!append_added && env_append[0] != '\0') {
 		#define SET_ENV(name, value) { \
 			sprintf((char *)(mem + (env_seg << 4) + ofs), "%s=%s", name, value); \
-			ofs += (int)strlen((char *)(mem + (env_seg << 4) + ofs)) + 1; \
+			int len = (int)strlen((char *)(mem + (env_seg << 4) + ofs)); \
+			if(ofs + len + 1 + (2 + (8 + 1 + 3)) + 2 > env_size) { \
+				fatalerror("too many environments\n"); \
+			} \
+			ofs += len + 1; \
 		}
 		SET_ENV("APPEND", env_append);
 	}
@@ -22631,16 +22668,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			strcat(tz_value, tz_dlt);
 		}
 		SET_ENV("TZ", tz_value);
-	}
-	int env_size = (ofs + 1) + (2 + MAX_PATH + 1);
-	env_size = ((env_size + 15) >> 4) << 4;
-	if(env_size > 32768) {
-		fatalerror("too many environment variables (size:%d max:32768)\nspecify -e option to load minimum environment variables\n", env_size);
-	}
-	if(standard_env) {
-		env_size = max(env_size + 128, 1024);
-	} else {
-		env_size = min(env_size + 512, 32768);
 	}
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, env_size >> 4);
 	seg += (env_size >> 4);

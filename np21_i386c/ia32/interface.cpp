@@ -152,17 +152,15 @@ ia32(void)
 		exec_allstep();
 	}else 
 */
-#ifdef USE_CLOCK
 	if (!CPU_TRAP) {
-		do {
+		//do {
 			exec_1step();
 #ifdef USE_DMA
 			dmax86();
 #endif
-		} while (CPU_REMCLOCK > 0);
+		//} while (CPU_REMCLOCK > 0);
 	}else{
-		do {
-#endif
+		//do {
 			exec_1step();
 			if (CPU_TRAP) {
 				CPU_DR6 |= CPU_DR6_BS;
@@ -171,10 +169,8 @@ ia32(void)
 #ifdef USE_DMA
 			dmax86();
 #endif
-#ifdef USE_CLOCK
-		} while (CPU_REMCLOCK > 0);
+		//} while (CPU_REMCLOCK > 0);
 	}
-#endif
 #ifdef __cplusplus
 	} catch (int e) {
 		switch (e) {
@@ -221,11 +217,10 @@ ia32_step(void)
 		break;
 	}
 #endif
-#ifdef USE_CLOCK
-	do {
-#endif
+	//do {
+		UINT8 old_TRAP = CPU_TRAP;
 		exec_1step();
-		if (CPU_TRAP) {
+		if (CPU_TRAP && old_TRAP) {
 			CPU_DR6 |= CPU_DR6_BS;
 			INTERRUPT(1, INTR_TYPE_EXCEPTION);
 		}
@@ -234,9 +229,7 @@ ia32_step(void)
 			dmax86();
 		//}
 #endif
-#ifdef USE_CLOCK
-	} while (CPU_REMCLOCK > 0);
-#endif
+	//} while (CPU_REMCLOCK > 0);
 #ifdef __cplusplus
 	} catch (int e) {
 		switch (e) {
