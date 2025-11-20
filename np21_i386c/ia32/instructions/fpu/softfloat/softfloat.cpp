@@ -66,6 +66,158 @@ int8 floatx80_rounding_precision = 80;
 *----------------------------------------------------------------------------*/
 #include "softfloat-specialize.h" // rename softfloat-specialize -> softfloat-specialize.h
 
+// for np2 FPU by SimK 2025/10/25
+/*----------------------------------------------------------------------------
+| Takes a 64-bit fixed-point value `absZ' with binary point between bits 6
+| and 7, and returns the properly rounded 16-bit integer corresponding to the
+| input.  If `zSign' is 1, the input is negated before being converted to an
+| integer.  Bit 63 of `absZ' must be zero.  Ordinarily, the fixed-point input
+| is simply rounded to an integer, with the inexact exception raised if the
+| input cannot be represented exactly as an integer.  However, if the fixed-
+| point input is too large, the invalid exception is raised and the largest
+| negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+static int16 roundAndPackInt16_np2(flag zSign, bits64 absZ)
+{
+    int8 roundingMode;
+    flag roundNearestEven;
+    int8 roundIncrement, roundBits;
+    int16 z;
+
+    roundingMode = float_rounding_mode;
+    roundNearestEven = (roundingMode == float_round_nearest_even);
+    roundIncrement = 0x40;
+    if (!roundNearestEven) {
+        if (roundingMode == float_round_to_zero) {
+            roundIncrement = 0;
+        }
+        else {
+            roundIncrement = 0x7F;
+            if (zSign) {
+                if (roundingMode == float_round_up) roundIncrement = 0;
+            }
+            else {
+                if (roundingMode == float_round_down) roundIncrement = 0;
+            }
+        }
+    }
+    roundBits = absZ & 0x7F;
+    absZ = (absZ + roundIncrement) >> 7;
+    absZ &= ~(((roundBits ^ 0x40) == 0) & roundNearestEven);
+    z = (int16)absZ;
+    if (zSign) z = -z;
+    z = (sbits16)z;
+    if ((absZ >> 16) || (z && ((z < 0) ^ zSign))) {
+        float_raise(float_flag_invalid);
+        return (sbits16)0x8000; // for np2 by SimK 2025/10/25
+    }
+    if (roundBits) float_exception_flags |= float_flag_inexact;
+    return z;
+
+}
+
+/*----------------------------------------------------------------------------
+| Takes a 64-bit fixed-point value `absZ' with binary point between bits 6
+| and 7, and returns the properly rounded 32-bit integer corresponding to the
+| input.  If `zSign' is 1, the input is negated before being converted to an
+| integer.  Bit 63 of `absZ' must be zero.  Ordinarily, the fixed-point input
+| is simply rounded to an integer, with the inexact exception raised if the
+| input cannot be represented exactly as an integer.  However, if the fixed-
+| point input is too large, the invalid exception is raised and the largest
+| negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+static int32 roundAndPackInt32_np2(flag zSign, bits64 absZ)
+{
+    int8 roundingMode;
+    flag roundNearestEven;
+    int8 roundIncrement, roundBits;
+    int32 z;
+
+    roundingMode = float_rounding_mode;
+    roundNearestEven = (roundingMode == float_round_nearest_even);
+    roundIncrement = 0x40;
+    if (!roundNearestEven) {
+        if (roundingMode == float_round_to_zero) {
+            roundIncrement = 0;
+        }
+        else {
+            roundIncrement = 0x7F;
+            if (zSign) {
+                if (roundingMode == float_round_up) roundIncrement = 0;
+            }
+            else {
+                if (roundingMode == float_round_down) roundIncrement = 0;
+            }
+        }
+    }
+    roundBits = absZ & 0x7F;
+    absZ = (absZ + roundIncrement) >> 7;
+    absZ &= ~(((roundBits ^ 0x40) == 0) & roundNearestEven);
+    z = (int32)absZ;
+    if (zSign) z = -z;
+    z = (sbits32)z;
+    if ((absZ >> 32) || (z && ((z < 0) ^ zSign))) {
+        float_raise(float_flag_invalid);
+        return 0x80000000; // for np2 by SimK 2025/10/25
+    }
+    if (roundBits) float_exception_flags |= float_flag_inexact;
+    return z;
+
+}
+
+/*----------------------------------------------------------------------------
+| Takes the 128-bit fixed-point value formed by concatenating `absZ0' and
+| `absZ1', with binary point between bits 63 and 64 (between the input words),
+| and returns the properly rounded 64-bit integer corresponding to the input.
+| If `zSign' is 1, the input is negated before being converted to an integer.
+| Ordinarily, the fixed-point input is simply rounded to an integer, with
+| the inexact exception raised if the input cannot be represented exactly as
+| an integer.  However, if the fixed-point input is too large, the invalid
+| exception is raised and the largest negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+static int64 roundAndPackInt64_np2(flag zSign, bits64 absZ0, bits64 absZ1)
+{
+    int8 roundingMode;
+    flag roundNearestEven, increment;
+    int64 z;
+
+    roundingMode = float_rounding_mode;
+    roundNearestEven = (roundingMode == float_round_nearest_even);
+    increment = ((sbits64)absZ1 < 0);
+    if (!roundNearestEven) {
+        if (roundingMode == float_round_to_zero) {
+            increment = 0;
+        }
+        else {
+            if (zSign) {
+                increment = (roundingMode == float_round_down) && absZ1;
+            }
+            else {
+                increment = (roundingMode == float_round_up) && absZ1;
+            }
+        }
+    }
+    if (increment) {
+        ++absZ0;
+        if (absZ0 == 0) goto overflow;
+        absZ0 &= ~(((bits64)(absZ1 << 1) == 0) & roundNearestEven);
+    }
+    z = absZ0;
+    if (zSign) z = -z;
+    z = (sbits64)z;
+    if (z && ((z < 0) ^ zSign)) {
+    overflow:
+        float_raise(float_flag_invalid);
+        return LIT64(0x8000000000000000); // for np2 by SimK 2025/10/25
+    }
+    if (absZ1) float_exception_flags |= float_flag_inexact;
+    return z;
+
+}
+
 /*----------------------------------------------------------------------------
 | Takes a 64-bit fixed-point value `absZ' with binary point between bits 6
 | and 7, and returns the properly rounded 32-bit integer corresponding to the
@@ -3069,6 +3221,92 @@ flag float64_lt_quiet( float64 a, float64 b )
 }
 
 #ifdef FLOATX80
+
+// for np2 FPU by SimK 2025/10/25
+/*----------------------------------------------------------------------------
+| Returns the result of converting the double-extended-precision floating-
+| point value `a' to the 16-bit two's complement integer format.  The
+| conversion is performed according to the IEEE Standard for Floating-Point
+| Arithmetic---which means in particular that the conversion is rounded
+| according to the current rounding mode.  If `a' is a NaN or the conversion 
+| overflows, the largest negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+int16 floatx80_to_int16_np2(floatx80 a)
+{
+    flag aSign;
+    int32 aExp, shiftCount;
+    bits64 aSig;
+
+    aSig = extractFloatx80Frac(a);
+    aExp = extractFloatx80Exp(a);
+    aSign = extractFloatx80Sign(a);
+    if ((aExp == 0x7FFF) && (bits64)(aSig << 1)) aSign = 0;
+    shiftCount = 0x4037 - aExp;
+    if (shiftCount <= 0) shiftCount = 1;
+    shift64RightJamming(aSig, shiftCount, &aSig);
+    return roundAndPackInt16_np2(aSign, aSig);
+
+}
+
+/*----------------------------------------------------------------------------
+| Returns the result of converting the double-extended-precision floating-
+| point value `a' to the 32-bit two's complement integer format.  The
+| conversion is performed according to the IEEE Standard for Floating-Point
+| Arithmetic---which means in particular that the conversion is rounded
+| according to the current rounding mode.  If `a' is a NaN or the conversion 
+| overflows, the largest negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+int32 floatx80_to_int32_np2(floatx80 a)
+{
+    flag aSign;
+    int32 aExp, shiftCount;
+    bits64 aSig;
+
+    aSig = extractFloatx80Frac(a);
+    aExp = extractFloatx80Exp(a);
+    aSign = extractFloatx80Sign(a);
+    if ((aExp == 0x7FFF) && (bits64)(aSig << 1)) aSign = 0;
+    shiftCount = 0x4037 - aExp;
+    if (shiftCount <= 0) shiftCount = 1;
+    shift64RightJamming(aSig, shiftCount, &aSig);
+    return roundAndPackInt32_np2(aSign, aSig);
+
+}
+
+/*----------------------------------------------------------------------------
+| Returns the result of converting the double-extended-precision floating-
+| point value `a' to the 64-bit two's complement integer format.  The
+| conversion is performed according to the IEEE Standard for Floating-Point
+| Arithmetic---which means in particular that the conversion is rounded
+| according to the current rounding mode.  If `a' is a NaN or the conversion 
+| overflows, the largest negative integer is returned.
+*----------------------------------------------------------------------------*/
+
+int64 floatx80_to_int64_np2(floatx80 a)
+{
+    flag aSign;
+    int32 aExp, shiftCount;
+    bits64 aSig, aSigExtra;
+
+    aSig = extractFloatx80Frac(a);
+    aExp = extractFloatx80Exp(a);
+    aSign = extractFloatx80Sign(a);
+    shiftCount = 0x403E - aExp;
+    if (shiftCount <= 0) {
+        if (shiftCount) {
+            float_raise(float_flag_invalid);
+            return (sbits64)LIT64(0x8000000000000000);
+        }
+        aSigExtra = 0;
+    }
+    else {
+        shift64ExtraRightJamming(aSig, 0, shiftCount, &aSig, &aSigExtra);
+    }
+    return roundAndPackInt64_np2(aSign, aSig, aSigExtra);
+
+}
 
 /*----------------------------------------------------------------------------
 | Returns the result of converting the double-extended-precision floating-

@@ -354,11 +354,4 @@ UINT32 IOINPCALL iocore_inp32(UINT port)
 	return read_io_dword(port);
 }
 
-#ifdef USE_DMA
-void dmax86(void)
-{
-	dma_run();
-}
-#endif
-
 #endif

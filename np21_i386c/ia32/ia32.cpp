@@ -234,7 +234,7 @@ change_pg(BOOL onoff)
 	if (onoff) {
 		ia32_panic("Paging-Mode: not supported in this build!");
 	}
-	//VERBOSE(("Paging-Mode: not supported in this build!"));
+	VERBOSE(("Paging-Mode: not supported in this build!"));
 #endif
 }
 

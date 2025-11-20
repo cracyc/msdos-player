@@ -140,6 +140,16 @@
 #define IME_CMODE_SYMBOL                0x0400
 #endif
 
+#ifndef MAPVK_VK_TO_VSC
+#define MAPVK_VK_TO_VSC                 0
+#endif
+#ifndef MAPVK_VK_TO_CHAR
+#define MAPVK_VK_TO_CHAR                2
+#endif
+#ifndef MAPVK_VK_TO_VSC_EX
+#define MAPVK_VK_TO_VSC_EX              4
+#endif
+
 #ifndef VER_MINORVERSION
 #define VER_MINORVERSION                0x0000001
 #endif

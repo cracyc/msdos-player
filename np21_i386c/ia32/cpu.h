@@ -64,7 +64,7 @@
 #define USE_CPU_DIRECTREG
 #define USE_CPU_EIPMASK
 //#define USE_CLOCK
-//#define USE_DMA
+//#define IA32_INSTRUCTION_TRACE
 #define IA32_REBOOT_ON_PANIC
 
 #ifdef __BIG_ENDIAN__

@@ -436,9 +436,9 @@ DWORD MyGetFullPathNameA(LPCSTR lpFileName, DWORD nBufferLength, LPSTR lpBuffer,
 		wchar_t wcShortPath[MAX_PATH];
 		char szShortPath[MAX_PATH];
 		
-		MultiByteToWideChar(CP_ACP, 0, lpFileName, -1, wcFileName, MAX_PATH);
+		MultiByteToWideChar(CP_OEMCP, 0, lpFileName, -1, wcFileName, MAX_PATH);
 		if(GetFullPathNameW(wcFileName, MAX_PATH, wcBuffer, NULL) != 0 && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
-			WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+			WideCharToMultiByte(CP_OEMCP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 			if((dwResult = MyOldGetLongPathNameA(szShortPath, lpBuffer, nBufferLength)) == 0) {
 				my_strlcpy(lpBuffer, szShortPath, nBufferLength);
 				dwResult = (DWORD)strlen(lpBuffer);
@@ -474,7 +474,7 @@ DWORD MyGetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 					wcscpy(p, wcShortPath);
 				}
 				if(MyGetShortPathNameW(wcFilename, wcShortPath, MAX_PATH) != 0) {
-					WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+					WideCharToMultiByte(CP_OEMCP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 					if((dwResult = MyOldGetLongPathNameA(szShortPath, lpFilename, nSize)) == 0) {
 						my_strlcpy(lpFilename, szShortPath, nSize);
 						dwResult = (DWORD)strlen(lpFilename);
@@ -495,7 +495,7 @@ char *my_getdcwd(int drive, char *buffer, int maxlen)
 			char szShortPath[MAX_PATH];
 			
 			if(_wgetdcwd(drive, wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
-				WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+				WideCharToMultiByte(CP_OEMCP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 				if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
 					my_strlcpy(buffer, szShortPath, maxlen);
 				}
@@ -515,7 +515,7 @@ char *my_getcwd(char *buffer,int maxlen)
 			char szShortPath[MAX_PATH];
 			
 			if(_wgetcwd(wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
-				WideCharToMultiByte(CP_ACP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
+				WideCharToMultiByte(CP_OEMCP, 0, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 				if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
 					my_strlcpy(buffer, szShortPath, maxlen);
 				}
@@ -4853,7 +4853,38 @@ bool update_console_input()
 	CONSOLE_SCREEN_BUFFER_INFO csbi = {0};
 	bool result = false;
 	
-	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) && dwNumberOfEvents != 0) {
+	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) == 0) {
+		// win32 pipe connected to stdin?
+		if(GetLastError() == 6) {
+			static BOOL initialized = FALSE;
+			if(!initialized) {
+				while(kbhit()) {
+					_getch();
+				}
+				initialized = TRUE;
+			}
+			while(kbhit()) {
+				int chr1 = _getch();
+				int chr2 = 0;
+				if(chr1 == 0x00 || chr1 == 0xe0) {
+					chr2 = _getch();
+				}
+				if(key_buf_char != NULL && key_buf_scan != NULL) {
+					enter_key_buf_lock();
+					if(chr1 == 0x00 || chr1 == 0xe0) {
+						pcbios_set_key_buffer(0x00, chr1);
+						pcbios_set_key_buffer(0x00, chr2);
+					} else {
+						pcbios_set_key_buffer(chr1, 0x00);
+					}
+					leave_key_buf_lock();
+				}
+				result = key_changed = true;
+				// IME may be on and it may causes screen scroll up and cursor position change
+				cursor_moved = true;
+			}
+		}
+	} else if(dwNumberOfEvents != 0) {
 		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
@@ -5816,7 +5847,7 @@ const char *msdos_get_multiple_short_path(const wchar_t *src, bool only_existing
 				if(env_path[0] != '\0') {
 					strcat(env_path, ";");
 				}
-				WideCharToMultiByte(CP_ACP, 0, path, -1, ansi_path, MAX_PATH, NULL, NULL);
+				WideCharToMultiByte(CP_OEMCP, 0, path, -1, ansi_path, MAX_PATH, NULL, NULL);
 				strcat(env_path, ansi_path);
 			}
 		}
@@ -5963,7 +5994,7 @@ const char *msdos_short_path(const wchar_t *path)
 	if(MyGetShortPathNameW(path, wc_tmp, MAX_PATH) == 0) {
 		wcscpy(wc_tmp, path);
 	}
-	WideCharToMultiByte(CP_ACP, 0, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL);
+	WideCharToMultiByte(CP_OEMCP, 0, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL);
 	my_strupr(tmp);
 	return(tmp);
 }
@@ -6869,9 +6900,19 @@ retry:
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
+					int chr1 = _getch();
+					int chr2 = 0;
+					if(chr1 == 0x00 || chr1 == 0xe0) {
+						chr2 = _getch();
+					}
 					if(key_buf_char != NULL && key_buf_scan != NULL) {
 						enter_key_buf_lock();
-						pcbios_set_key_buffer(_getch(), 0x00);
+						if(chr1 == 0x00 || chr1 == 0xe0) {
+							pcbios_set_key_buffer(0x00, chr1);
+							pcbios_set_key_buffer(0x00, chr2);
+						} else {
+							pcbios_set_key_buffer(chr1, 0x00);
+						}
 						leave_key_buf_lock();
 					}
 				} else {
@@ -17575,7 +17616,9 @@ inline void msdos_int_24h()
 		}
 		key = _getch();
 		
-		if(key == 'I' || key == 'i') {
+		if(key == 0x00 || key == 0xe0) {
+			_getch();
+		} else if(key == 'I' || key == 'i') {
 			if(CPU_AH & 0x20) {
 				CPU_AL = 0;
 				break;
@@ -18954,6 +18997,21 @@ inline void msdos_int_2fh_56h()
 //		if(msdos_is_remote_drive(CPU_BH)) {
 //			CPU_AL = 0x00;
 //		}
+		break;
+	default:
+		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		CPU_AX = 0x01;
+		CPU_SET_C_FLAG(1);
+		break;
+	}
+}
+
+inline void msdos_int_2fh_74h()
+{
+	switch(CPU_AL) {
+	case 0x76:
+		// Check if this is MS-DOS Player (0=VTDOS 2=DOSVAXJ3)
+		CPU_AX = 0x01;
 		break;
 	default:
 		unimplemented_2fh("int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", 0x2f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
@@ -21774,6 +21832,7 @@ void msdos_syscall(unsigned num)
 		case 0x4f: msdos_int_2fh_4fh(); break;
 		case 0x55: msdos_int_2fh_55h(); break;
 		case 0x56: msdos_int_2fh_56h(); break;
+		case 0x74: msdos_int_2fh_74h(); break;
 		case 0xad: msdos_int_2fh_adh(); break;
 		case 0xae: msdos_int_2fh_aeh(); break;
 		case 0xb7: msdos_int_2fh_b7h(); break;
@@ -22564,7 +22623,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				tz_added = 1;
 			} else if(((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) && value[1] == ':' && value[2] == '\\') {
 				// may be single/multiple absolute path
-				MultiByteToWideChar(CP_ACP, 0, name, -1, wc_name, 128);
+				MultiByteToWideChar(CP_OEMCP, 0, name, -1, wc_name, 128);
 				if(GetEnvironmentVariableW(wc_name, wc_path, ENV_SIZE) != 0) {
 					if((short_path = msdos_get_multiple_short_path(wc_path, false)) != NULL && short_path[0] != '\0') {
 						value = short_path;

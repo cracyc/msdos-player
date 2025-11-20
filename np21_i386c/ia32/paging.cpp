@@ -728,6 +728,7 @@ paging(UINT32 laddr, int ucrw)
 		cpu_memorywrite_d_paging(pde_addr, pde);
 	}
 
+	/* 4KB page size */
 	pte_addr = (pde & CPU_PDE_BASEADDR_MASK) + ((laddr >> 10) & 0xffc);
 	pte = cpu_memoryread_d_paging(pte_addr);
 	if (!(pte & CPU_PTE_PRESENT)) {

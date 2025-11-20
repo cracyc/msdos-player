@@ -59,10 +59,6 @@ REG16 IOINPCALL iocore_inp16(UINT port);
 void IOOUTCALL iocore_out32(UINT port, UINT32 dat);
 UINT32 IOINPCALL iocore_inp32(UINT port);
 
-#ifdef USE_DMA
-void dmax86(void);
-#endif
-
 //#ifdef __cplusplus
 //}
 //#endif
