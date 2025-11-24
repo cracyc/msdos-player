@@ -140,16 +140,6 @@
 #define IME_CMODE_SYMBOL                0x0400
 #endif
 
-#ifndef MAPVK_VK_TO_VSC
-#define MAPVK_VK_TO_VSC                 0
-#endif
-#ifndef MAPVK_VK_TO_CHAR
-#define MAPVK_VK_TO_CHAR                2
-#endif
-#ifndef MAPVK_VK_TO_VSC_EX
-#define MAPVK_VK_TO_VSC_EX              4
-#endif
-
 #ifndef VER_MINORVERSION
 #define VER_MINORVERSION                0x0000001
 #endif
@@ -164,6 +154,10 @@
 #endif
 #ifndef VER_GREATER_EQUAL
 #define VER_GREATER_EQUAL               3
+#endif
+
+#ifndef WC_NO_BEST_FIT_CHARS
+#define WC_NO_BEST_FIT_CHARS            0x0400  // do not use best fit chars
 #endif
 
 #ifndef IMAGE_FILE_MACHINE_AMD64

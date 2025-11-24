@@ -79,9 +79,13 @@ SGDT_Ms(UINT32 op)
 		CPU_WORKCLOCK(11);
 		limit = CPU_GDTR_LIMIT;
 		base = CPU_GDTR_BASE;
+		// Win32s requires all 32 bits to be stored here, despite various Intel docs
+		// claiming that the upper 8 bits are either zeroed or undefined in 16-bit mode
+#if 0
 		if (!CPU_INST_OP32) {
 			base &= 0x00ffffff;
 		}
+#endif
 		madr = calc_ea_dst(op);
 		cpu_vmemorywrite_w(CPU_INST_SEGREG_INDEX, madr, limit);
 		cpu_vmemorywrite_d(CPU_INST_SEGREG_INDEX, madr + 2, base);
@@ -236,9 +240,11 @@ SIDT_Ms(UINT32 op)
 		CPU_WORKCLOCK(11);
 		limit = CPU_IDTR_LIMIT;
 		base = CPU_IDTR_BASE;
+#if 0
 		if (!CPU_INST_OP32) {
 			base &= 0x00ffffff;
 		}
+#endif
 		madr = calc_ea_dst(op);
 		cpu_vmemorywrite_w(CPU_INST_SEGREG_INDEX, madr, limit);
 		cpu_vmemorywrite_d(CPU_INST_SEGREG_INDEX, madr + 2, base);
