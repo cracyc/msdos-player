@@ -228,17 +228,7 @@ inline char* my_strtok_s(char *tok, const char *del, char** context)
 }
 inline char *my_strupr(char *str)
 {
-#if 1
-	// don't depend on the locale
-	for(int i = 0; str[i] != '\0'; i++) {
-		if(str[i] >= 'a' && str[i] <= 'z') {
-			str[i] = (str[i] - 'a') + 'A';
-		}
-	}
-	return str;
-#else
 	return (char *)_mbsupr((unsigned char *)(str));
-#endif
 }
 #else
 #define my_strchr(str, chr) strchr((str), (chr))
@@ -5989,6 +5979,21 @@ int msdos_kanji_2nd_byte_check(UINT8 *buf, int n)
 	}
 }
 
+char *msdos_strupr(char *str)
+{
+	for(int i = 0, is_kanji = 0; str[i] != '\0'; i++) {
+		UINT8 c = str[i];
+		if(is_kanji) {
+			is_kanji = 0;
+		} else if(msdos_lead_byte_check(c)) {
+			is_kanji = 1;
+		} else if(c >= 'a' && c <= 'z') {
+			str[i] = (str[i] - 'a') + 'A';
+		}
+	}
+	return(str);
+}
+
 // file control
 
 const char *msdos_remove_double_quote(const char *path)
@@ -6166,7 +6171,7 @@ const char *msdos_get_multiple_short_path(const char *src, bool only_existing_pa
 					if(MyGetShortPathNameA(path, short_path, MAX_PATH) == 0) {
 						path = msdos_remove_end_separator(path);
 					} else {
-						my_strupr(short_path);
+						msdos_strupr(short_path);
 						path = msdos_remove_end_separator(short_path);
 					}
 				} else if(only_existing_path) {
@@ -6367,7 +6372,7 @@ const char *msdos_short_path(const char *path)
 	if(MyGetShortPathNameA(path, tmp, MAX_PATH) == 0) {
 		strcpy(tmp, path);
 	}
-	my_strupr(tmp);
+	msdos_strupr(tmp);
 	return(tmp);
 }
 
@@ -6383,7 +6388,7 @@ const char *msdos_short_path(const wchar_t *path)
 	if(!(is_win2k_or_later && WideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL) != ERROR_INVALID_FLAGS)) {
 		WideCharToMultiByte(uCodePage, 0, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL);
 	}
-	my_strupr(tmp);
+	msdos_strupr(tmp);
 	return(tmp);
 }
 
@@ -6396,7 +6401,7 @@ const char *msdos_short_name(WIN32_FIND_DATAA *fd)
 	} else {
 		strcpy(tmp, fd->cFileName);
 	}
-	my_strupr(tmp);
+	msdos_strupr(tmp);
 	return(tmp);
 }
 
@@ -6413,7 +6418,7 @@ const char *msdos_short_full_path(const char *path)
 	} else {
 		strcpy(tmp, path);
 	}
-	my_strupr(tmp);
+	msdos_strupr(tmp);
 	return(tmp);
 }
 
@@ -6814,7 +6819,7 @@ const char *msdos_short_volume_label(const char *label)
 	} else {
 		*dst_n = '\0';
 	}
-	my_strupr(tmp);
+	msdos_strupr(tmp);
 	return(tmp);
 }
 
@@ -7051,8 +7056,8 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 		
 		char fname[MAX_PATH] = {0}, ext[MAX_PATH] = {0};
 		_splitpath(file_handler[fd].path, NULL, NULL, fname, ext);
-		my_strupr(fname);
-		my_strupr(ext);
+		msdos_strupr(fname);
+		msdos_strupr(ext);
 		memset(sft + 0x20, 0x20, 11);
 		memcpy(sft + 0x20, fname, min(strlen(fname), 8));
 		memcpy(sft + 0x28, ext + 1, min(strlen(ext + 1), 3));
@@ -9264,7 +9269,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 						// NOTE: this is Windows NT specific
 						const char *env = msdos_env_get(parent_psp->env_seg, opt);
 						if(env != NULL) {
-							my_strupr(opt);
+							msdos_strupr(opt);
 							OPEN_STDOUT();
 							msdos_printf(fstdout, "%s=%s\n", opt, env);
 							CLOSE_STDOUT();
@@ -9272,7 +9277,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					} else {
 						char *nam = my_strtok(opt, "=");
 						char *val = opt + strlen(nam) + 1;
-						my_strupr(nam);
+						msdos_strupr(nam);
 						msdos_env_set(parent_psp->env_seg, nam, val);
 					}
 					retval = 0x00;
@@ -14081,7 +14086,7 @@ inline void msdos_int_21h_17h()
 				} else {
 					strcpy(path, new_name);
 				}
-				my_strupr(path);
+				msdos_strupr(path);
 				
 				if(!my_rename(fd.cFileName, path)) {
 					CPU_AL = 0x00;
@@ -16918,7 +16923,7 @@ inline void msdos_int_21h_60h(int lfn)
 		switch(CPU_CL) {
 		case 1:
 			MyGetShortPathNameA(full, full, MAX_PATH);
-			my_strupr(full);
+			msdos_strupr(full);
 			break;
 		case 2:
 			MyGetLongPathNameA(full, full, MAX_PATH);
@@ -17077,19 +17082,19 @@ inline void msdos_int_21h_65h()
 	case 0xa0:
 		memset(tmp, 0, sizeof(tmp));
 		tmp[0] = CPU_DL;
-		my_strupr(tmp);
+		msdos_strupr(tmp);
 		CPU_DL = tmp[0];
 		break;
 	case 0x21:
 	case 0xa1:
 		memset(tmp, 0, sizeof(tmp));
 		memcpy(tmp, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
-		my_strupr(tmp);
+		msdos_strupr(tmp);
 		memcpy(mem + CPU_DS_BASE + CPU_DX, tmp, CPU_CX);
 		break;
 	case 0x22:
 	case 0xa2:
-		my_strupr((char *)(mem + CPU_DS_BASE + CPU_DX));
+		msdos_strupr((char *)(mem + CPU_DS_BASE + CPU_DX));
 		break;
 	case 0x23:
 	case 0xa3:
@@ -18389,7 +18394,7 @@ inline void msdos_int_2fh_12h()
 		{
 			char path[MAX_PATH], *p;
 			strcpy(path, (char *)(mem + CPU_DS_BASE + CPU_SI));
-			my_strupr(path);
+			msdos_strupr(path);
 			while((p = my_strchr(path, '/')) != NULL) {
 				*p = '\\';
 			}
@@ -18403,7 +18408,7 @@ inline void msdos_int_2fh_12h()
 		{
 			char tmp[2] = {0};
 			tmp[0] = CPU_READ_STACK();
-			my_strupr(tmp);
+			msdos_strupr(tmp);
 			CPU_AL = tmp[0];
 		}
 		break;
@@ -22571,7 +22576,7 @@ void msdos_syscall(unsigned num)
 		if(CPU_AL >= 0x80) {
 			char tmp[2] = {0};
 			tmp[0] = CPU_AL;
-			my_strupr(tmp);
+			msdos_strupr(tmp);
 			CPU_AL = tmp[0];
 		}
 		break;
@@ -22661,6 +22666,13 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 {
 	// NOTE: global variables will be automatically initialized to zero in usual C++
 	// so I comment-out some memset(), but don't remove them to clarify the intention of initialization
+	
+	// init memory
+#if 0
+	memset(mem, 0, sizeof(mem));
+#endif
+	// NLS stuff (this should be done first for msdos_strupr)
+	msdos_nls_tables_init();
 	
 	// init file handler
 #if 0
@@ -23515,9 +23527,6 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		UINT16 seg, ofs;
 		msdos_drive_param_block_update(i, &seg, &ofs, 1);
 	}
-	
-	// NLS stuff
-	msdos_nls_tables_init();
 	
 	// load device drivers specified with -ld
 	load_devices(devices_to_load, env_seg);
