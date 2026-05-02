@@ -65,9 +65,9 @@ endif
 
 CFLAGS_I286 = $(CFLAGS) -I. -DHAS_I286
 CXXFLAGS_I286 = $(CFLAGS_I286) 
-CFLAGS_I386 = $(CFLAGS) -I. -DHAS_I386
+CFLAGS_I386 = $(CFLAGS) -I. -DHAS_I386 -Imame/lib/softfloat/source/include
 CXXFLAGS_I386 = $(CFLAGS_I386)
-CFLAGS_I486 = $(CFLAGS) -I. -DHAS_I486
+CFLAGS_I486 = $(CFLAGS) -I. -DHAS_I486 -Imame/lib/softfloat/source/include
 CXXFLAGS_I486 = $(CFLAGS_I486)
 
 #COMPILE = $(CC) $(CFLAGS) $(CFLAGS_EXTRA) $(CFLAGS_OO) $?
@@ -77,7 +77,6 @@ SRCD_BASE = .$(D)
 SRCD_EMUCPU = $(SRCD_BASE)mame$(D)emu$(D)cpu$(D)
 SRCD_I86 = $(SRCD_EMUCPU)i86$(D)
 SRCD_I386 = $(SRCD_EMUCPU)i386$(D)
-SRCD_SOFTFLOAT = $(SRCD_BASE)mame$(D)lib$(D)softfloat$(D)
 
 OUTD_BASE = .$(D)binary$(D)
 #OUTD_BASE = .$(D)
@@ -138,17 +137,6 @@ SRCS_PENTIUM = \
 	$(SRCS_I486) \
 	$(SRCD_I386)pentops.c
 
-SRCS_SOFTFLOAT = \
-	$(SRCD_SOFTFLOAT)fpu_constant.h \
-	$(SRCD_SOFTFLOAT)fsincos.c \
-	$(SRCD_SOFTFLOAT)fyl2x.c \
-	$(SRCD_SOFTFLOAT)mamesf.h \
-	$(SRCD_SOFTFLOAT)milieu.h \
-	$(SRCD_SOFTFLOAT)softfloat-macros \
-	$(SRCD_SOFTFLOAT)softfloat-specialize \
-	$(SRCD_SOFTFLOAT)softfloat.c \
-	$(SRCD_SOFTFLOAT)softfloat.h
-
 all : i286 i386 i486 ntvdm
 
 i286: $(TARGET_I286)
@@ -166,14 +154,14 @@ $(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I8
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_I386) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I386) $(SRCS_I386DASM) $(SRCS_SOFTFLOAT)
+$(TARGET_I386) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I386) $(SRCS_I386DASM)
 	$(CXX) $(CXXFLAGS_I386) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
 		$(SRCD_BASE)msdos.cpp \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I386DASM) $(SRCS_SOFTFLOAT)
+$(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I386DASM)
 	$(CXX) $(CXXFLAGS_I486) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
 		$(SRCD_BASE)msdos.cpp \

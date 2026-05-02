@@ -6,8 +6,7 @@
 #define __I386_H__
 
 //#include "i386.h"
-#include "../../../lib/softfloat/milieu.h"
-#include "../../../lib/softfloat/softfloat.h"
+#include "../../../lib/softfloat/source/include/softfloat.h"
 #include "../vtlb.h"
 
 #include <math.h>
@@ -534,7 +533,7 @@ enum CR4_BITS {
 	UINT64 m_perfctr[2];
 
 	// FPU
-	floatx80 m_x87_reg[8];
+	extFloat80_t m_x87_reg[8];
 
 	UINT16 m_x87_cw;
 	UINT16 m_x87_sw;
@@ -647,7 +646,7 @@ static int i386_limit_check(int seg, UINT32 offset, int size);
 #define SetSZPF16(x)        {m_ZF = ((UINT16)(x)==0);  m_SF = ((x)&0x8000) ? 1 : 0; m_PF = i386_parity_table[x & 0xFF]; }
 #define SetSZPF32(x)        {m_ZF = ((UINT32)(x)==0);  m_SF = ((x)&0x80000000) ? 1 : 0; m_PF = i386_parity_table[x & 0xFF]; }
 
-#define MMX(n)              (*((MMX_REG *)(&m_x87_reg[(n)].low)))
+#define MMX(n)              (*((MMX_REG *)(&m_x87_reg[(n)].signif)))
 #define XMM(n)              m_sse_reg[(n)]
 
 /***********************************************************************************/

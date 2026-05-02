@@ -1312,7 +1312,7 @@ UINT32 read_byte(UINT32 byteaddress)
 	check_bp(byteaddress, &rd_break_point, 1);
 	if(byteaddress < MAX_MEM) {
 		ret = mem[byteaddress];
-	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress >= 0xffff8000)) {
 		ret = mem[byteaddress &= 0xfffff];
 #ifdef SUPPORT_VDD
 	} else if(vdd_mem) {
@@ -1331,20 +1331,20 @@ UINT32 read_word(UINT32 byteaddress)
 {
 	UINT16 ret;
 	check_bp(byteaddress, &rd_break_point, 2);
-	if(byteaddress == 0x41c) {
-		// pointer to first free slot in keyboard buffer
-		if(key_buf_char != NULL && key_buf_scan != NULL) {
-			enter_key_buf_lock();
-			bool empty = pcbios_is_key_buffer_empty();
-			leave_key_buf_lock();
-			if(empty) maybe_idle();
-		}
-	}
 	if(byteaddress < MAX_MEM - 1) {
+		if(byteaddress == 0x41c) {
+			// pointer to first free slot in keyboard buffer
+			if(key_buf_char != NULL && key_buf_scan != NULL) {
+				enter_key_buf_lock();
+				bool empty = pcbios_is_key_buffer_empty();
+				leave_key_buf_lock();
+				if(empty) maybe_idle();
+			}
+		}
 		ret = *(UINT16 *)(mem + byteaddress);
 	} else if(byteaddress == MAX_MEM - 1) {
 		ret = mem[byteaddress] | 0xff00;
-	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress >= 0xffff8000)) {
 		ret = *(UINT16 *)(mem + (byteaddress & 0xfffff));
 #ifdef SUPPORT_VDD
 	} else if(vdd_mem) {
@@ -1365,18 +1365,10 @@ UINT32 read_dword(UINT32 byteaddress)
 	check_bp(byteaddress, &rd_break_point, 4);
 	if(byteaddress < MAX_MEM - 3) {
 		ret = *(UINT32 *)(mem + byteaddress);
-	} else if((byteaddress & ~3) == (MAX_MEM - 4)) { // if byteaddress == MAX_MEM - 4 we won't reach here
-		int shift = (byteaddress & 3) << 3;
-		ret = (*(UINT32 *)(mem + MAX_MEM - 4) >> shift) | (0xffffffff << (32 - shift));
-	} else if((ADDR_MASK == 0xffffffff) && (byteaddress > 0xffff8000)) {
+	} else if((ADDR_MASK == 0xffffffff) && (byteaddress >= 0xffff8000)) {
 		ret = *(UINT32 *)(mem + (byteaddress & 0xfffff));
-#ifdef SUPPORT_VDD
-	} else if(vdd_mem) {
-		// call VirtualAlloc automatically instead of page-fault handler
-		UINT32 *ptr = (UINT32 *)get_virtual_memory(byteaddress);
-		if(ptr) return *ptr;
-		ret = 0xffffffff;
-#endif
+	} else if(byteaddress & ~3) {
+		ret = read_word(byteaddress + 2) << 16 | read_word(byteaddress);
 	} else {
 		ret = 0xffffffff;
 	}
@@ -1813,6 +1805,126 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 	return TRUE;
 }
 
+BOOL MyReadConsoleOutputA(HANDLE hConsoleOutput, CHAR_INFO *lpBuffer, COORD dwBufferSize, COORD dwBufferCoord, PSMALL_RECT lpReadRegion)
+{
+	if(use_vt) {
+		if(lpReadRegion->Right > scr_width) {
+			lpReadRegion->Right = scr_width;
+		}
+		if(lpReadRegion->Bottom > scr_height) {
+			lpReadRegion->Bottom = scr_height;
+		}
+		if((lpReadRegion->Left >= lpReadRegion->Right) || (lpReadRegion->Top >= lpReadRegion->Bottom)) {
+			return TRUE;
+		}
+		int width = lpReadRegion->Right - lpReadRegion->Left;
+		int height = lpReadRegion->Bottom - lpReadRegion->Top;
+		if(width > (dwBufferSize.X - dwBufferCoord.X)) {
+			width = dwBufferSize.X - dwBufferCoord.X;
+		}
+		if(height > (dwBufferSize.Y - dwBufferCoord.Y)) {
+			height = dwBufferSize.Y - dwBufferCoord.Y;
+		}
+
+		int dest_pos = dwBufferCoord.Y * dwBufferSize.X + dwBufferCoord.X;
+		for(int y = 0; y < height; y++) {
+			int src_y = lpReadRegion->Top + y;
+			for(int x = 0; x < width; x++) {
+				int src_x = lpReadRegion->Left + x;
+				int src_pos = src_y * scr_width + src_x;
+				lpBuffer[dest_pos + x].Char.AsciiChar = scr_char[src_pos];
+				lpBuffer[dest_pos + x].Attributes = scr_attr[src_pos];
+			}
+			dest_pos += dwBufferSize.X;
+		}
+		lpReadRegion->Right = lpReadRegion->Left + width;
+		lpReadRegion->Bottom = lpReadRegion->Top + height;
+	} else {
+		return ReadConsoleOutputA(hConsoleOutput, lpBuffer, dwBufferSize, dwBufferCoord, lpReadRegion);
+	}
+	return TRUE;
+}
+
+BOOL MyScrollScreen(HANDLE hConsoleOutput, SMALL_RECT *lpScrollRectangle, INT iLines, WORD attribute)
+{
+	if (!iLines) iLines = scr_height;
+	if (use_vt) {
+		if (!alt_buffer) return TRUE;  // don't try to scroll if we arn't in the alt buffer since the back buffer contents aren't valid
+
+		char buf[64];
+		int len;
+		int top = lpScrollRectangle->Top;
+		int bottom = lpScrollRectangle->Bottom;
+		int left = lpScrollRectangle->Left;
+		int right = lpScrollRectangle->Right;
+
+		if(right > scr_width) {
+			right = scr_width;
+		}
+		if(bottom > scr_height) {
+			bottom = scr_height;
+		}
+		if((left >= right) || (top >= bottom)) {
+			return TRUE;
+		}
+
+		int width = right - left;
+		int height = bottom - top;
+		int lines = abs(iLines);
+
+		len = sprintf(buf, "\x1b?69h\x1b[%d;%dr\x1b[%d;%ds", top + 1, bottom + 1, left + 1, right + 1);
+		WriteConsoleA(hConsoleOutput, buf, len, NULL, NULL);
+
+		if (iLines > 0) {
+			len = sprintf(buf, "\x1b[%dL", lines);
+		} else {
+			len = sprintf(buf, "\x1b[%dM", lines);
+		}
+		WriteConsoleA(hConsoleOutput, buf, len, NULL, NULL);
+
+		WriteConsoleA(hConsoleOutput, "\x1b[r\x1b[s\x1b?69l", 11, NULL, NULL);
+
+		if (lines >= height) {
+			for (int y = top; y <= bottom; y++) {
+				for (int x = left; x <= right; x++) {
+					scr_char[y * scr_width + x] = ' ';
+					scr_attr[y * scr_width + x] = attribute;
+				}
+			}
+		} else {
+			if (iLines < 0) {
+				for (int y = top, line = 0; y <= bottom; y++, line++) {
+					if (line < lines) {
+						memcpy(&scr_char[y * scr_width + left], &scr_char[(y + lines) * scr_width + left], width);
+						memcpy(&scr_attr[y * scr_width + left], &scr_attr[(y + lines) * scr_width + left], width * 2);
+					} else {
+						for (int x = left; x <= right; x++) {
+							scr_char[y * scr_width + x] = ' ';
+							scr_attr[y * scr_width + x] = attribute;
+						}
+					}
+				}
+			} else {
+				for (int y = bottom, line = 0; y >= top; y--, line++) {
+					if (line < lines) {
+						memcpy(&scr_char[y * scr_width + left], &scr_char[(y - lines) * scr_width + left], width);
+						memcpy(&scr_attr[y * scr_width + left], &scr_attr[(y - lines) * scr_width + left], width * 2);
+					} else {
+						for (int x = left; x <= right; x++) {
+							scr_char[y * scr_width + x] = ' ';
+							scr_attr[y * scr_width + x] = attribute;
+						}
+					}
+				}
+			}
+		}
+	} else {
+		COORD dest = {lpScrollRectangle->Left, (SHORT)(lpScrollRectangle->Top + (SHORT)iLines)};
+		CHAR_INFO fill = {' ', attribute};
+		ScrollConsoleScreenBuffer(hConsoleOutput, lpScrollRectangle, NULL, dest, &fill);
+	}
+}
+
 #else
 void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LPCSTR attributes, DWORD nLength, COORD dwWriteCoord)
 {
@@ -1948,16 +2060,16 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 void write_byte(UINT32 byteaddress, UINT8 data)
 {
 	check_bp(byteaddress, &wr_break_point, 1);
-	if((byteaddress < MEMORY_END) || (byteaddress >= DUMMY_TOP)) {
-		if (byteaddress < MAX_MEM) {
-			mem[byteaddress] = data;
-		}
+	if(byteaddress >= MAX_MEM) {
 #ifdef SUPPORT_VDD
-	} else if(vdd_mem) {
-		// call VirtualAlloc automatically instead of page-fault handler
-		UINT8 *ptr = get_virtual_memory(byteaddress);
-		if(ptr) *ptr = data;
+		if(vdd_mem) {
+			// call VirtualAlloc automatically instead of page-fault handler
+			UINT8 *ptr = get_virtual_memory(byteaddress);
+			if(ptr) *ptr = data;
+		}
 #endif
+	} else if((byteaddress < MEMORY_END) || (byteaddress >= DUMMY_TOP)) {
+		mem[byteaddress] = data;
 	} else {
 		if(byteaddress >= text_vram_top_address && byteaddress < text_vram_end_address) {
 			if(!restore_console_size) {
@@ -1980,7 +2092,15 @@ void write_byte(UINT32 byteaddress, UINT8 data)
 void write_word(UINT32 byteaddress, UINT16 data)
 {
 	check_bp(byteaddress, &wr_break_point, 2);
-	if(byteaddress < MEMORY_END - 1) {
+	if(byteaddress >= MAX_MEM) {
+#ifdef SUPPORT_VDD
+		if(vdd_mem) {
+			// call VirtualAlloc automatically instead of page-fault handler
+			UINT16 *ptr = (UINT16 *)get_virtual_memory(byteaddress);
+			if(ptr) *ptr = data;
+		}
+#endif
+	} else if((byteaddress < MEMORY_END - 1) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 1))) {
 		if(byteaddress == cursor_position_address) {
 			if(*(UINT16 *)(mem + byteaddress) != data) {
 				COORD co;
@@ -1992,16 +2112,6 @@ void write_word(UINT32 byteaddress, UINT16 data)
 			}
 		}
 		*(UINT16 *)(mem + byteaddress) = data;
-	} else if(byteaddress >= DUMMY_TOP) {
-		if (byteaddress < MAX_MEM - 1) {
-			*(UINT16 *)(mem + byteaddress) = data;
-		}
-#ifdef SUPPORT_VDD
-	} else if(vdd_mem) {
-		// call VirtualAlloc automatically instead of page-fault handler
-		UINT16 *ptr = (UINT16 *)get_virtual_memory(byteaddress);
-		if(ptr) *ptr = data;
-#endif
 	} else if(byteaddress & 1) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte
 		write_byte(byteaddress    , (data     ) & 0xff);
 		write_byte(byteaddress + 1, (data >> 8) & 0xff);
@@ -2025,13 +2135,7 @@ void write_dword(UINT32 byteaddress, UINT32 data)
 	check_bp(byteaddress, &wr_break_point, 4);
 	if((byteaddress < MEMORY_END - 3) || ((byteaddress >= DUMMY_TOP) && (byteaddress < MAX_MEM - 3))) {
 		*(UINT32 *)(mem + byteaddress) = data;
-#ifdef SUPPORT_VDD
-	} else if(vdd_mem) {
-		// call VirtualAlloc automatically instead of page-fault handler
-		UINT32 *ptr = (UINT32 *)get_virtual_memory(byteaddress);
-		if(ptr) *ptr = data;
-#endif
-	} else if(byteaddress & 3) { // if the bp hit above now_suspended will be true so it won't hit again in write_byte/word
+	} else {
 		if(byteaddress & 1) {
 			write_byte(byteaddress    , (data      ) & 0x00ff);
 			write_word(byteaddress + 1, (data >>  8) & 0xffff);
@@ -2242,8 +2346,8 @@ void debugger_regs_info(char *buffer, int r32)
 	
 #if defined(HAS_I386)
 	if(r32) {
-		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
-		CPU_EAX, CPU_EBX, CPU_ECX, CPU_EDX, CPU_ESP, CPU_EBP, CPU_ESI, CPU_EDI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS,
+		sprintf(buffer, "EAX=%08X  EBX=%08X  ECX=%08X  EDX=%08X\nESP=%08X  EBP=%08X  ESI=%08X  EDI=%08X\nEIP=%08X  DS=%04X  ES=%04X  SS=%04X  CS=%04X  FS=%04x  GS=%04X  FLAG=[%s %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c]\n",
+		CPU_EAX, CPU_EBX, CPU_ECX, CPU_EDX, CPU_ESP, CPU_EBP, CPU_ESI, CPU_EDI, CPU_EIP, CPU_DS, CPU_ES, CPU_SS, CPU_CS, CPU_FS, CPU_GS,
 		CPU_STAT_PM ? "PE" : "--",
 		(flags & 0x40000) ? 'A' : '-',
 		(flags & 0x20000) ? 'V' : '-',
@@ -2398,11 +2502,12 @@ UINT16 debugger_hexatow(char *value)
 void debugger_main()
 {
 	char buffer[8192];
-	
-	buffer[0] = 0xff; // IAC
-	buffer[1] = 0xfb; // WILL
-	buffer[2] = 0x01; // ECHO
-	telnet_send(buffer, 3);
+
+	// this	breaks echo with windows telnet
+	//buffer[0] = 0xff; // IAC
+	//buffer[1] = 0xfb; // WILL
+	//buffer[2] = 0x01; // ECHO
+	//telnet_send(buffer, 3);
 	
 	telnet_command("\033[20h"); // cr-lf
 	
@@ -2746,6 +2851,33 @@ void debugger_main()
 			} else if(_stricmp(params[0], "TRANS") == 0) {
 				if(num == 2) {
 					telnet_printf("%08x\n", CPU_TRANS_PAGING_ADDR(debugger_get_val(params[1])));
+				} else {
+					telnet_printf("invalid parameter number\n");
+				}
+			} else if(_stricmp(params[0], "CR") == 0) {
+				if(num == 2) {
+					uint32_t val;
+					switch (debugger_get_val(params[1])) {
+					case 0:
+						val = CPU_CR0;
+						break;
+					case 2:
+						val = CPU_CR2;
+						break;
+					case 3:
+						val = CPU_CR3;
+						break;
+					case 4:
+						val = CPU_CR4;
+						break;
+					default:
+						val = -1;
+						telnet_printf("invalid CR reg\n");
+						break;
+					}
+					if (val != -1) {
+						telnet_printf("%08x\n", val);
+					}
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -3475,6 +3607,7 @@ void debugger_main()
 				telnet_printf("GDTBASE - show gdt base\n");
 				telnet_printf("IDTBASE - show idt base\n");
 				telnet_printf("TRANS <address> - show translated address\n");
+				telnet_printf("CR <n> - show CRn\n");
 #endif
 				
 				telnet_printf("> <filename> - output logfile\n");
@@ -3702,6 +3835,9 @@ void exit_handler()
 	}
 #ifdef SUPPORT_XMS
 	msdos_xms_release();
+#endif
+#ifdef EXPORT_DEBUG_TO_FILE
+	fflush(fp_debug_log);
 #endif
 	hardware_release();
 }
@@ -23647,6 +23783,13 @@ void hardware_run()
 	while(!msdos_stat) {
 #if 1
 		while(!msdos_stat && update_ops < UPDATE_OPS) {
+#if defined(USE_DEBUGGER) && defined(ENABLE_DEBUG_LOG)
+			if(debug_trace && fp_debug_log != NULL) {
+				char buffer[256];
+				debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
+				fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
+			}
+#endif
 			CPU_EXECUTE();
 			if(CPU_EIP_CHANGED) {
 				idle_ops++;
@@ -23681,13 +23824,6 @@ inline void hardware_run_cpu()
 	if(CPU_EIP_CHANGED) {
 		idle_ops++;
 	}
-#if defined(USE_DEBUGGER) && defined(ENABLE_DEBUG_LOG)
-	if(debug_trace && fp_debug_log != NULL) {
-		char buffer[256];
-		debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
-		fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
-	}
-#endif
 	if(msdos_stat & REQ_SYSCALL) {
 		msdos_stat &= ~REQ_SYSCALL;
 		msdos_syscall(msdos_int_num);

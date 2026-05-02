@@ -97,19 +97,18 @@
  *
  *************************************/
 
-static const floatx80 fx80_zero =   { 0x0000, U64(0x0000000000000000) };
-static const floatx80 fx80_one =    { 0x3fff, U64(0x8000000000000000) };
-
-static const floatx80 fx80_ninf =   { 0xffff, U64(0x8000000000000000) };
-static const floatx80 fx80_inan =   { 0xffff, U64(0xc000000000000000) };
+static const extFloat80_t fx80_zero = packToExtF80(0, 0x0000, 0x0000000000000000ULL);
+static const extFloat80_t fx80_one  = packToExtF80(0, 0x3fff, 0x8000000000000000ULL);
+static const extFloat80_t fx80_ninf = packToExtF80(1, 0x7fff, 0x8000000000000000ULL);
+static const extFloat80_t fx80_inan = packToExtF80(1, 0x7fff, 0xC000000000000000ULL);
 
 /* Maps x87 round modes to SoftFloat round modes */
 static const int x87_to_sf_rc[4] =
 {
-	float_round_nearest_even,
-	float_round_down,
-	float_round_up,
-	float_round_to_zero,
+	softfloat_round_near_even,
+	softfloat_round_min,
+	softfloat_round_max,
+	softfloat_round_minMag,
 };
 
 
@@ -119,69 +118,60 @@ static const int x87_to_sf_rc[4] =
  *
  *************************************/
 
-extern flag floatx80_is_nan(floatx80 a);
-
-extern flag floatx80_is_signaling_nan(floatx80 a);
-
-INLINE flag floatx80_is_quiet_nan(floatx80 a)
+INLINE bool floatx80_is_quiet_nan(extFloat80_t a)
 {
-	bits64 aLow;
+	UINT64 aLow;
 
-	aLow = a.low & ~LIT64(0x4000000000000000);
+	aLow = a.signif & ~0x4000000000000000ULL;
 	return
-		((a.high & 0x7FFF) == 0x7FFF)
-		&& (bits64)(aLow << 1)
-		&& (a.low != aLow);
+		((a.signExp & 0x7FFF) == 0x7FFF)
+		&& (UINT64)(aLow << 1)
+		&& (a.signif != aLow);
 }
 
-INLINE int floatx80_is_zero(floatx80 fx)
+INLINE int floatx80_is_zero(extFloat80_t fx)
 {
-	return (((fx.high & 0x7fff) == 0) && ((fx.low << 1) == 0));
+	return (((fx.signExp & 0x7fff) == 0) && ((fx.signif << 1) == 0));
 }
 
-INLINE int floatx80_is_inf(floatx80 fx)
+INLINE int floatx80_is_inf(extFloat80_t fx)
 {
-	return (((fx.high & 0x7fff) == 0x7fff) && ((fx.low << 1) == 0));
+	return (((fx.signExp & 0x7fff) == 0x7fff) && ((fx.signif << 1) == 0));
 }
 
-INLINE int floatx80_is_denormal(floatx80 fx)
+INLINE int floatx80_is_denormal(extFloat80_t fx)
 {
-	return (((fx.high & 0x7fff) == 0) &&
-		((fx.low & U64(0x8000000000000000)) == 0) &&
-		((fx.low << 1) != 0));
+	return (((fx.signExp & 0x7fff) == 0) &&
+		((fx.signif & U64(0x8000000000000000)) == 0) &&
+		((fx.signif << 1) != 0));
 }
 
-INLINE floatx80 floatx80_abs(floatx80 fx)
+INLINE extFloat80_t floatx80_abs(extFloat80_t fx)
 {
-	fx.high &= 0x7fff;
+	fx.signExp &= 0x7fff;
 	return fx;
 }
 
-INLINE double fx80_to_double(floatx80 fx)
+INLINE double fx80_to_double(extFloat80_t fx)
 {
-	UINT64 d = floatx80_to_float64(fx);
+	float64_t d = extF80_to_f64(fx);
 	return *(double*)&d;
 }
 
-INLINE floatx80 double_to_fx80(double in)
+INLINE extFloat80_t READ80(UINT32 ea)
 {
-	return float64_to_floatx80(*(UINT64*)&in);
-}
+	extFloat80_t t;
 
-INLINE floatx80 READ80(UINT32 ea)
-{
-	floatx80 t;
-
-	t.low = READ64(ea);
-	t.high = READ16(ea + 8);
+	t.signif = READ64(ea);
+	t.signExp = READ16(ea + 8);
 
 	return t;
 }
 
-INLINE void WRITE80(UINT32 ea, floatx80 t)
+INLINE void WRITE80(UINT32 ea, extFloat80_t t)
 {
-	WRITE64(ea, t.low);
-	WRITE16(ea + 8, t.high);
+	WRITE64(ea, t.signif);
+	WRITE16(ea + 8, t.signExp);
 }
 
 
@@ -205,7 +195,7 @@ INLINE void x87_set_tag(int reg, int tag)
 	m_x87_tw |= (tag << shift);
 }
 
-void x87_write_stack(int i, floatx80 value, bool update_tag)
+void x87_write_stack(int i, extFloat80_t value, bool update_tag)
 {
 	ST(i) = value;
 
@@ -217,7 +207,7 @@ void x87_write_stack(int i, floatx80 value, bool update_tag)
 		{
 			tag = X87_TW_ZERO;
 		}
-		else if (floatx80_is_inf(value) || floatx80_is_nan(value))
+		else if (floatx80_is_inf(value) || extFloat80_is_nan(value))
 		{
 			tag = X87_TW_SPECIAL;
 		}
@@ -341,30 +331,30 @@ int x87_check_exceptions(bool store)
 		m_x87_inst_ptr = m_prev_eip + (m_x87_cs << 4);
 
 	/* Update the exceptions from SoftFloat */
-	if (float_exception_flags & float_flag_invalid)
+	if (softfloat_exceptionFlags & softfloat_flag_invalid)
 	{
 		m_x87_sw |= X87_SW_IE;
-		float_exception_flags &= ~float_flag_invalid;
+		softfloat_exceptionFlags &= ~softfloat_flag_invalid;
 	}
-	if (float_exception_flags & float_flag_overflow)
+	if (softfloat_exceptionFlags & softfloat_flag_overflow)
 	{
 		m_x87_sw |= X87_SW_OE;
-		float_exception_flags &= ~float_flag_overflow;
+		softfloat_exceptionFlags &= ~softfloat_flag_overflow;
 	}
-	if (float_exception_flags & float_flag_underflow)
+	if (softfloat_exceptionFlags & softfloat_flag_underflow)
 	{
 		m_x87_sw |= X87_SW_UE;
-		float_exception_flags &= ~float_flag_underflow;
+		softfloat_exceptionFlags &= ~softfloat_flag_underflow;
 	}
-	if (float_exception_flags & float_flag_inexact)
+	if (softfloat_exceptionFlags & softfloat_flag_inexact)
 	{
 		m_x87_sw |= X87_SW_PE;
-		float_exception_flags &= ~float_flag_inexact;
+		softfloat_exceptionFlags &= ~softfloat_flag_inexact;
 	}
-	if (float_exception_flags & float_flag_divbyzero)
+	if (softfloat_exceptionFlags & softfloat_flag_infinite)
 	{
 		m_x87_sw |= X87_SW_ZE;
-		float_exception_flags &= ~float_flag_divbyzero;
+		softfloat_exceptionFlags &= ~softfloat_flag_infinite;
 	}
 
 	UINT16 unmasked = (m_x87_sw & ~m_x87_cw) & 0x3f;
@@ -386,7 +376,7 @@ INLINE void x87_write_cw(UINT16 cw)
 	m_x87_cw = cw;
 
 	/* Update the SoftFloat rounding mode */
-	float_rounding_mode = x87_to_sf_rc[(m_x87_cw >> X87_CW_RC_SHIFT) & X87_CW_RC_MASK];
+	softfloat_roundingMode = x87_to_sf_rc[(m_x87_cw >> X87_CW_RC_SHIFT) & X87_CW_RC_MASK];
 }
 
 void x87_reset()
@@ -410,29 +400,29 @@ void x87_reset()
  *
  *************************************/
 
-static floatx80 x87_add(floatx80 a, floatx80 b)
+static extFloat80_t x87_add(extFloat80_t a, extFloat80_t b)
 {
-	floatx80 result = { 0 };
+	extFloat80_t result = { 0 };
 
 	switch ((m_x87_cw >> X87_CW_PC_SHIFT) & X87_CW_PC_MASK)
 	{
 		case X87_CW_PC_SINGLE:
 		{
-			float32 a32 = floatx80_to_float32(a);
-			float32 b32 = floatx80_to_float32(b);
-			result = float32_to_floatx80(float32_add(a32, b32));
+			float32_t a32 = extF80_to_f32(a);
+			float32_t b32 = extF80_to_f32(b);
+			result = f32_to_extF80(f32_add(a32, b32));
 			break;
 		}
 		case X87_CW_PC_DOUBLE:
 		{
-			float64 a64 = floatx80_to_float64(a);
-			float64 b64 = floatx80_to_float64(b);
-			result = float64_to_floatx80(float64_add(a64, b64));
+			float64_t a64 = extF80_to_f64(a);
+			float64_t b64 = extF80_to_f64(b);
+			result = f64_to_extF80(f64_add(a64, b64));
 			break;
 		}
 		case X87_CW_PC_EXTEND:
 		{
-			result = floatx80_add(a, b);
+			result = extF80_add(a, b);
 			break;
 		}
 	}
@@ -440,29 +430,29 @@ static floatx80 x87_add(floatx80 a, floatx80 b)
 	return result;
 }
 
-static floatx80 x87_sub(floatx80 a, floatx80 b)
+static extFloat80_t x87_sub(extFloat80_t a, extFloat80_t b)
 {
-	floatx80 result = { 0 };
+	extFloat80_t result = { 0 };
 
 	switch ((m_x87_cw >> X87_CW_PC_SHIFT) & X87_CW_PC_MASK)
 	{
 		case X87_CW_PC_SINGLE:
 		{
-			float32 a32 = floatx80_to_float32(a);
-			float32 b32 = floatx80_to_float32(b);
-			result = float32_to_floatx80(float32_sub(a32, b32));
+			float32_t a32 = extF80_to_f32(a);
+			float32_t b32 = extF80_to_f32(b);
+			result = f32_to_extF80(f32_sub(a32, b32));
 			break;
 		}
 		case X87_CW_PC_DOUBLE:
 		{
-			float64 a64 = floatx80_to_float64(a);
-			float64 b64 = floatx80_to_float64(b);
-			result = float64_to_floatx80(float64_sub(a64, b64));
+			float64_t a64 = extF80_to_f64(a);
+			float64_t b64 = extF80_to_f64(b);
+			result = f64_to_extF80(f64_sub(a64, b64));
 			break;
 		}
 		case X87_CW_PC_EXTEND:
 		{
-			result = floatx80_sub(a, b);
+			result = extF80_sub(a, b);
 			break;
 		}
 	}
@@ -470,29 +460,29 @@ static floatx80 x87_sub(floatx80 a, floatx80 b)
 	return result;
 }
 
-static floatx80 x87_mul(floatx80 a, floatx80 b)
+static extFloat80_t x87_mul(extFloat80_t a, extFloat80_t b)
 {
-	floatx80 val = { 0 };
+	extFloat80_t val = { 0 };
 
 	switch ((m_x87_cw >> X87_CW_PC_SHIFT) & X87_CW_PC_MASK)
 	{
 		case X87_CW_PC_SINGLE:
 		{
-			float32 a32 = floatx80_to_float32(a);
-			float32 b32 = floatx80_to_float32(b);
-			val = float32_to_floatx80(float32_mul(a32, b32));
+			float32_t a32 = extF80_to_f32(a);
+			float32_t b32 = extF80_to_f32(b);
+			val = f32_to_extF80(f32_mul(a32, b32));
 			break;
 		}
 		case X87_CW_PC_DOUBLE:
 		{
-			float64 a64 = floatx80_to_float64(a);
-			float64 b64 = floatx80_to_float64(b);
-			val = float64_to_floatx80(float64_mul(a64, b64));
+			float64_t a64 = extF80_to_f64(a);
+			float64_t b64 = extF80_to_f64(b);
+			val = f64_to_extF80(f64_mul(a64, b64));
 			break;
 		}
 		case X87_CW_PC_EXTEND:
 		{
-			val = floatx80_mul(a, b);
+			val = extF80_mul(a, b);
 			break;
 		}
 	}
@@ -501,29 +491,29 @@ static floatx80 x87_mul(floatx80 a, floatx80 b)
 }
 
 
-static floatx80 x87_div(floatx80 a, floatx80 b)
+static extFloat80_t x87_div(extFloat80_t a, extFloat80_t b)
 {
-	floatx80 val = { 0 };
+	extFloat80_t val = { 0 };
 
 	switch ((m_x87_cw >> X87_CW_PC_SHIFT) & X87_CW_PC_MASK)
 	{
 		case X87_CW_PC_SINGLE:
 		{
-			float32 a32 = floatx80_to_float32(a);
-			float32 b32 = floatx80_to_float32(b);
-			val = float32_to_floatx80(float32_div(a32, b32));
+			float32_t a32 = extF80_to_f32(a);
+			float32_t b32 = extF80_to_f32(b);
+			val = f32_to_extF80(f32_div(a32, b32));
 			break;
 		}
 		case X87_CW_PC_DOUBLE:
 		{
-			float64 a64 = floatx80_to_float64(a);
-			float64 b64 = floatx80_to_float64(b);
-			val = float64_to_floatx80(float64_div(a64, b64));
+			float64_t a64 = extF80_to_f64(a);
+			float64_t b64 = extF80_to_f64(b);
+			val = f64_to_extF80(f64_div(a64, b64));
 			break;
 		}
 		case X87_CW_PC_EXTEND:
 		{
-			val = floatx80_div(a, b);
+			val = extF80_div(a, b);
 			break;
 		}
 	}
@@ -545,7 +535,7 @@ static floatx80 x87_div(floatx80 a, floatx80 b)
 
 void x87_fadd_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -557,13 +547,13 @@ void x87_fadd_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -582,7 +572,7 @@ void x87_fadd_m32real(UINT8 modrm)
 
 void x87_fadd_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -594,13 +584,13 @@ void x87_fadd_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -619,7 +609,7 @@ void x87_fadd_m64real(UINT8 modrm)
 
 void x87_fadd_st_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -631,11 +621,11 @@ void x87_fadd_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -657,7 +647,7 @@ void x87_fadd_st_sti(UINT8 modrm)
 
 void x87_fadd_sti_st(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -669,11 +659,11 @@ void x87_fadd_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -695,7 +685,7 @@ void x87_fadd_sti_st(UINT8 modrm)
 
 void x87_faddp(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -707,11 +697,11 @@ void x87_faddp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -736,7 +726,7 @@ void x87_faddp(UINT8 modrm)
 
 void x87_fiadd_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -750,11 +740,11 @@ void x87_fiadd_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -773,7 +763,7 @@ void x87_fiadd_m32int(UINT8 modrm)
 
 void x87_fiadd_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -787,11 +777,11 @@ void x87_fiadd_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -817,7 +807,7 @@ void x87_fiadd_m16int(UINT8 modrm)
 
 void x87_fsub_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -829,13 +819,13 @@ void x87_fsub_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -854,7 +844,7 @@ void x87_fsub_m32real(UINT8 modrm)
 
 void x87_fsub_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -866,13 +856,13 @@ void x87_fsub_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -891,7 +881,7 @@ void x87_fsub_m64real(UINT8 modrm)
 
 void x87_fsub_st_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -903,11 +893,11 @@ void x87_fsub_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -929,7 +919,7 @@ void x87_fsub_st_sti(UINT8 modrm)
 
 void x87_fsub_sti_st(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -941,11 +931,11 @@ void x87_fsub_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -967,7 +957,7 @@ void x87_fsub_sti_st(UINT8 modrm)
 
 void x87_fsubp(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -979,11 +969,11 @@ void x87_fsubp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1008,7 +998,7 @@ void x87_fsubp(UINT8 modrm)
 
 void x87_fisub_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1022,11 +1012,11 @@ void x87_fisub_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1045,7 +1035,7 @@ void x87_fisub_m32int(UINT8 modrm)
 
 void x87_fisub_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1059,11 +1049,11 @@ void x87_fisub_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1089,7 +1079,7 @@ void x87_fisub_m16int(UINT8 modrm)
 
 void x87_fsubr_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1101,13 +1091,13 @@ void x87_fsubr_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = float32_to_floatx80(m32real);
-		floatx80 b = ST(0);
+		extFloat80_t a = f32_to_extF80(m32real);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1126,7 +1116,7 @@ void x87_fsubr_m32real(UINT8 modrm)
 
 void x87_fsubr_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1138,13 +1128,13 @@ void x87_fsubr_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = float64_to_floatx80(m64real);
-		floatx80 b = ST(0);
+		extFloat80_t a = f64_to_extF80(m64real);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1163,7 +1153,7 @@ void x87_fsubr_m64real(UINT8 modrm)
 
 void x87_fsubr_st_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -1175,11 +1165,11 @@ void x87_fsubr_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1201,7 +1191,7 @@ void x87_fsubr_st_sti(UINT8 modrm)
 
 void x87_fsubr_sti_st(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -1213,11 +1203,11 @@ void x87_fsubr_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1239,7 +1229,7 @@ void x87_fsubr_sti_st(UINT8 modrm)
 
 void x87_fsubrp(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -1251,11 +1241,11 @@ void x87_fsubrp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1280,7 +1270,7 @@ void x87_fsubrp(UINT8 modrm)
 
 void x87_fisubr_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1294,11 +1284,11 @@ void x87_fisubr_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = int32_to_floatx80(m32int);
-		floatx80 b = ST(0);
+		extFloat80_t a = i32_to_extF80(m32int);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1317,7 +1307,7 @@ void x87_fisubr_m32int(UINT8 modrm)
 
 void x87_fisubr_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1331,11 +1321,11 @@ void x87_fisubr_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = int32_to_floatx80(m16int);
-		floatx80 b = ST(0);
+		extFloat80_t a = i32_to_extF80(m16int);
+		extFloat80_t b = ST(0);
 
-		if ((floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.high ^ b.high) & 0x8000)))
+		if ((extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
+		|| (floatx80_is_inf(a) && floatx80_is_inf(b) && ((a.signExp ^ b.signExp) & 0x8000)))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1361,7 +1351,7 @@ void x87_fisubr_m16int(UINT8 modrm)
 
 void x87_fdiv_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1373,12 +1363,12 @@ void x87_fdiv_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1398,7 +1388,7 @@ void x87_fdiv_m32real(UINT8 modrm)
 
 void x87_fdiv_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1410,12 +1400,12 @@ void x87_fdiv_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1436,7 +1426,7 @@ void x87_fdiv_m64real(UINT8 modrm)
 void x87_fdiv_st_sti(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1447,10 +1437,10 @@ void x87_fdiv_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1476,7 +1466,7 @@ void x87_fdiv_st_sti(UINT8 modrm)
 void x87_fdiv_sti_st(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1487,10 +1477,10 @@ void x87_fdiv_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1516,7 +1506,7 @@ void x87_fdiv_sti_st(UINT8 modrm)
 void x87_fdivp(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1527,10 +1517,10 @@ void x87_fdivp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1556,7 +1546,7 @@ void x87_fdivp(UINT8 modrm)
 
 void x87_fidiv_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1570,10 +1560,10 @@ void x87_fidiv_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1593,7 +1583,7 @@ void x87_fidiv_m32int(UINT8 modrm)
 
 void x87_fidiv_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1607,10 +1597,10 @@ void x87_fidiv_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1637,7 +1627,7 @@ void x87_fidiv_m16int(UINT8 modrm)
 
 void x87_fdivr_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1649,12 +1639,12 @@ void x87_fdivr_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = float32_to_floatx80(m32real);
-		floatx80 b = ST(0);
+		extFloat80_t a = f32_to_extF80(m32real);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1674,7 +1664,7 @@ void x87_fdivr_m32real(UINT8 modrm)
 
 void x87_fdivr_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1686,12 +1676,12 @@ void x87_fdivr_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = float64_to_floatx80(m64real);
-		floatx80 b = ST(0);
+		extFloat80_t a = f64_to_extF80(m64real);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1712,7 +1702,7 @@ void x87_fdivr_m64real(UINT8 modrm)
 void x87_fdivr_st_sti(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1723,10 +1713,10 @@ void x87_fdivr_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(i);
-		floatx80 b = ST(0);
+		extFloat80_t a = ST(i);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1752,7 +1742,7 @@ void x87_fdivr_st_sti(UINT8 modrm)
 void x87_fdivr_sti_st(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1763,10 +1753,10 @@ void x87_fdivr_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1792,7 +1782,7 @@ void x87_fdivr_sti_st(UINT8 modrm)
 void x87_fdivrp(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1803,10 +1793,10 @@ void x87_fdivrp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1833,7 +1823,7 @@ void x87_fdivrp(UINT8 modrm)
 
 void x87_fidivr_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1847,10 +1837,10 @@ void x87_fidivr_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = int32_to_floatx80(m32int);
-		floatx80 b = ST(0);
+		extFloat80_t a = i32_to_extF80(m32int);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1870,7 +1860,7 @@ void x87_fidivr_m32int(UINT8 modrm)
 
 void x87_fidivr_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1884,10 +1874,10 @@ void x87_fidivr_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ32(ea);
 
-		floatx80 a = int32_to_floatx80(m16int);
-		floatx80 b = ST(0);
+		extFloat80_t a = i32_to_extF80(m16int);
+		extFloat80_t b = ST(0);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1914,7 +1904,7 @@ void x87_fidivr_m16int(UINT8 modrm)
 
 void x87_fmul_m32real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1926,12 +1916,12 @@ void x87_fmul_m32real(UINT8 modrm)
 	}
 	else
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1950,7 +1940,7 @@ void x87_fmul_m32real(UINT8 modrm)
 
 void x87_fmul_m64real(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -1962,12 +1952,12 @@ void x87_fmul_m64real(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -1986,7 +1976,7 @@ void x87_fmul_m64real(UINT8 modrm)
 
 void x87_fmul_st_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -1998,10 +1988,10 @@ void x87_fmul_st_sti(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -2023,7 +2013,7 @@ void x87_fmul_st_sti(UINT8 modrm)
 
 void x87_fmul_sti_st(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2035,10 +2025,10 @@ void x87_fmul_sti_st(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -2060,7 +2050,7 @@ void x87_fmul_sti_st(UINT8 modrm)
 
 void x87_fmulp(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2072,10 +2062,10 @@ void x87_fmulp(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -2100,7 +2090,7 @@ void x87_fmulp(UINT8 modrm)
 
 void x87_fimul_m32int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2114,10 +2104,10 @@ void x87_fimul_m32int(UINT8 modrm)
 	{
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -2136,7 +2126,7 @@ void x87_fimul_m32int(UINT8 modrm)
 
 void x87_fimul_m16int(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2150,10 +2140,10 @@ void x87_fimul_m16int(UINT8 modrm)
 	{
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+		if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
@@ -2178,7 +2168,7 @@ void x87_fimul_m16int(UINT8 modrm)
 
 void x87_fcmovb_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2207,7 +2197,7 @@ void x87_fcmovb_sti(UINT8 modrm)
 
 void x87_fcmove_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2236,7 +2226,7 @@ void x87_fcmove_sti(UINT8 modrm)
 
 void x87_fcmovbe_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2265,7 +2255,7 @@ void x87_fcmovbe_sti(UINT8 modrm)
 
 void x87_fcmovu_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2294,7 +2284,7 @@ void x87_fcmovu_sti(UINT8 modrm)
 
 void x87_fcmovnb_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2323,7 +2313,7 @@ void x87_fcmovnb_sti(UINT8 modrm)
 
 void x87_fcmovne_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2352,7 +2342,7 @@ void x87_fcmovne_sti(UINT8 modrm)
 
 void x87_fcmovnbe_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2381,7 +2371,7 @@ void x87_fcmovnbe_sti(UINT8 modrm)
 
 void x87_fcmovnu_sti(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 	int i = modrm & 7;
 
 	if (x87_mf_fault())
@@ -2416,7 +2406,7 @@ void x87_fcmovnu_sti(UINT8 modrm)
 /* D9 F8 */
 void x87_fprem(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2427,23 +2417,11 @@ void x87_fprem(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a0 = ST(0);   // dividend
-		floatx80 b1 = ST(1);   // divider
+		uint64_t q;
 
-		floatx80 a0_abs = packFloatx80(0, (a0.high & 0x7FFF), a0.low);
-		floatx80 b1_abs = packFloatx80(0, (b1.high & 0x7FFF), b1.low);
 		m_x87_sw &= ~X87_SW_C2;
 
-		//int d=extractFloatx80Exp(a0)-extractFloatx80Exp(b1);
-		int d = (a0.high & 0x7FFF) - (b1.high & 0x7FFF);
-		if (d < 64) {
-			floatx80 t=floatx80_div(a0_abs, b1_abs);
-			int64 q = floatx80_to_int64_round_to_zero(t);
-			floatx80 qf = int64_to_floatx80(q);
-			floatx80 tt = floatx80_mul(b1_abs, qf);
-			result = floatx80_sub(a0_abs, tt);
-			result.high |= a0.high & 0x8000;
-			// C2 already 0
+		if (!extFloat80_remainder(ST(0), ST(1), result, q)) {
 			m_x87_sw &= ~(X87_SW_C0|X87_SW_C3|X87_SW_C1);
 			if (q & 1)
 				m_x87_sw |= X87_SW_C1;
@@ -2452,19 +2430,8 @@ void x87_fprem(UINT8 modrm)
 			if (q & 4)
 				m_x87_sw |= X87_SW_C0;
 		}
-		else {
+		else
 			m_x87_sw |= X87_SW_C2;
-			int n = 63;
-			int e = 1 << (d - n);
-			floatx80 ef = int32_to_floatx80(e);
-			floatx80 t=floatx80_div(a0, b1);
-			floatx80 td = floatx80_div(t, ef);
-			int64 qq = floatx80_to_int64_round_to_zero(td);
-			floatx80 qqf = int64_to_floatx80(qq);
-			floatx80 tt = floatx80_mul(b1, qqf);
-			floatx80 ttt = floatx80_mul(tt, ef);
-			result = floatx80_sub(a0, ttt);
-		}
 	}
 
 	if (x87_check_exceptions())
@@ -2478,7 +2445,7 @@ void x87_fprem(UINT8 modrm)
 
 void x87_fprem1(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2489,13 +2456,21 @@ void x87_fprem1(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 a = ST(0);
-		floatx80 b = ST(1);
+		uint64_t q;
 
 		m_x87_sw &= ~X87_SW_C2;
 
-		// TODO: Implement Cx bits
-		result = floatx80_rem(a, b);
+		if (!extFloat80_ieee754_remainder(ST(0), ST(1), result, q)) {
+			m_x87_sw &= ~(X87_SW_C0|X87_SW_C3|X87_SW_C1);
+			if (q & 1)
+				m_x87_sw |= X87_SW_C1;
+			if (q & 2)
+				m_x87_sw |= X87_SW_C3;
+			if (q & 4)
+				m_x87_sw |= X87_SW_C0;
+		}
+		else
+			m_x87_sw |= X87_SW_C2;
 	}
 
 	if (x87_check_exceptions())
@@ -2509,7 +2484,7 @@ void x87_fprem1(UINT8 modrm)
 
 void x87_fsqrt(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2520,9 +2495,9 @@ void x87_fsqrt(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 value = ST(0);
+		extFloat80_t value = ST(0);
 
-		if ((!floatx80_is_zero(value) && (value.high & 0x8000)) ||
+		if ((!floatx80_is_zero(value) && (value.signExp & 0x8000)) ||
 				floatx80_is_denormal(value))
 		{
 			m_x87_sw |= X87_SW_IE;
@@ -2530,7 +2505,7 @@ void x87_fsqrt(UINT8 modrm)
 		}
 		else
 		{
-			result = floatx80_sqrt(value);
+			result = extF80_sqrt(value);
 		}
 	}
 
@@ -2551,7 +2526,7 @@ void x87_fsqrt(UINT8 modrm)
 
 void x87_f2xm1(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2562,8 +2537,8 @@ void x87_f2xm1(UINT8 modrm)
 	}
 	else
 	{
-		extern floatx80 f2xm1(floatx80 a);
-		result = f2xm1(ST(0));
+		extern extFloat80_t f2xm1(extFloat80_t a);
+		result = extFloat80_2xm1(ST(0));
 	}
 	if (x87_check_exceptions())
 	{
@@ -2578,7 +2553,7 @@ void x87_f2xm1(UINT8 modrm)
 
 void x87_fyl2x(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2589,17 +2564,16 @@ void x87_fyl2x(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 x = ST(0);
+		extFloat80_t x = ST(0);
 
-		if (x.high & 0x8000)
+		if (x.signExp & 0x8000)
 		{
 			m_x87_sw |= X87_SW_IE;
 			result = fx80_inan;
 		}
 		else
 		{
-			extern floatx80 fyl2x(floatx80 a, floatx80 b);
-			result = fyl2x(ST(0), ST(1));
+			result = extFloat80_fyl2x(ST(0), ST(1));
 		}
 	}
 
@@ -2617,7 +2591,7 @@ void x87_fyl2x(UINT8 modrm)
 
 void x87_fyl2xp1(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2628,8 +2602,7 @@ void x87_fyl2xp1(UINT8 modrm)
 	}
 	else
 	{
-		extern floatx80 fyl2xp1(floatx80 a, floatx80 b);
-		result = fyl2xp1(ST(0), ST(1));
+		result = extFloat80_fyl2xp1(ST(0), ST(1));
 	}
 
 	if (x87_check_exceptions())
@@ -2646,7 +2619,7 @@ void x87_fyl2xp1(UINT8 modrm)
 /* D9 F2 if 8087   0 < angle < pi/4 */
 void x87_fptan(UINT8 modrm)
 {
-	floatx80 result1, result2;
+	extFloat80_t result1, result2;
 
 	if (x87_mf_fault())
 		return;
@@ -2668,7 +2641,7 @@ void x87_fptan(UINT8 modrm)
 		result2 = fx80_one;
 
 #if 1 // TODO: Function produces bad values
-		if (floatx80_ftan(result1) != -1)
+		if (extFloat80_tan(result1) != -1)
 			m_x87_sw &= ~X87_SW_C2;
 		else
 			m_x87_sw |= X87_SW_C2;
@@ -2696,7 +2669,7 @@ void x87_fptan(UINT8 modrm)
 /* D9 F3 */
 void x87_fpatan(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2707,7 +2680,7 @@ void x87_fpatan(UINT8 modrm)
 	}
 	else
 	{
-		result = floatx80_fpatan(ST(0), ST(1));
+		result = extFloat80_atan(ST(0), ST(1));
 	}
 
 	if (x87_check_exceptions())
@@ -2724,7 +2697,7 @@ void x87_fpatan(UINT8 modrm)
 /* D9 FE  387 only */
 void x87_fsin(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2739,7 +2712,7 @@ void x87_fsin(UINT8 modrm)
 
 
 #if 1 // TODO: Function produces bad values    Result checked
-		if (floatx80_fsin(result) != -1)
+		if (extFloat80_sin(result) != -1)
 			m_x87_sw &= ~X87_SW_C2;
 		else
 			m_x87_sw |= X87_SW_C2;
@@ -2763,7 +2736,7 @@ void x87_fsin(UINT8 modrm)
 /* D9 FF 387 only */
 void x87_fcos(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -2777,7 +2750,7 @@ void x87_fcos(UINT8 modrm)
 		result = ST(0);
 
 #if 1 // TODO: Function produces bad values   to check!
-		if (floatx80_fcos(result) != -1)
+		if (extFloat80_cos(result) != -1)
 			m_x87_sw &= ~X87_SW_C2;
 		else
 			m_x87_sw |= X87_SW_C2;
@@ -2801,7 +2774,7 @@ void x87_fcos(UINT8 modrm)
 /* D9 FB  387 only */
 void x87_fsincos(UINT8 modrm)
 {
-	floatx80 s_result, c_result;
+	extFloat80_t s_result, c_result;
 
 	if (x87_mf_fault())
 		return;
@@ -2817,12 +2790,10 @@ void x87_fsincos(UINT8 modrm)
 	}
 	else
 	{
-		extern int sf_fsincos(floatx80 a, floatx80 *sin_a, floatx80 *cos_a);
-
 		s_result = c_result = ST(0);
 
 #if 1 // TODO: Function produces bad values
-		if (sf_fsincos(s_result, &s_result, &c_result) != -1)
+		if (extFloat80_sincos(s_result, &s_result, &c_result) != -1)
 			m_x87_sw &= ~X87_SW_C2;
 		else
 			m_x87_sw |= X87_SW_C2;
@@ -2861,20 +2832,20 @@ void x87_fsincos(UINT8 modrm)
 
 void x87_fld_m32real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
 	UINT32 ea = Getx87EA(modrm, 0);
 	if (x87_ck_over_stack())
 	{
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		value = float32_to_floatx80(m32real);
+		value = f32_to_extF80(m32real);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (floatx80_is_signaling_nan(value) || floatx80_is_denormal(value))
+		if (extF80_isSignalingNaN(value) || floatx80_is_denormal(value))
 		{
 			m_x87_sw |= X87_SW_IE;
 			value = fx80_inan;
@@ -2896,20 +2867,20 @@ void x87_fld_m32real(UINT8 modrm)
 
 void x87_fld_m64real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
 	UINT32 ea = Getx87EA(modrm, 0);
 	if (x87_ck_over_stack())
 	{
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		value = float64_to_floatx80(m64real);
+		value = f64_to_extF80(m64real);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (floatx80_is_signaling_nan(value) || floatx80_is_denormal(value))
+		if (extF80_isSignalingNaN(value) || floatx80_is_denormal(value))
 		{
 			m_x87_sw |= X87_SW_IE;
 			value = fx80_inan;
@@ -2931,7 +2902,7 @@ void x87_fld_m64real(UINT8 modrm)
 
 void x87_fld_m80real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -2957,7 +2928,7 @@ void x87_fld_m80real(UINT8 modrm)
 
 void x87_fld_sti(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -2982,7 +2953,7 @@ void x87_fld_sti(UINT8 modrm)
 
 void x87_fild_m16int(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -2996,7 +2967,7 @@ void x87_fild_m16int(UINT8 modrm)
 		m_x87_sw &= ~X87_SW_C1;
 
 		INT16 m16int = READ16(ea);
-		value = int32_to_floatx80(m16int);
+		value = i32_to_extF80(m16int);
 	}
 
 	if (x87_check_exceptions())
@@ -3010,7 +2981,7 @@ void x87_fild_m16int(UINT8 modrm)
 
 void x87_fild_m32int(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3024,7 +2995,7 @@ void x87_fild_m32int(UINT8 modrm)
 		m_x87_sw &= ~X87_SW_C1;
 
 		INT32 m32int = READ32(ea);
-		value = int32_to_floatx80(m32int);
+		value = i32_to_extF80(m32int);
 	}
 
 	if (x87_check_exceptions())
@@ -3038,7 +3009,7 @@ void x87_fild_m32int(UINT8 modrm)
 
 void x87_fild_m64int(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3052,7 +3023,7 @@ void x87_fild_m64int(UINT8 modrm)
 		m_x87_sw &= ~X87_SW_C1;
 
 		INT64 m64int = READ64(ea);
-		value = int64_to_floatx80(m64int);
+		value = i64_to_extF80(m64int);
 	}
 
 	if (x87_check_exceptions())
@@ -3066,7 +3037,7 @@ void x87_fild_m64int(UINT8 modrm)
 
 void x87_fbld(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3084,18 +3055,18 @@ void x87_fbld(UINT8 modrm)
 
 		value = READ80(ea);
 
-		sign = value.high & 0x8000;
-		m64val += ((value.high >> 4) & 0xf) * 10;
-		m64val += ((value.high >> 0) & 0xf);
+		sign = value.signExp & 0x8000;
+		m64val += ((value.signExp >> 4) & 0xf) * 10;
+		m64val += ((value.signExp >> 0) & 0xf);
 
 		for (int i = 60; i >= 0; i -= 4)
 		{
 			m64val *= 10;
-			m64val += (value.low >> i) & 0xf;
+			m64val += (value.signif >> i) & 0xf;
 		}
 
-		value = int64_to_floatx80(m64val);
-		value.high |= sign;
+		value = i64_to_extF80(m64val);
+		value.signExp |= sign;
 	}
 
 	if (x87_check_exceptions())
@@ -3116,7 +3087,7 @@ void x87_fbld(UINT8 modrm)
 
 void x87_fst_m32real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3132,16 +3103,16 @@ void x87_fst_m32real(UINT8 modrm)
 		value = ST(0);
 	}
 
-	UINT32 m32real = floatx80_to_float32(value);
+	float32_t m32real = extF80_to_f32(value);
 	if (x87_check_exceptions(true))
-		WRITE32(ea, m32real);
+		WRITE32(ea, m32real.v);
 
 	CYCLES(7);
 }
 
 void x87_fst_m64real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3157,9 +3128,9 @@ void x87_fst_m64real(UINT8 modrm)
 		value = ST(0);
 	}
 
-	UINT64 m64real = floatx80_to_float64(value);
+	float64_t m64real = extF80_to_f64(value);
 	if (x87_check_exceptions(true))
-		WRITE64(ea, m64real);
+		WRITE64(ea, m64real.v);
 
 	CYCLES(8);
 }
@@ -3167,7 +3138,7 @@ void x87_fst_m64real(UINT8 modrm)
 void x87_fst_sti(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3193,7 +3164,7 @@ void x87_fst_sti(UINT8 modrm)
 
 void x87_fstp_m32real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3209,10 +3180,10 @@ void x87_fstp_m32real(UINT8 modrm)
 		value = ST(0);
 	}
 
-	UINT32 m32real = floatx80_to_float32(value);
+	float32_t m32real = extF80_to_f32(value);
 	if (x87_check_exceptions(true))
 	{
-		WRITE32(ea, m32real);
+		WRITE32(ea, m32real.v);
 		x87_inc_stack();
 	}
 
@@ -3221,7 +3192,7 @@ void x87_fstp_m32real(UINT8 modrm)
 
 void x87_fstp_m64real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3238,10 +3209,10 @@ void x87_fstp_m64real(UINT8 modrm)
 
 
 	UINT32 ea = Getx87EA(modrm, 1);
-	UINT64 m64real = floatx80_to_float64(value);
+	float64_t m64real = extF80_to_f64(value);
 	if (x87_check_exceptions(true))
 	{
-		WRITE64(ea, m64real);
+		WRITE64(ea, m64real.v);
 		x87_inc_stack();
 	}
 
@@ -3250,7 +3221,7 @@ void x87_fstp_m64real(UINT8 modrm)
 
 void x87_fstp_m80real(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3278,7 +3249,7 @@ void x87_fstp_m80real(UINT8 modrm)
 void x87_fstp_sti(UINT8 modrm)
 {
 	int i = modrm & 7;
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3318,18 +3289,18 @@ void x87_fist_m16int(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 fx80 = floatx80_round_to_int(ST(0));
+		extFloat80_t fx80 = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 
-		floatx80 lowerLim = int32_to_floatx80(-32768);
-		floatx80 upperLim = int32_to_floatx80(32767);
+		extFloat80_t lowerLim = i32_to_extF80(-32768);
+		extFloat80_t upperLim = i32_to_extF80(32767);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
-			m16int = floatx80_to_int32(fx80);
+		if (!extF80_lt(fx80, lowerLim) && extF80_le(fx80, upperLim))
+			m16int = extF80_to_i32(fx80, softfloat_roundingMode, true);
 		else
 		{
-			float_exception_flags = float_flag_invalid;
+			softfloat_exceptionFlags = softfloat_flag_invalid;
 			m16int = -32768;
 		}
 	}
@@ -3356,18 +3327,18 @@ void x87_fist_m32int(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 fx80 = floatx80_round_to_int(ST(0));
+		extFloat80_t fx80 = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 
-		floatx80 lowerLim = int32_to_floatx80(0x80000000);
-		floatx80 upperLim = int32_to_floatx80(0x7fffffff);
+		extFloat80_t lowerLim = i32_to_extF80(0x80000000);
+		extFloat80_t upperLim = i32_to_extF80(0x7fffffff);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
-			m32int = floatx80_to_int32(fx80);
+		if (!extF80_lt(fx80, lowerLim) && extF80_le(fx80, upperLim))
+			m32int = extF80_to_i32(fx80, softfloat_roundingMode, true);
 		else
 		{
-			float_exception_flags = float_flag_invalid;
+			softfloat_exceptionFlags = softfloat_flag_invalid;
 			m32int = 0x80000000;
 		}
 	}
@@ -3394,18 +3365,18 @@ void x87_fistp_m16int(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 fx80 = floatx80_round_to_int(ST(0));
+		extFloat80_t fx80 = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 
-		floatx80 lowerLim = int32_to_floatx80(-32768);
-		floatx80 upperLim = int32_to_floatx80(32767);
+		extFloat80_t lowerLim = i32_to_extF80(-32768);
+		extFloat80_t upperLim = i32_to_extF80(32767);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
-			m16int = floatx80_to_int32(fx80);
+		if (!extF80_lt(fx80, lowerLim) && extF80_le(fx80, upperLim))
+			m16int = extF80_to_i32(fx80, softfloat_roundingMode, true);
 		else
 		{
-			float_exception_flags = float_flag_invalid;
+			softfloat_exceptionFlags = softfloat_flag_invalid;
 			m16int = (UINT16)0x8000;
 		}
 	}
@@ -3433,18 +3404,19 @@ void x87_fistp_m32int(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 fx80 = floatx80_round_to_int(ST(0));
+		extFloat80_t fx80 = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 
-		floatx80 lowerLim = int32_to_floatx80(0x80000000);
-		floatx80 upperLim = int32_to_floatx80(0x7fffffff);
+
+		extFloat80_t lowerLim = i32_to_extF80(0x80000000);
+		extFloat80_t upperLim = i32_to_extF80(0x7fffffff);
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
-			m32int = floatx80_to_int32(fx80);
+		if (!extF80_lt(fx80, lowerLim) && extF80_le(fx80, upperLim))
+			m32int = extF80_to_i32(fx80, softfloat_roundingMode, true);
 		else
 		{
-			float_exception_flags = float_flag_invalid;
+			softfloat_exceptionFlags = softfloat_flag_invalid;
 			m32int = 0x80000000;
 		}
 	}
@@ -3472,18 +3444,18 @@ void x87_fistp_m64int(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 fx80 = floatx80_round_to_int(ST(0));
+		extFloat80_t fx80 = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 
-		floatx80 lowerLim = int64_to_floatx80(U64(0x8000000000000000));
-		floatx80 upperLim = int64_to_floatx80(U64(0x7fffffffffffffff));
+		extFloat80_t lowerLim = i64_to_extF80(U64(0x8000000000000000));
+		extFloat80_t upperLim = i64_to_extF80(U64(0x7fffffffffffffff));
 
 		m_x87_sw &= ~X87_SW_C1;
 
-		if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim))
-			m64int = floatx80_to_int64(fx80);
+		if (!extF80_lt(fx80, lowerLim) && extF80_le(fx80, upperLim))
+			m64int = extF80_to_i64(fx80, softfloat_roundingMode, true);
 		else
 		{
-			float_exception_flags = float_flag_invalid;
+			softfloat_exceptionFlags = softfloat_flag_invalid;
 			m64int = U64(0x8000000000000000);
 		}
 	}
@@ -3500,7 +3472,7 @@ void x87_fistp_m64int(UINT8 modrm)
 
 void x87_fbstp(UINT8 modrm)
 {
-	floatx80 result;
+	extFloat80_t result;
 
 	if (x87_mf_fault())
 		return;
@@ -3511,18 +3483,18 @@ void x87_fbstp(UINT8 modrm)
 	}
 	else
 	{
-		UINT64 u64 = floatx80_to_int64(floatx80_abs(ST(0)));
-		result.low = 0;
+		UINT64 u64 = extF80_to_i64(floatx80_abs(ST(0)), softfloat_roundingMode, true);
+		result.signif = 0;
 
 		for (int i = 0; i < 64; i += 4)
 		{
-			result.low += (u64 % 10) << i;
+			result.signif += (u64 % 10) << i;
 			u64 /= 10;
 		}
 
-		result.high = (u64 % 10);
-		result.high += ((u64 / 10) % 10) << 4;
-		result.high |= ST(0).high & 0x8000;
+		result.signExp = (u64 % 10);
+		result.signExp += ((u64 / 10) % 10) << 4;
+		result.signExp |= ST(0).signExp & 0x8000;
 	}
 
 	UINT32 ea = Getx87EA(modrm, 1);
@@ -3544,7 +3516,7 @@ void x87_fbstp(UINT8 modrm)
 
 void x87_fld1(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3575,7 +3547,7 @@ void x87_fld1(UINT8 modrm)
 
 void x87_fldl2t(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3583,12 +3555,12 @@ void x87_fldl2t(UINT8 modrm)
 	if (x87_dec_stack())
 	{
 		tag = X87_TW_VALID;
-		value.high = 0x4000;
+		value.signExp = 0x4000;
 
 		if (X87_RC == X87_CW_RC_UP)
-			value.low =  U64(0xd49a784bcd1b8aff);
+			value.signif =  U64(0xd49a784bcd1b8aff);
 		else
-			value.low = U64(0xd49a784bcd1b8afe);
+			value.signif = U64(0xd49a784bcd1b8afe);
 
 		m_x87_sw &= ~X87_SW_C1;
 	}
@@ -3612,7 +3584,7 @@ void x87_fldl2t(UINT8 modrm)
 
 void x87_fldl2e(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3621,12 +3593,12 @@ void x87_fldl2e(UINT8 modrm)
 	{
 		int rc = X87_RC;
 		tag = X87_TW_VALID;
-		value.high = 0x3fff;
+		value.signExp = 0x3fff;
 
 		if (rc == X87_CW_RC_UP || rc == X87_CW_RC_NEAREST)
-			value.low = U64(0xb8aa3b295c17f0bc);
+			value.signif = U64(0xb8aa3b295c17f0bc);
 		else
-			value.low = U64(0xb8aa3b295c17f0bb);
+			value.signif = U64(0xb8aa3b295c17f0bb);
 
 		m_x87_sw &= ~X87_SW_C1;
 	}
@@ -3650,7 +3622,7 @@ void x87_fldl2e(UINT8 modrm)
 
 void x87_fldpi(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3659,12 +3631,12 @@ void x87_fldpi(UINT8 modrm)
 	{
 		int rc = X87_RC;
 		tag = X87_TW_VALID;
-		value.high = 0x4000;
+		value.signExp = 0x4000;
 
 		if (rc == X87_CW_RC_UP || rc == X87_CW_RC_NEAREST)
-			value.low = U64(0xc90fdaa22168c235);
+			value.signif = U64(0xc90fdaa22168c235);
 		else
-			value.low = U64(0xc90fdaa22168c234);
+			value.signif = U64(0xc90fdaa22168c234);
 
 		m_x87_sw &= ~X87_SW_C1;
 	}
@@ -3688,7 +3660,7 @@ void x87_fldpi(UINT8 modrm)
 
 void x87_fldlg2(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3697,12 +3669,12 @@ void x87_fldlg2(UINT8 modrm)
 	{
 		int rc = X87_RC;
 		tag = X87_TW_VALID;
-		value.high = 0x3ffd;
+		value.signExp = 0x3ffd;
 
 		if (rc == X87_CW_RC_UP || rc == X87_CW_RC_NEAREST)
-			value.low = U64(0x9a209a84fbcff799);
+			value.signif = U64(0x9a209a84fbcff799);
 		else
-			value.low = U64(0x9a209a84fbcff798);
+			value.signif = U64(0x9a209a84fbcff798);
 
 		m_x87_sw &= ~X87_SW_C1;
 	}
@@ -3726,7 +3698,7 @@ void x87_fldlg2(UINT8 modrm)
 
 void x87_fldln2(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3735,12 +3707,12 @@ void x87_fldln2(UINT8 modrm)
 	{
 		int rc = X87_RC;
 		tag = X87_TW_VALID;
-		value.high = 0x3ffe;
+		value.signExp = 0x3ffe;
 
 		if (rc == X87_CW_RC_UP || rc == X87_CW_RC_NEAREST)
-			value.low = U64(0xb17217f7d1cf79ac);
+			value.signif = U64(0xb17217f7d1cf79ac);
 		else
-			value.low = U64(0xb17217f7d1cf79ab);
+			value.signif = U64(0xb17217f7d1cf79ab);
 
 		m_x87_sw &= ~X87_SW_C1;
 	}
@@ -3764,7 +3736,7 @@ void x87_fldln2(UINT8 modrm)
 
 void x87_fldz(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 	int tag;
 
 	if (x87_mf_fault())
@@ -3808,7 +3780,7 @@ void x87_fnop(UINT8 modrm)
 
 void x87_fchs(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3822,7 +3794,7 @@ void x87_fchs(UINT8 modrm)
 		m_x87_sw &= ~X87_SW_C1;
 
 		value = ST(0);
-		value.high ^= 0x8000;
+		value.signExp ^= 0x8000;
 	}
 
 	if (x87_check_exceptions())
@@ -3836,7 +3808,7 @@ void x87_fchs(UINT8 modrm)
 
 void x87_fabs(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3850,7 +3822,7 @@ void x87_fabs(UINT8 modrm)
 		m_x87_sw &= ~X87_SW_C1;
 
 		value = ST(0);
-		value.high &= 0x7fff;
+		value.signExp &= 0x7fff;
 	}
 
 	if (x87_check_exceptions())
@@ -3864,7 +3836,7 @@ void x87_fabs(UINT8 modrm)
 
 void x87_fscale(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3876,7 +3848,7 @@ void x87_fscale(UINT8 modrm)
 	else
 	{
 		m_x87_sw &= ~X87_SW_C1;
-		value = floatx80_scale(ST(0), ST(1));
+		value = extFloat80_scale(ST(0), ST(1));
 	}
 
 	if (x87_check_exceptions())
@@ -3890,7 +3862,7 @@ void x87_fscale(UINT8 modrm)
 
 void x87_frndint(UINT8 modrm)
 {
-	floatx80 value;
+	extFloat80_t value;
 
 	if (x87_mf_fault())
 		return;
@@ -3903,7 +3875,7 @@ void x87_frndint(UINT8 modrm)
 	{
 		m_x87_sw &= ~X87_SW_C1;
 
-		value = floatx80_round_to_int(ST(0));
+		value = extF80_roundToInt(ST(0), softfloat_roundingMode, true);
 	}
 
 	if (x87_check_exceptions())
@@ -3917,7 +3889,7 @@ void x87_frndint(UINT8 modrm)
 
 void x87_fxtract(UINT8 modrm)
 {
-	floatx80 sig80, exp80;
+	extFloat80_t sig80, exp80;
 
 	if (x87_mf_fault())
 		return;
@@ -3933,9 +3905,9 @@ void x87_fxtract(UINT8 modrm)
 	}
 	else
 	{
-		floatx80 value = ST(0);
+		extFloat80_t value = ST(0);
 
-		if (floatx80_eq(value, fx80_zero))
+		if (extF80_eq(value, fx80_zero))
 		{
 			m_x87_sw |= X87_SW_ZE;
 
@@ -3945,12 +3917,12 @@ void x87_fxtract(UINT8 modrm)
 		else
 		{
 			// Extract the unbiased exponent
-			exp80 = int32_to_floatx80((value.high & 0x7fff) - 0x3fff);
+			exp80 = i32_to_extF80((value.signExp & 0x7fff) - 0x3fff);
 
 			// For the significand, replicate the original value and set its true exponent to 0.
 			sig80 = value;
-			sig80.high &= ~0x7fff;
-			sig80.high |=  0x3fff;
+			sig80.signExp &= ~0x7fff;
+			sig80.signExp |=  0x3fff;
 		}
 	}
 
@@ -3986,17 +3958,17 @@ void x87_ftst(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		if (floatx80_is_nan(ST(0)))
+		if (extFloat80_is_nan(ST(0)))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(ST(0), fx80_zero))
+			if (extF80_eq(ST(0), fx80_zero))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(ST(0), fx80_zero))
+			if (extF80_lt(ST(0), fx80_zero))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4011,7 +3983,7 @@ void x87_ftst(UINT8 modrm)
 
 void x87_fxam(UINT8 modrm)
 {
-	floatx80 value = ST(0);
+	extFloat80_t value = ST(0);
 
 	if (x87_mf_fault())
 		return;
@@ -4026,7 +3998,7 @@ void x87_fxam(UINT8 modrm)
 	{
 		m_x87_sw |= X87_SW_C3;
 	}
-	else if (floatx80_is_nan(value))
+	else if (extFloat80_is_nan(value))
 	{
 		m_x87_sw |= X87_SW_C0;
 	}
@@ -4039,7 +4011,7 @@ void x87_fxam(UINT8 modrm)
 		m_x87_sw |= X87_SW_C2;
 	}
 
-	if (value.high & 0x8000)
+	if (value.signExp & 0x8000)
 		m_x87_sw |= X87_SW_C1;
 
 	CYCLES(8);
@@ -4061,20 +4033,20 @@ void x87_ficom_m16int(UINT8 modrm)
 
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if (floatx80_is_nan(a))
+		if (extFloat80_is_nan(a))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4100,20 +4072,20 @@ void x87_ficom_m32int(UINT8 modrm)
 
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if (floatx80_is_nan(a))
+		if (extFloat80_is_nan(a))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4139,20 +4111,20 @@ void x87_ficomp_m16int(UINT8 modrm)
 
 		INT16 m16int = READ16(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m16int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m16int);
 
-		if (floatx80_is_nan(a))
+		if (extFloat80_is_nan(a))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4179,20 +4151,20 @@ void x87_ficomp_m32int(UINT8 modrm)
 
 		INT32 m32int = READ32(ea);
 
-		floatx80 a = ST(0);
-		floatx80 b = int32_to_floatx80(m32int);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = i32_to_extF80(m32int);
 
-		if (floatx80_is_nan(a))
+		if (extFloat80_is_nan(a))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4218,22 +4190,22 @@ void x87_fcom_m32real(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4257,22 +4229,22 @@ void x87_fcom_m64real(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4297,20 +4269,20 @@ void x87_fcom_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4337,22 +4309,22 @@ void x87_fcomp_m32real(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		UINT32 m32real = READ32(ea);
+		float32_t m32real{ READ32(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float32_to_floatx80(m32real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f32_to_extF80(m32real);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4377,22 +4349,22 @@ void x87_fcomp_m64real(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		UINT64 m64real = READ64(ea);
+		float64_t m64real{ READ64(ea) };
 
-		floatx80 a = ST(0);
-		floatx80 b = float64_to_floatx80(m64real);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = f64_to_extF80(m64real);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4418,20 +4390,20 @@ void x87_fcomp_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4462,10 +4434,10 @@ void x87_fcomi_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~X87_SW_C1;
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_ZF = 1;
 			m_PF = 1;
@@ -4478,10 +4450,10 @@ void x87_fcomi_sti(UINT8 modrm)
 			m_PF = 0;
 			m_CF = 0;
 
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_ZF = 1;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_CF = 1;
 		}
 	}
@@ -4511,10 +4483,10 @@ void x87_fcomip_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~X87_SW_C1;
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_ZF = 1;
 			m_PF = 1;
@@ -4527,10 +4499,10 @@ void x87_fcomip_sti(UINT8 modrm)
 			m_PF = 0;
 			m_CF = 0;
 
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_ZF = 1;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_CF = 1;
 		}
 	}
@@ -4561,8 +4533,8 @@ void x87_fucomi_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~X87_SW_C1;
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
 		if (floatx80_is_quiet_nan(a) || floatx80_is_quiet_nan(b))
 		{
@@ -4570,7 +4542,7 @@ void x87_fucomi_sti(UINT8 modrm)
 			m_PF = 1;
 			m_CF = 1;
 		}
-		else if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		else if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_ZF = 1;
 			m_PF = 1;
@@ -4583,10 +4555,10 @@ void x87_fucomi_sti(UINT8 modrm)
 			m_PF = 0;
 			m_CF = 0;
 
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_ZF = 1;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_CF = 1;
 		}
 	}
@@ -4616,8 +4588,8 @@ void x87_fucomip_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~X87_SW_C1;
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
 		if (floatx80_is_quiet_nan(a) || floatx80_is_quiet_nan(b))
 		{
@@ -4625,7 +4597,7 @@ void x87_fucomip_sti(UINT8 modrm)
 			m_PF = 1;
 			m_CF = 1;
 		}
-		else if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		else if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_ZF = 1;
 			m_PF = 1;
@@ -4638,10 +4610,10 @@ void x87_fucomip_sti(UINT8 modrm)
 			m_PF = 0;
 			m_CF = 0;
 
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_ZF = 1;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_CF = 1;
 		}
 	}
@@ -4668,20 +4640,20 @@ void x87_fcompp(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(1);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(1);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 			m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4720,22 +4692,22 @@ void x87_fucom_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 
-			if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+			if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 				m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4763,22 +4735,22 @@ void x87_fucomp_sti(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(i);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(i);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 
-			if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+			if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 				m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -4805,22 +4777,22 @@ void x87_fucompp(UINT8 modrm)
 	{
 		m_x87_sw &= ~(X87_SW_C3 | X87_SW_C2 | X87_SW_C1 | X87_SW_C0);
 
-		floatx80 a = ST(0);
-		floatx80 b = ST(1);
+		extFloat80_t a = ST(0);
+		extFloat80_t b = ST(1);
 
-		if (floatx80_is_nan(a) || floatx80_is_nan(b))
+		if (extFloat80_is_nan(a) || extFloat80_is_nan(b))
 		{
 			m_x87_sw |= X87_SW_C0 | X87_SW_C2 | X87_SW_C3;
 
-			if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
+			if (extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b))
 				m_x87_sw |= X87_SW_IE;
 		}
 		else
 		{
-			if (floatx80_eq(a, b))
+			if (extF80_eq(a, b))
 				m_x87_sw |= X87_SW_C3;
 
-			if (floatx80_lt(a, b))
+			if (extF80_lt(a, b))
 				m_x87_sw |= X87_SW_C0;
 		}
 	}
@@ -5169,7 +5141,7 @@ void x87_fxch(UINT8 modrm)
 
 	if (x87_check_exceptions())
 	{
-		floatx80 tmp = ST(0);
+		extFloat80_t tmp = ST(0);
 		ST(0) = ST(1);
 		ST(1) = tmp;
 
@@ -5203,7 +5175,7 @@ void x87_fxch_sti(UINT8 modrm)
 
 	if (x87_check_exceptions())
 	{
-		floatx80 tmp = ST(0);
+		extFloat80_t tmp = ST(0);
 		ST(0) = ST(i);
 		ST(i) = tmp;
 
