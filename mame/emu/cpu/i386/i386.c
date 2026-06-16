@@ -2895,8 +2895,12 @@ static void I386OP(decode_opcode)()
 	m_opcode = FETCH();
 
 	if(m_lock && !m_lock_table[0][m_opcode]) {
+#ifdef TOLERATE_BOGUS_LOCK_PREFIX
+		m_lock = false;
+#else
 		I386OP(invalid)();
 		return;
+#endif
 	}
 
 	if( m_operand_size )
@@ -2911,8 +2915,12 @@ static void I386OP(decode_two_byte)()
 	m_opcode = FETCH();
 
 	if(m_lock && !m_lock_table[1][m_opcode]) {
+#ifdef TOLERATE_BOGUS_LOCK_PREFIX
+		m_lock = false;
+#else
 		I386OP(invalid)();
 		return;
+#endif
 	}
 
 	if( m_operand_size )

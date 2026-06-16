@@ -2079,7 +2079,13 @@ void write_byte(UINT32 byteaddress, UINT8 data)
 			char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
 			write_text_vram((byteaddress & ~1) - text_vram_top_address, chr, attr);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
-			if(int_10h_feh_called && !int_10h_ffh_called) {
+			// Mirror shadow-buffer (INT 10h FE/FF, TopView/DESQview) writes to the
+			// console whenever the program is using the buffer, not only before
+			// its first INT 10h/FF. WordPerfect writes some updates (e.g. the
+			// F5/F7 status-line prompts) straight to the buffer without a
+			// following FF and relies on it being live; the old !ffh latch left
+			// those writes invisible.
+			if(int_10h_feh_called) {
 				char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
 				char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
 				write_text_vram((byteaddress & ~1) - shadow_buffer_top_address, chr, attr);
@@ -2122,7 +2128,8 @@ void write_word(UINT32 byteaddress, UINT16 data)
 			}
 			write_text_vram(byteaddress - text_vram_top_address, data & 0xff, data >> 8);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
-			if(int_10h_feh_called && !int_10h_ffh_called) {
+			// see note in write_byte(): keep mirroring shadow-buffer writes live
+			if(int_10h_feh_called) {
 				write_text_vram(byteaddress - shadow_buffer_top_address, data & 0xff, data >> 8);
 			}
 		}
@@ -5753,6 +5760,14 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
 			process[i].parent_ds = CPU_DS;
 			process[i].parent_es = CPU_ES;
+			// Save the parent's callee-saved registers so they can be restored
+			// when the child terminates. Real DOS preserves the caller's BP/SI/DI
+			// across INT 21h/4Bh (EXEC); leaving them holding the child's values
+			// crashes parents (e.g. Word for Word) whose post-EXEC epilogue does
+			// "mov sp,bp / pop bp / retf".
+			process[i].parent_bp = CPU_BP;
+			process[i].parent_si = CPU_SI;
+			process[i].parent_di = CPU_DI;
 
 			return(&process[i]);
 		}
@@ -10074,6 +10089,11 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	CPU_LOAD_SREG(CPU_SS_INDEX, psp->stack.w.h);
 	CPU_SP = psp->stack.w.l;
 	CPU_JMP_FAR(psp->int_22h.w.h, psp->int_22h.w.l);
+	// A parent resuming after its child terminates (the INT 21h/4Bh EXEC path)
+	// must see the carry flag clear to indicate the EXEC succeeded. It resumes
+	// here via INT 22h rather than returning through the INT 21h dispatcher, so
+	// the flag still holds the child's leftover state.
+	CPU_SET_C_FLAG(0);
 	
 //	process_t *current_process = msdos_process_info_get(psp_seg);
 	process_t *current_process = NULL;
@@ -10093,6 +10113,10 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	}
 	CPU_LOAD_SREG(CPU_DS_INDEX, current_process->parent_ds);
 	CPU_LOAD_SREG(CPU_ES_INDEX, current_process->parent_es);
+	// restore the parent's callee-saved registers (see msdos_process_info_create)
+	CPU_BP = current_process->parent_bp;
+	CPU_SI = current_process->parent_si;
+	CPU_DI = current_process->parent_di;
 	
 	if(mem_free) {
 		int mcb_seg, umb_linked;
