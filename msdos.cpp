@@ -23648,7 +23648,11 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// system file table
 	*(UINT32 *)(mem + SFT_TOP + 0) = 0xffffffff;
-	*(UINT16 *)(mem + SFT_TOP + 4) = 20;
+	// report the configured handle count (-fN, default 20) as the FILES= value
+	// programs read from the SFT block header; it was hardcoded to 20, so apps
+	// that require more (e.g. WordPerfect 5.1 needs FILES>=25) failed even when
+	// -f was raised
+	*(UINT16 *)(mem + SFT_TOP + 4) = max_files;
 	
 	// disk buffer header (from DOSBox)
 	*(UINT16 *)(mem + DISK_BUF_TOP +  0) = 0xffff;		// forward ptr
