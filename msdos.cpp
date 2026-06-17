@@ -2079,12 +2079,8 @@ void write_byte(UINT32 byteaddress, UINT8 data)
 			char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
 			write_text_vram((byteaddress & ~1) - text_vram_top_address, chr, attr);
 		} else if(byteaddress >= shadow_buffer_top_address && byteaddress < shadow_buffer_end_address) {
-			// Mirror shadow-buffer (INT 10h FE/FF, TopView/DESQview) writes to the
-			// console whenever the program is using the buffer, not only before
-			// its first INT 10h/FF. WordPerfect writes some updates (e.g. the
-			// F5/F7 status-line prompts) straight to the buffer without a
-			// following FF and relies on it being live; the old !ffh latch left
-			// those writes invisible.
+			// keep mirroring shadow-buffer (INT 10h FE/FF) writes live, not only
+			// before the first FF: WordPerfect writes some updates with no FF
 			if(int_10h_feh_called) {
 				char chr = (byteaddress & 1) ? mem[byteaddress - 1] : data;
 				char attr = (byteaddress & 1) ? data : mem[byteaddress + 1];
@@ -5760,11 +5756,8 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
 			process[i].parent_ds = CPU_DS;
 			process[i].parent_es = CPU_ES;
-			// Save the parent's callee-saved registers so they can be restored
-			// when the child terminates. Real DOS preserves the caller's BP/SI/DI
-			// across INT 21h/4Bh (EXEC); leaving them holding the child's values
-			// crashes parents (e.g. Word for Word) whose post-EXEC epilogue does
-			// "mov sp,bp / pop bp / retf".
+			// save the parent's callee-saved registers to restore on child exit;
+			// real DOS preserves BP/SI/DI across INT 21h/4Bh (EXEC)
 			process[i].parent_bp = CPU_BP;
 			process[i].parent_si = CPU_SI;
 			process[i].parent_di = CPU_DI;
@@ -10089,10 +10082,8 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	CPU_LOAD_SREG(CPU_SS_INDEX, psp->stack.w.h);
 	CPU_SP = psp->stack.w.l;
 	CPU_JMP_FAR(psp->int_22h.w.h, psp->int_22h.w.l);
-	// A parent resuming after its child terminates (the INT 21h/4Bh EXEC path)
-	// must see the carry flag clear to indicate the EXEC succeeded. It resumes
-	// here via INT 22h rather than returning through the INT 21h dispatcher, so
-	// the flag still holds the child's leftover state.
+	// a parent resuming from EXEC must see carry clear (success); it resumes via
+	// INT 22h, not the INT 21h dispatcher, so the flag still holds child state
 	CPU_SET_C_FLAG(0);
 	
 //	process_t *current_process = msdos_process_info_get(psp_seg);
@@ -23648,10 +23639,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	// system file table
 	*(UINT32 *)(mem + SFT_TOP + 0) = 0xffffffff;
-	// report the configured handle count (-fN, default 20) as the FILES= value
-	// programs read from the SFT block header; it was hardcoded to 20, so apps
-	// that require more (e.g. WordPerfect 5.1 needs FILES>=25) failed even when
-	// -f was raised
+	// report the configured handle count (-fN, default 20) as FILES=; was
+	// hardcoded to 20, so apps needing more (e.g. WordPerfect 5.1) failed
 	*(UINT16 *)(mem + SFT_TOP + 4) = max_files;
 	
 	// disk buffer header (from DOSBox)

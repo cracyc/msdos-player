@@ -13,12 +13,9 @@
 
 //#define DEBUG_MISSING_OPCODE
 
-/* A LOCK prefix on a non-lockable opcode is #UD on real hardware, but several
-   real-mode DOS programs (e.g. the Word for Word file-conversion modules, which
-   contain "LOCK CMP") carry such redundant prefixes and rely on them simply
-   being ignored, as other DOS emulators do. Drop the stray prefix and execute
-   the instruction normally instead of faulting. Comment out for strict,
-   hardware-accurate behavior. */
+/* Ignore a stray LOCK prefix on a non-lockable opcode instead of raising #UD,
+   as other DOS emulators do; some real-mode programs (e.g. the "LOCK CMP" in
+   the Word for Word converters) rely on it. Comment out for strict behavior. */
 #define TOLERATE_BOGUS_LOCK_PREFIX
 
 #define I386OP(XX)      i386_##XX
