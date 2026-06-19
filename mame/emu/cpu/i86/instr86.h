@@ -212,6 +212,7 @@ static void PREFIX86(_rotshft_bcl)();
 static void PREFIX86(_rotshft_wcl)();
 static void PREFIX86(_aam)();
 static void PREFIX86(_aad)();
+static void PREFIX86(_salc)();
 static void PREFIX86(_xlat)();
 static void PREFIX86(_escape)();
 static void PREFIX86(_loopne)();

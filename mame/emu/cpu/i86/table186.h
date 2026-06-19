@@ -47,7 +47,7 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_sub_ald8),          /* 0x2c */
 		PREFIX86(_sub_axd16),         /* 0x2d */
 		PREFIX186(_cs),               /* 0x2e */
-		PREFIX86(_das),            /* 0x2f */
+		PREFIX86(_das),               /* 0x2f */
 		PREFIX86(_xor_br8),           /* 0x30 */
 		PREFIX86(_xor_wr16),          /* 0x31 */
 		PREFIX86(_xor_r8b),           /* 0x32 */
@@ -55,15 +55,15 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_xor_ald8),          /* 0x34 */
 		PREFIX86(_xor_axd16),         /* 0x35 */
 		PREFIX186(_ss),               /* 0x36 */
-		PREFIX86(_aaa),            /* 0x37 */
+		PREFIX86(_aaa),               /* 0x37 */
 		PREFIX86(_cmp_br8),           /* 0x38 */
 		PREFIX86(_cmp_wr16),          /* 0x39 */
 		PREFIX86(_cmp_r8b),           /* 0x3a */
 		PREFIX86(_cmp_r16w),          /* 0x3b */
 		PREFIX86(_cmp_ald8),          /* 0x3c */
 		PREFIX86(_cmp_axd16),         /* 0x3d */
-		PREFIX186(_ds),                /* 0x3e */
-		PREFIX86(_aas),            /* 0x3f */
+		PREFIX186(_ds),               /* 0x3e */
+		PREFIX86(_aas),               /* 0x3f */
 		PREFIX86(_inc_ax),            /* 0x40 */
 		PREFIX86(_inc_cx),            /* 0x41 */
 		PREFIX86(_inc_dx),            /* 0x42 */
@@ -96,22 +96,22 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_pop_bp),            /* 0x5d */
 		PREFIX86(_pop_si),            /* 0x5e */
 		PREFIX86(_pop_di),            /* 0x5f */
-		PREFIX186(_pusha),             /* 0x60 */
-		PREFIX186(_popa),              /* 0x61 */
-		PREFIX186(_bound),             /* 0x62 */
+		PREFIX186(_pusha),            /* 0x60 */
+		PREFIX186(_popa),             /* 0x61 */
+		PREFIX186(_bound),            /* 0x62 */
 		PREFIX86(_invalid),
 		PREFIX86(_invalid),
 		PREFIX86(_invalid),
 		PREFIX86(_invalid),
 		PREFIX86(_invalid),
-		PREFIX186(_push_d16),          /* 0x68 */
-		PREFIX186(_imul_d16),          /* 0x69 */
-		PREFIX186(_push_d8),           /* 0x6a */
-		PREFIX186(_imul_d8),           /* 0x6b */
-		PREFIX186(_insb),              /* 0x6c */
-		PREFIX186(_insw),              /* 0x6d */
-		PREFIX186(_outsb),             /* 0x6e */
-		PREFIX186(_outsw),             /* 0x6f */
+		PREFIX186(_push_d16),         /* 0x68 */
+		PREFIX186(_imul_d16),         /* 0x69 */
+		PREFIX186(_push_d8),          /* 0x6a */
+		PREFIX186(_imul_d8),          /* 0x6b */
+		PREFIX186(_insb),             /* 0x6c */
+		PREFIX186(_insw),             /* 0x6d */
+		PREFIX186(_outsb),            /* 0x6e */
+		PREFIX186(_outsw),            /* 0x6f */
 		PREFIX86(_jo),                /* 0x70 */
 		PREFIX86(_jno),               /* 0x71 */
 		PREFIX86(_jb),                /* 0x72 */
@@ -130,7 +130,7 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_jnle),              /* 0x7f */
 		PREFIX86(_80pre),             /* 0x80 */
 		PREFIX86(_81pre),             /* 0x81 */
-		PREFIX86(_82pre),           /* 0x82 */
+		PREFIX86(_82pre),             /* 0x82 */
 		PREFIX86(_83pre),             /* 0x83 */
 		PREFIX86(_test_br8),          /* 0x84 */
 		PREFIX86(_test_wr16),         /* 0x85 */
@@ -192,16 +192,16 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_mov_bpd16),         /* 0xbd */
 		PREFIX86(_mov_sid16),         /* 0xbe */
 		PREFIX86(_mov_did16),         /* 0xbf */
-		PREFIX186(_rotshft_bd8),       /* 0xc0 */
-		PREFIX186(_rotshft_wd8),       /* 0xc1 */
+		PREFIX186(_rotshft_bd8),      /* 0xc0 */
+		PREFIX186(_rotshft_wd8),      /* 0xc1 */
 		PREFIX86(_ret_d16),           /* 0xc2 */
 		PREFIX86(_ret),               /* 0xc3 */
 		PREFIX86(_les_dw),            /* 0xc4 */
 		PREFIX86(_lds_dw),            /* 0xc5 */
 		PREFIX86(_mov_bd8),           /* 0xc6 */
 		PREFIX86(_mov_wd16),          /* 0xc7 */
-		PREFIX186(_enter),             /* 0xc8 */
-		PREFIX186(_leave),             /* 0xc9 */
+		PREFIX186(_enter),            /* 0xc8 */
+		PREFIX186(_leave),            /* 0xc9 */
 		PREFIX86(_retf_d16),          /* 0xca */
 		PREFIX86(_retf),              /* 0xcb */
 		PREFIX86(_int3),              /* 0xcc */
@@ -210,11 +210,11 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_iret),              /* 0xcf */
 		PREFIX86(_rotshft_b),         /* 0xd0 */
 		PREFIX86(_rotshft_w),         /* 0xd1 */
-		PREFIX186(_rotshft_bcl),       /* 0xd2 */
-		PREFIX186(_rotshft_wcl),       /* 0xd3 */
+		PREFIX186(_rotshft_bcl),      /* 0xd2 */
+		PREFIX186(_rotshft_wcl),      /* 0xd3 */
 		PREFIX86(_aam),               /* 0xd4 */
 		PREFIX86(_aad),               /* 0xd5 */
-		PREFIX86(_invalid),
+		PREFIX86(_salc),              /* 0xd6 */
 		PREFIX86(_xlat),              /* 0xd7 */
 		PREFIX86(_escape),            /* 0xd8 */
 		PREFIX86(_escape),            /* 0xd9 */
@@ -242,9 +242,9 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_outdxax),           /* 0xef */
 		PREFIX86(_lock),              /* 0xf0 */
 		PREFIX86(_invalid),           /* 0xf1 */
-		PREFIX186(_repne),             /* 0xf2 */
-		PREFIX186(_repe),              /* 0xf3 */
-		PREFIX86(_hlt),     /* 0xf4 */
+		PREFIX186(_repne),            /* 0xf2 */
+		PREFIX186(_repe),             /* 0xf3 */
+		PREFIX86(_hlt),               /* 0xf4 */
 		PREFIX86(_cmc),               /* 0xf5 */
 		PREFIX86(_f6pre),             /* 0xf6 */
 		PREFIX86(_f7pre),             /* 0xf7 */
@@ -255,7 +255,7 @@ static void (*const PREFIX186(_instruction)[256])() =
 		PREFIX86(_cld),               /* 0xfc */
 		PREFIX86(_std),               /* 0xfd */
 		PREFIX86(_fepre),             /* 0xfe */
-		PREFIX86(_ffpre)             /* 0xff */
+		PREFIX86(_ffpre)              /* 0xff */
 };
 
 #if defined(BIGCASE) && !defined(RS6000)
@@ -359,22 +359,22 @@ static void (*const PREFIX186(_instruction)[256])() =
 	case 0x5d:    PREFIX86(_pop_bp)(); break;\
 	case 0x5e:    PREFIX86(_pop_si)(); break;\
 	case 0x5f:    PREFIX86(_pop_di)(); break;\
-			case 0x60:    PREFIX186(_pusha)(); break;\
-			case 0x61:    PREFIX186(_popa)(); break;\
-			case 0x62:    PREFIX186(_bound)(); break;\
+	case 0x60:    PREFIX186(_pusha)(); break;\
+	case 0x61:    PREFIX186(_popa)(); break;\
+	case 0x62:    PREFIX186(_bound)(); break;\
 	case 0x63:    PREFIX86(_invalid)(); break;\
 	case 0x64:    PREFIX86(_invalid)(); break;\
 	case 0x65:    PREFIX86(_invalid)(); break;\
 	case 0x66:    PREFIX86(_invalid)(); break;\
 	case 0x67:    PREFIX86(_invalid)(); break;\
-			case 0x68:    PREFIX186(_push_d16)(); break;\
-			case 0x69:    PREFIX186(_imul_d16)(); break;\
-			case 0x6a:    PREFIX186(_push_d8)(); break;\
-			case 0x6b:    PREFIX186(_imul_d8)(); break;\
-			case 0x6c:    PREFIX186(_insb)(); break;\
-			case 0x6d:    PREFIX186(_insw)(); break;\
-			case 0x6e:    PREFIX186(_outsb)(); break;\
-			case 0x6f:    PREFIX186(_outsw)(); break;\
+	case 0x68:    PREFIX186(_push_d16)(); break;\
+	case 0x69:    PREFIX186(_imul_d16)(); break;\
+	case 0x6a:    PREFIX186(_push_d8)(); break;\
+	case 0x6b:    PREFIX186(_imul_d8)(); break;\
+	case 0x6c:    PREFIX186(_insb)(); break;\
+	case 0x6d:    PREFIX186(_insw)(); break;\
+	case 0x6e:    PREFIX186(_outsb)(); break;\
+	case 0x6f:    PREFIX186(_outsw)(); break;\
 	case 0x70:    PREFIX86(_jo)(); break;\
 	case 0x71:    PREFIX86(_jno)(); break;\
 	case 0x72:    PREFIX86(_jb)(); break;\
@@ -455,29 +455,29 @@ static void (*const PREFIX186(_instruction)[256])() =
 	case 0xbd:    PREFIX86(_mov_bpd16)(); break;\
 	case 0xbe:    PREFIX86(_mov_sid16)(); break;\
 	case 0xbf:    PREFIX86(_mov_did16)(); break;\
-			case 0xc0:    PREFIX186(_rotshft_bd8)(); break;\
-			case 0xc1:    PREFIX186(_rotshft_wd8)(); break;\
+	case 0xc0:    PREFIX186(_rotshft_bd8)(); break;\
+	case 0xc1:    PREFIX186(_rotshft_wd8)(); break;\
 	case 0xc2:    PREFIX86(_ret_d16)(); break;\
 	case 0xc3:    PREFIX86(_ret)(); break;\
 	case 0xc4:    PREFIX86(_les_dw)(); break;\
 	case 0xc5:    PREFIX86(_lds_dw)(); break;\
 	case 0xc6:    PREFIX86(_mov_bd8)(); break;\
 	case 0xc7:    PREFIX86(_mov_wd16)(); break;\
-			case 0xc8:    PREFIX186(_enter)(); break;\
-			case 0xc9:    PREFIX186(_leave)(); break;\
+	case 0xc8:    PREFIX186(_enter)(); break;\
+	case 0xc9:    PREFIX186(_leave)(); break;\
 	case 0xca:    PREFIX86(_retf_d16)(); break;\
 	case 0xcb:    PREFIX86(_retf)(); break;\
 	case 0xcc:    PREFIX86(_int3)(); break;\
 	case 0xcd:    PREFIX86(_int)(); break;\
 	case 0xce:    PREFIX86(_into)(); break;\
 	case 0xcf:    PREFIX86(_iret)(); break;\
-			case 0xd0:    PREFIX86(_rotshft_b)(); break;\
-			case 0xd1:    PREFIX86(_rotshft_w)(); break;\
-			case 0xd2:    PREFIX186(_rotshft_bcl)(); break;\
-			case 0xd3:    PREFIX186(_rotshft_wcl)(); break;\
+	case 0xd0:    PREFIX86(_rotshft_b)(); break;\
+	case 0xd1:    PREFIX86(_rotshft_w)(); break;\
+	case 0xd2:    PREFIX186(_rotshft_bcl)(); break;\
+	case 0xd3:    PREFIX186(_rotshft_wcl)(); break;\
 	case 0xd4:    PREFIX86(_aam)(); break;\
 	case 0xd5:    PREFIX86(_aad)(); break;\
-	case 0xd6:    PREFIX86(_invalid)(); break;\
+	case 0xd6:    PREFIX86(_salc)(); break;\
 	case 0xd7:    PREFIX86(_xlat)(); break;\
 	case 0xd8:    PREFIX86(_escape)(); break;\
 	case 0xd9:    PREFIX86(_escape)(); break;\

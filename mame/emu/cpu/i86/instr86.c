@@ -24,6 +24,18 @@
     the serious effect of ignoring the next instruction, as invalid, *IF*
     it is an 80186 specific instruction.
 
+    DIV/IDIV note: it's been observed on real 8086/8088 that DIV and IDIV
+    set the zero flag in the expected manner according to the quotient.  The
+    firmware for the Akai MPC60 expicitly relies on this behavior.  One
+    example from the routine that calculates how many timer ticks a sample
+    should play for:
+
+    5659 sub dx,dx      ; sets ZF=1
+    565b mov cx,0x000a  ; flags unchanged
+    565e div cx         ; firmware expects this to affect ZF
+    5660 jne 0x5665
+    5662 mov ax,1       ; if ZF=1 the quotient was zero, round up to 1 tick
+    5665 ...
 */
 
 #if !defined(I80186)
@@ -882,8 +894,9 @@ static void PREFIX86(_daa)()    /* Opcode 0x27 */
 {
 	if (AF || ((m_regs.b[AL] & 0xf) > 9))
 	{
-		int tmp;
-		m_regs.b[AL] = tmp = m_regs.b[AL] + 6;
+		UINT16 tmp;
+		tmp = m_regs.b[AL] + 6;
+		m_regs.b[AL] = tmp;
 		m_AuxVal = 1;
 		m_CarryVal |= tmp & 0x100;
 	}
@@ -941,16 +954,16 @@ static void PREFIX86(_sub_axd16)()    /* Opcode 0x2d */
 
 static void PREFIX86(_das)()    /* Opcode 0x2f */
 {
-	UINT8 tmpAL=m_regs.b[AL];
 	if (AF || ((m_regs.b[AL] & 0xf) > 9))
 	{
-		int tmp;
-		m_regs.b[AL] = tmp = m_regs.b[AL] - 6;
+		UINT16 tmp;
+		tmp = m_regs.b[AL] - 6;
+		m_regs.b[AL] = tmp;
 		m_AuxVal = 1;
 		m_CarryVal |= tmp & 0x100;
 	}
 
-	if (CF || (tmpAL > 0x9f))
+	if (CF || (m_regs.b[AL] > 0x9f))
 	{
 		m_regs.b[AL] -= 0x60;
 		m_CarryVal = 1;
@@ -1059,13 +1072,13 @@ static void PREFIX86(_cmp_axd16)()    /* Opcode 0x3d */
 
 static void PREFIX86(_aas)()    /* Opcode 0x3f */
 {
-//  UINT8 ALcarry=1;
-//  if (m_regs.b[AL]>0xf9) ALcarry=2;
+	UINT8 ALcarry=1;
+ 	if (m_regs.b[AL]<6) ALcarry=2;
 
 	if (AF || ((m_regs.b[AL] & 0xf) > 9))
 	{
 		m_regs.b[AL] -= 6;
-		m_regs.b[AH] -= 1;
+		m_regs.b[AH] -= ALcarry;
 		m_AuxVal = 1;
 		m_CarryVal = 1;
 	}
@@ -1265,8 +1278,7 @@ static void PREFIX86(_pop_di)()    /* Opcode 0x5f */
 static void PREFIX86(_jo)()    /* Opcode 0x70 */
 {
 	int tmp = (int)((INT8)FETCH);
-	if (OF)
-	{
+	if (OF) {
 		m_pc += tmp;
 /* ASG - can probably assume this is safe
         CHANGE_PC(m_pc);*/
@@ -1396,7 +1408,6 @@ static void PREFIX86(_jl)()    /* Opcode 0x7c */
 static void PREFIX86(_jnl)()    /* Opcode 0x7d */
 {
 	int tmp = (int)((INT8)FETCH);
-//	if (ZF||(SF==OF)) {
 	if (SF==OF) {
 		m_pc += tmp;
 /* ASG - can probably assume this is safe
@@ -1671,7 +1682,7 @@ static void PREFIX86(_mov_r16w)()    /* Opcode 0x8b */
 static void PREFIX86(_mov_wsreg)()    /* Opcode 0x8c */
 {
 	unsigned ModRM = FETCH;
-#ifndef I8086
+#ifdef I80286
 	if (ModRM & 0x20) { /* HJB 12/13/98 1xx is invalid */
 		m_pc = m_prevpc;
 		PREFIX86(_invalid)();
@@ -1694,7 +1705,7 @@ static void PREFIX86(_lea)()    /* Opcode 0x8d */
 static void PREFIX86(_popw)()    /* Opcode 0x8f */
 {
 	unsigned ModRM = FETCH;
-		WORD tmp;
+	WORD tmp;
 	tmp = ReadWord(m_base[SS] + m_regs.w[SP]);
 	PutRMWord(ModRM,tmp);
 	m_regs.w[SP] += 2;
@@ -2075,6 +2086,9 @@ static void PREFIX86(_ret)()    /* Opcode 0xc3 */
 static void PREFIX86(_les_dw)()    /* Opcode 0xc4 */
 {
 	unsigned ModRM = FETCH;
+#ifdef I80286
+	if (ModRM>=0xc0) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+#endif
 	WORD tmp = GetRMWord(ModRM);
 
 #ifdef I80286
@@ -2089,6 +2103,9 @@ static void PREFIX86(_les_dw)()    /* Opcode 0xc4 */
 static void PREFIX86(_lds_dw)()    /* Opcode 0xc5 */
 {
 	unsigned ModRM = FETCH;
+#ifdef I80286
+	if (ModRM>=0xc0) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+#endif
 	WORD tmp = GetRMWord(ModRM);
 
 #ifdef I80286
@@ -2163,7 +2180,7 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 	POP(m_sregs[CS]);
 	m_base[CS] = SegBase(CS);
 	m_pc = (m_pc + m_base[CS]) & AMASK;
-		PREFIX(_popf)();
+	PREFIX(_popf)();
 	CHANGE_PC(m_pc);
 
 	/* if the IF is set, and an interrupt is pending, signal an interrupt */
@@ -2253,6 +2270,10 @@ static void PREFIX86(_aad)()    /* Opcode 0xd5 */
 	m_SignVal = 0;
 }
 
+static void PREFIX86(_salc)()    /* Opcode 0xd6 */
+{
+	m_regs.b[AL] = (CF ? 0xff : 0);
+}
 
 static void PREFIX86(_xlat)()    /* Opcode 0xd7 */
 {
@@ -2539,9 +2560,12 @@ static void PREFIX(_mov_sregw)()    /* Opcode 0x8e */
 		break;
 	case 0x10:  /* mov ss,ew */
 		m_sregs[SS] = src;
-		m_base[SS] = SegBase(SS); /* no interrupt allowed before next instr */
+		m_base[SS] = SegBase(SS);
+#ifdef I80186
+		/* no interrupt allowed before next instr */
 		m_seg_prefix = FALSE;
 		PREFIX(_instruction)[FETCHOP]();
+#endif
 		break;
 	case 0x08:  /* mov cs,ew */
 #ifndef I80186
@@ -2555,12 +2579,17 @@ static void PREFIX(_mov_sregw)()    /* Opcode 0x8e */
 #endif
 		break;
 	}
+#ifndef I80186
+	/* no interrupt allowed before next instr */
+	m_seg_prefix = FALSE;
+	PREFIX(_instruction)[FETCHOP]();
+#endif
 #endif
 }
 
 static void PREFIX(_repne)()    /* Opcode 0xf2 */
 {
-		PREFIX(rep)(0);
+	PREFIX(rep)(0);
 }
 
 static void PREFIX(_repe)()    /* Opcode 0xf3 */
@@ -2638,34 +2667,18 @@ static void PREFIX86(_f6pre)()
 		break;
 	case 0x20:  /* MUL AL, Eb */
 		{
-			UINT16 result;
-			tmp2 = m_regs.b[AL];
-
-			SetSF((INT8)tmp2);
-			SetPF(tmp2);
-
-			result = (UINT16)tmp2*tmp;
-			m_regs.w[AX]=(WORD)result;
-
+			UINT32 uresult = m_regs.b[AL] * tmp;
+			m_regs.w[AX] = (UINT16)uresult;
+			m_CarryVal = m_OverVal = (m_regs.b[AH]!=0) ? 1 : 0;
 			SetZF(m_regs.w[AX]);
-			m_CarryVal = m_OverVal = (m_regs.b[AH] != 0);
 		}
 		break;
 	case 0x28:  /* IMUL AL, Eb */
 		{
-			INT16 result;
-
-			tmp2 = (unsigned)m_regs.b[AL];
-
-			SetSF((INT8)tmp2);
-			SetPF(tmp2);
-
-			result = (INT16)((INT8)tmp2)*(INT16)((INT8)tmp);
-			m_regs.w[AX]=(WORD)result;
-
+			INT32 result = (INT16)((INT8)m_regs.b[AL])*(INT16)((INT8)tmp);
+			m_regs.w[AX] = (UINT16)result;
+			m_CarryVal = m_OverVal = (m_regs.b[AH]!=0) ? 1 : 0;
 			SetZF(m_regs.w[AX]);
-
-			m_CarryVal = m_OverVal = (result >> 7 != 0) && (result >> 7 != -1);
 		}
 		break;
 	case 0x30:  /* DIV AL, Ew */
@@ -2684,6 +2697,7 @@ static void PREFIX86(_f6pre)()
 				{
 					m_regs.b[AL] = uresult;
 					m_regs.b[AH] = uresult2;
+					SetZF(m_regs.b[AL]);
 				}
 			}
 			else
@@ -2701,7 +2715,7 @@ static void PREFIX86(_f6pre)()
 				INT32 result2 = result % (INT16)((INT8)tmp);
 				result /= (INT16)((INT8)tmp);
 				INT32 lower_bound = m_MF ? -0x7f : -0x80;
-				if (result > 0xff || result < lower_bound)
+				if (result > 0x7f || result < lower_bound)
 				{
 					PREFIX(_interrupt)(0);
 					break;
@@ -2710,6 +2724,7 @@ static void PREFIX86(_f6pre)()
 				{
 					m_regs.b[AL] = result;
 					m_regs.b[AH] = result2;
+					SetZF(m_regs.b[AL]);
 				}
 			}
 			else
@@ -2727,7 +2742,7 @@ static void PREFIX86(_f7pre)()
 {
 	/* Opcode 0xf7 */
 	unsigned ModRM = FETCH;
-		unsigned tmp = GetRMWord(ModRM);
+	unsigned tmp = GetRMWord(ModRM);
 	unsigned tmp2;
 
 
@@ -2757,38 +2772,20 @@ static void PREFIX86(_f7pre)()
 		break;
 	case 0x20:  /* MUL AX, Ew */
 		{
-			UINT32 result;
-			tmp2 = m_regs.w[AX];
-
-			SetSF((INT16)tmp2);
-			SetPF(tmp2);
-
-			result = (UINT32)tmp2*tmp;
-			m_regs.w[AX]=(WORD)result;
-			result >>= 16;
-			m_regs.w[DX]=result;
-
+			UINT32 uresult = m_regs.w[AX]*tmp;
+			m_regs.w[AX] = uresult & 0xffff;
+			m_regs.w[DX] = ((UINT32)uresult)>>16;
+			m_CarryVal = m_OverVal = (m_regs.w[DX] != 0) ? 1 : 0;
 			SetZF(m_regs.w[AX] | m_regs.w[DX]);
-			m_CarryVal = m_OverVal = (m_regs.w[DX] != 0);
 		}
 		break;
 
 	case 0x28:  /* IMUL AX, Ew */
 		{
-			INT32 result;
-
-			tmp2 = m_regs.w[AX];
-
-			SetSF((INT16)tmp2);
-			SetPF(tmp2);
-
-			result = (INT32)((INT16)tmp2)*(INT32)((INT16)tmp);
-			m_CarryVal = m_OverVal = (result >> 15 != 0) && (result >> 15 != -1);
-
-			m_regs.w[AX]=(WORD)result;
-			result = (WORD)(result >> 16);
-			m_regs.w[DX]=result;
-
+			INT32 result = (INT32)((INT16)m_regs.w[AX]) * (INT32)((INT16)tmp);
+			m_regs.w[AX] = result & 0xffff;
+			m_regs.w[DX] = result >> 16;
+			m_CarryVal = m_OverVal = (m_regs.w[DX] != 0) ? 1 : 0;
 			SetZF(m_regs.w[AX] | m_regs.w[DX]);
 		}
 		break;
@@ -2808,6 +2805,7 @@ static void PREFIX86(_f7pre)()
 				{
 					m_regs.w[AX] = uresult;
 					m_regs.w[DX] = uresult2;
+					SetZF(m_regs.w[AX]);
 				}
 			}
 			else
@@ -2834,6 +2832,7 @@ static void PREFIX86(_f7pre)()
 				{
 					m_regs.w[AX] = result;
 					m_regs.w[DX] = result2;
+					SetZF(m_regs.w[AX]);
 				}
 			}
 			else

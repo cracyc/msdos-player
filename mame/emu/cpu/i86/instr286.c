@@ -310,9 +310,10 @@ static void i80286_switch_task(UINT16 ntask, int type)
 
 	if (type == CALL) m_flags |= 0x4000;
 	m_msw |= 8;
+	// Docs explicitly say SS is loaded first.  Why?  Because the DPL
+	// of the TSS is compared to the DPL of SS which is CPL
 	i80286_data_descriptor_full(SS, ntss[TSS_SS], RPL(ntss[TSS_CS]), TRAP(INVALID_TSS,IDXTBL(ntss[TSS_SS])), 0, 0);
 
-	m_sregs[CS] = IDXTBL(m_sregs[CS]) | RPL(ntss[TSS_CS]);  // fixme
 	try {
 		i80286_code_descriptor(ntss[TSS_CS], ntss[TSS_IP], 0);
 	} catch(UINT32 e) {
@@ -321,8 +322,8 @@ static void i80286_switch_task(UINT16 ntask, int type)
 		throw e;
 	}
 
-	i80286_data_descriptor_full(ES, ntss[TSS_ES], RPL(ntss[TSS_CS]), TRAP(INVALID_TSS,IDXTBL(ntss[TSS_ES])), 0, 0);
-	i80286_data_descriptor_full(DS, ntss[TSS_DS], RPL(ntss[TSS_CS]), TRAP(INVALID_TSS,IDXTBL(ntss[TSS_DS])), 0, 0);
+	i80286_data_descriptor_full(ES, ntss[TSS_ES], CPL, TRAP(INVALID_TSS,IDXTBL(ntss[TSS_ES])), 0, 0);
+	i80286_data_descriptor_full(DS, ntss[TSS_DS], CPL, TRAP(INVALID_TSS,IDXTBL(ntss[TSS_DS])), 0, 0);
 }
 
 static void i80286_code_descriptor(UINT16 selector, UINT16 offset, int gate)
@@ -431,6 +432,7 @@ static void i80286_interrupt_descriptor(UINT16 number, int hwint, int error)
 	UINT16 desc[3], gatedesc[3]={0,0,0}, gatesel;
 	UINT8 r;
 	UINT32 addr;
+	hwint = hwint ? 1 : 0;
 
 	if(!PM) {
 		PREFIX86(_interrupt)(number);
@@ -453,34 +455,38 @@ static void i80286_interrupt_descriptor(UINT16 number, int hwint, int error)
 #endif
 
 	if ((number<<3)>=m_idtr.limit)
-		throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+(hwint&&1)));
+		throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+hwint));
 
 	desc[0] = ReadWord(m_idtr.base+(number<<3));
 	desc[1] = ReadWord(m_idtr.base+(number<<3)+2);
 	desc[2] = ReadWord(m_idtr.base+(number<<3)+4);
 	r = RIGHTS(desc);
-	if (!hwint && (DPL(r)<CPL)) throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+(hwint&&1)));
-	if (!PRES(r)) throw TRAP(SEG_NOT_PRESENT,(number*8+2+(hwint&&1)));
+	if (!hwint && (DPL(r)<CPL)) throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+hwint));
+	if (!PRES(r)) throw TRAP(SEG_NOT_PRESENT,(number*8+2+hwint));
 	gatesel = GATESEL(desc);
 
 	switch (GATE(r)) {
 	case TASKGATE:
-		i80286_switch_task(gatesel, CALL);
+		try {
+			i80286_switch_task(gatesel, CALL);
+		} catch (UINT32 e) {
+			throw e + hwint;
+		}
 		if((hwint == 1) && (error != -1)) PUSH(error);
 		i80286_load_flags(m_flags, CPL);
 		break;
 	case INTGATE:
 	case TRAPGATE:
 		if ((addr = i80286_selector_address(gatesel)) == -1)
-			throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+(hwint&&1)));
+			throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+hwint));
 		gatedesc[0] = ReadWord(addr);
 		gatedesc[1] = ReadWord(addr+2);
 		gatedesc[2] = ReadWord(addr+4);
 		r = RIGHTS(gatedesc);
-		if (!CODE(r) || !SEGDESC(r)) throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+(hwint&&1)));
-		if (DPL(r)>CPL) throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+(hwint&&1)));
-		if (!PRES(r)) throw TRAP(SEG_NOT_PRESENT,(IDXTBL(gatesel)+(hwint&&1)));
-		if (GATEOFF(desc) > LIMIT(gatedesc)) throw TRAP(GENERAL_PROTECTION_FAULT,(int)(hwint&&1));
+		if (!CODE(r) || !SEGDESC(r)) throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+hwint));
+		if (DPL(r)>CPL) throw TRAP(GENERAL_PROTECTION_FAULT,(IDXTBL(gatesel)+hwint));
+		if (!PRES(r)) throw TRAP(SEG_NOT_PRESENT,(IDXTBL(gatesel)+hwint));
+		if (GATEOFF(desc) > LIMIT(gatedesc)) throw TRAP(GENERAL_PROTECTION_FAULT,hwint);
 
 		if (!CONF(r)&&(DPL(r)<CPL)) {  // inner call
 			UINT16 tss_ss, tss_sp, oldss, oldsp;
@@ -489,7 +495,7 @@ static void i80286_interrupt_descriptor(UINT16 number, int hwint, int error)
 
 			oldss = m_sregs[SS];
 			oldsp = m_regs.w[SP];
-			i80286_data_descriptor_full(SS, tss_ss, DPL(r), TRAP(INVALID_TSS,(IDXTBL(tss_ss)+(hwint&&1))), tss_sp-((error != -1)?12:10), (error != -1)?12:10);
+			i80286_data_descriptor_full(SS, tss_ss, DPL(r), TRAP(INVALID_TSS,(IDXTBL(tss_ss)+hwint)), tss_sp-((error != -1)?12:10), (error != -1)?12:10);
 			m_regs.w[SP] = tss_sp;
 			PUSH(oldss);
 			PUSH(oldsp);
@@ -511,7 +517,7 @@ static void i80286_interrupt_descriptor(UINT16 number, int hwint, int error)
 		CHANGE_PC(m_pc);
 		break;
 	default:
-		throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+(hwint&&1)));
+		throw TRAP(GENERAL_PROTECTION_FAULT,(number*8+2+hwint));
 	}
 }
 
@@ -525,8 +531,8 @@ static void PREFIX286(_0fpre)()
 
 	switch (next) {
 	case 0:
-		ModRM=FETCHOP;
 		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+		ModRM=FETCHOP;
 		switch (ModRM&0x38) {
 		case 0: /* sldt */
 			PutRMWord(ModRM, m_ldtr.sel);
@@ -602,6 +608,7 @@ static void PREFIX286(_0fpre)()
 		/* lgdt, lldt in protected mode privilege level 0 required else common protection
 		   failure 0xd */
 		ModRM = FETCHOP;
+		if ((ModRM>=0xc0) && (ModRM<0xe0)) throw TRAP(ILLEGAL_INSTRUCTION,-1);
 		switch (ModRM&0x38) {
 		case 0: /* sgdt */
 			PutRMWord(ModRM,m_gdtr.limit);
@@ -629,7 +636,6 @@ static void PREFIX286(_0fpre)()
 		case 0x30: /* lmsw */
 			if (PM&&(CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 			msw = GetRMWord(ModRM);
-//			if (!PM&&(msw&1)) m_sregs[CS] = IDX(m_sregs[CS]); // cheat and set cpl to 0
 			m_msw=(m_msw&1)|msw;
 			break;
 		default:
@@ -637,8 +643,8 @@ static void PREFIX286(_0fpre)()
 		}
 		break;
 	case 2: /* LAR */
-		ModRM = FETCHOP;
 		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+		ModRM = FETCHOP;
 		tmp=GetRMWord(ModRM);
 		if ((addr = i80286_selector_address(tmp)) == -1) m_ZeroVal = 1;
 		else {
@@ -656,8 +662,8 @@ static void PREFIX286(_0fpre)()
 		}
 		break;
 	case 3: /* LSL */
-		ModRM = FETCHOP;
 		if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+		ModRM = FETCHOP;
 		tmp=GetRMWord(ModRM);
 		if ((addr = i80286_selector_address(tmp)) == -1) m_ZeroVal = 1;
 		else {
@@ -677,10 +683,10 @@ static void PREFIX286(_0fpre)()
 		if (PM&&(CPL!=0)) throw TRAP(GENERAL_PROTECTION_FAULT,0);
 		m_msw =        (m_msw&1)|ReadWord(0x806);
 		m_tr.sel =     ReadWord(0x816);
-		tmp =                  ReadWord(0x818);
+		tmp =          ReadWord(0x818);
 		ExpandFlags(tmp);
-		m_flags = tmp;
-		m_flags = CompressFlags();
+		m_flags =      tmp;
+		m_flags =      CompressFlags();
 		m_pc =         ReadWord(0x81a);
 		m_ldtr.sel =   ReadWord(0x81c);
 		m_sregs[DS] =  ReadWord(0x81e);
@@ -729,8 +735,8 @@ static void PREFIX286(_arpl)() /* 0x63 */
 {
 	UINT16 ModRM, tmp, source;
 
-	ModRM=FETCHOP;
 	if (!PM) throw TRAP(ILLEGAL_INSTRUCTION,-1);
+	ModRM=FETCHOP;
 	tmp=GetRMWord(ModRM);
 	source=RegWord(ModRM);
 
@@ -746,6 +752,7 @@ static void PREFIX286(_arpl)() /* 0x63 */
 static void i80286_load_flags(UINT16 flags, int cpl)
 {
 	m_flags = CompressFlags();
+	flags &= ~0x8000;
 	if(PM && cpl) {
 		UINT16 mask = 0x3000;
 		if(cpl>IOPL) mask |= 0x200;

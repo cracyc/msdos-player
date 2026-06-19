@@ -27,6 +27,7 @@ static void I486OP(cpuid)()             // Opcode 0x0F A2
 			case 1:
 			{
 				REG32(EAX) = m_cpu_version;
+				REG32(EBX) = m_brand_id;
 				REG32(EDX) = m_feature_flags;
 				CYCLES(CYCLES_CPUID_EAX1);
 				break;
@@ -52,6 +53,7 @@ static void PENTIUM3OP(cpuid)()         // Opcode 0x0F A2
 		case 1:
 		{
 			REG32(EAX) = m_cpu_version;
+			REG32(EBX) = m_brand_id;
 			REG32(EDX) = m_feature_flags;
 			CYCLES(CYCLES_CPUID_EAX1);
 			break;
@@ -61,7 +63,7 @@ static void PENTIUM3OP(cpuid)()         // Opcode 0x0F A2
 		{
 			// TODO: lower part of 96 bits s/n for Pentium III processors only (ditched in 4)
 			// (upper 32-bits part is in EAX=1 EAX return)
-			// NB: if this is triggered from an Arcade system then there's a very good chance
+			// NOTE: if this is triggered from an Arcade system then there's a very good chance
 			// that is trying to tie the serial as a form of copy protection cfr. gamecstl
 			logerror("CPUID with EAX=00000003 (Pentium III PSN?) at %08x!\n", m_eip);
 			REG32(EAX) = 0x00000000;

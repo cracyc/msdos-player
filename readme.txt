@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								8/31/2025
+								6/14/2026
 
 ----- What's This
 
@@ -1258,9 +1258,9 @@ See also COPYING.txt for more details about the license.
 
 ----- Thanks
 
-8086/80286 code is based on MAME 0.149 and applied fixes in MAME 0.150-0.279.
+8086/80286 code is based on MAME 0.149 and applied fixes in MAME 0.150-0.288.
 NEC V30 instructions code is based on MAME 0.128.
-8038/80486 code is based on MAME 0.152 and applied fixes in MAME 0.154-0.279.
+80386 code is based on MAME 0.152 and applied fixes in MAME 0.154-0.288.
 IA32 code is based on Neko Project 21/W.
 
 INT 15H AH=84H (Joystick Support),

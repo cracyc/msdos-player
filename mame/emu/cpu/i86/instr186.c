@@ -147,7 +147,6 @@ static void PREFIX186(_enter)()    /* Opcode 0xc8 */
 {
 	unsigned nb = FETCH;
 	unsigned i,level;
-	UINT16 fp;
 
 	nb += FETCH << 8;
 #ifdef I80286
@@ -157,12 +156,11 @@ static void PREFIX186(_enter)()    /* Opcode 0xc8 */
 	level = FETCH;
 #endif
 	PUSH(m_regs.w[BP]);
-	fp = m_regs.w[SP];
+	m_regs.w[BP] = m_regs.w[SP];
+	m_regs.w[SP] -= nb;
 	for (i=1;i<level;i++)
 		PUSH(GetMemW(SS,m_regs.w[BP]-i*2));
-	if (level) PUSH(fp);
-	m_regs.w[BP] = fp;
-	m_regs.w[SP] -= nb;
+	if (level) PUSH(m_regs.w[BP]);
 }
 
 static void PREFIX186(_leave)()    /* Opcode 0xc9 */

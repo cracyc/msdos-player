@@ -527,6 +527,7 @@ enum CR4_BITS {
 	int m_cpuid_max_input_value_eax; // Highest CPUID standard function available
 	UINT32 m_cpuid_id0, m_cpuid_id1, m_cpuid_id2;
 	UINT32 m_cpu_version;
+	UINT32 m_brand_id;
 	UINT32 m_feature_flags;
 	UINT64 m_tsc;
 	UINT64 m_rdtsc;
