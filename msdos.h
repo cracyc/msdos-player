@@ -1189,7 +1189,10 @@ typedef struct {
 	bool parent_int_10h_ffh_called;
 	UINT16 parent_ds;
 	UINT16 parent_es;
-	struct {
+	UINT16 parent_bp;
+	UINT16 parent_si;
+	UINT16 parent_di;
+struct {
 		UINT16 handle;
 		UINT16 page;
 		bool mapped;

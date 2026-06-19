@@ -1653,17 +1653,17 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 BOOL MyWriteConsoleOutputA(HANDLE hConsoleOutput, const CHAR_INFO *lpBuffer, COORD dwBufferSize, COORD dwBufferCoord, PSMALL_RECT lpWriteRegion)
 {
 	if(use_vt) {
-		if(lpWriteRegion->Right > scr_width) {
-			lpWriteRegion->Right = scr_width;
+		if(lpWriteRegion->Right >= scr_width) {
+			lpWriteRegion->Right = scr_width - 1;
 		}
-		if(lpWriteRegion->Bottom > scr_height) {
-			lpWriteRegion->Bottom = scr_height;
+		if(lpWriteRegion->Bottom >= scr_height) {
+			lpWriteRegion->Bottom = scr_height - 1;
 		}
 		if((lpWriteRegion->Left >= lpWriteRegion->Right) || (lpWriteRegion->Top >= lpWriteRegion->Bottom)) {
 			return TRUE;
 		}
-		int width = lpWriteRegion->Right - lpWriteRegion->Left;
-		int height = lpWriteRegion->Bottom - lpWriteRegion->Top;
+		int width = lpWriteRegion->Right - lpWriteRegion->Left + 1;
+		int height = lpWriteRegion->Bottom - lpWriteRegion->Top + 1;
 		if(width > (dwBufferSize.X - dwBufferCoord.X)) {
 			width = dwBufferSize.X - dwBufferCoord.X;
 		}
@@ -5753,6 +5753,9 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
 			process[i].parent_ds = CPU_DS;
 			process[i].parent_es = CPU_ES;
+			process[i].parent_bp = CPU_BP;
+			process[i].parent_si = CPU_SI;
+			process[i].parent_di = CPU_DI;
 
 			return(&process[i]);
 		}
@@ -10093,7 +10096,10 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	}
 	CPU_LOAD_SREG(CPU_DS_INDEX, current_process->parent_ds);
 	CPU_LOAD_SREG(CPU_ES_INDEX, current_process->parent_es);
-	
+	CPU_BP = current_process->parent_bp;
+	CPU_SI = current_process->parent_si;
+	CPU_DI = current_process->parent_di;
+
 	if(mem_free) {
 		int mcb_seg, umb_linked;
 		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
