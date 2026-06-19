@@ -11700,14 +11700,19 @@ inline void pcbios_int_10h_ffh()
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
 		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		COORD co;
+		int size = CPU_CX;
 		
 		if(use_vram_thread) {
 			vram_flush();
 		}
+		// workaround bug in wordperfect that only updates 2000 chars
+		if((CPU_DI == 0) && (size == 2000)) {
+			size = scr_width * scr_height;
+		}
 		co.X = (CPU_DI >> 1) % scr_width;
 		co.Y = (CPU_DI >> 1) / scr_width;
 		int ofs = pcbios_get_shadow_buffer_address(0, co.X, co.Y);
-		int end = min(ofs + CPU_CX * 2, pcbios_get_shadow_buffer_address(0, 0, scr_height));
+		int end = min(ofs + size * 2, pcbios_get_shadow_buffer_address(0, 0, scr_height));
 		int len;
 		for(len = 0; ofs < end; len++) {
 			scr_char[len] = mem[ofs++];
