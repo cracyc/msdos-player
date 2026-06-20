@@ -23668,9 +23668,9 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	}
 	cmd_line->cmd[cmd_line->len] = 0x0d;
 	
-	// system file table
+	// system file table, dosbox gets away with showing more entries than the table actually has
 	*(UINT32 *)(mem + SFT_TOP + 0) = 0xffffffff;
-	*(UINT16 *)(mem + SFT_TOP + 4) = 20;
+	*(UINT16 *)(mem + SFT_TOP + 4) = max_files;
 	
 	// disk buffer header (from DOSBox)
 	*(UINT16 *)(mem + DISK_BUF_TOP +  0) = 0xffff;		// forward ptr
