@@ -139,6 +139,8 @@ UINT8 MEMCALL cpu_linear_memory_read_b(UINT32 laddr, int ucrw);
 UINT16 MEMCALL cpu_linear_memory_read_w(UINT32 laddr, int ucrw);
 UINT32 MEMCALL cpu_linear_memory_read_d(UINT32 laddr, int ucrw);
 UINT64 MEMCALL cpu_linear_memory_read_q(UINT32 laddr, int ucrw);
+REG80 MEMCALL cpu_linear_memory_read_f(UINT32 laddr, int ucrw);
+void MEMCALL cpu_linear_memory_reads(UINT32 laddr, void* dat, UINT leng, int ucrw);
 PF_UINT8 MEMCALL cpu_linear_memory_read_b_codefetch(UINT32 laddr, int ucrw);
 PF_UINT16 MEMCALL cpu_linear_memory_read_w_codefetch(UINT32 laddr, int ucrw);
 PF_UINT32 MEMCALL cpu_linear_memory_read_d_codefetch(UINT32 laddr, int ucrw);
@@ -148,6 +150,7 @@ void MEMCALL cpu_linear_memory_write_w(UINT32 laddr, UINT16 value, int ucrw);
 void MEMCALL cpu_linear_memory_write_d(UINT32 laddr, UINT32 value, int ucrw);
 void MEMCALL cpu_linear_memory_write_q(UINT32 laddr, UINT64 value, int ucrw);
 void MEMCALL cpu_linear_memory_write_f(UINT32 laddr, const REG80 *value, int ucrw);
+void MEMCALL cpu_linear_memory_writes(UINT32 laddr, void* dat, UINT leng, int ucrw);
 
 /*
  * linear address memory access function with TLB
@@ -271,6 +274,17 @@ cpu_lmemoryread_f(UINT32 laddr, int ucrw)
 	return cpu_linear_memory_read_f(laddr, ucrw);
 }
 
+STATIC_INLINE void
+cpu_lmemoryreads(UINT32 laddr, void* dat, UINT leng, int ucrw)
+{
+	if (!CPU_STAT_PAGING) {
+		memp_reads(laddr, dat, leng);
+	}
+	else {
+		cpu_linear_memory_reads(laddr, dat, leng, ucrw);
+	}
+}
+
 /* write */
 STATIC_INLINE void MEMCALL
 cpu_lmemorywrite_b(UINT32 laddr, UINT8 value, int ucrw)
@@ -326,6 +340,17 @@ cpu_lmemorywrite_f(UINT32 laddr, const REG80 *value, int ucrw)
 		return;
 	}
 	cpu_linear_memory_write_f(laddr, value, ucrw);
+}
+
+STATIC_INLINE void
+cpu_lmemorywrites(UINT32 laddr, void* dat, UINT leng, int ucrw)
+{
+	if (!CPU_STAT_PAGING) {
+		memp_writes(laddr, dat, leng);
+	}
+	else {
+		cpu_linear_memory_writes(laddr, dat, leng, ucrw);
+	}
 }
 
 

@@ -36,8 +36,8 @@
 #error No FPU detected. Please define SUPPORT_FPU_DOSBOX, SUPPORT_FPU_DOSBOX2 or SUPPORT_FPU_SOFTFLOAT.
 #endif
 
-void
-fpu_initialize(void)
+void CPUCALL
+fpu_initialize(int initreg)
 {
 #if defined(USE_FPU)
 	if(i386cpuid.cpu_feature & CPU_FEATURE_FPU){
@@ -53,7 +53,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = DB_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = DB_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = DB_ESC7;
-			DB_FPU_FINIT();
+			if (initreg) DB_FPU_FINIT();
 			break;
 #endif
 #if defined(SUPPORT_FPU_DOSBOX2)
@@ -67,7 +67,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = DB2_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = DB2_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = DB2_ESC7;
-			DB2_FPU_FINIT();
+			if (initreg) DB2_FPU_FINIT();
 			break;
 #endif
 #if defined(SUPPORT_FPU_SOFTFLOAT)
@@ -81,7 +81,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = SF_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = SF_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = SF_ESC7;
-			SF_FPU_FINIT();
+			if (initreg) SF_FPU_FINIT();
 			break;
 #endif
 		default:
@@ -95,7 +95,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = SF_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = SF_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = SF_ESC7;
-			SF_FPU_FINIT();
+			if (initreg) SF_FPU_FINIT();
 #elif defined(SUPPORT_FPU_DOSBOX)
 			insttable_2byte[0][0xae] = insttable_2byte[1][0xae] = DB_FPU_FXSAVERSTOR;
 			insttable_1byte[0][0xd8] = insttable_1byte[1][0xd8] = DB_ESC0;
@@ -106,7 +106,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = DB_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = DB_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = DB_ESC7;
-			DB_FPU_FINIT();
+			if (initreg) DB_FPU_FINIT();
 #elif defined(SUPPORT_FPU_DOSBOX2)
 			insttable_2byte[0][0xae] = insttable_2byte[1][0xae] = DB2_FPU_FXSAVERSTOR;
 			insttable_1byte[0][0xd8] = insttable_1byte[1][0xd8] = DB2_ESC0;
@@ -117,7 +117,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = DB2_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = DB2_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = DB2_ESC7;
-			DB2_FPU_FINIT();
+			if (initreg) DB2_FPU_FINIT();
 #else
 			insttable_2byte[0][0xae] = insttable_2byte[1][0xae] = NOFPU_FPU_FXSAVERSTOR;
 			insttable_1byte[0][0xd8] = insttable_1byte[1][0xd8] = NOFPU_ESC0;
@@ -128,7 +128,7 @@ fpu_initialize(void)
 			insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = NOFPU_ESC5;
 			insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = NOFPU_ESC6;
 			insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = NOFPU_ESC7;
-			NOFPU_FPU_FINIT();
+			if (initreg) NOFPU_FPU_FINIT();
 #endif
 			break;
 		}
@@ -143,7 +143,7 @@ fpu_initialize(void)
 		insttable_1byte[0][0xdd] = insttable_1byte[1][0xdd] = NOFPU_ESC5;
 		insttable_1byte[0][0xde] = insttable_1byte[1][0xde] = NOFPU_ESC6;
 		insttable_1byte[0][0xdf] = insttable_1byte[1][0xdf] = NOFPU_ESC7;
-		NOFPU_FPU_FINIT();
+		if (initreg) NOFPU_FPU_FINIT();
 #if defined(USE_FPU)
 	}
 #endif

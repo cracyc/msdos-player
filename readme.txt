@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/14/2026
+								6/21/2026
 
 ----- What's This
 
@@ -1124,7 +1124,7 @@ VDD (Virtual Device Driver)
 	demFileFindNext
 	demGetPhysicalDriveType
 	demIsShortPathName
-	demSetCurrentDirectoryGetDrive (*10)
+	demSetCurrentDirectoryGetDrive
 	MGetVdmPointer
 	Sim32pGetVDMPointer
 	Sim32GetVDMPointer
@@ -1138,8 +1138,8 @@ VDD (Virtual Device Driver)
 	VDDIncludeMem (*10)
 	VDDExcludeMem (*10)
 	call_ica_hw_interrupt
-	VDDReserveIrqLine (*10)
-	VDDReleaseIrqLine (*10)
+	VDDReserveIrqLine
+	VDDReleaseIrqLine
 	VDDInstallIOHook
 	VDDDeInstallIOHook
 	VDDRequestDMA
@@ -1151,10 +1151,10 @@ VDD (Virtual Device Driver)
 	VDDTerminateVDM
 	VDDInstallUserHook
 	VDDDeInstallUserHook
-	VDDAllocateDosHandle (*10)
-	VDDReleaseDosHandle (*10)
-	VDDAssociateNtHandle (*10)
-	VDDRetrieveNtHandle (*10)
+	VDDAllocateDosHandle
+	VDDReleaseDosHandle
+	VDDAssociateNtHandle
+	VDDRetrieveNtHandle
 	VdmTraceEvent (*10)
 	VdmParametersInfo (*10)
 	VdmGetParametersInfoError (*10)

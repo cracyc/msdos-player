@@ -275,7 +275,7 @@ modify_eflags(UINT32 new_flags, UINT32 mask)
 	CPU_EFLAG = (REAL_EFLAGREG & ~mask) | (new_flags & mask);
 
 	CPU_OV = CPU_FLAG & O_FLAG;
-	CPU_TRAP = (CPU_FLAG & (I_FLAG|T_FLAG)) == (I_FLAG|T_FLAG);
+	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG);
 	if (CPU_STAT_PM) {
 		if ((orig ^ CPU_EFLAG) & VM_FLAG) {
 			if (CPU_EFLAG & VM_FLAG) {

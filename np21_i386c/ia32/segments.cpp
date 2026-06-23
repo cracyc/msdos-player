@@ -280,6 +280,18 @@ load_descriptor(descriptor_t *sdp, UINT32 addr)
 		case CPU_SYSDESC_TYPE_CALL_16:		/* 286 call gate */
 		case CPU_SYSDESC_TYPE_INTR_16:		/* 286 interrupt gate */
 		case CPU_SYSDESC_TYPE_TRAP_16:		/* 286 trap gate */
+			if ((h & 0x0000000e0) == 0) {
+				sdp->valid = 1;
+				sdp->d = (h & CPU_GATEDESC_H_D) ? 1 : 0;
+				sdp->u.gate.selector = (UINT16)(l >> 16);
+				sdp->u.gate.offset = l & 0xffff;
+				sdp->u.gate.count = (UINT8)(h & 0x1f);
+			}
+			else {
+				sdp->valid = 0;
+				VERBOSE(("load_descriptor: gate is invalid"));
+			}
+			break;
 		case CPU_SYSDESC_TYPE_CALL_32:		/* 386 call gate */
 		case CPU_SYSDESC_TYPE_INTR_32:		/* 386 interrupt gate */
 		case CPU_SYSDESC_TYPE_TRAP_32:		/* 386 trap gate */

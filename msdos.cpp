@@ -5922,7 +5922,7 @@ void msdos_dta_info_free(UINT16 psp_seg)
 
 bool msdos_cds_update(int drv)
 {
-	cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
+	cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * drv);
 	bool valid_drive = msdos_is_valid_drive(drv);
 	bool need_to_chdir = false;
 	
@@ -7216,46 +7216,44 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	file_handler[fd].lpt_port = lpt_port;
 	
 	// init system file table
-	if(fd < 20) {
-		UINT8 *sft = mem + SFT_TOP + 6 + 0x3b * fd;
+	sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+	
+	memset(sft, 0, sizeof(sft_t));
+	
+	sft->ref_count = 1;
+	sft->open_mode = file_handler[fd].mode;
+	sft->attrib = MyGetFileAttributesA(file_handler[fd].path) & 0xff;
+	sft->dev_info = file_handler[fd].info & 0xff;
+	
+	if(!(file_handler[fd].info & 0x80)) {
+		sft->dev_driver.w.l = sizeof(dpb_t) * (file_handler[fd].info & 0x1f);
+		sft->dev_driver.w.h = DPB_TOP >> 4;
 		
-		memset(sft, 0, 0x3b);
-		
-		*(UINT16 *)(sft + 0x00) = 1;
-		*(UINT16 *)(sft + 0x02) = file_handler[fd].mode;
-		*(UINT8  *)(sft + 0x04) = MyGetFileAttributesA(file_handler[fd].path) & 0xff;
-		*(UINT16 *)(sft + 0x05) = file_handler[fd].info & 0xff;
-		
-		if(!(file_handler[fd].info & 0x80)) {
-			*(UINT16 *)(sft + 0x07) = sizeof(dpb_t) * (file_handler[fd].info & 0x1f);
-			*(UINT16 *)(sft + 0x09) = DPB_TOP >> 4;
-			
-			FILETIME time, local;
-			HANDLE hHandle;
-			WORD dos_date = 0, dos_time = 0;
-			DWORD file_size = 0;
-			if((hHandle = (HANDLE)_get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
-				if(GetFileTime(hHandle, NULL, NULL, &time)) {
-					FileTimeToLocalFileTime(&time, &local);
-					FileTimeToDosDateTime(&local, &dos_date, &dos_time);
-				}
-				file_size = GetFileSize(hHandle, NULL);
+		FILETIME time, local;
+		HANDLE hHandle;
+		WORD dos_date = 0, dos_time = 0;
+		DWORD file_size = 0;
+		if((hHandle = (HANDLE)_get_osfhandle(fd)) != INVALID_HANDLE_VALUE) {
+			if(GetFileTime(hHandle, NULL, NULL, &time)) {
+				FileTimeToLocalFileTime(&time, &local);
+				FileTimeToDosDateTime(&local, &dos_date, &dos_time);
 			}
-			*(UINT16 *)(sft + 0x0d) = dos_time;
-			*(UINT16 *)(sft + 0x0f) = dos_date;
-			*(UINT32 *)(sft + 0x11) = file_size;
+			file_size = GetFileSize(hHandle, NULL);
 		}
-		
-		char fname[MAX_PATH] = {0}, ext[MAX_PATH] = {0};
-		_splitpath(file_handler[fd].path, NULL, NULL, fname, ext);
-		msdos_strupr(fname);
-		msdos_strupr(ext);
-		memset(sft + 0x20, 0x20, 11);
-		memcpy(sft + 0x20, fname, min(strlen(fname), 8));
-		memcpy(sft + 0x28, ext + 1, min(strlen(ext + 1), 3));
-		
-		*(UINT16 *)(sft + 0x31) = psp_seg;
+		sft->file_time = dos_time;
+		sft->file_date = dos_date;
+		sft->file_size = file_size;
 	}
+	
+	char fname[MAX_PATH] = {0}, ext[MAX_PATH] = {0};
+	_splitpath(file_handler[fd].path, NULL, NULL, fname, ext);
+	msdos_strupr(fname);
+	msdos_strupr(ext);
+	memset(&sft->file_name[0], 0x20, 11);
+	memcpy(&sft->file_name[0], fname, min(strlen(fname), 8));
+	memcpy(&sft->file_name[8], ext + 1, min(strlen(ext + 1), 3));
+	
+	sft->owner_psp = psp_seg;
 }
 
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
@@ -7276,12 +7274,15 @@ int msdos_file_handler_close(int fd)
 #if 0
 	// don't close the standard streams even if a program wants to
 	if((fd > 2) || (file_handler[fd].valid > 1))
+#else
+	if(file_handler[fd].valid > 0)
 #endif 
 	{
 		file_handler[fd].valid--;
 	}
-	if((!file_handler[fd].valid) && fd < 20) {
-		memset(mem + SFT_TOP + 6 + 0x3b * fd, 0, 0x3b);
+	if(!file_handler[fd].valid) {
+		sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+		memset(sft, 0, sizeof(sft_t));
 	}
 	return file_handler[fd].valid;
 }
@@ -10152,7 +10153,7 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	CPU_BP = current_process->parent_bp;
 	CPU_SI = current_process->parent_si;
 	CPU_DI = current_process->parent_di;
-
+	
 	if(mem_free) {
 		int mcb_seg, umb_linked;
 		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
@@ -15138,7 +15139,7 @@ inline void msdos_int_21h_3bh(int lfn)
 				drv = path[0] - 'a';
 			}
 		}
-		cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * drv);
+		cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * drv);
 		char cur_path[MAX_PATH];
 		if(my_getdcwd(drv + 1, cur_path, MAX_PATH) != NULL) {
 			my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(cur_path));
@@ -17096,7 +17097,7 @@ inline void msdos_int_21h_5fh()
 		break;
 	case 0x08: // DOS 5+ - Disable Drive
 		if(msdos_is_valid_drive(CPU_DL)) {
-			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * CPU_DL);
+			cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * CPU_DL);
 			cds->drive_attrib = 0x0000;
 		} else {
 			CPU_AX = 0x0f; // invalid drive
@@ -17630,7 +17631,7 @@ inline void msdos_int_21h_714eh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
 	find_lfn_t *find = (find_lfn_t *)(mem + CPU_ES_BASE + CPU_DI);
-	const char *path = (char *)(mem + CPU_DS_BASE + CPU_DX);
+	const char *path = (const char *)(mem + CPU_DS_BASE + CPU_DX);
 	const char *tmp = "*";
 	WIN32_FIND_DATAA fd;
 	
@@ -17947,7 +17948,7 @@ inline void msdos_int_21h_7302h()
 
 inline void msdos_int_21h_7303h()
 {
-	const char *path = (char *)(mem + CPU_DS_BASE + CPU_DX);
+	const char *path = (const char *)(mem + CPU_DS_BASE + CPU_DX);
 	ext_space_info_t *info = (ext_space_info_t *)(mem + CPU_ES_BASE + CPU_DI);
 	DWORD sectors_per_cluster, bytes_per_sector, free_clusters, total_clusters;
 	
@@ -18615,12 +18616,12 @@ inline void msdos_int_2fh_12h()
 		break;
 //	case 0x15: // DOS 3.0+ internal - Flush Buffer
 	case 0x16:
-		if(CPU_BX < 20) {
+		if(CPU_BX < max_files) {
 			CPU_LOAD_SREG(CPU_ES_INDEX, SFT_TOP >> 4);
-			CPU_DI = 6 + 0x3b * CPU_BX;
+			CPU_DI = 6 + sizeof(sft_t) * CPU_BX;
 			
 			// update system file table
-			UINT8* sft = mem + SFT_TOP + 6 + 0x3b * CPU_BX;
+			sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * CPU_BX);
 			if(file_handler[CPU_BX].valid) {
 				process_t *process = msdos_process_info_get(current_psp);
 				int count = 0;
@@ -18629,13 +18630,13 @@ inline void msdos_int_2fh_12h()
 						count++;
 					}
 				}
-				*(UINT16 *)(sft + 0x00) = count ? count : 0xffff;
-				*(UINT32 *)(sft + 0x15) = _tell(CPU_BX);
+				sft->ref_count = count ? count : 0xffff;
+				sft->file_pos = _tell(CPU_BX);
 				_lseek(CPU_BX, 0, SEEK_END);
-				*(UINT32 *)(sft + 0x11) = _tell(CPU_BX);
-				_lseek(CPU_BX, *(UINT32 *)(sft + 0x15), SEEK_SET);
+				sft->file_size = _tell(CPU_BX);
+				_lseek(CPU_BX, sft->file_pos, SEEK_SET);
 			} else {
-				memset(sft, 0, 0x3b);
+				memset(sft, 0, sizeof(sft_t));
 			}
 		} else {
 			CPU_AX = 0x06;
@@ -23686,7 +23687,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// drive parameter block
 	for(int i = 0; i < 2; i++) {
 		// may be a floppy drive
-		cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * i);
+		cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * i);
 		sprintf(cds->path_name, "%c:\\", 'A' + i);
 		cds->drive_attrib = 0x4000;	// physical drive
 		cds->dpb_ptr.w.l = (UINT16)(sizeof(dpb_t) * i);
@@ -23703,7 +23704,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	for(int i = 2; i < 26; i++) {
 		if(msdos_cds_update(i) && (_getdrive() - 1) == i) {
 			// make sure the dcwd env var is set
-			cds_t *cds = (cds_t *)(mem + CDS_TOP + 88 * i);
+			cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * i);
 			my_chdir(cds->path_name);
 		}
 		UINT16 seg, ofs;
@@ -26517,6 +26518,7 @@ void vdd_init()
 /*
 	memset(vdd_modules, 0, sizeof(vdd_modules));
 	memset(vdd_io, 0, sizeof(vdd_io));
+	memset(vdd_irq_owner, 0, sizeof(vdd_irq_owner));
 	vdd_mem = NULL;
 	hNTVDM = NULL;
 */
@@ -26542,6 +26544,9 @@ void vdd_finish()
 				vdd_io[i].io_range = NULL;
 			}
 			vdd_io[i].hvdd = NULL;
+		}
+		for (int i = 0; i < 16; i++) {
+			vdd_irq_owner[i] = NULL;
 		}
 		for (int i = 0; i < 5; i++) {
 			if (vdd_modules[i].hvdd) {
@@ -26631,6 +26636,20 @@ void vdd_req(char func)
 		CPU_EIP += 4;
 		if ((handle > 5) || !vdd_modules[handle].hvdd) {
 			return; // ntvdm exits here
+		}
+		for (int i = 0; i < 5; i++) {
+			if (vdd_io[i].hvdd == vdd_modules[handle].hvdd) {
+				if (vdd_io[i].io_range) {
+					HeapFree(GetProcessHeap(), 0, vdd_io[i].io_range);
+					vdd_io[i].io_range = NULL;
+				}
+				vdd_io[i].hvdd = NULL;
+			}
+		}
+		for (int i = 0; i < 16; i++) {
+			if (vdd_irq_owner[i] == vdd_modules[handle].hvdd) {
+				vdd_irq_owner[i] = NULL;
+			}
 		}
 		FreeLibrary(vdd_modules[handle].hvdd);
 		vdd_modules[handle].hvdd = 0;
@@ -27250,6 +27269,45 @@ void VDDSimulateInterrupt(int ms, BYTE line, int count)
 	}
 }
 
+WORD VDDReserveIrqLine(HANDLE hvdd, WORD line)
+{
+	if (hvdd != NULL) {
+		if (line == 0xffff) {
+			// IRQ lines below are unsed in MS-DOS Player:
+			//	IRQ  0: System Timer
+			//	IRQ  1: Keyboard
+			//	IRQ  3: COM2 or COM4
+			//	IRQ  4: COM1 or COM3
+			//	IRQ 12: PS/2 Mouse
+			for (int i = 0; i < 16; i++) {
+				if (i == 0 || i == 1 || i == 3 || i == 4 || i == 12) {
+					continue;
+				}
+				if (vdd_irq_owner[i] == NULL) {
+					line = i;
+					break;
+				}
+			}
+		}
+		if (line < 16 && vdd_irq_owner[line] == NULL) {
+			vdd_irq_owner[line] = hvdd;
+			return line;
+		}
+	}
+	return 0xffff;
+}
+
+BOOL VDDReleaseIrqLine(HANDLE hvdd, WORD line)
+{
+	if (hvdd != NULL) {
+		if (line < 16 && vdd_irq_owner[line] == hvdd) {
+			vdd_irq_owner[line] = NULL;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
 BOOL VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
 {
 	int handle = (int)hvdd;
@@ -27277,7 +27335,6 @@ BOOL VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange
 
 void VDDDeInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange)
 {
-	int handle = (int)hvdd;
 	int i;
 	for (i = 0; i < 5; i++) {
 		if (hvdd == vdd_io[i].hvdd) {
@@ -27530,6 +27587,125 @@ BOOL VDDDeInstallUserHook(HANDLE hvdd)
 	return FALSE;
 }
 
+SHORT VDDAllocateDosHandle(ULONG pPDB, PVOID* ppSFT, PVOID* ppJFT)
+{
+	if(pPDB == 0) {
+		pPDB = current_psp;
+	}
+	psp_t *psp = (psp_t *)(mem + (pPDB << 4));
+	
+	// JSF length is 20 in PSP, and extended JFT is not supported :-(
+	for(int i = 0; i < 20; i++) {
+		if(psp->file_table[i] == 0xff) {
+			int fd = -1;
+			for(int j = 0; j < max_files; j++) {
+				if(!file_handler[j].valid) {
+					fd = j;
+					break;
+				}
+			}
+			if(fd != -1) {
+				sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+				memset(sft, 0, sizeof(sft_t));
+				sft->ref_count = 1;
+				file_handler[fd].valid = 1;
+				file_handler[fd].nt_handle = INVALID_HANDLE_VALUE;
+				
+				if(ppSFT) {
+					*ppSFT = sft;
+				}
+				if(ppJFT) {
+					*ppJFT = psp->file_table;
+				}
+				psp->file_table[i] = fd;
+				return (SHORT)i;
+			}
+		}
+	}
+	if(ppSFT) {
+		*ppSFT = NULL;
+	}
+	if(ppJFT) {
+		*ppJFT = NULL;
+	}
+	return (SHORT)-1;
+}
+
+BOOL VDDReleaseDosHandle(ULONG pPDB, SHORT hFile)
+{
+	if(pPDB == 0) {
+		pPDB = current_psp;
+	}
+	psp_t *psp = (psp_t *)(mem + (pPDB << 4));
+	
+	if(hFile >= 0 && hFile < 20 && psp->file_table[hFile] != 0xff) {
+		int fd = psp->file_table[hFile];
+		if(fd >= 0 && fd < max_files) {
+			sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+			if(sft->ref_count > 0) {
+				sft->ref_count--;
+			}
+			if(sft->ref_count == 0) {
+				memset(sft, 0, sizeof(sft_t));
+				file_handler[fd].valid = 0;
+			}
+		}
+		psp->file_table[hFile] = 0xff;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+void VDDAssociateNtHandle(PVOID pSFT, HANDLE h32File, WORD wAccess)
+{
+	for(int fd = 0; fd < max_files; fd++) {
+		sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+		if(pSFT == (PVOID)sft) {
+			file_handler[fd].nt_handle = h32File;
+			// dwAccess:
+			// -------- -----xxx	Access Mode
+			// -------- -xxx----	Sharing Mode
+			// -------- x-------	Inheritance Flag
+			if(wAccess & 0x80) {
+				sft->dev_info |=  0x1000;
+			} else {
+				sft->dev_info &= ~0x1000;
+			}
+			sft->open_mode = (sft->open_mode & 0xff00) | (wAccess & 0xff);
+			break;
+		}
+	}
+}
+
+HANDLE VDDRetrieveNtHandle(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT)
+{
+	if(pPDB == 0) {
+		pPDB = current_psp;
+	}
+	psp_t *psp = (psp_t *)(mem + (pPDB << 4));
+	
+	if(hFile >= 0 && hFile < 20 && psp->file_table[hFile] != 0xff) {
+		int fd = psp->file_table[hFile];
+		if(fd >= 0 && fd < max_files) {
+			if(ppSFT) {
+				sft_t *sft = (sft_t *)(mem + SFT_TOP + 6 + sizeof(sft_t) * fd);
+				*ppSFT = sft;
+			}
+			if(ppJFT) {
+				*ppJFT = psp->file_table;
+			}
+			return file_handler[fd].nt_handle;
+		}
+	}
+	if(ppSFT) {
+		*ppSFT = NULL;
+	}
+	if(ppJFT) {
+		*ppJFT = NULL;
+	}
+	return INVALID_HANDLE_VALUE;
+}
+
 BOOL vdd_io_read(int port, int size, void *val)
 {
 	for (int i = 0; i < 5; i++) {
@@ -27678,6 +27854,8 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 	ptr->VDDAllocMem = VDDAllocMem;
 	ptr->VDDFreeMem = VDDFreeMem;
 	ptr->VDDSimulateInterrupt = VDDSimulateInterrupt;
+	ptr->VDDReserveIrqLine = VDDReserveIrqLine;
+	ptr->VDDReleaseIrqLine = VDDReleaseIrqLine;
 	ptr->VDDInstallIOHook = VDDInstallIOHook;
 	ptr->VDDDeInstallIOHook = VDDDeInstallIOHook;
 	ptr->VDDRequestDMA = VDDRequestDMA;
@@ -27687,6 +27865,10 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 	ptr->VDDTerminateVDM = VDDTerminateVDM;
 	ptr->VDDInstallUserHook = VDDInstallUserHook;
 	ptr->VDDDeInstallUserHook = VDDDeInstallUserHook;
+	ptr->VDDAllocateDosHandle = VDDAllocateDosHandle;
+	ptr->VDDReleaseDosHandle = VDDReleaseDosHandle;
+	ptr->VDDAssociateNtHandle = VDDAssociateNtHandle;
+	ptr->VDDRetrieveNtHandle = VDDRetrieveNtHandle;
 }
 #endif
 

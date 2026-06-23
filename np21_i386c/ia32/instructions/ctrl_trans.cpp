@@ -51,6 +51,118 @@ extern UINT32 IRET_TOP;
 extern unsigned msdos_stat;
 extern unsigned msdos_int_num;
 
+static void
+current_stack_push16(UINT32 *sp, UINT16 value)
+{
+	UINT32 mask;
+	UINT32 new_sp;
+
+	mask = CPU_STAT_SS32 ? 0xffffffff : 0x0000ffff;
+	new_sp = (*sp - 2) & mask;
+
+	cpu_vmemorywrite_w(CPU_SS_INDEX, new_sp, value);
+
+	*sp = new_sp;
+}
+
+static void
+current_stack_push32(UINT32 *sp, UINT32 value)
+{
+	UINT32 mask;
+	UINT32 new_sp;
+
+	mask = CPU_STAT_SS32 ? 0xffffffff : 0x0000ffff;
+	new_sp = (*sp - 4) & mask;
+
+	cpu_vmemorywrite_d(CPU_SS_INDEX, new_sp, value);
+
+	*sp = new_sp;
+}
+
+static void
+commit_current_stack_pointer(UINT32 sp)
+{
+	if (CPU_STAT_SS32) {
+		CPU_ESP = sp;
+	} else {
+		CPU_SP = (UINT16)sp;
+	}
+}
+
+#if defined(USE_VME)
+static BOOL CPUCALL
+vme_int_redirect_allowed(UINT vect)
+{
+	UINT32 iobase;
+	UINT32 redir_base;
+	UINT32 off;
+	UINT8 map;
+
+	if (!(CPU_CR4 & CPU_CR4_VME)) {
+		return FALSE;
+	}
+	if (CPU_TR_DESC.type != CPU_SYSDESC_TYPE_TSS_BUSY_32) {
+		return FALSE;
+	}
+	if (CPU_STAT_IOLIMIT == 0) {
+		return FALSE;
+	}
+	if (CPU_STAT_IOADDR < CPU_TR_BASE) {
+		return FALSE;
+	}
+
+	/*
+	 * In a 32-bit TSS used with VME, the 256-bit interrupt-redirection
+	 * bitmap is the 32 bytes immediately before the I/O permission bitmap.
+	 * A clear bit means emulate the software interrupt in VM86; a set bit
+	 * means trap to the VM86 monitor with #GP(0).
+	 */
+	iobase = CPU_STAT_IOADDR - CPU_TR_BASE;
+	if (iobase < 32) {
+		return FALSE;
+	}
+	redir_base = CPU_STAT_IOADDR - 32;
+	off = vect >> 3;
+	map = cpu_lmemoryread(redir_base + off, CPU_PAGE_READ_DATA | CPU_STAT_USER_MODE);
+
+	return (map & (1 << (vect & 7))) == 0;
+}
+
+static void CPUCALL
+vme_redirect_int(UINT vect)
+{
+	UINT32 idt_idx;
+	UINT32 new_ip;
+	UINT16 new_cs;
+	UINT16 flags;
+
+	idt_idx = vect * 4;
+	if (idt_idx + 3 > 0xffff) {
+		EXCEPTION(GP_EXCEPTION, 0);
+	}
+
+	/* The redirected interrupt uses the VM86 real-mode IVT at linear 0. */
+	new_ip = cpu_lmemoryread_w(idt_idx, CPU_PAGE_READ_DATA | CPU_STAT_USER_MODE);
+	new_cs = cpu_lmemoryread_w(idt_idx + 2, CPU_PAGE_READ_DATA | CPU_STAT_USER_MODE);
+
+	flags = REAL_FLAGREG;
+	flags = (flags & ~I_FLAG) | ((CPU_EFLAG & VIF_FLAG) ? I_FLAG : 0);
+	flags |= IOPL_FLAG;
+
+	CPU_SET_PREV_ESP();
+	PUSH0_16(flags);
+	PUSH0_16(CPU_CS);
+	PUSH0_16(CPU_IP);
+
+	CPU_EFLAG &= ~(T_FLAG | VIF_FLAG | AC_FLAG | RF_FLAG);
+	CPU_TRAP = 0;
+
+	LOAD_SEGREG(CPU_CS_INDEX, new_cs);
+	CPU_EIP = new_ip;
+	CPU_CLEAR_PREV_ESP();
+}
+#endif
+
 
 /*
  * JMP
@@ -964,24 +1076,30 @@ CALL16_Ap(void)
 	UINT16 new_ip;
 	UINT16 new_cs;
 	UINT16 sreg;
+	UINT32 sp;
+	UINT32 tmp_sp;
 
 	CPU_WORKCLOCK(13);
 	GET_PCWORD(new_ip);
 	GET_PCWORD(new_cs);
 	if (!CPU_STAT_PM || CPU_STAT_VM86) {
 		/* Real mode or VM86 mode */
-		CPU_SET_PREV_ESP();
 		load_segreg(CPU_CS_INDEX, new_cs, &sreg, &sd, GP_EXCEPTION);
 		if (new_ip > sd.u.seg.limit) {
 			EXCEPTION(GP_EXCEPTION, 0);
 		}
 
-		PUSH0_16(CPU_CS);
-		PUSH0_16(CPU_IP);
+		sp = CPU_STAT_SS32 ? CPU_ESP : CPU_SP;
+		SS_PUSH_CHECK(sp, 4);
 
+		tmp_sp = sp;
+		current_stack_push16(&tmp_sp, CPU_CS);
+		current_stack_push16(&tmp_sp, CPU_IP);
+
+		/* Commit only after all faultable stack writes succeeded. */
+		commit_current_stack_pointer(tmp_sp);
 		LOAD_SEGREG(CPU_CS_INDEX, new_cs);
 		CPU_EIP = new_ip;
-		CPU_CLEAR_PREV_ESP();
 	} else {
 		/* Protected mode */
 		CALLfar_pm(new_cs, new_ip);
@@ -995,24 +1113,30 @@ CALL32_Ap(void)
 	UINT32 new_ip;
 	UINT16 new_cs;
 	UINT16 sreg;
+	UINT32 sp;
+	UINT32 tmp_sp;
 
 	CPU_WORKCLOCK(13);
 	GET_PCDWORD(new_ip);
 	GET_PCWORD(new_cs);
 	if (!CPU_STAT_PM || CPU_STAT_VM86) {
 		/* Real mode or VM86 mode */
-		CPU_SET_PREV_ESP();
 		load_segreg(CPU_CS_INDEX, new_cs, &sreg, &sd, GP_EXCEPTION);
 		if (new_ip > sd.u.seg.limit) {
 			EXCEPTION(GP_EXCEPTION, 0);
 		}
 
-		PUSH0_32(CPU_CS);
-		PUSH0_32(CPU_EIP);
+		sp = CPU_STAT_SS32 ? CPU_ESP : CPU_SP;
+		SS_PUSH_CHECK(sp, 8);
 
+		tmp_sp = sp;
+		current_stack_push32(&tmp_sp, CPU_CS);
+		current_stack_push32(&tmp_sp, CPU_EIP);
+
+		/* Commit only after all faultable stack writes succeeded. */
+		commit_current_stack_pointer(tmp_sp);
 		LOAD_SEGREG(CPU_CS_INDEX, new_cs);
 		CPU_EIP = new_ip;
-		CPU_CLEAR_PREV_ESP();
 	} else {
 		/* Protected mode */
 		CALLfar_pm(new_cs, new_ip);
@@ -1027,6 +1151,8 @@ CALL16_Ep(UINT32 op)
 	UINT16 new_ip;
 	UINT16 new_cs;
 	UINT16 sreg;
+	UINT32 sp;
+	UINT32 tmp_sp;
 
 	CPU_WORKCLOCK(16);
 	if (op < 0xc0) {
@@ -1035,18 +1161,22 @@ CALL16_Ep(UINT32 op)
 		new_cs = cpu_vmemoryread_w(CPU_INST_SEGREG_INDEX, madr + 2);
 		if (!CPU_STAT_PM || CPU_STAT_VM86) {
 			/* Real mode or VM86 mode */
-			CPU_SET_PREV_ESP();
 			load_segreg(CPU_CS_INDEX, new_cs, &sreg, &sd, GP_EXCEPTION);
 			if (new_ip > sd.u.seg.limit) {
 				EXCEPTION(GP_EXCEPTION, 0);
 			}
 
-			PUSH0_16(CPU_CS);
-			PUSH0_16(CPU_IP);
+			sp = CPU_STAT_SS32 ? CPU_ESP : CPU_SP;
+			SS_PUSH_CHECK(sp, 4);
 
+			tmp_sp = sp;
+			current_stack_push16(&tmp_sp, CPU_CS);
+			current_stack_push16(&tmp_sp, CPU_IP);
+
+			/* Commit only after all faultable stack writes succeeded. */
+			commit_current_stack_pointer(tmp_sp);
 			LOAD_SEGREG(CPU_CS_INDEX, new_cs);
 			CPU_EIP = new_ip;
-			CPU_CLEAR_PREV_ESP();
 		} else {
 			/* Protected mode */
 			CALLfar_pm(new_cs, new_ip);
@@ -1064,6 +1194,8 @@ CALL32_Ep(UINT32 op)
 	UINT32 new_ip;
 	UINT16 new_cs;
 	UINT16 sreg;
+	UINT32 sp;
+	UINT32 tmp_sp;
 
 	CPU_WORKCLOCK(16);
 	if (op < 0xc0) {
@@ -1072,18 +1204,22 @@ CALL32_Ep(UINT32 op)
 		new_cs = cpu_vmemoryread_w(CPU_INST_SEGREG_INDEX, madr + 4);
 		if (!CPU_STAT_PM || CPU_STAT_VM86) {
 			/* Real mode or VM86 mode */
-			CPU_SET_PREV_ESP();
 			load_segreg(CPU_CS_INDEX, new_cs, &sreg, &sd, GP_EXCEPTION);
 			if (new_ip > sd.u.seg.limit) {
 				EXCEPTION(GP_EXCEPTION, 0);
 			}
 
-			PUSH0_32(CPU_CS);
-			PUSH0_32(CPU_EIP);
+			sp = CPU_STAT_SS32 ? CPU_ESP : CPU_SP;
+			SS_PUSH_CHECK(sp, 8);
 
+			tmp_sp = sp;
+			current_stack_push32(&tmp_sp, CPU_CS);
+			current_stack_push32(&tmp_sp, CPU_EIP);
+
+			/* Commit only after all faultable stack writes succeeded. */
+			commit_current_stack_pointer(tmp_sp);
 			LOAD_SEGREG(CPU_CS_INDEX, new_cs);
 			CPU_EIP = new_ip;
-			CPU_CLEAR_PREV_ESP();
 		} else {
 			/* Protected mode */
 			CALLfar_pm(new_cs, new_ip);
@@ -1431,10 +1567,15 @@ INT_Ib(void)
 	}
 	VERBOSE(("INT_Ib: VM86 && IOPL < 3 && INTn"));
 #if defined(USE_VME)
-	EXCEPTION(GP_EXCEPTION, 0); // XXX: ˆê‰ž“®‚¢‚Ä‚é‚¯‚ÇŽÀ‘•‚µ‚È‚¢‚Æ‚Ü‚¸‚¢¥¥¥H
-#else
-	EXCEPTION(GP_EXCEPTION, 0);
+	GET_MODRM_PCBYTE(vect);
+	if (vme_int_redirect_allowed(vect)) {
+		VERBOSE(("INT_Ib: VME redirect INT %02x", vect));
+		vme_redirect_int(vect);
+		return;
+	}
+	CPU_EIP = CPU_PREV_EIP;
 #endif
+	EXCEPTION(GP_EXCEPTION, 0);
 }
 
 void

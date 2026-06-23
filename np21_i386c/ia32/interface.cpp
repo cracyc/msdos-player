@@ -88,7 +88,7 @@ ia32_initreg(void)
 	CPU_ADRSMASK = ~0;
 
 	tlb_init();
-	fpu_initialize();
+	fpu_initialize(1);
 
 #if defined(USE_CPU_EIPMASK)
 	CPU_EIPMASK = CPU_STATSAVE.cpu_inst_default.op_32 ? 0xffffffff : 0xffff;

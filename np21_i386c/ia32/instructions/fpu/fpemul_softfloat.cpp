@@ -42,6 +42,8 @@
 #include "../sse/sse.h"
 #endif
 
+ // softfloat.hのインクルードはcpu.hにあります
+
  /*
  Short Real
 	31: sign (符号)
@@ -234,58 +236,19 @@ static void FPU_FST_F80(UINT32 addr) {
 
 static void FPU_FST_I16(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
-#if 0
-	// from mame i386 core
-	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
-	floatx80 lowerLim = int32_to_floatx80(-32768);
-	floatx80 upperLim = int32_to_floatx80(32767);
-	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
-		fpu_memorywrite_w(addr, (UINT16)((SINT16)floatx80_to_int32(fx80)));
-	} else {
-		fpu_memorywrite_w(addr, (UINT16)((SINT16)-32768));
-		float_exception_flags = float_flag_invalid;
-	}
-#else
 	fpu_memorywrite_w(addr, (UINT16)floatx80_to_int16_np2(FPU_STAT.reg[FPU_STAT_TOP].d));
-#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
 static void FPU_FST_I32(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
-#if 0
-	// from mame i386 core
-	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
-	floatx80 lowerLim = int32_to_floatx80(0x80000000);
-	floatx80 upperLim = int32_to_floatx80(0x7fffffff);
-	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
-		fpu_memorywrite_d(addr, (UINT32)floatx80_to_int32(fx80));
-	} else {
-		fpu_memorywrite_d(addr, (UINT32)0x80000000);
-		float_exception_flags = float_flag_invalid;
-	}
-#else
 	fpu_memorywrite_d(addr, (UINT32)floatx80_to_int32_np2(FPU_STAT.reg[FPU_STAT_TOP].d));
-#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
 static void FPU_FST_I64(UINT32 addr) {
 	float_exception_flags = (FPU_STATUSWORD & 0x3f);
-#if 0
-	// from mame i386 core
-	floatx80 fx80 = floatx80_round_to_int(FPU_STAT.reg[FPU_STAT_TOP].d);
-	floatx80 lowerLim = int64_to_floatx80((UINT64)0x8000000000000000);
-	floatx80 upperLim = int64_to_floatx80((UINT64)0x7fffffffffffffff);
-	if (!floatx80_lt(fx80, lowerLim) && floatx80_le(fx80, upperLim)) {
-		fpu_memorywrite_q(addr, (UINT64)floatx80_to_int64(fx80));
-	} else {
-		fpu_memorywrite_q(addr, (UINT64)0x8000000000000000);
-		float_exception_flags = float_flag_invalid;
-	}
-#else
 	fpu_memorywrite_q(addr, (UINT64)floatx80_to_int64_np2(FPU_STAT.reg[FPU_STAT_TOP].d));
-#endif
 	FPU_STATUSWORD |= float_exception_flags;
 }
 
@@ -1269,13 +1232,13 @@ SF_ESC1(void)
 			case 0x6:	/* FSIN */
 				TRACEOUT(("FSIN"));
 				FPU_STATUSWORD &= ~FP_C1_FLAG;
-				FPU_FSIN();				
+				FPU_FSIN();
 				break;
 				
 			case 0x7:	/* FCOS */
 				TRACEOUT(("FCOS"));
 				FPU_STATUSWORD &= ~FP_C1_FLAG;
-				FPU_FCOS();	
+				FPU_FCOS();
 				break;
 			}
 			break;
@@ -1310,7 +1273,7 @@ SF_ESC1(void)
 
 		case 4:	/* FLDENV */
 			TRACEOUT(("FLDENV"));
-			FPU_FLDENV(madr);		
+			FPU_FLDENV(madr);
 			break;
 
 		case 5:	/* FLDCW */
@@ -1470,7 +1433,7 @@ SF_ESC3(void)
 		case 6: /* FCOMI */
 			TRACEOUT(("ESC3: FCOMI"));
 			FPU_STATUSWORD &= ~FP_C1_FLAG;
-			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			break;
 		default:
 			break;
@@ -1555,11 +1518,11 @@ SF_ESC4(void)
 		case 2: /* FCOM */
 			TRACEOUT(("ESC4: FCOM"));
 			FPU_STATUSWORD &= ~FP_C1_FLAG;
-			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));			
+			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));
 			break;
 		case 3: /* FCOMP */
 			TRACEOUT(("ESC4: FCOMP"));
-			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_pop();
 			break;
 		case 4:	/* FSUBR */
@@ -1729,7 +1692,7 @@ SF_ESC6(void)
 			}
 			FPU_FCOM(FPU_STAT_TOP,FPU_ST(1));
 			FPU_pop(); // 下コードと合わせて2回pop
-			break;			
+			break;
 		case 4:	/* FSUBRP */
 			TRACEOUT(("FSUBRP"));
 			FPU_FSUBR(FPU_ST(sub),FPU_STAT_TOP);
@@ -1818,12 +1781,12 @@ SF_ESC7(void)
 			break;
 		case 5: /* FUCOMIP */
 			TRACEOUT(("ESC7: FUCOMIP"));
-			FPU_FUCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FUCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_pop();
 			break;
 		case 6: /* FCOMIP */
 			TRACEOUT(("ESC7: FCOMIP"));
-			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_pop();
 			break;
 		default:

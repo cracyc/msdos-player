@@ -1045,6 +1045,9 @@ static BOOL IsInvalidName(char *Name, size_t Length)
 
 __declspec(dllexport) BOOL WINAPI demIsShortPathName(LPCSTR Path, BOOL Unknown)
 {
+	if(Path == NULL || Path[0] == '\0') {
+		return FALSE;
+	}
 	if(((Path[0] >= 'A' && Path[0] <= 'Z') || (Path[0] >= 'a' && Path[0] <= 'z')) && Path[1] == ':') {
 		Path += 2;
 	}
@@ -1062,11 +1065,10 @@ __declspec(dllexport) BOOL WINAPI demIsShortPathName(LPCSTR Path, BOOL Unknown)
 		}
 		Path += strlen(Name) + (Sep1 || Sep2 ? 1 : 0);
 		
-		Ext = my_strrchr(Name, '.');
-		if(Ext) {
-			if(Sep1 || Sep2) {
-				return FALSE;
-			}
+		if(Name[0] == '\0' || strcmp(Name, ".") == 0 || strcmp(Name, "..") == 0) {
+			continue;
+		}
+		if((Ext = my_strrchr(Name, '.')) != NULL) {
 			*Ext++ = '\0';
 			if(IsInvalidName(Ext, 3)) {
 				return FALSE;
@@ -1081,6 +1083,28 @@ __declspec(dllexport) BOOL WINAPI demIsShortPathName(LPCSTR Path, BOOL Unknown)
 
 __declspec(dllexport) DWORD WINAPI demSetCurrentDirectoryGetDrive(LPCSTR CurrentDirectory, PUCHAR DriveNumber)
 {
+	char FullPath[MAX_PATH];
+
+	if(!SetCurrentDirectoryA(CurrentDirectory)) {
+		return GetLastError();
+	}
+	if(DriveNumber != NULL) {
+		if(CurrentDirectory[0] >= 'A' && CurrentDirectory[0] <= 'Z' && CurrentDirectory[1] == ':') {
+			*DriveNumber = (CurrentDirectory[0] - 'A') + 1;
+		} else if(CurrentDirectory[0] >= 'a' && CurrentDirectory[0] <= 'z' && CurrentDirectory[1] == ':') {
+			*DriveNumber = (CurrentDirectory[0] - 'a') + 1;
+		} else if(GetFullPathNameA(CurrentDirectory, MAX_PATH, FullPath, NULL) != 0 && FullPath[1] == ':') {
+			if(FullPath[0] >= 'A' && FullPath[0] <= 'Z') {
+				*DriveNumber = (FullPath[0] - 'A') + 1;
+			} else if(FullPath[0] >= 'a' && FullPath[0] <= 'z') {
+				*DriveNumber = (FullPath[0] - 'a') + 1;
+			} else {
+				*DriveNumber = (UCHAR)_getdrive();
+			}
+		} else {
+			*DriveNumber = (UCHAR)_getdrive();
+		}
+	}
 	return ERROR_SUCCESS;
 }
 
@@ -1169,12 +1193,12 @@ __declspec(dllexport) void WINAPI call_ica_hw_interrupt(int ms, BYTE line, int c
 
 __declspec(dllexport) WORD WINAPI VDDReserveIrqLine(HANDLE hvdd, WORD line)
 {
-	return 0xffff;
+	return func.VDDReserveIrqLine(hvdd, line);
 }
 
 __declspec(dllexport) BOOL WINAPI VDDReleaseIrqLine(HANDLE hvdd, WORD line)
 {
-	return FALSE;
+	return func.VDDReleaseIrqLine(hvdd, line);;
 }
 
 __declspec(dllexport) BOOL WINAPI VDDInstallIOHook(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler)
@@ -1227,27 +1251,27 @@ __declspec(dllexport) BOOL WINAPI VDDDeInstallUserHook(HANDLE hvdd)
 	return func.VDDDeInstallUserHook(hvdd);
 }
 
-// Unknown functions defined in NT_VDD.H
 __declspec(dllexport) SHORT WINAPI VDDAllocateDosHandle(ULONG pPDB, PVOID* ppSFT, PVOID* ppJFT)
 {
-	return 0;
+	return func.VDDAllocateDosHandle(pPDB, ppSFT, ppJFT);
 }
 
 __declspec(dllexport) BOOL WINAPI VDDReleaseDosHandle(ULONG pPDB, SHORT hFile)
 {
-	return FALSE;
+	return func.VDDReleaseDosHandle(pPDB, hFile);
 }
 
 __declspec(dllexport) void WINAPI VDDAssociateNtHandle(PVOID pSFT, HANDLE h32File, WORD wAccess)
 {
-	
+	func.VDDAssociateNtHandle(pSFT, h32File, wAccess);
 }
 
 __declspec(dllexport) HANDLE WINAPI VDDRetrieveNtHandle(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT)
 {
-	return NULL;
+	return func.VDDRetrieveNtHandle(pPDB, hFile, ppSFT, ppJFT);
 }
 
+// Unknown functions defined in NT_VDD.H
 __declspec(dllexport) VOID WINAPI VdmTraceEvent(USHORT Type, USHORT wData, ULONG  lData)
 {
 	

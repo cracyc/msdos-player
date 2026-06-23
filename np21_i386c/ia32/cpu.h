@@ -445,7 +445,7 @@ typedef struct {
 	FP_REG		reg[FPU_REG_NUM+1]; // R0 to R7 + α
 	FP_TAG		tag[FPU_REG_NUM+1]; // R0 to R7 + α
 	FP_RND		round;
-#ifdef SUPPORT_FPU_DOSBOX2 // XXX: 整数間だけ正確にするため用
+#if defined(SUPPORT_FPU_DOSBOX2) // XXX: 整数間だけ正確にするため用
 	FP_INT_REG	int_reg[FPU_REG_NUM+1];
 	UINT8		int_regvalid[FPU_REG_NUM+1];
 #endif
@@ -1298,14 +1298,14 @@ do { \
 #define CPU_CLI \
 do { \
 	CPU_FLAG &= ~I_FLAG; \
-	CPU_TRAP = 0; \
+	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG); \
 	np2haxstat.update_regs = 1; \
 } while (/*CONSTCOND*/0)
 
 #define CPU_STI \
 do { \
 	CPU_FLAG |= I_FLAG; \
-	CPU_TRAP = (CPU_FLAG & (I_FLAG|T_FLAG)) == (I_FLAG|T_FLAG) ; \
+	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG) ; \
 	np2haxstat.update_regs = 1; \
 } while (/*CONSTCOND*/0)
 
@@ -1313,13 +1313,13 @@ do { \
 #define CPU_CLI \
 do { \
 	CPU_FLAG &= ~I_FLAG; \
-	CPU_TRAP = 0; \
+	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG); \
 } while (/*CONSTCOND*/0)
 
 #define CPU_STI \
 do { \
 	CPU_FLAG |= I_FLAG; \
-	CPU_TRAP = (CPU_FLAG & (I_FLAG|T_FLAG)) == (I_FLAG|T_FLAG) ; \
+	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG) ; \
 } while (/*CONSTCOND*/0)
 #endif
 

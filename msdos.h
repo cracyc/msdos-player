@@ -707,17 +707,15 @@ PAIR32 dos_get_device(const char* name);
 #else
 #define DPB_TOP		(DOS_INFO_TOP + DOS_INFO_SIZE)
 #endif
-#define DPB_SIZE	0x600
-#define SFT_TOP		(DPB_TOP + DPB_SIZE)
-#define SFT_SIZE	0x4b0	/* 6 + 0x3b * 20 */
-#define DISK_BUF_TOP	(SFT_TOP + SFT_SIZE)
+#define DPB_SIZE	((sizeof(dpb_t) * 26 + 15) & ~15U)
+#define DISK_BUF_TOP	(DPB_TOP + DPB_SIZE)
 #define DISK_BUF_SIZE	0x20
 #define CDS_TOP		(DISK_BUF_TOP + DISK_BUF_SIZE)
-#define CDS_SIZE	0x8F0	/* 88 * 26 */
+#define CDS_SIZE	((sizeof(cds_t) * 26 + 15) & ~15U)
 #define FCB_TABLE_TOP	(CDS_TOP + CDS_SIZE)
 #define FCB_TABLE_SIZE	0x10
 #define SDA_TOP		(FCB_TABLE_TOP + FCB_TABLE_SIZE)
-#define SDA_SIZE	0xb0
+#define SDA_SIZE	((sizeof(sda_t) + 15) & ~15U)
 // NLS tables
 #define UPPERTABLE_TOP	(SDA_TOP + SDA_SIZE)
 #define UPPERTABLE_SIZE	0x82
@@ -732,8 +730,9 @@ PAIR32 dos_get_device(const char* name);
 #define DBCS_TOP	(COLLATING_TABLE_TOP + COLLATING_TABLE_SIZE)
 #define DBCS_TABLE	(DBCS_TOP + 2)
 #define DBCS_SIZE	0x10
-#define MSDOS_SYSTEM_DATA_END (DBCS_TOP + DBCS_SIZE)
-#define MEMORY_TOP	((MSDOS_SYSTEM_DATA_END + 15) & ~15U)
+#define SFT_TOP		((DBCS_TOP + DBCS_SIZE + 15) & ~15U)
+#define SFT_SIZE	((6 + sizeof(sft_t) * max_files + 15) & ~15U)
+#define MEMORY_TOP	(SFT_TOP + SFT_SIZE)
 #define MEMORY_END	0xb0000
 #define MDA_VRAM_TOP	0xb0000
 #define TEXT_VRAM_TOP	0xb8000
@@ -1037,14 +1036,47 @@ typedef struct {
 
 #pragma pack(1)
 typedef struct {
-	char path_name[67];
-	UINT16 drive_attrib;
-	PAIR32 dpb_ptr;
-	UINT16 word_1;
-	UINT16 word_2;
-	UINT16 word_3;
-	UINT16 bs_offset;
+	char path_name[67];	// 0x00
+	UINT16 drive_attrib;	// 0x43
+	PAIR32 dpb_ptr;		// 0x45
+	UINT16 word_1;		// 0x49
+	UINT16 word_2;		// 0x4B
+	UINT16 word_3;		// 0x4D
+	UINT16 bs_offset;	// 0x4F
+	UINT8 dev_type;		// 0x51
+	PAIR32 ifs_driver;	// 0x52
+	UINT16 available;	// 0x56
 } cds_t;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct {
+	UINT16 ref_count;	// 0x00
+	UINT16 open_mode;	// 0x02
+	UINT8 attrib;		// 0x04
+	UINT16 dev_info;	// 0x05
+	PAIR32 dev_driver;	// 0x07
+	UINT16 start_cluster;	// 0x0B
+	UINT16 file_time;	// 0x0D
+	UINT16 file_date;	// 0x0F
+	UINT32 file_size;	// 0x11
+	UINT32 file_pos;	// 0x15
+#if 1
+	UINT16 rel_cluster;	// 0x19
+	UINT32 dir_sector;	// 0x1B
+	UINT8 dir_entry_idx;	// 0x1F
+#else
+	PAIR32 redir_ifs;	// 0x19
+	UINT8 unknown[3];	// 0x1D
+#endif
+	UINT8 file_name[11];	// 0x20
+	PAIR32 share_prev;	// 0x2B
+	UINT16 share_net_mach;	// 0x2F
+	UINT16 owner_psp;	// 0x31
+	UINT16 share_record;	// 0x33
+	UINT16 abs_cluster;	// 0x35
+	PAIR32 ifs_driver;	// 0x37
+} sft_t;
 #pragma pack()
 
 #pragma pack(1)
@@ -1160,6 +1192,7 @@ typedef struct {
 	UINT16 psp;
 	int sio_port; // 1-4
 	int lpt_port; // 1-3
+	HANDLE nt_handle;
 } file_handler_t;
 
 static const struct {
@@ -1192,7 +1225,7 @@ typedef struct {
 	UINT16 parent_bp;
 	UINT16 parent_si;
 	UINT16 parent_di;
-struct {
+	struct {
 		UINT16 handle;
 		UINT16 page;
 		bool mapped;
@@ -1442,6 +1475,8 @@ typedef struct {
 } vdd_io_t;
 
 static vdd_io_t vdd_io[5] = {0};
+
+static HANDLE vdd_irq_owner[16] = {0};
 
 HMODULE hNTVDM = NULL;
 

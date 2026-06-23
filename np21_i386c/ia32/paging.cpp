@@ -506,6 +506,23 @@ cpu_linear_memory_read_f(UINT32 laddr, int ucrw)
 	return value;
 }
 
+void MEMCALL
+cpu_linear_memory_reads(UINT32 laddr, void* dat, UINT leng, int ucrw)
+{
+	UINT32 paddr;
+	UINT8* p = (UINT8*)dat;
+
+	while (leng > 0) {
+		UINT32 inPageSize = CPU_PAGE_SIZE - (laddr & CPU_PAGE_MASK);
+		inPageSize = min(inPageSize, leng);
+		paddr = paging(laddr, ucrw);
+		memp_reads(paddr, p, inPageSize);
+		p += inPageSize;
+		laddr += inPageSize;
+		leng -= inPageSize;
+	}
+}
+
 /* write */
 void MEMCALL
 cpu_linear_memory_write_b(UINT32 laddr, UINT8 value, int ucrw)
@@ -657,6 +674,23 @@ cpu_linear_memory_write_f(UINT32 laddr, const REG80 *value, int ucrw)
 	}
 }
 
+void MEMCALL
+cpu_linear_memory_writes(UINT32 laddr, void* dat, UINT leng, int ucrw)
+{
+	UINT32 paddr;
+	UINT8* p = (UINT8*)dat;
+
+	while (leng > 0) {
+		UINT32 inPageSize = CPU_PAGE_SIZE - (laddr & CPU_PAGE_MASK);
+		inPageSize = min(inPageSize, leng);
+		paddr = paging(laddr, ucrw);
+		memp_writes(paddr, p, inPageSize);
+		p += inPageSize;
+		laddr += inPageSize;
+		leng -= inPageSize;
+	}
+}
+
 /*
  * linear address memory access function
  */
@@ -746,8 +780,8 @@ paging(UINT32 laddr, int ucrw)
 	/* make physical address */
 	paddr = (pte & CPU_PTE_BASEADDR_MASK) + (laddr & CPU_PAGE_MASK);
 
-	bit  = ucrw & (CPU_PAGE_WRITE|CPU_PAGE_USER_MODE);
-	bit |= (pde & pte & (CPU_PTE_WRITABLE|CPU_PTE_USER_MODE));
+	bit  = ucrw & (CPU_PAGE_WRITE | CPU_PAGE_USER_MODE);
+	bit |= (pde & pte & (CPU_PTE_WRITABLE | CPU_PTE_USER_MODE));
 	bit |= CPU_STAT_WP;
 
 #if !defined(USE_PAGE_ACCESS_TABLE)
@@ -769,7 +803,7 @@ paging(UINT32 laddr, int ucrw)
 		cpu_memorywrite_d_paging(pte_addr, pte);
 	}
 
-	tlb_update(laddr, pte, (bit & (CPU_PTE_WRITABLE|CPU_PTE_USER_MODE)) + ((ucrw & CPU_PAGE_CODE) ? 1 : 0));
+	tlb_update(laddr, pte, (bit & (CPU_PTE_WRITABLE | CPU_PTE_USER_MODE)) + ((ucrw & CPU_PAGE_CODE) ? 1 : 0));
 
 	return paddr;
 

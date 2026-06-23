@@ -122,6 +122,8 @@ typedef BOOL (*funcVDDDeInstallMemoryHook)(HANDLE hvdd, PVOID addr, DWORD size);
 typedef BOOL (*funcVDDAllocMem)(HANDLE hvdd, PVOID addr, DWORD size);
 typedef BOOL (*funcVDDFreeMem)(HANDLE hvdd, PVOID addr, DWORD size);
 typedef void (*funcVDDSimulateInterrupt)(int ms, BYTE line, int count);
+typedef WORD (*funcVDDReserveIrqLine)(HANDLE hvdd, WORD line);
+typedef BOOL (*funcVDDReleaseIrqLine)(HANDLE hvdd, WORD line);
 typedef BOOL (*funcVDDInstallIOHook)(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange, PVDD_IO_HANDLERS IOhandler);
 typedef void (*funcVDDDeInstallIOHook)(HANDLE hvdd, WORD cPortRange, PVDD_IO_PORTRANGE pPortRange);
 typedef DWORD (*funcVDDRequestDMA)(HANDLE hvdd, WORD ch, PVOID buf, DWORD len);
@@ -131,6 +133,10 @@ typedef void (*funcVDDSimulate16)();
 typedef void (*funcVDDTerminateVDM)(void);
 typedef BOOL (*funcVDDInstallUserHook)(HANDLE hvdd, PFNVDD_UCREATE ucr_Handler, PFNVDD_UTERMINATE uterm_Handler, PFNVDD_UBLOCK ublock_handler, PFNVDD_URESUME uresume_handler);
 typedef BOOL (*funcVDDDeInstallUserHook)(HANDLE hvdd);
+typedef SHORT (*funcVDDAllocateDosHandle)(ULONG pPDB, PVOID* ppSFT, PVOID* ppJFT);
+typedef BOOL (*funcVDDReleaseDosHandle)(ULONG pPDB, SHORT hFile);
+typedef void (*funcVDDAssociateNtHandle)(PVOID pSFT, HANDLE h32File, WORD wAccess);
+typedef HANDLE (*funcVDDRetrieveNtHandle)(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT);
 
 typedef struct _VDD_FUNC_TABLE {
 	funcGetBYTE getAL;
@@ -225,6 +231,8 @@ typedef struct _VDD_FUNC_TABLE {
 	funcVDDAllocMem VDDAllocMem;
 	funcVDDFreeMem VDDFreeMem;
 	funcVDDSimulateInterrupt VDDSimulateInterrupt;
+	funcVDDReserveIrqLine VDDReserveIrqLine;
+	funcVDDReleaseIrqLine VDDReleaseIrqLine;
 	funcVDDInstallIOHook VDDInstallIOHook;
 	funcVDDDeInstallIOHook VDDDeInstallIOHook;
 	funcVDDRequestDMA VDDRequestDMA;
@@ -234,6 +242,10 @@ typedef struct _VDD_FUNC_TABLE {
 	funcVDDTerminateVDM VDDTerminateVDM;
 	funcVDDInstallUserHook VDDInstallUserHook;
 	funcVDDDeInstallUserHook VDDDeInstallUserHook;
+	funcVDDAllocateDosHandle VDDAllocateDosHandle;
+	funcVDDReleaseDosHandle VDDReleaseDosHandle;
+	funcVDDAssociateNtHandle VDDAssociateNtHandle;
+	funcVDDRetrieveNtHandle VDDRetrieveNtHandle;
 } VDD_FUNC_TABLE, *PVDD_FUNC_TABLE;
 
 #endif

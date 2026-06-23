@@ -976,7 +976,7 @@ static void FPU_FSCALE(void){
 
 static void FPU_FSTENV(UINT32 addr)
 {
-//	descriptor_t *sdp = &CPU_CS_DESC;	
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	FPU_SET_TOP(FPU_STAT_TOP);
 	
 //	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000))
@@ -992,15 +992,15 @@ static void FPU_FSTENV(UINT32 addr)
 	case 0x100: case 0x101:
 		fpu_memorywrite_d(addr+0,(UINT32)(FPU_CTRLWORD));
 		fpu_memorywrite_d(addr+4,(UINT32)(FPU_STATUSWORD));
-		fpu_memorywrite_d(addr+8,(UINT32)(FPU_GetTag()));	
-		fpu_memorywrite_d(addr+20,FPU_LASTINSTOP);			
+		fpu_memorywrite_d(addr+8,(UINT32)(FPU_GetTag()));
+		fpu_memorywrite_d(addr+20,FPU_LASTINSTOP);
 		break;
 	}
 }
 
 static void FPU_FLDENV(UINT32 addr)
 {
-//	descriptor_t *sdp = &CPU_CS_DESC;	
+//	descriptor_t *sdp = &CPU_CS_DESC;
 	
 //	switch ((CPU_CR0 & 1) | (SEG_IS_32BIT(sdp) ? 0x100 : 0x000)) {
 	switch ((CPU_CR0 & 1) | (CPU_INST_OP32 ? 0x100 : 0x000)) {
@@ -1015,7 +1015,7 @@ static void FPU_FLDENV(UINT32 addr)
 		FPU_SetCW((UINT16)fpu_memoryread_d(addr+0));
 		FPU_STATUSWORD = (UINT16)fpu_memoryread_d(addr+4);
 		FPU_SetTag((UINT16)fpu_memoryread_d(addr+8));
-		FPU_LASTINSTOP = (UINT16)fpu_memoryread_d(addr+20);		
+		FPU_LASTINSTOP = (UINT16)fpu_memoryread_d(addr+20);
 		break;
 	}
 	FPU_STAT_TOP = FPU_GET_TOP();
@@ -1647,12 +1647,12 @@ DB2_ESC1(void)
 				
 			case 0x6:	/* FSIN */
 				TRACEOUT(("FSIN"));
-				FPU_FSIN();				
+				FPU_FSIN();
 				break;
 				
 			case 0x7:	/* FCOS */
 				TRACEOUT(("FCOS"));
-				FPU_FCOS();	
+				FPU_FCOS();
 				break;
 			}
 			break;
@@ -1675,7 +1675,7 @@ DB2_ESC1(void)
 
 		case 2:	/* FST (単精度実数) */
 			TRACEOUT(("FST float"));
-			FPU_FST_F32(madr);			
+			FPU_FST_F32(madr);
 			break;
 
 		case 3:	/* FSTP (単精度実数) */
@@ -1686,7 +1686,7 @@ DB2_ESC1(void)
 
 		case 4:	/* FLDENV */
 			TRACEOUT(("FLDENV"));
-			FPU_FLDENV(madr);		
+			FPU_FLDENV(madr);
 			break;
 
 		case 5:	/* FLDCW */
@@ -1836,7 +1836,7 @@ DB2_ESC3(void)
 			break;
 		case 6: /* FCOMI */
 			TRACEOUT(("ESC3: FCOMI"));
-			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			break;
 		default:
 			break;
@@ -1917,11 +1917,11 @@ DB2_ESC4(void)
 			break;
 		case 2: /* FCOM */
 			TRACEOUT(("ESC4: FCOM"));
-			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));			
+			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));
 			break;
 		case 3: /* FCOMP */
 			TRACEOUT(("ESC4: FCOMP"));
-			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOM(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_FPOP();
 			break;
 		case 4:	/* FSUBR */
@@ -2094,7 +2094,7 @@ DB2_ESC6(void)
 			}
 			FPU_FCOM(FPU_STAT_TOP,FPU_ST(1));
 			FPU_FPOP(); /* extra pop at the bottom*/
-			break;			
+			break;
 		case 4:	/* FSUBRP */
 			TRACEOUT(("FSUBRP"));
 			FPU_FSUBR(FPU_ST(sub),FPU_STAT_TOP);
@@ -2182,12 +2182,12 @@ DB2_ESC7(void)
 			break;
 		case 5: /* FUCOMIP */
 			TRACEOUT(("ESC7: FUCOMIP"));
-			FPU_FUCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FUCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_FPOP();
 			break;
 		case 6: /* FCOMIP */
 			TRACEOUT(("ESC7: FCOMIP"));
-			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));	
+			FPU_FCOMI(FPU_STAT_TOP,FPU_ST(sub));
 			FPU_FPOP();
 			break;
 		default:

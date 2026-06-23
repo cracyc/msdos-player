@@ -333,7 +333,7 @@ void CPU_RESET()
 	i386cpuid.fpu_type = FPU_TYPE_SOFTFLOAT;
 //	i386cpuid.fpu_type = FPU_TYPE_DOSBOX;
 //	i386cpuid.fpu_type = FPU_TYPE_DOSBOX2;
-	fpu_initialize();
+	fpu_initialize(1);
 
 	UINT32 PREV_CPU_ADRSMASK = CPU_ADRSMASK;
 //	CPU_RESET();
