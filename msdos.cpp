@@ -19805,11 +19805,13 @@ inline void msdos_int_33h_0001h()
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-	WORD bx = CPU_BX;
-	CPU_AX = 0x0000;
-	CPU_BX = 0x0000;
-	pcbios_int_15h_c2h();
-	CPU_BX = bx;
+	if(mouse.call_addr.dw || !(mouse.call_mask & 0x7f)) {
+		WORD bx = CPU_BX;
+		CPU_AX = 0x0000;
+		CPU_BX = 0x0000;
+		pcbios_int_15h_c2h();
+		CPU_BX = bx;
+	}
 }
 
 inline void msdos_int_33h_0003h()
