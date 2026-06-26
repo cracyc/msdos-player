@@ -1869,17 +1869,17 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 BOOL MyReadConsoleOutputA(HANDLE hConsoleOutput, CHAR_INFO *lpBuffer, COORD dwBufferSize, COORD dwBufferCoord, PSMALL_RECT lpReadRegion)
 {
 	if(use_vt) {
-		if(lpReadRegion->Right > scr_width) {
-			lpReadRegion->Right = scr_width;
+		if(lpReadRegion->Right >= scr_width) {
+			lpReadRegion->Right = scr_width - 1;
 		}
-		if(lpReadRegion->Bottom > scr_height) {
-			lpReadRegion->Bottom = scr_height;
+		if(lpReadRegion->Bottom >= scr_height) {
+			lpReadRegion->Bottom = scr_height - 1;
 		}
 		if((lpReadRegion->Left >= lpReadRegion->Right) || (lpReadRegion->Top >= lpReadRegion->Bottom)) {
 			return TRUE;
 		}
-		int width = lpReadRegion->Right - lpReadRegion->Left;
-		int height = lpReadRegion->Bottom - lpReadRegion->Top;
+		int width = lpReadRegion->Right - lpReadRegion->Left + 1;
+		int height = lpReadRegion->Bottom - lpReadRegion->Top + 1;
 		if(width > (dwBufferSize.X - dwBufferCoord.X)) {
 			width = dwBufferSize.X - dwBufferCoord.X;
 		}
@@ -1906,7 +1906,7 @@ BOOL MyReadConsoleOutputA(HANDLE hConsoleOutput, CHAR_INFO *lpBuffer, COORD dwBu
 	return TRUE;
 }
 
-BOOL MyScrollScreen(HANDLE hConsoleOutput, SMALL_RECT *lpScrollRectangle, INT iLines, WORD attribute)
+BOOL MyScrollScreen(HANDLE hConsoleOutput, PSMALL_RECT lpScrollRectangle, INT iLines, WORD attribute)
 {
 	if (!iLines) iLines = scr_height;
 	if (use_vt) {
@@ -1919,11 +1919,11 @@ BOOL MyScrollScreen(HANDLE hConsoleOutput, SMALL_RECT *lpScrollRectangle, INT iL
 		int left = lpScrollRectangle->Left;
 		int right = lpScrollRectangle->Right;
 
-		if(right > scr_width) {
-			right = scr_width;
+		if(right >= scr_width) {
+			right = scr_width - 1;
 		}
-		if(bottom > scr_height) {
-			bottom = scr_height;
+		if(bottom >= scr_height) {
+			bottom = scr_height - 1;
 		}
 		if((left >= right) || (top >= bottom)) {
 			return TRUE;
@@ -19909,13 +19909,17 @@ inline void msdos_int_33h_000ch()
 	mouse.call_mask = CPU_CX;
 	mouse.call_addr.w.l = CPU_DX;
 	mouse.call_addr.w.h = CPU_ES;
+	int bx = CPU_BX;
 	if(mouse.call_addr.dw) {
 		CPU_BX = 0x0100;
 	} else {
 		CPU_BX = 0x0000;
 	}
 	CPU_AX = 0;
-	pcbios_int_15h_c2h();
+	if(mouse.call_mask & 0x7f) {
+		pcbios_int_15h_c2h();
+	}
+	CPU_BX = bx;
 }
 
 inline void msdos_int_33h_000fh()
@@ -19943,6 +19947,17 @@ inline void msdos_int_33h_0014h()
 	CPU_CX = old_mask;
 	CPU_DX = old_ofs;
 	CPU_LOAD_SREG(CPU_ES_INDEX, old_seg);
+	int bx = CPU_BX;
+	if(mouse.call_addr.dw) {
+		CPU_BX = 0x0100;
+	} else {
+		CPU_BX = 0x0000;
+	}
+	CPU_AX = 0;
+	if(mouse.call_mask & 0x7f) {
+		pcbios_int_15h_c2h();
+	}
+	CPU_BX = bx;
 }
 
 inline void msdos_int_33h_0015h()
