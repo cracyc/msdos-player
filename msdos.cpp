@@ -19910,15 +19910,13 @@ inline void msdos_int_33h_000ch()
 	mouse.call_addr.w.l = CPU_DX;
 	mouse.call_addr.w.h = CPU_ES;
 	int bx = CPU_BX;
-	if(mouse.call_addr.dw) {
+	if(mouse.call_addr.dw && (mouse.call_mask & 0x7f)) {
 		CPU_BX = 0x0100;
 	} else {
 		CPU_BX = 0x0000;
 	}
 	CPU_AX = 0;
-	if(mouse.call_mask & 0x7f) {
-		pcbios_int_15h_c2h();
-	}
+	pcbios_int_15h_c2h();
 	CPU_BX = bx;
 }
 
@@ -19948,15 +19946,13 @@ inline void msdos_int_33h_0014h()
 	CPU_DX = old_ofs;
 	CPU_LOAD_SREG(CPU_ES_INDEX, old_seg);
 	int bx = CPU_BX;
-	if(mouse.call_addr.dw) {
+	if(mouse.call_addr.dw && (mouse.call_mask & 0x7f)) {
 		CPU_BX = 0x0100;
 	} else {
 		CPU_BX = 0x0000;
 	}
 	CPU_AX = 0;
-	if(mouse.call_mask & 0x7f) {
-		pcbios_int_15h_c2h();
-	}
+	pcbios_int_15h_c2h();
 	CPU_BX = bx;
 }
 
