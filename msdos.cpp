@@ -19805,7 +19805,7 @@ inline void msdos_int_33h_0001h()
 inline void msdos_int_33h_0002h()
 {
 	mouse.hidden++;
-	if(mouse.call_addr.dw || !(mouse.call_mask & 0x7f)) {
+	if(!mouse.call_addr.dw || !(mouse.call_mask & 0x7f)) {
 		WORD bx = CPU_BX;
 		CPU_AX = 0x0000;
 		CPU_BX = 0x0000;
