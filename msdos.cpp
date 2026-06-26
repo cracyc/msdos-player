@@ -4109,10 +4109,15 @@ HDC get_console_window_device_context()
 #endif
 #define LANG_TAIWANESE MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL)
 
+#ifdef SUBLANG_CHINESE_TAIWANESE_IBM5550
+#undef SUBLANG_CHINESE_TAIWANESE_IBM5550
+#endif
+#define SUBLANG_CHINESE_TAIWANESE_IBM5550 0x1f
+
 #ifdef LANG_TAIWANESE_IBM5550
 #undef LANG_TAIWANESE_IBM5550
 #endif
-#define LANG_TAIWANESE_IBM5550 MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_MACAU + 1)
+#define LANG_TAIWANESE_IBM5550 MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TAIWANESE_IBM5550)
 
 USHORT get_message_lang()
 {
@@ -5489,7 +5494,7 @@ bool update_console_input()
 						if(!prev_status && mouse.buttons[j].status) {
 							mouse.buttons[j].pressed_times++;
 							mouse.buttons[j].pressed_position.x = mouse.position.x;
-							mouse.buttons[j].pressed_position.y = mouse.position.x;
+							mouse.buttons[j].pressed_position.y = mouse.position.y;
 							if(j < 2) {
 								mouse.status_alt |= 2 << (j * 2);
 							}
@@ -5497,7 +5502,7 @@ bool update_console_input()
 						} else if(prev_status && !mouse.buttons[j].status) {
 							mouse.buttons[j].released_times++;
 							mouse.buttons[j].released_position.x = mouse.position.x;
-							mouse.buttons[j].released_position.y = mouse.position.x;
+							mouse.buttons[j].released_position.y = mouse.position.y;
 							if(j < 2) {
 								mouse.status_alt |= 4 << (j * 2);
 							}
@@ -6553,16 +6558,16 @@ const char *msdos_fcb_path(fcb_t *fcb)
 
 void msdos_set_fcb_path(fcb_t *fcb, const char *path)
 {
-	char tmp[MAX_PATH];
-	strcpy(tmp, path);
-	char *ext = my_strchr(tmp, '.');
+	char tmp[MAX_PATH], *ext;
 	
+	strcpy(tmp, path);
+	msdos_strupr(tmp);
 	memset(fcb->file_name, 0x20, 8 + 3);
-	if(ext != NULL && tmp[0] != '.') {
-		*ext = '\0';
-		memcpy(fcb->file_name + 8, ext + 1, strlen(ext + 1));
+	if((ext = my_strrchr(tmp, '.')) != NULL) {
+		*ext++ = '\0';
+		memcpy(fcb->file_name + 8, ext, min(strlen(ext), 3));
 	}
-	memcpy(fcb->file_name, tmp, strlen(tmp));
+	memcpy(fcb->file_name, tmp, min(strlen(tmp), 8));
 }
 
 const char *msdos_short_path(const char *path)
@@ -6780,7 +6785,7 @@ void msdos_set_comm_params(int sio_port, const char *path)
 		int baud = max(110, min(9600, atoi(p + 1)));
 		UINT16 divisor = 115200 / baud;
 		
-		if((p = my_strstr(p + 1, ",")) != NULL) {
+		if((p = my_strstr(p + 1, ",")) != NULL && p[1] != '\0') {
 			// parity
 			if(p[1] == 'N' || p[1] == 'n') {
 				selector = (selector & ~0x38) | 0x00;
@@ -6793,7 +6798,7 @@ void msdos_set_comm_params(int sio_port, const char *path)
 			} else if(p[1] == 'S' || p[1] == 's') {
 				selector = (selector & ~0x38) | 0x38;
 			}
-			if((p = my_strstr(p + 1, ",")) != NULL) {
+			if((p = my_strstr(p + 1, ",")) != NULL && p[1] != '\0') {
 				// word length
 				if(p[1] == '8') {
 					selector = (selector & ~0x03) | 0x03;
@@ -6804,7 +6809,7 @@ void msdos_set_comm_params(int sio_port, const char *path)
 				} else if(p[1] == '5') {
 					selector = (selector & ~0x03) | 0x00;
 				}
-				if((p = my_strstr(p + 1, ",")) != NULL) {
+				if((p = my_strstr(p + 1, ",")) != NULL && p[1] != '\0') {
 					// stop bits
 					float bits = atof(p + 1);
 					if(bits > 1.0F) {
@@ -6907,16 +6912,18 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	const char *sep = NULL;
 	
 	// check if COMMAND.COM is in the same directory as the target program file
-	if(MyGetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0) {
-		sprintf(file_name, "COMMAND.COM");
+	if(MyGetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0 && file_name != NULL) {
+		*file_name = '\0';
+		my_strcat_s(tmp, MAX_PATH, "COMMAND.COM");
 		if(my_access(tmp, 0) == 0) {
 			return(tmp);
 		}
 	}
 	
 	// check if COMMAND.COM is in the same directory as the running msdos.exe
-	if(MyGetModuleFileNameA(NULL, path, MAX_PATH) != 0 && MyGetFullPathNameA(path, MAX_PATH, tmp, &file_name) != 0) {
-		sprintf(file_name, "COMMAND.COM");
+	if(MyGetModuleFileNameA(NULL, path, MAX_PATH) != 0 && MyGetFullPathNameA(path, MAX_PATH, tmp, &file_name) != 0 && file_name != NULL) {
+		*file_name = '\0';
+		my_strcat_s(tmp, MAX_PATH, "COMMAND.COM");
 		if(my_access(tmp, 0) == 0) {
 			return(tmp);
 		}
@@ -6978,38 +6985,40 @@ const char *msdos_volume_label(const char *path)
 const char *msdos_short_volume_label(const char *label)
 {
 	static char tmp[(8 + 1 + 3) + 1];
-	const char *src = label;
-	int remain = (int)strlen(label);
 	char *dst_n = tmp;
 	char *dst_e = tmp + 9;
+	char source[MAX_PATH];
+	char *name = source, *ext;
 	
+	my_strlcpy(source, label, MAX_PATH);
+	if((ext = my_strrchr(source, '.')) != NULL) {
+		*ext++ = '\0';
+	}
 	strcpy(tmp, "        .   ");
-	for(int i = 0; i < 8 && remain > 0; i++) {
-		if(msdos_lead_byte_check(*src)) {
-			if(++i == 8) {
+	
+	for(int i = 0; i < 8 && *name != '\0'; i++) {
+		if(msdos_lead_byte_check(*name)) {
+			if(++i == 8 || *(name + 1) == '\0') {
 				break;
 			}
-			*dst_n++ = *src++;
-			remain--;
+			*dst_n++ = *name++;
+			*dst_n++ = *name++;
+		} else {
+			*dst_n++ = *name++;
 		}
-		*dst_n++ = *src++;
-		remain--;
 	}
-	if(remain > 0) {
-		for(int i = 0; i < 3 && remain > 0; i++) {
-			if(msdos_lead_byte_check(*src)) {
-				if(++i == 3) {
+	if(ext != NULL) {
+		for(int i = 0; i < 3 && *ext != '\0'; i++) {
+			if(msdos_lead_byte_check(*ext)) {
+				if(++i == 3 || *(ext + 1) == '\0') {
 					break;
 				}
-				*dst_e++ = *src++;
-				remain--;
+				*dst_e++ = *ext++;
+				*dst_e++ = *ext++;
+			} else {
+				*dst_e++ = *ext++;
 			}
-			*dst_e++ = *src++;
-			remain--;
 		}
-		*dst_e = '\0';
-	} else {
-		*dst_n = '\0';
 	}
 	msdos_strupr(tmp);
 	return(tmp);
@@ -7133,7 +7142,13 @@ int msdos_open_device(const char *path, int oflag, int *sio_port, int *lpt_port)
 		fd = msdos_open("NUL", oflag);
 	} else if(dos_get_device(path).dw) {
 		// create a temporary file to get a valid file descriptor for the device
-		fd = my_open(path, _O_CREAT | _O_TEMPORARY, _S_IREAD | _S_IWRITE);
+//		fd = my_open(path, _O_CREAT | _O_TEMPORARY, _S_IREAD | _S_IWRITE);
+		char temp_dir[MAX_PATH], temp_file[MAX_PATH];
+		if(GetTempPathA(MAX_PATH, temp_dir) != 0 && GetTempFileNameA(temp_dir, "DEV", 0, temp_file) != 0) {
+			fd = my_open(temp_file, _O_CREAT | _O_RDWR | _O_BINARY | _O_TEMPORARY, _S_IREAD | _S_IWRITE);
+		} else {
+			fd = msdos_open("NUL", oflag);
+		}
 	} else if(msdos_is_device_path(path)) {
 		fd = msdos_open("NUL", oflag);
 //	} else if(oflag & _O_CREAT) {
@@ -7251,8 +7266,11 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	msdos_strupr(ext);
 	memset(&sft->file_name[0], 0x20, 11);
 	memcpy(&sft->file_name[0], fname, min(strlen(fname), 8));
-	memcpy(&sft->file_name[8], ext + 1, min(strlen(ext + 1), 3));
-	
+	if(ext[0] == '.') {
+		memcpy(&sft->file_name[8], ext + 1, min(strlen(ext + 1), 3));
+	} else if(ext[0] != '\0') {
+		memcpy(&sft->file_name[8], ext, min(strlen(ext), 3)); // just in case...
+	}
 	sft->owner_psp = psp_seg;
 }
 
@@ -7327,6 +7345,12 @@ int msdos_find_file_has_8dot3name(WIN32_FIND_DATAA *fd)
 		return(0);
 	}
 	if(ext && strlen(ext) > 4) {
+		return(0);
+	}
+	if(ext && ext != my_strchr(fd->cFileName, '.')) {
+		return(0);
+	}
+	if(my_strchr(fd->cFileName, ' ') != NULL) {
 		return(0);
 	}
 	return(1);
@@ -7541,6 +7565,8 @@ inline int msdos_getche(unsigned int_num, UINT8 reg_ah)
 
 int msdos_write(int fd, const void *buffer, unsigned int count)
 {
+	process_t *process = msdos_process_info_get(current_psp);
+	
 	if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].sio_port >= 1 && file_handler[fd].sio_port <= 4) {
 		// write to serial port
 		int written = 0;
@@ -7695,7 +7721,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	static int stored_x;
 	static int stored_y;
 	static WORD stored_a;
-	static char tmp[64], out[64];
+	static char tmp[256], out[256];
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	
@@ -7758,12 +7784,16 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 			} else if(tmp[1] == '[') {
 				int param[256], params = 0;
 				memset(param, 0, sizeof(param));
-				for(int i = 2; i < p; i++) {
+				for(int i = 2, flag = 0; i < p; i++) {
 					if(tmp[i] >= '0' && tmp[i] <= '9') {
 						param[params] *= 10;
 						param[params] += tmp[i] - '0';
+						flag = 1;
 					} else {
-						params++;
+						if(flag) {
+							params++;
+						}
+						flag = 0;
 					}
 				}
 				if(data == 'A') {
@@ -7847,10 +7877,13 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 						ci_new.bVisible = TRUE;
 					}
 				} else if(data == 'm') {
-					wAttributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+					wAttributes = (params == 0) ? (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE) : csbi.wAttributes;
 					int reverse = 0, hidden = 0;
 					for(int i = 0; i < params; i++) {
-						if(param[i] == 1) {
+						if(param[i] == 0) {
+							wAttributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+							reverse = hidden = 0;
+						} else if(param[i] == 1) {
 							wAttributes |= FOREGROUND_INTENSITY;
 						} else if(param[i] == 4) {
 							wAttributes |= COMMON_LVB_UNDERSCORE;
@@ -7888,8 +7921,19 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 						}
 					}
 					if(reverse) {
-						wAttributes &= ~0xff;
-						wAttributes |= BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
+						if((wAttributes & 7) == ((wAttributes >> 4) & 7)) {
+							if((wAttributes & 7) == 0) {
+								wAttributes &= ~0xff;
+								wAttributes |= BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE;
+							} else if((wAttributes & 7) == 7) {
+								wAttributes &= ~0xff;
+								wAttributes |= FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+							} else {
+								wAttributes &= ~0x0f;
+							}
+						} else {
+							wAttributes = (wAttributes & ~0xff) | ((wAttributes & 0xf0) >> 4) | ((wAttributes & 0x0f) << 4);
+						}
 					}
 					if(hidden) {
 						wAttributes &= ~0x0f;
@@ -7956,9 +8000,9 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		UINT8 c = tmp[i];
 		if(is_kanji) {
 			is_kanji = 0;
-		} else if(msdos_lead_byte_check(data)) {
+		} else if(msdos_lead_byte_check(c)) {
 			is_kanji = 1;
-		} else if(msdos_ctrl_code_check(data, int_num, reg_ah)) {
+		} else if(msdos_ctrl_code_check(c, int_num, reg_ah)) {
 			out[q++] = '^';
 			c += 'A' - 1;
 		}
@@ -9707,6 +9751,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	
 	// check COMMAND.COM version
 	if(first_process && !dos_version_specified && _stricmp(msdos_file_name(path), "COMMAND.COM") == 0) {
+		const char *buffer_end = (const char *)&file_buffer[length];
 		for(int p = 0; p < length; p++) {
 			const BYTE version_kana[] = {
 				0xCA,0xDE,0xB0,0xBC,0xDE,0xAE,0xDD,0x20
@@ -9736,7 +9781,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				if((*s++) == ' ') {
 					if(*s == ' ') s++;
 					if(strncmp(s, "Ver", 3) == 0 || strncmp(s, "ver", 3) == 0) {
-						while((*s++) != ' ');
+						while(s < buffer_end && (*s++) != ' ');
 						found = true;
 					} else if(memcmp(s, version_kana, sizeof(version_kana)) == 0) {
 						s += sizeof(version_kana);
@@ -9751,7 +9796,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				}
 			} else if(strncmp(s, "IBM Personal Computer DOS\r\nVer", 30) == 0) {
 				s += 30;
-				while((*s++) != ' ');
+				while(s < buffer_end && (*s++) != ' ');
 				if(strncmp(s, "3.22", 4) == 0) {
 					// IBM JX PC-DOS Version 3.22
 					dos_major_version = true_major_version = 3;
@@ -9762,12 +9807,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				found = true;
 			} else if(strncmp(s, "IBM DOS Ver", 11) == 0) {
 				s += 11;
-				while((*s++) != ' ');
+				while(s < buffer_end && (*s++) != ' ');
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
 				found = true;
 			} else if(strncmp(s, "PC DOS Ver", 10) == 0) {
 				s += 10;
-				while((*s++) != ' ');
+				while(s < buffer_end && (*s++) != ' ');
 				if(*s == 'H' || *s == 'J' || *s == 'K' || *s == 'P' || *s == 'T') s++;
 				if(strncmp(s, "6.10", 4) == 0) {
 					// PC-DOS Version 6.10
@@ -10222,7 +10267,7 @@ int msdos_drive_param_block_update(int drive_num, UINT16 *seg, UINT16 *ofs, int 
 		
 		dpb->bytes_per_sector = (UINT16)geo->BytesPerSector;
 		dpb->highest_sector_num = (UINT8)(geo->SectorsPerTrack - 1);
-		dpb->highest_cluster_num = (UINT16)(geo->TracksPerCylinder * geo->Cylinders.QuadPart + 1);
+		dpb->highest_cluster_num = (UINT16)min(geo->TracksPerCylinder * geo->Cylinders.QuadPart + 1, 0xfff5);
 		dpb->maximum_cluster_num = (UINT32)(geo->TracksPerCylinder * geo->Cylinders.QuadPart + 1);
 		switch(geo->MediaType) {
 		case F5_320_512:	// floppy, double-sided, 8 sectors per track (320K)
@@ -10324,26 +10369,19 @@ void finish_service_loop()
 	}
 }
 
-UINT32 get_ticks_since_midnight(UINT32 cur_msec)
+UINT32 get_ticks_since_midnight()
 {
-	static unsigned __int64 start_msec_since_midnight = 0;
-	static unsigned __int64 start_msec_since_hostboot = 0;
-	
-	if(start_msec_since_midnight == 0) {
-		SYSTEMTIME time;
-		MyGetLocalTime(&time);
-		start_msec_since_midnight = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
-		start_msec_since_hostboot = cur_msec;
-	}
-	unsigned __int64 msec = (start_msec_since_midnight + cur_msec - start_msec_since_hostboot) % (24 * 60 * 60 * 1000);
+	SYSTEMTIME time;
+	MyGetLocalTime(&time);
+	unsigned __int64 msec = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 + time.wMilliseconds;
 	unsigned __int64 tick = msec * 0x1800b0 / (24 * 60 * 60 * 1000);
 	return (UINT32)tick;
 }
 
-void pcbios_update_daily_timer_counter(UINT32 cur_msec)
+void pcbios_update_daily_timer_counter()
 {
 	UINT32 prev_tick = *(UINT32 *)(mem + 0x46c);
-	UINT32 next_tick = get_ticks_since_midnight(cur_msec);
+	UINT32 next_tick = get_ticks_since_midnight();
 	
 	if(prev_tick > next_tick) {
 		mem[0x470] = 1;
@@ -10354,7 +10392,7 @@ void pcbios_update_daily_timer_counter(UINT32 cur_msec)
 inline void pcbios_irq0()
 {
 	//++*(UINT32 *)(mem + 0x46c);
-	pcbios_update_daily_timer_counter(timeGetTime());
+	pcbios_update_daily_timer_counter();
 }
 
 int pcbios_get_text_vram_address(int page)
@@ -13563,7 +13601,7 @@ inline void pcbios_int_17h_85h()
 
 inline void pcbios_int_1ah_00h()
 {
-	pcbios_update_daily_timer_counter(timeGetTime());
+	pcbios_update_daily_timer_counter();
 	CPU_CX = *(UINT16 *)(mem + 0x46e);
 	CPU_DX = *(UINT16 *)(mem + 0x46c);
 	CPU_AL = mem[0x470];
@@ -22979,7 +23017,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 		*(UINT16 *)(mem + 0x463) = 0x3d4; // CGA/EGA/VGA
 	}
 	*(UINT8  *)(mem + 0x465) = 0x09;
-	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight(timeGetTime());
+	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight();
 	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
 	*(UINT8  *)(mem + 0x478) = 1; // lpt1 timeout
 	*(UINT8  *)(mem + 0x479) = 1; // lpt2 timeout
@@ -24056,7 +24094,7 @@ void hardware_update()
 		ci_old = ci_new;
 		
 		// update daily timer counter
-		pcbios_update_daily_timer_counter(cur_time);
+		pcbios_update_daily_timer_counter();
 		
 		prev_time = cur_time;
 	}
@@ -28188,11 +28226,18 @@ PAIR32 dos_get_device(const char* name)
 			DriverHeader = (device_t*)FAR_POINTER(Driver);
 			// Compare both strings and consider space ' ' as string termination
 			for(int i = 0; i < MAX_DEVICE_NAME; i++){
-				if((i != 0) && (name[i] == '\0' || name[i] == ' ') && (DriverHeader->dev_name[i] == '\0' || DriverHeader->dev_name[i] == ' ')){
+				char c1 = (name[i] == ' ') ? '\0' :
+				          (name[i] >= 'a' && name[i] <= 'z') ? (name[i] - 'a') + 'A' : name[i];
+				char c2 = (DriverHeader->dev_name[i] == ' ') ? '\0' :
+				          (DriverHeader->dev_name[i] >= 'a' && DriverHeader->dev_name[i] <= 'z') ? (DriverHeader->dev_name[i] - 'a') + 'A' : DriverHeader->dev_name[i];
+				if(c1 == '\0' && c2 == '\0' && i != 0){
 					return(Driver);
 				}
-				if((name[i] != DriverHeader->dev_name[i]) || name[i] == '\0' || DriverHeader->dev_name[i] == '\0'){
+				if(c1 == '\0' || c2 == '\0' || c1 != c2){
 					break;
+				}
+				if(i == MAX_DEVICE_NAME - 1){
+					return(Driver);
 				}
 			}
 			Driver = DriverHeader->next_driver;
