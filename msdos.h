@@ -1332,17 +1332,17 @@ bool restore_console_font = false;
 bool cursor_moved;
 bool cursor_moved_by_crtc;
 
-FIFO *key_buf_char = NULL;
-FIFO *key_buf_scan = NULL;
-FIFO *key_buf_data = NULL;
+FIFO *kbc_buffer = NULL;
+FIFO *key_buffer = NULL;
 bool key_changed = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
 bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
-void pcbios_set_key_buffer(int key_char, int key_scan);
-bool pcbios_get_key_buffer(int *key_char, int *key_scan);
+void pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
+bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan);
+void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data);
 
 UINT8 ctrl_break_checking = 0x00; // ???
 bool ctrl_break_detected = false;
