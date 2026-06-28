@@ -10511,6 +10511,18 @@ int get_scan_lines()
 	return 400;
 }
 
+int get_default_char_height() {
+	switch(mem[0x489] & 0x90) {
+	case 0x00:
+		return 14;
+	case 0x10:
+		return 16;
+	case 0x80:
+		return 8;
+	}
+	return 16;
+}
+
 inline void pcbios_int_10h_00h()
 {
 	if(video_card_type == VIDEO_CARD_MDA) {
@@ -10533,7 +10545,7 @@ inline void pcbios_int_10h_00h()
 	case 0x03: // CGA Text Mode
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
-		pcbios_set_console_size(80, get_scan_lines() / 16, !(CPU_AL & 0x80));
+		pcbios_set_console_size(80, get_scan_lines() / get_default_char_height(), !(CPU_AL & 0x80));
 		break;
 	case 0x73: // Extended CGA Text Mode
 	case 0x74: // J-3100 DCGA (mono)
