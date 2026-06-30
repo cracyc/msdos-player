@@ -7120,7 +7120,11 @@ int msdos_open(const char *path, int oflag)
 	}
 	
 	int fd = _open_osfhandle((intptr_t) h, oflag);
-	if(fd == -1) {
+	if(fd >= max_files) {
+		fd = -1;
+		_close(fd);
+		_doserrno = ERROR_TOO_MANY_OPEN_FILES;
+	} else if(fd == -1) {
 		CloseHandle(h);
 	}
 	return(fd);
