@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/21/2026
+								6/30/2026
 
 ----- What's This
 
@@ -1106,9 +1106,14 @@ CALL FAR XMS
 
 VDD (Virtual Device Driver)
 
-	RegisterModule
-	UnRegisterModule
-	DispatchCall
+	C4H,C4H,51H	VDD BOP
+
+		00H	RegisterModule
+		01H	UnRegisterModule
+		02H	DispatchCall
+
+	C4H,C4H,FEH	VDDUnSimulate16 BOP
+
 	getAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
 	setAL,AH,AX,EAX,BL,BH,BX,EBX,CL,CH,CX,ECX,DL,DH,EDX
 	getSP,ESP,BP,EBP,SI,ESI,DI,EDI,IP,EIP
@@ -1145,7 +1150,6 @@ VDD (Virtual Device Driver)
 	VDDRequestDMA
 	VDDQueryDMA
 	VDDSetDMA
-	VDDSimulate16
 	host_simulate
 	VDDUnSimulate16
 	VDDTerminateVDM
@@ -1159,6 +1163,23 @@ VDD (Virtual Device Driver)
 	VdmParametersInfo (*10)
 	VdmGetParametersInfoError (*10)
 	WOWSysErrorBox
+
+Other BOP
+
+	C4H,C4H,00H	Terminate VDM BOP
+
+	C4H,C4H,51H	WOW32 User/Task BOP
+
+		02H	WOW_YIELD
+
+	C4H,C4H,54H	Command/Console BOP
+
+		00H	BOP_CMD_INIT
+		01H	BOP_CMD_XEC
+		02H	BOP_CMD_EXIT
+		93H	BOP_CMD_CURDIR
+
+	C4H,C4H,60H	NTVDM Get Version BOP
 
 (*1) Not a Hercules-compatible video adapter
 (*2) Support only floppy disk drive

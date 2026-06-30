@@ -1492,12 +1492,19 @@ static HANDLE vdd_irq_owner[16] = {0};
 
 HMODULE hNTVDM = NULL;
 
+static BYTE bytIntelRegister[sizeof(X86_CONTEXT) + 15];
+static X86_CONTEXT* pIntelRegister = NULL;
+
+void cmd_req(char fnc);
+
 void vdd_init();
 void vdd_finish();
 void vdd_req(char func);
 BOOL vdd_io_read(int port, int size, void *val);
 BOOL vdd_io_write(int port, int size, WORD val);
 void vdd_init_table(PVDD_FUNC_TABLE ptr);
+void vdd_store_intel_register();
+void vdd_restore_intel_register();
 #endif
 
 /* ----------------------------------------------------------------------------

@@ -343,6 +343,22 @@ UINT8 FPU_REG(int n, int i)
 	}
 	return 0;
 }
+
+void SET_FPU_REG(int n, int i, UINT8 val)
+{
+	switch(i) {
+	case 0: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff <<  0)) | ((UINT64)val <<  0); break;
+	case 1: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff <<  8)) | ((UINT64)val <<  8); break;
+	case 2: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 16)) | ((UINT64)val << 16); break;
+	case 3: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 24)) | ((UINT64)val << 24); break;
+	case 4: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 32)) | ((UINT64)val << 32); break;
+	case 5: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 40)) | ((UINT64)val << 40); break;
+	case 6: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 48)) | ((UINT64)val << 48); break;
+	case 7: m_x87_reg[n].low =  (m_x87_reg[n].low  & ~((UINT64)0xff << 56)) | ((UINT64)val << 56); break;
+	case 8: m_x87_reg[n].high = (m_x87_reg[n].high & ~((UINT16)0xff <<  0)) | ((UINT16)val <<  0); break;
+	case 9: m_x87_reg[n].high = (m_x87_reg[n].high & ~((UINT16)0xff <<  8)) | ((UINT16)val <<  8); break;
+	}
+}
 #endif
 
 inline void CPU_SET_C_FLAG(UINT8 value)

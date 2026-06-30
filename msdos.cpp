@@ -9708,7 +9708,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			UINT16 machine = *(UINT16 *)(file_buffer + e_lfanew + 0x04);
 			UINT16 subsys = *(UINT16 *)(file_buffer + e_lfanew + 0x5c);
 			if(sign_nt == IMAGE_NT_SIGNATURE && (machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_AMD64)) {
-				char tmp[MAX_PATH];
+				char tmp[MAX_PATH * 2];
 				if(opt[0] != '\0') {
 					sprintf(tmp, "\"%s\" %s", path, opt);
 				} else {
@@ -10354,6 +10354,21 @@ int get_scan_lines()
 	return 400;
 }
 
+#if 0
+int get_default_char_height()
+{
+	switch(mem[0x489] & 0x90) {
+	case 0x00:
+		return 14;
+	case 0x10:
+		return 16;
+	case 0x80:
+		return 8;
+	}
+	return 16;
+}
+#endif
+
 inline void pcbios_int_10h_00h()
 {
 	if(video_card_type == VIDEO_CARD_MDA) {
@@ -10373,15 +10388,11 @@ inline void pcbios_int_10h_00h()
 	case 0x71: // Extended CGA V-Text Mode
 		pcbios_set_console_size(scr_width, scr_height, !(CPU_AL & 0x80));
 		break;
-	case 0x03: // CGA Text Mode
-		change_console_size(80, 25); // for Windows10
-		pcbios_set_font_size(font_width, font_height);
-		pcbios_set_console_size(80, get_scan_lines() / 16, !(CPU_AL & 0x80));
-		break;
 	case 0x73: // Extended CGA Text Mode
 	case 0x74: // J-3100 DCGA (mono)
 	case 0x75: // J-3100 DCGA
 	case 0x02: // CGA Text Mode (gray)
+	case 0x03: // CGA Text Mode
 	case 0x07: // MDA Text Mode (mono)
 		change_console_size(80, 25); // for Windows10
 		pcbios_set_font_size(font_width, font_height);
@@ -21771,13 +21782,49 @@ void msdos_syscall(unsigned num)
 #ifdef SUPPORT_VDD
 		try {
 			UINT8 *opcode = mem + CPU_TRANS_CODE_ADDR(CPU_CS, CPU_EIP);
-			if((opcode[0] == 0xc4) && (opcode[1] == 0xc4) && (opcode[2] == 0x58)) {
-				vdd_req(opcode[3]);
-				break;
-			}
-			if((opcode[0] == 0xc4) && (opcode[1] == 0xc4) && (opcode[2] == 0xfe)) {
-				// VDDUnSimulate16
-				msdos_stat |= REQ_UNSIM16;
+			if(opcode[0] == 0xc4 && opcode[1] == 0xc4) {
+				if(opcode[2] == 0x00) {
+					// Terminate VDM BOP
+					CPU_EIP += 3;
+					msdos_stat |= REQ_EXIT;
+				} else if(opcode[2] == 0x51 && opcode[3] == 0x02) {
+					// WOW32 User/Task BOP, WOW_YIELD
+					CPU_EIP += 4;
+					Sleep(0);
+					CPU_SET_C_FLAG(0);
+					CPU_AX = 0x0000;
+				} else if(opcode[2] == 0x54) {
+					// Command/Console BOP
+					CPU_EIP += 4;
+					cmd_req(opcode[3]);
+				} else if(opcode[2] == 0x58) {
+					// VDD BOP
+					CPU_EIP += 4;
+					vdd_req(opcode[3]);
+				} else if(opcode[2] == 0x60) {
+					// NTVDM Get Version BOP
+					CPU_EIP += 3;
+					CPU_SET_C_FLAG(0);
+					if(win_major_version >= 4) {
+						CPU_AX = 0x0400; // Windows NT 4.0 or later
+					} else {
+						CPU_AX = 0x0300; // Windows NT 3.51 or prior
+					}
+				} else if(opcode[2] == 0xfe) {
+					// VDDUnSimulate16 BOP
+					CPU_EIP += 3;
+					msdos_stat |= REQ_UNSIM16;
+				} else if(opcode[2] == 0x50 || opcode[2] == 0x51 || (opcode[2] >= 0x08 && opcode[2] <= 0x0f)) {
+					// Known BOP containing 4 bytes
+					CPU_EIP += 4;
+					CPU_SET_C_FLAG(1);
+					CPU_AX = 0xffff;
+				} else {
+					// Unknown BOP, probably 3 bytes
+					CPU_EIP += 3;
+					CPU_SET_C_FLAG(1);
+					CPU_AX = 0xffff;
+				}
 				break;
 			}
 		} catch(...) {
@@ -26439,6 +26486,51 @@ void write_io_dword(UINT32 addr, UINT32 val)
 }
 
 #ifdef SUPPORT_VDD
+void cmd_req(char func)
+{
+	switch(func) {
+	case 0x00: // BOP_CMD_INIT
+	case 0x02: // BOP_CMD_EXIT
+		CPU_SET_C_FLAG(0);
+		CPU_AX = 0x0000;
+		break;
+	case 0x01: // BOP_CMD_EXEC
+		{
+			// NOTE: BOP_CMD_EXEC is usually used to execute Win32 executables in INT 21h, AH=4Bh
+			// but msdos_process_exec() will execute Win32 executables directly,
+			// so this function is called only in the case application dare calls it
+			const char *path = (const char *)(mem + CPU_DS_BASE + CPU_DX);
+			param_block_t *param = (param_block_t *)(mem + CPU_ES_BASE + CPU_BX);
+			char opt[MAX_PATH], cmd[MAX_PATH * 2];
+			int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
+			memset(opt, 0, sizeof(opt));
+			memcpy(opt, mem + opt_ofs + 1, (unsigned int)mem[opt_ofs]);
+			_snprintf(cmd, sizeof(cmd), "\"%s\" %s", path, opt);
+			if(system(cmd) == -1) {
+				CPU_SET_C_FLAG(1);
+				CPU_AX = 0x0002; // file not found
+			} else {
+				CPU_SET_C_FLAG(0);
+				CPU_AX = 0x0000;
+			}
+		}
+		break;
+	case 0x03: // BOP_CMD_CURDIR
+		if(my_chdir((char *)(mem + CPU_DS_BASE + CPU_SI))) {
+			CPU_SET_C_FLAG(1);
+			CPU_AX = 0x0003; // path not found
+		} else {
+			CPU_SET_C_FLAG(0);
+			CPU_AX = 0x0000;
+		}
+		break;
+	default:
+		CPU_SET_C_FLAG(1);
+		CPU_AX = 0xffff;
+		break;
+	}
+}
+
 void vdd_init()
 {
 /*
@@ -26514,18 +26606,32 @@ void vdd_req(char func)
 			vdd_init_table(&func);
 			pfnSetFuncTable(&func);
 		}
-		LPCSTR dll = (LPCSTR)(mem + CPU_ESI + CPU_DS_BASE);
-		LPCSTR init = (LPCSTR)(mem + CPU_EDI + CPU_ES_BASE);
-		LPCSTR dispatch = (LPCSTR)(mem + CPU_EBX + CPU_DS_BASE);
-		CPU_EIP += 4;
+		LPCSTR dll = (LPCSTR)(mem + CPU_DS_BASE + CPU_SI);
+		LPCSTR init = (LPCSTR)(mem + CPU_ES_BASE + CPU_DI);
+		LPCSTR dispatch = (LPCSTR)(mem + CPU_DS_BASE + CPU_BX);
 		HMODULE hVdd = LoadLibraryA(dll);
 		if (!hVdd) {
 			CPU_SET_C_FLAG(1);
-			CPU_AX = GetLastError();
+			CPU_AX = 0x0001; //GetLastError();
 			return;
 		}
 		FARPROC pfnInit = GetProcAddress(hVdd, init);
 		FARPROC pfnDispatch = GetProcAddress(hVdd, dispatch);
+		if (!pfnDispatch) {
+			FreeLibrary(hVdd);
+			CPU_SET_C_FLAG(1);
+			CPU_AX = 0x0002;
+			return;
+		}
+#if 0
+		// FIXME: not sure if init==NULL should be allowed
+		if (!pfnInit) {
+			FreeLibrary(hVdd);
+			CPU_SET_C_FLAG(1);
+			CPU_AX = 0x0003;
+			return;
+		}
+#endif
 		int i;
 		// Try to locate the handle in case it was already added to the list during DLL initialisation
 		for (i = 0; i < 5; i++) {
@@ -26547,20 +26653,31 @@ void vdd_req(char func)
 		if (i == 5) {
 			FreeLibrary(hVdd);
 			CPU_SET_C_FLAG(1);
-			CPU_AX = 4;
+			CPU_AX = 0x0004;
 			return;
 		}
 		CPU_SET_C_FLAG(0);
 		CPU_AX = i + 1;
 		if (pfnInit) {
+			pIntelRegister = (X86_CONTEXT*)(((ULONG_PTR)bytIntelRegister + 15) & ~15);
+			vdd_store_intel_register();
+#if defined(_MSC_VER) || (defined(__clang__) && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 7)))
+			__try {
+				pfnInit();
+			} __except(EXCEPTION_EXECUTE_HANDLER) {
+				pIntelRegister->EFlags |= 0x1; // CF = 1
+				pIntelRegister->Eax |= 0xffff; // AX = FFFFh
+			}
+#else
 			pfnInit();
+#endif
+			vdd_restore_intel_register();
 		}
 	}
 	/* UnregisterModule */
 	else if (func == 0x01) {
 		WORD handle = CPU_AX - 1;
-		CPU_EIP += 4;
-		if ((handle > 5) || !vdd_modules[handle].hvdd) {
+		if ((handle >= 5) || !vdd_modules[handle].hvdd) {
 			return; // ntvdm exits here
 		}
 		for (int i = 0; i < 5; i++) {
@@ -26583,11 +26700,22 @@ void vdd_req(char func)
 	/* DispatchCall */
 	else if (func == 0x02) {
 		WORD handle = CPU_AX - 1;
-		CPU_EIP += 4;
-		if ((handle > 5) || !vdd_modules[handle].hvdd) {
+		if ((handle >= 5) || !vdd_modules[handle].hvdd) {
 			return; // ntvdm exits here
 		}
+		pIntelRegister = (X86_CONTEXT*)(((ULONG_PTR)bytIntelRegister + 15) & ~15);
+		vdd_store_intel_register();
+#if defined(_MSC_VER) || (defined(__clang__) && (__clang_major__ > 3 || (__clang_major__ == 3 && __clang_minor__ >= 7)))
+		__try {
+			vdd_modules[handle].dispatch();
+		} __except(EXCEPTION_EXECUTE_HANDLER) {
+			pIntelRegister->EFlags |= 0x1; // CF = 1
+			pIntelRegister->Eax |= 0xffff; // AX = FFFFh
+		}
+#else
 		vdd_modules[handle].dispatch();
+#endif
+		vdd_restore_intel_register();
 	}
 }
 
@@ -26713,122 +26841,170 @@ DWORD getEDI()
 
 void setAL(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_AL = val;
+	vdd_store_intel_register();
 }
 
 void setAH(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_AH = val;
+	vdd_store_intel_register();
 }
 
 void setAX(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_AX = val;
+	vdd_store_intel_register();
 }
 
 void setEAX(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EAX = val;
+	vdd_store_intel_register();
 }
 
 void setBL(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_BL = val;
+	vdd_store_intel_register();
 }
 
 void setBH(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_BH = val;
+	vdd_store_intel_register();
 }
 
 void setBX(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_BX = val;
+	vdd_store_intel_register();
 }
 
 void setEBX(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EBX = val;
+	vdd_store_intel_register();
 }
 
 void setCL(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_CL = val;
+	vdd_store_intel_register();
 }
 
 void setCH(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_CH = val;
+	vdd_store_intel_register();
 }
 
 void setCX(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_CX = val;
+	vdd_store_intel_register();
 }
 
 void setECX(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_ECX = val;
+	vdd_store_intel_register();
 }
 
 void setDL(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_DL = val;
+	vdd_store_intel_register();
 }
 
 void setDH(BYTE val)
 {
+	vdd_restore_intel_register();
 	CPU_DH = val;
+	vdd_store_intel_register();
 }
 
 void setDX(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_DX = val;
+	vdd_store_intel_register();
 }
 
 void setEDX(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EDX = val;
+	vdd_store_intel_register();
 }
 
 void setSP(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SP = val;
+	vdd_store_intel_register();
 }
 
 void setESP(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_ESP = val;
+	vdd_store_intel_register();
 }
 
 void setBP(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_BP = val;
+	vdd_store_intel_register();
 }
 
 void setEBP(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EBP = val;
+	vdd_store_intel_register();
 }
 
 void setSI(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SI = val;
+	vdd_store_intel_register();
 }
 
 void setESI(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_ESI = val;
+	vdd_store_intel_register();
 }
 
 void setDI(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_DI = val;
+	vdd_store_intel_register();
 }
 
 void setEDI(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EDI = val;
+	vdd_store_intel_register();
 }
 
 WORD getDS()
@@ -26863,32 +27039,44 @@ WORD getGS()
 
 void setDS(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_DS = val;
+	vdd_store_intel_register();
 }
 
 void setES(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_ES = val;
+	vdd_store_intel_register();
 }
 
 void setCS(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_CS = val;
+	vdd_store_intel_register();
 }
 
 void setSS(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SS = val;
+	vdd_store_intel_register();
 }
 
 void setFS(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_FS = val;
+	vdd_store_intel_register();
 }
 
 void setGS(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_GS = val;
+	vdd_store_intel_register();
 }
 
 WORD getIP()
@@ -26903,12 +27091,16 @@ DWORD getEIP()
 
 void setIP(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EIP = (CPU_EIP & ~0xffff) | val;
+	vdd_store_intel_register();
 }
 
 void setEIP(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_EIP = val;
+	vdd_store_intel_register();
 }
 
 DWORD getCF()
@@ -26953,42 +27145,58 @@ DWORD getOF()
 
 void setCF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_C_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setPF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_P_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setAF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_A_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setZF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_Z_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setSF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_S_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setIF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_I_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setDF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_D_FLAG(val);
+	vdd_store_intel_register();
 }
 
 void setOF(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_O_FLAG(val);
+	vdd_store_intel_register();
 }
 
 DWORD getEFLAGS()
@@ -26998,7 +27206,9 @@ DWORD getEFLAGS()
 
 void setEFLAGS(DWORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_EFLAG(val);
+	vdd_store_intel_register();
 }
 
 WORD getMSW()
@@ -27008,62 +27218,110 @@ WORD getMSW()
 
 void setMSW(WORD val)
 {
+	vdd_restore_intel_register();
 	CPU_SET_CR0((CPU_CR0 & ~0xffff) | val);
+	vdd_store_intel_register();
+}
+
+void vdd_store_intel_register()
+{
+	memset(pIntelRegister, 0, sizeof(X86_CONTEXT));
+	
+	pIntelRegister->ContextFlags  = 0x00010000; // Intel 386
+	pIntelRegister->ContextFlags |= 0x00000010; // DR0, DR1, DR2, DR3, DR6, DR7
+	pIntelRegister->ContextFlags |= 0x00000004; // DS, ES, FS, GS
+	pIntelRegister->ContextFlags |= 0x00000002; // AX, BX, CX, DX, SI, DI
+	pIntelRegister->ContextFlags |= 0x00000001; // SS:SP, CS:IP, FLAGS, BP
+	
+	pIntelRegister->Dr0    = CPU_DR(0);
+	pIntelRegister->Dr1    = CPU_DR(1);
+	pIntelRegister->Dr2    = CPU_DR(2);
+	pIntelRegister->Dr3    = CPU_DR(3);
+	pIntelRegister->Dr6    = CPU_DR(6);
+	pIntelRegister->Dr7    = CPU_DR(7);
+	pIntelRegister->SegGs  = CPU_GS;
+	pIntelRegister->SegFs  = CPU_FS;
+	pIntelRegister->SegEs  = CPU_ES;
+	pIntelRegister->SegDs  = CPU_DS;
+	pIntelRegister->Edi    = CPU_EDI;
+	pIntelRegister->Esi    = CPU_ESI;
+	pIntelRegister->Ebx    = CPU_EBX;
+	pIntelRegister->Edx    = CPU_EDX;
+	pIntelRegister->Ecx    = CPU_ECX;
+	pIntelRegister->Eax    = CPU_EAX;
+	pIntelRegister->Ebp    = CPU_EBP;
+	pIntelRegister->Eip    = CPU_EIP;
+	pIntelRegister->SegCs  = CPU_CS;
+	pIntelRegister->EFlags = CPU_EFLAG;
+	pIntelRegister->Esp    = CPU_ESP;
+	pIntelRegister->SegSs  = CPU_SS;
+	
+#if defined(SUPPORT_FPU)
+	pIntelRegister->ContextFlags |= 0x00000008; // FPU
+	
+	pIntelRegister->FloatSave.ControlWord   = FPU_CTRLWORD;
+	pIntelRegister->FloatSave.StatusWord    = FPU_STATUSWORD;
+	pIntelRegister->FloatSave.TagWord       = FPU_TAGWORD;
+	pIntelRegister->FloatSave.ErrorOffset   = FPU_INSTPTR_OFFSET;
+	pIntelRegister->FloatSave.ErrorSelector = FPU_INSTPTR_SEG;
+	pIntelRegister->FloatSave.DataOffset    = FPU_DATAPTR_OFFSET;
+	pIntelRegister->FloatSave.DataSelector  = FPU_DATAPTR_SEG;
+	for (int n = 0; n < 8; n++) {
+		for (int i = 0; i < 10; i++) {
+			pIntelRegister->FloatSave.RegisterArea[n * 10 + i] = FPU_REG(n, i);
+		}
+	}
+	pIntelRegister->FloatSave.Cr0NpxState   = (CPU_CR0 & 0xffff) | (FPU_STATUSWORD << 16);
+#endif
+}
+
+void vdd_restore_intel_register()
+{
+	CPU_DR(0) = pIntelRegister->Dr0;
+	CPU_DR(1) = pIntelRegister->Dr1;
+	CPU_DR(2) = pIntelRegister->Dr2;
+	CPU_DR(3) = pIntelRegister->Dr3;
+	CPU_DR(6) = pIntelRegister->Dr6;
+	CPU_DR(7) = pIntelRegister->Dr7;
+	CPU_GS    = pIntelRegister->SegGs;
+	CPU_FS    = pIntelRegister->SegFs;
+	CPU_ES    = pIntelRegister->SegEs;
+	CPU_DS    = pIntelRegister->SegDs;
+	CPU_EDI   = pIntelRegister->Edi;
+	CPU_ESI   = pIntelRegister->Esi;
+	CPU_EBX   = pIntelRegister->Ebx;
+	CPU_EDX   = pIntelRegister->Edx;
+	CPU_ECX   = pIntelRegister->Ecx;
+	CPU_EAX   = pIntelRegister->Eax;
+	CPU_EBP   = pIntelRegister->Ebp;
+	CPU_EIP   = pIntelRegister->Eip;
+	CPU_CS    = pIntelRegister->SegCs;
+//	CPU_EFLAG = pIntelRegister->EFlags;
+	CPU_SET_EFLAG(pIntelRegister->EFlags);
+	CPU_ESP   = pIntelRegister->Esp;
+	CPU_SS    = pIntelRegister->SegSs;
+	
+#if defined(SUPPORT_FPU)
+	FPU_CTRLWORD       = pIntelRegister->FloatSave.ControlWord;
+	FPU_STATUSWORD     = pIntelRegister->FloatSave.StatusWord;
+	FPU_TAGWORD        = pIntelRegister->FloatSave.TagWord;
+	FPU_INSTPTR_OFFSET = pIntelRegister->FloatSave.ErrorOffset;
+	FPU_INSTPTR_SEG    = pIntelRegister->FloatSave.ErrorSelector;
+	FPU_DATAPTR_OFFSET = pIntelRegister->FloatSave.DataOffset;
+	FPU_DATAPTR_SEG    = pIntelRegister->FloatSave.DataSelector;
+	for (int n = 0; n < 8; n++) {
+		for (int i = 0; i < 10; i++) {
+//			FPU_REG(n, i) = pIntelRegister->FloatSave.RegisterArea[n * 10 + i];
+			SET_FPU_REG(n, i, pIntelRegister->FloatSave.RegisterArea[n * 10 + i]);
+		}
+	}
+	CPU_CR0 = (CPU_CR0 & ~0xffff) | (pIntelRegister->FloatSave.Cr0NpxState & 0xffff);
+#endif
 }
 
 PVOID getIntelRegistersPointer()
 {
-	static X86_CONTEXT IntelRegister;
-	
-	memset(&IntelRegister, 0, sizeof(IntelRegister));
-	
-	IntelRegister.ContextFlags  = 0x00010000; // Intel 386
-	IntelRegister.ContextFlags |= 0x00000010; // DR0, DR1, DR2, DR3, DR6, DR7
-	IntelRegister.ContextFlags |= 0x00000004; // DS, ES, FS, GS
-	IntelRegister.ContextFlags |= 0x00000002; // AX, BX, CX, DX, SI, DI
-	IntelRegister.ContextFlags |= 0x00000001; // SS:SP, CS:IP, FLAGS, BP
-	
-	IntelRegister.Dr0    = CPU_DR(0);
-	IntelRegister.Dr1    = CPU_DR(1);
-	IntelRegister.Dr2    = CPU_DR(2);
-	IntelRegister.Dr3    = CPU_DR(3);
-	IntelRegister.Dr6    = CPU_DR(6);
-	IntelRegister.Dr7    = CPU_DR(7);
-	IntelRegister.SegGs  = CPU_GS;
-	IntelRegister.SegFs  = CPU_FS;
-	IntelRegister.SegEs  = CPU_ES;
-	IntelRegister.SegDs  = CPU_DS;
-	IntelRegister.Edi    = CPU_EDI;
-	IntelRegister.Esi    = CPU_ESI;
-	IntelRegister.Ebx    = CPU_EBX;
-	IntelRegister.Edx    = CPU_EDX;
-	IntelRegister.Ecx    = CPU_ECX;
-	IntelRegister.Eax    = CPU_EAX;
-	IntelRegister.Ebp    = CPU_EBP;
-	IntelRegister.Eip    = CPU_EIP;
-	IntelRegister.SegCs  = CPU_CS;
-	IntelRegister.EFlags = CPU_EFLAG;
-	IntelRegister.Esp    = CPU_ESP;
-	IntelRegister.SegSs  = CPU_SS;
-	
-#if defined(SUPPORT_FPU)
-	IntelRegister.ContextFlags |= 0x00000008; // FPU
-	
-	IntelRegister.FloatSave.ControlWord   = FPU_CTRLWORD;
-	IntelRegister.FloatSave.StatusWord    = FPU_STATUSWORD;
-	IntelRegister.FloatSave.TagWord       = FPU_TAGWORD;
-	IntelRegister.FloatSave.ErrorOffset   = FPU_INSTPTR_OFFSET;
-	IntelRegister.FloatSave.ErrorSelector = FPU_INSTPTR_SEG;
-	IntelRegister.FloatSave.DataOffset    = FPU_DATAPTR_OFFSET;
-	IntelRegister.FloatSave.DataSelector  = FPU_DATAPTR_SEG;
-	for (int n = 0; n < 8; n++) {
-		for (int i = 0; i < 10; i++) {
-			IntelRegister.FloatSave.RegisterArea[n * 10 + i] = FPU_REG(n, i);
-		}
-	}
-	IntelRegister.FloatSave.Cr0NpxState   = 0; // ???
-#endif
-	return &IntelRegister;
+	return pIntelRegister;
 }
 
 PBYTE MGetVdmPointer(DWORD addr, DWORD size, BOOL protmode)
@@ -27462,9 +27720,11 @@ BOOL VDDSetDMA(HANDLE hvdd, WORD ch, WORD flag, PVDD_DMA_INFO info)
 
 void VDDSimulate16()
 {
+	vdd_restore_intel_register();
 	while (!(msdos_stat & (REQ_EXIT | REQ_UNSIM16))) {
 		hardware_run_cpu();
 	}
+	vdd_store_intel_register();
 	msdos_stat &= ~REQ_UNSIM16;
 }
 
@@ -28056,10 +28316,10 @@ static VOID DosCallDriver(PAIR32 Driver, DOS_REQUEST_HEADER *Request)
 	// Call the strategy routine, and then the interrupt routine
 	RunCallback16(Driver.w.h, DriverBlock->strategy);
 	RunCallback16(Driver.w.h, DriverBlock->interrupt);
- 
+
 	// Get the request structure from ES:BX
 	memmove(Request, &sda->Request, Request->RequestLength);
- 
+
 	// Restore the registers
 	CPU_AX = tmp_AX;
 	CPU_CX = tmp_CX;

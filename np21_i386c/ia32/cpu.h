@@ -1512,6 +1512,7 @@ void dbg_printf(const char *str, ...);
 #define	FPU_ST(i)		((FPU_STAT_TOP+ (i) ) & 7)
 #endif
 #define	FPU_REG(n,i)		FPU_STAT.reg[n].b[i]
+#define	SET_FPU_REG(n,i,v)	FPU_STAT.reg[n].b[i] = v
 
 /* FPU status register */
 #define	FP_IE_FLAG	(1 << 0)	/* –³Œø‚È“®ì */
