@@ -1279,12 +1279,14 @@ __declspec(dllexport) VOID WINAPI VdmTraceEvent(USHORT Type, USHORT wData, ULONG
 
 __declspec(dllexport) BOOL WINAPI VdmParametersInfo(VDM_INFO_TYPE infotype, PVOID pBuffer, ULONG cbBufferSize)
 {
-	return FALSE;
+	return func.VdmParametersInfo(infotype, pBuffer, cbBufferSize);
 }
 
-__declspec(dllexport) VDM_INFO_TYPE WINAPI VdmGetParametersInfoError(VOID)
+// NOTE: nt_vdd.h says return-value type is VDM_INFO_TYPE, but I believe this is simply the typo
+
+__declspec(dllexport) VDM_ERROR_TYPE WINAPI VdmGetParametersInfoError(VOID)
 {
-	return 0;
+	return func.VdmGetParametersInfoError();
 }
 
 enum btnval
