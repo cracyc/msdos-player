@@ -1494,6 +1494,7 @@ HMODULE hNTVDM = NULL;
 
 static BYTE bytIntelRegister[sizeof(X86_CONTEXT) + 15];
 static X86_CONTEXT* pIntelRegister = NULL;
+static VDM_ERROR_TYPE VdmParametersInfoError = VDM_NO_ERROR;
 
 void cmd_req(char fnc);
 

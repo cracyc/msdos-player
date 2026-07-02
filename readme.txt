@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								6/30/2026
+								7/2/2026
 
 ----- What's This
 
@@ -1160,8 +1160,8 @@ VDD (Virtual Device Driver)
 	VDDAssociateNtHandle
 	VDDRetrieveNtHandle
 	VdmTraceEvent (*10)
-	VdmParametersInfo (*10)
-	VdmGetParametersInfoError (*10)
+	VdmParametersInfo
+	VdmGetParametersInfoError
 	WOWSysErrorBox
 
 Other BOP

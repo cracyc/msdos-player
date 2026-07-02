@@ -70,6 +70,8 @@ typedef struct _X86_CONTEXT {
 	BYTE  ExtendedRegisters[512];
 } X86_CONTEXT;
 
+// from nt_vdd.h in Windows DDK 3790.1830
+
 typedef struct _VDD_IO_HANDLERS {
 	PFNVDD_INB inb_handler;
 	PFNVDD_INW inw_handler;
@@ -99,6 +101,12 @@ typedef enum {
 	VDM_V86,
 	VDM_PM
 } VDM_MODE;
+
+typedef enum {
+	VDM_NO_ERROR,
+	VDM_ERROR_INVALID_BUFFER_SIZE,
+	VDM_ERROR_INVALID_FUNCTION,
+} VDM_ERROR_TYPE;
 
 typedef enum {
 	VDM_GET_TICK_COUNT,
@@ -137,6 +145,8 @@ typedef SHORT (*funcVDDAllocateDosHandle)(ULONG pPDB, PVOID* ppSFT, PVOID* ppJFT
 typedef BOOL (*funcVDDReleaseDosHandle)(ULONG pPDB, SHORT hFile);
 typedef void (*funcVDDAssociateNtHandle)(PVOID pSFT, HANDLE h32File, WORD wAccess);
 typedef HANDLE (*funcVDDRetrieveNtHandle)(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT);
+typedef BOOL (*funcVdmParametersInfo)(VDM_INFO_TYPE infotype, PVOID pBuffer, ULONG cbBufferSize);
+typedef VDM_ERROR_TYPE (*funcVdmGetParametersInfoError)(VOID);
 
 typedef struct _VDD_FUNC_TABLE {
 	funcGetBYTE getAL;
@@ -246,6 +256,8 @@ typedef struct _VDD_FUNC_TABLE {
 	funcVDDReleaseDosHandle VDDReleaseDosHandle;
 	funcVDDAssociateNtHandle VDDAssociateNtHandle;
 	funcVDDRetrieveNtHandle VDDRetrieveNtHandle;
+	funcVdmParametersInfo VdmParametersInfo;
+	funcVdmGetParametersInfoError VdmGetParametersInfoError;
 } VDD_FUNC_TABLE, *PVDD_FUNC_TABLE;
 
 #endif

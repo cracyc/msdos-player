@@ -3032,7 +3032,7 @@ void debugger_main()
 					} else {
 						if((fp = fopen(file_path, "wb")) != NULL) {
 							for(UINT32 addr = start_addr; addr <= end_addr; addr++) {
-								fputc(read_byte(addr & ADDR_MASK),fp);
+								fputc(read_byte(addr & ADDR_MASK), fp);
 							}
 							fclose(fp);
 						} else {
@@ -6957,7 +6957,11 @@ int msdos_open(const char *path, int oflag)
 	}
 	
 	int fd = _open_osfhandle((intptr_t) h, oflag);
-	if(fd == -1) {
+	if(fd >= max_files) {
+		_close(fd);
+		fd = -1;
+		_doserrno = ERROR_TOO_MANY_OPEN_FILES;
+	} else if(fd == -1) {
 		CloseHandle(h);
 	}
 	return(fd);
@@ -22161,6 +22165,26 @@ void msdos_syscall(unsigned num)
 //			break;
 //		}
 	case 0x21:
+		if(num == 0x21 && CPU_AH != 0x50 && CPU_AH != 0x51 && CPU_AH != 0x62 && CPU_AH != 0x64 && CPU_AH < 0x6c) {
+			// from DOSBox commit r4481 (Push registers for most DOS function calls)
+			// This pretends INT 21h service pushes function entry registers onto the stack
+			// and will fix crashes in specific utilities like UNLZEX
+			
+			// NOTE: IRET is already executed to leave INT 21h handler when we reach here
+			// so IP, CS, and EFlags are at the top of dead stack
+//			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP -  2) = CPU_EIP;
+//			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP -  4) = CPU_CS;
+//			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP -  6) = CPU_EFLAG;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP -  8) = CPU_ES;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 10) = CPU_DS;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 12) = CPU_BP;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 14) = CPU_DI;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 16) = CPU_SI;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 18) = CPU_DX;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 20) = CPU_CX;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 22) = CPU_BX;
+			*(UINT16 *)(mem + CPU_SS_BASE + CPU_SP - 24) = CPU_AX;
+		}
 		// MS-DOS System Call
 		msdos_inc_indos();
 		CPU_SET_C_FLAG(0);
@@ -27892,6 +27916,77 @@ HANDLE VDDRetrieveNtHandle(ULONG pPDB, SHORT hFile, PVOID* ppSFT, PVOID* ppJFT)
 	return INVALID_HANDLE_VALUE;
 }
 
+// I confirmed the behavior of VdmParametersInfo() and VdmGetParametersInfoError() on Windows 2000
+
+BOOL VdmParametersInfo(VDM_INFO_TYPE infotype, PVOID pBuffer, ULONG cbBufferSize)
+{
+	// It seems return-value of VdmGetParametersInfoError() never be reset even if VdmParametersInfo() succeeds
+//	VdmParametersInfoError = VDM_NO_ERROR;
+	
+	switch(infotype) {
+	case VDM_GET_TICK_COUNT:
+		if(cbBufferSize == 8) {
+			// It seems to return sec and usec as DWORD values
+			// NOTE: usec value is always (n * 1000), so it is better to use QueryPerformanceCounter()
+			DWORD time = timeGetTime();
+			((DWORD *)pBuffer)[0] = (time / 1000);
+			((DWORD *)pBuffer)[1] = (time % 1000) * 1000;
+			return TRUE;
+		} else {
+			VdmParametersInfoError = VDM_ERROR_INVALID_BUFFER_SIZE;
+		}
+		break;
+	case VDM_GET_TIMER0_INITIAL_COUNT:
+		if(cbBufferSize == 4) {
+			*(DWORD *)pBuffer = PIT_COUNT_VALUE(0);
+			return TRUE;
+		} else {
+			VdmParametersInfoError = VDM_ERROR_INVALID_BUFFER_SIZE;
+		}
+		break;
+	case VDM_GET_LAST_UPDATED_TIMER0_COUNT:
+		if(cbBufferSize == 2) {
+			if(!pit[0].count_latched) {
+				pit_latch_count(0);
+			}
+			*(WORD *)pBuffer = pit[0].latch;
+			return TRUE;
+		} else {
+			VdmParametersInfoError = VDM_ERROR_INVALID_BUFFER_SIZE;
+		}
+		break;
+	case VDM_LATCH_TIMER0_COUNT:
+		if(cbBufferSize == 2) {
+			pit_latch_count(0);
+			*(WORD *)pBuffer = pit[0].latch;
+			return TRUE;
+		} else {
+			VdmParametersInfoError = VDM_ERROR_INVALID_BUFFER_SIZE;
+		}
+		break;
+	case VDM_SET_NEXT_TIMER0_COUNT:
+		if(cbBufferSize == 2) {
+			// When succeeded, I found pBuffer value is CCCCh uing debug build of vdd dll
+			// It seems this command does nothing and pBuffer is not updated
+			return TRUE;
+		} else {
+			VdmParametersInfoError = VDM_ERROR_INVALID_BUFFER_SIZE;
+		}
+		break;
+	default:
+		VdmParametersInfoError = VDM_ERROR_INVALID_FUNCTION;
+		break;
+	}
+	return FALSE;
+}
+
+// NOTE: nt_vdd.h says return-value type is VDM_INFO_TYPE, but I believe this is simply the typo
+
+VDM_ERROR_TYPE VdmGetParametersInfoError(VOID)
+{
+	return VdmParametersInfoError;
+}
+
 BOOL vdd_io_read(int port, int size, void *val)
 {
 	for (int i = 0; i < 5; i++) {
@@ -28055,6 +28150,8 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr)
 	ptr->VDDReleaseDosHandle = VDDReleaseDosHandle;
 	ptr->VDDAssociateNtHandle = VDDAssociateNtHandle;
 	ptr->VDDRetrieveNtHandle = VDDRetrieveNtHandle;
+	ptr->VdmParametersInfo = VdmParametersInfo;
+	ptr->VdmGetParametersInfoError = VdmGetParametersInfoError;
 }
 #endif
 
