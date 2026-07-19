@@ -5489,6 +5489,9 @@ bool update_console_input()
 					}
 				}
 				if(ir[i].EventType & KEY_EVENT) {
+#define ENABLE_DEBUG_IOPORT
+					fprintf(fp_debug_log, "key %s %x %x\n", ir[i].Event.KeyEvent.bKeyDown ? "down" : "up", ir[i].Event.KeyEvent.wVirtualScanCode, ir[i].Event.KeyEvent.uChar.AsciiChar);
+#endif
 					// update keyboard flags in BIOS data area
 					if(ir[i].Event.KeyEvent.dwControlKeyState & CAPSLOCK_ON) {
 						mem[0x417] |= 0x40;
@@ -13046,21 +13049,6 @@ inline void pcbios_int_16h_0ah()
 {
 //	CPU_BX = 0x41ab;	// MF2 Keyboard (usually in translate mode)
 	CPU_BX = 0x83ab;	// MF2 Keyboard (pass-through mode)
-}
-
-inline void pcbios_int_16h_11h()
-{
-	int key_char, key_scan;
-	
-	enter_key_buf_lock();
-	if(pcbios_check_key_buffer(&key_char, &key_scan)) {
-		CPU_AL = key_char;
-		CPU_AH = key_scan;
-		CPU_SET_Z_FLAG(0);
-	} else {
-		CPU_SET_Z_FLAG(1);
-	}
-	leave_key_buf_lock();
 }
 
 inline void pcbios_int_16h_12h()
@@ -22196,7 +22184,7 @@ void msdos_syscall(unsigned num)
 		case 0x09: pcbios_int_16h_09h(); break;
 		case 0x0a: pcbios_int_16h_0ah(); break;
 		case 0x10: pcbios_int_16h_00h(); break;
-		case 0x11: pcbios_int_16h_11h(); break;
+		case 0x11: pcbios_int_16h_01h(); break;
 		case 0x12: pcbios_int_16h_12h(); break;
 		case 0x13: pcbios_int_16h_13h(); break;
 		case 0x14: pcbios_int_16h_14h(); break;
@@ -22992,6 +22980,11 @@ void msdos_syscall(unsigned num)
 		pcbios_update_cursor_position();
 		cursor_moved = false;
 	}
+#ifdef ENABLE_DEBUG_SYSCALL
+	if(num != 0x08 && num != 0x1c) {
+		fprintf(fp_debug_log, "out %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+	}
+#endif
 }
 
 // init
