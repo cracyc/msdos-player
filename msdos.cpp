@@ -1792,12 +1792,20 @@ BOOL MySetConsoleTextAttribute(HANDLE hConsoleOutput, WORD wAttributes)
 
 void read_cursor_pos(HANDLE hStdout, COORD *pos)
 {
-	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	// we need the console stdin, this should be in MyGetConsoleScreenBufferInfo but it
+	// hangs in GetNumberOfConsoleInputEvents
+	HANDLE hStdin = CreateFile("CONIN$", GENERIC_READ, FILE_SHARE_READ, NULL, 3, FILE_ATTRIBUTE_NORMAL, NULL);
 	DWORD count;
 	INPUT_RECORD ir;
 	bool esc_found = false;
 	char buf[20];
 	int bpos = 0;
+
+	if(hStdin == INVALID_HANDLE_VALUE) {
+		pos->X = 1;
+		pos->Y = 1;
+		return;
+	}
 	memset(&buf, 0, 20);
 	pos->X = 1;
 	pos->Y = 1;
@@ -1830,6 +1838,7 @@ void read_cursor_pos(HANDLE hStdout, COORD *pos)
 		buf[i + 1] = 0;
 	}
 	sscanf(buf, "[%hd;%hdR", &pos->Y, &pos->X);
+	CloseHandle(hStdin);
 }
 				
 bool update_console_input();
@@ -3880,14 +3889,8 @@ void exit_handler()
 		temp_file_created = false;
 	}
 	if(kbc_buffer != NULL) {
-		kbc_buffer->release();
 		delete kbc_buffer;
 		kbc_buffer = NULL;
-	}
-	if(key_buffer != NULL) {
-		key_buffer->release();
-		delete key_buffer;
-		key_buffer = NULL;
 	}
 #ifdef EXPORT_DEBUG_TO_FILE
 	if(fp_debug_log != NULL) {
@@ -5142,7 +5145,6 @@ int main(int argc, char *argv[], char *envp[])
 	cursor_moved_by_crtc = false;
 	
 	kbc_buffer = new FIFO(4096);
-	key_buffer = new FIFO(4096);
 	
 	hardware_init();
 	
@@ -5268,14 +5270,8 @@ int main(int argc, char *argv[], char *envp[])
 	hardware_finish();
 	
 	if(kbc_buffer != NULL) {
-		kbc_buffer->release();
 		delete kbc_buffer;
 		kbc_buffer = NULL;
-	}
-	if(key_buffer != NULL) {
-		key_buffer->release();
-		delete key_buffer;
-		key_buffer = NULL;
 	}
 	if(use_service_thread) {
 		DeleteCriticalSection(&input_crit_sect);
@@ -5427,38 +5423,7 @@ bool update_console_input()
 	CONSOLE_SCREEN_BUFFER_INFO csbi = {0};
 	bool result = false;
 	
-	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) == 0) {
-		// win32 pipe connected to stdin?
-		if(GetLastError() == 6) {
-			static BOOL initialized = FALSE;
-			if(!initialized) {
-				while(kbhit()) {
-					_getch();
-				}
-				initialized = TRUE;
-			}
-			while(kbhit()) {
-				int chr1 = _getch();
-				int chr2 = 0;
-				if(chr1 == 0x00 || chr1 == 0xe0) {
-					chr2 = _getch();
-				}
-				if(kbc_buffer != NULL) {
-					enter_key_buf_lock();
-					if(chr1 == 0x00 || chr1 == 0xe0) {
-						set_kbc_buffer(0x00, chr1, 0x00);
-						set_kbc_buffer(0x00, chr2, 0x00);
-					} else {
-						set_kbc_buffer(chr1, 0x00, 0x00);
-					}
-					leave_key_buf_lock();
-				}
-				result = key_changed = true;
-				// IME may be on and it may causes screen scroll up and cursor position change
-				cursor_moved = true;
-			}
-		}
-	} else if(dwNumberOfEvents != 0) {
+	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) && dwNumberOfEvents) {
 		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
@@ -5727,6 +5692,11 @@ bool update_console_input()
 								ctrl_c_pressed = (scn == 0x2e);
 							}
 						}
+						else if(kbc_buffer != NULL) {
+							enter_key_buf_lock();
+							set_kbc_buffer(chr, scn, port_data);
+							leave_key_buf_lock();
+						}
 					}
 					result = key_changed = true;
 					// IME may be on and it may causes screen scroll up and cursor position change
@@ -5771,11 +5741,15 @@ bool update_key_buffer()
 		if(kbc_buffer != NULL) {
 			if(!kbc_empty) {
 				enter_key_buf_lock();
-				if(!kbc_buffer->empty()) {
+				while(!kbc_buffer->empty()) {
 					int key_data = kbc_buffer->read();
-					pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
-					kbd_read_data(); // clear OUTBF
-					buf_empty = false; //pcbios_is_key_buffer_empty();
+					if(!((key_data >> 16) & 0x80)) {
+						pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+						kbd_read_data(); // clear OUTBF
+						buf_empty = false; //pcbios_is_key_buffer_empty();
+						key_port_read = false;
+						break;
+					}
 				}
 				leave_key_buf_lock();
 			}
@@ -12826,15 +12800,11 @@ void pcbios_clear_key_buffer()
 	if(kbc_buffer != NULL) {
 		kbc_buffer->clear();
 	}
-	if(key_buffer != NULL) {
-		key_buffer->clear();
-	}
-	
 	// update key buffer
 	*(UINT16 *)(mem + 0x41a) = *(UINT16 *)(mem + 0x41c); // head = tail
 }
 
-void pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan)
+bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan)
 {
 	// update key buffer
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
@@ -12848,11 +12818,9 @@ void pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan)
 		mem[0x400 + (tail++)] = key_char;
 		mem[0x400 + (tail++)] = key_scan;
 	} else {
-		// store to extra key buffer
-		if(key_buffer != NULL) {
-			key_buffer->write(key_char | (key_scan << 8));
-		}
+		return(false);
 	}
+	return(true);
 }
 
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
@@ -12868,14 +12836,6 @@ bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 		*(UINT16 *)(mem + 0x41a) = next;
 		*key_char = mem[0x400 + (head++)];
 		*key_scan = mem[0x400 + (head++)];
-		
-		// restore from extra key buffer
-		if(key_buffer != NULL) {
-			if(!key_buffer->empty()) {
-				int key_data = key_buffer->read();
-				pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
-			}
-		}
 		return(true);
 	} else {
 		*key_char = 0x00;
@@ -12932,9 +12892,12 @@ void pcbios_update_key_code(bool wait)
 			key_recv  = 0x0000ffff;
 			// we want to read another code
 			if(pcbios_is_key_buffer_empty()) {
-				if(!kbc_buffer->empty()) {
+				while(!kbc_buffer->empty()) {
 					int key_data = kbc_buffer->read();
-					pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+					if(!((key_data >> 16) & 0x80)) {
+						pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+						break;
+					}
 				}
 			}
 		}
@@ -22017,14 +21980,14 @@ void msdos_syscall(unsigned num)
 	case 0x09:
 		enter_key_buf_lock();
 		if(kbc_buffer != NULL && !kbc_buffer->empty()) {
-			if(!(kbd_status & 1)) {
-				// keyboard data is already read, so BIOS cannot read it :-(
-				kbc_buffer->read();
-			} else if(!pcbios_is_key_buffer_full()) {
+			if(!pcbios_is_key_buffer_full()) {
 				// keyboard data is read by PC BIOS and pushed into key buffer
 				int key_data = kbc_buffer->read();
-				pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+				if(!((key_data >> 16) & 0x80)) {
+					pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+				}
 				kbd_read_data(); // clear OUTBF
+				key_port_read = false;
 			}
 		}
 		leave_key_buf_lock();
@@ -22261,6 +22224,8 @@ void msdos_syscall(unsigned num)
 					if(!kbc_buffer->empty()) {
 						int key_data = kbc_buffer->read_not_remove(0);
 						kbd_data = (UINT8)((key_data >> 16) & 0xff);
+						key_port_has_key = true;
+						key_port_read = false;
 						kbd_status |= 1;
 						pic_req(0, 1, 1);
 					}
@@ -24120,14 +24085,24 @@ void hardware_update()
 				if(kbc_buffer != NULL) {
 					enter_key_buf_lock();
 					if(!kbc_buffer->empty()) {
+						// the keyboard port was read without calling
+						// bios int 9 handler so clear stale key code
+						if(key_port_read && key_port_has_key) {
+							kbc_buffer->read();
+						}
+					}
+					if(!kbc_buffer->empty()) {
 						// show top key data in keyboard controller buffer
 						// it will be removed from buffer in IRQ 1 handler
 						int key_data = kbc_buffer->read_not_remove(0);
 						kbd_data = (UINT8)((key_data >> 16) & 0xff);
+						key_port_has_key = true;
+						key_port_read = false;
 						kbd_status |= 1;
 					} else if(!pcbios_is_key_buffer_empty()) {
 						// we want to raise IRQ 1 to notify key buffer is not empty,
 						// but we have no key data in keyboard controller buffer
+						key_port_has_key = false;
 						kbd_data = 0;
 						kbd_status |= 1;
 					}
@@ -25220,7 +25195,6 @@ void sio_release()
 			EnterCriticalSection(&sio_mt[c].csSendData);
 		}
 		if(sio[c].send_buffer != NULL) {
-			sio[c].send_buffer->release();
 			delete sio[c].send_buffer;
 			sio[c].send_buffer = NULL;
 		}
@@ -25229,7 +25203,6 @@ void sio_release()
 			EnterCriticalSection(&sio_mt[c].csRecvData);
 		}
 		if(sio[c].recv_buffer != NULL) {
-			sio[c].recv_buffer->release();
 			delete sio[c].recv_buffer;
 			sio[c].recv_buffer = NULL;
 		}
@@ -25900,6 +25873,7 @@ void kbd_init()
 {
 	kbd_data = kbd_command = 0;
 	kbd_status = 0x18;
+	key_port_has_key = false;
 }
 
 void kbd_reset()
@@ -25938,6 +25912,7 @@ UINT8 kbd_read_data()
 	UINT8 data = kbd_data;
 	kbd_data = 0;
 	kbd_status &= ~1;
+	key_port_read = true;
 	return(data);
 }
 
@@ -25952,6 +25927,7 @@ void kbd_write_data(UINT8 val)
 		default:
 			kbd_data = 0xfa;
 			kbd_status |= 1;
+			key_port_has_key = false;
 			break;
 		}
 		break;
@@ -25966,6 +25942,7 @@ void kbd_write_data(UINT8 val)
 		kbd_command = 0;
 		kbd_data = 0xfa;
 		kbd_status |= 1;
+		key_port_has_key = false;
 		break;
 	}
 	kbd_status &= ~8;
@@ -25982,6 +25959,7 @@ void kbd_write_command(UINT8 val)
 	case 0xd0:
 		kbd_data = ((CPU_ADRSMASK >> 19) & 2) | 1;
 		kbd_status |= 1;
+		key_port_has_key = false;
 		break;
 	case 0xd1:
 		kbd_command = val;

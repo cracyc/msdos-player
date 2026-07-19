@@ -66,8 +66,7 @@ public:
 		buf = (int *)malloc(size * sizeof(int));
 		cnt = rpt = wpt = 0;
 	}
-	void release()
-	{
+	~FIFO() {
 		if(buf != NULL) {
 			free(buf);
 			buf = NULL;
@@ -1321,14 +1320,15 @@ bool cursor_moved_by_crtc;
 bool use_vt = false;
 
 FIFO *kbc_buffer = NULL;
-FIFO *key_buffer = NULL;
 bool key_changed = false;
+bool key_port_read = false;
+bool key_port_has_key = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
 bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
-void pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
+bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan);
 void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data);
 
