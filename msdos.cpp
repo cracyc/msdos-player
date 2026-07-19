@@ -5489,10 +5489,17 @@ bool update_console_input()
 					}
 				}
 				if(ir[i].EventType & KEY_EVENT) {
-#define ENABLE_DEBUG_IOPORT
+#ifdef ENABLE_DEBUG_IOPORT
 					fprintf(fp_debug_log, "key %s %x %x\n", ir[i].Event.KeyEvent.bKeyDown ? "down" : "up", ir[i].Event.KeyEvent.wVirtualScanCode, ir[i].Event.KeyEvent.uChar.AsciiChar);
 #endif
 					// update keyboard flags in BIOS data area
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_INSERT) {
+						if(!(mem[0x417] & 0x80)) {
+							mem[0x417] |= 0x80;
+						} else {
+							mem[0x417] &= ~0x80;
+						}
+					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & CAPSLOCK_ON) {
 						mem[0x417] |= 0x40;
 					} else {
@@ -5534,6 +5541,35 @@ bool update_console_input()
 					} else {
 						mem[0x417] &= ~0x03;
 					}
+					// these might get stuck if they are pressed when focus is lost
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_INSERT) {
+						if(ir[i].Event.KeyEvent.bKeyDown) {
+							mem[0x418] |= 0x80;
+						} else {
+							mem[0x418] &= ~0x80;
+						}
+					}
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_CAPITAL) {
+						if(ir[i].Event.KeyEvent.bKeyDown) {
+							mem[0x418] |= 0x40;
+						} else {
+							mem[0x418] &= ~0x40;
+						}
+					}
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_NUMLOCK) {
+						if(ir[i].Event.KeyEvent.bKeyDown) {
+							mem[0x418] |= 0x20;
+						} else {
+							mem[0x418] &= ~0x20;
+						}
+					}
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_SCROLL) {
+						if(ir[i].Event.KeyEvent.bKeyDown) {
+							mem[0x418] |= 0x10;
+						} else {
+							mem[0x418] &= ~0x10;
+						}
+					}
 					if(ir[i].Event.KeyEvent.dwControlKeyState & LEFT_ALT_PRESSED) {
 						mem[0x418] |= 0x02;
 					} else {
@@ -5544,7 +5580,16 @@ bool update_console_input()
 					} else {
 						mem[0x418] &= ~0x01;
 					}
-					
+					if(ir[i].Event.KeyEvent.dwControlKeyState & RIGHT_ALT_PRESSED) {
+						mem[0x496] |= 0x08;
+					} else {
+						mem[0x496] &= ~0x08;
+					}
+					if(ir[i].Event.KeyEvent.dwControlKeyState & RIGHT_CTRL_PRESSED) {
+						mem[0x496] |= 0x04;
+					} else {
+						mem[0x496] &= ~0x04;
+					}
 					// update dos key buffer
 					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
 					UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
@@ -12995,14 +13040,15 @@ inline void pcbios_int_16h_01h()
 
 inline void pcbios_int_16h_02h()
 {
-	CPU_AL  = KeyLocked (VK_INSERT ) ? 0x80 : 0;
+/*	CPU_AL  = KeyLocked (VK_INSERT ) ? 0x80 : 0;
 	CPU_AL |= KeyLocked (VK_CAPITAL) ? 0x40 : 0;
 	CPU_AL |= KeyLocked (VK_NUMLOCK) ? 0x20 : 0;
 	CPU_AL |= KeyLocked (VK_SCROLL ) ? 0x10 : 0;
 	CPU_AL |= KeyPressed(VK_MENU   ) ? 0x08 : 0;
 	CPU_AL |= KeyPressed(VK_CONTROL) ? 0x04 : 0;
 	CPU_AL |= KeyPressed(VK_LSHIFT ) ? 0x02 : 0;
-	CPU_AL |= KeyPressed(VK_RSHIFT ) ? 0x01 : 0;
+	CPU_AL |= KeyPressed(VK_RSHIFT ) ? 0x01 : 0;*/
+	CPU_AL = mem[0x417];
 }
 
 inline void pcbios_int_16h_03h()
@@ -13055,14 +13101,15 @@ inline void pcbios_int_16h_12h()
 {
 	pcbios_int_16h_02h();
 	
-	CPU_AH  = 0;//KeyPressed(VK_SYSREQ  ) ? 0x80 : 0;
+	/*CPU_AH  = 0;//KeyPressed(VK_SYSREQ  ) ? 0x80 : 0;
 	CPU_AH |= KeyPressed(VK_CAPITAL ) ? 0x40 : 0;
 	CPU_AH |= KeyPressed(VK_NUMLOCK ) ? 0x20 : 0;
 	CPU_AH |= KeyPressed(VK_SCROLL  ) ? 0x10 : 0;
 	CPU_AH |= KeyPressed(VK_RMENU   ) ? 0x08 : 0;
 	CPU_AH |= KeyPressed(VK_RCONTROL) ? 0x04 : 0;
 	CPU_AH |= KeyPressed(VK_LMENU   ) ? 0x02 : 0;
-	CPU_AH |= KeyPressed(VK_LCONTROL) ? 0x01 : 0;
+	CPU_AH |= KeyPressed(VK_LCONTROL) ? 0x01 : 0;*/
+	CPU_AH = (mem[0x418] & 0x73) | (mem[0x496] & 0x0c);
 }
 
 inline void pcbios_int_16h_13h()
@@ -24048,7 +24095,7 @@ void hardware_update()
 		
 		if(prev_tick != cur_tick) {
 			// update keyboard flags
-			UINT8 state;
+/*			UINT8 state;
 			state  = KeyLocked (VK_INSERT  ) ? 0x80 : 0;
 			state |= KeyLocked (VK_CAPITAL ) ? 0x40 : 0;
 			state |= KeyLocked (VK_NUMLOCK ) ? 0x20 : 0;
@@ -24066,7 +24113,7 @@ void hardware_update()
 //			state |= KeyPressed(VK_SYSREQ  ) ? 0x04 : 0;
 			state |= KeyPressed(VK_LMENU   ) ? 0x02 : 0;
 			state |= KeyPressed(VK_LCONTROL) ? 0x01 : 0;
-			mem[0x418] = state;
+			mem[0x418] = state;*/
 			
 			// update console input if needed
 			if(!key_changed || mouse.hidden == 0) {
