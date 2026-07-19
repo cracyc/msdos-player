@@ -7458,6 +7458,14 @@ int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
 {
 	static char prev = 0;
 	
+	if(cpr_pos != -1) {
+		char ret = cpr_buf[cpr_pos++];
+		if(ret) {
+			return(ret);
+		}
+		cpr_pos = -1;
+	}
+
 	msdos_stdio_reopen();
 	
 	process_t *process = msdos_process_info_get(current_psp);
@@ -7928,16 +7936,8 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 					}
 				} else if(data == 'n') {
 					if(param[0] == 6) {
-						char tmp[16];
-						sprintf(tmp, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
-						int len = (int)strlen(tmp);
-						if(kbc_buffer != NULL) {
-							enter_key_buf_lock();
-							for(int i = 0; i < len; i++) {
-								pcbios_set_key_buffer(tmp[i], 0x00);
-							}
-							leave_key_buf_lock();
-						}
+						sprintf(cpr_buf, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
+						cpr_pos = 0;
 					}
 				} else if(data == 's') {
 					stored_x = co.X;

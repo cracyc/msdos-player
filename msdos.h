@@ -1326,6 +1326,9 @@ bool key_port_has_key = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
+char cpr_buf[16];
+int cpr_pos = -1;
+
 bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
 bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
