@@ -338,17 +338,19 @@ __attribute__ ((aligned(4096)))
 #define MAX_EMS_PAGES 2048	/* 32MB */
 
 typedef struct {
-	char name[8];
-	UINT8* buffer;
-	int pages;
-	bool allocated;
-} ems_handle_t;
-
-typedef struct {
 	UINT16 handle;
 	UINT16 page;
 	bool mapped;
 } ems_page_t;
+
+typedef struct {
+	char name[8];
+	UINT8* buffer;
+	int pages;
+	bool allocated;
+	ems_page_t stored[4];
+	bool ems_pages_stored;
+} ems_handle_t;
 
 ems_handle_t ems_handles[MAX_EMS_HANDLES + 1] = {0};
 ems_page_t ems_pages[4];
@@ -1224,12 +1226,6 @@ typedef struct {
 	UINT16 parent_bp;
 	UINT16 parent_si;
 	UINT16 parent_di;
-	struct {
-		UINT16 handle;
-		UINT16 page;
-		bool mapped;
-	} ems_pages[4];
-	bool ems_pages_stored;
 	bool called_by_int2eh;
 } process_t;
 

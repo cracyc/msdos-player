@@ -15922,7 +15922,10 @@ inline void msdos_int_21h_44h()
 		}
 		break;
 	case 0x07: // Get Output Status
-		if(file_mode[file_handler[fd].mode].out) {
+		// EMM386 is never busy on output
+		if(my_strstr(file_handler[fd].path, "EMMXXXX0") != NULL && support_ems) {
+			CPU_AL = 0xff;
+		} else if(file_mode[file_handler[fd].mode].out) {
 			CPU_AL = 0xff;
 		} else {
 			CPU_AL = 0x00;
@@ -20324,46 +20327,40 @@ inline void msdos_int_67h_46h()
 
 inline void msdos_int_67h_47h()
 {
-	// NOTE: the map data should be stored in the specified EMS page, not process data
-	process_t *process = msdos_process_info_get(current_psp);
-	
 	if(!support_ems) {
 		CPU_AH = 0x84;
-//	} else if(!(CPU_DX >= 1 && CPU_DX <= MAX_EMS_HANDLES && ems_handles[CPU_DX].allocated)) {
-//		CPU_AH = 0x83;
-	} else if(process->ems_pages_stored) {
+	} else if(!(CPU_DX >= 1 && CPU_DX <= MAX_EMS_HANDLES && ems_handles[CPU_DX].allocated)) {
+		CPU_AH = 0x83;
+	} else if(ems_handles[CPU_DX].ems_pages_stored) {
 		CPU_AH = 0x8d;
 	} else {
 		for(int i = 0; i < 4; i++) {
-			process->ems_pages[i].handle = ems_pages[i].handle;
-			process->ems_pages[i].page   = ems_pages[i].page;
-			process->ems_pages[i].mapped = ems_pages[i].mapped;
+			ems_handles[CPU_DX].stored[i].page = ems_pages[i].page;
+			ems_handles[CPU_DX].stored[i].handle = ems_pages[i].handle;
+			ems_handles[CPU_DX].stored[i].mapped = ems_pages[i].mapped;
 		}
-		process->ems_pages_stored = true;
+		ems_handles[CPU_DX].ems_pages_stored = true;
 		CPU_AH = 0x00;
 	}
 }
 
 inline void msdos_int_67h_48h()
 {
-	// NOTE: the map data should be restored from the specified EMS page, not process data
-	process_t *process = msdos_process_info_get(current_psp);
-	
 	if(!support_ems) {
 		CPU_AH = 0x84;
-//	} else if(!(CPU_DX >= 1 && CPU_DX <= MAX_EMS_HANDLES && ems_handles[CPU_DX].allocated)) {
-//		CPU_AH = 0x83;
-	} else if(!process->ems_pages_stored) {
+	} else if(!(CPU_DX >= 1 && CPU_DX <= MAX_EMS_HANDLES && ems_handles[CPU_DX].allocated)) {
+		CPU_AH = 0x83;
+	} else if(!ems_handles[CPU_DX].ems_pages_stored) {
 		CPU_AH = 0x8e;
 	} else {
 		for(int i = 0; i < 4; i++) {
-			if(process->ems_pages[i].mapped) {
-				ems_map_page(i, process->ems_pages[i].handle, process->ems_pages[i].page);
+			if(ems_handles[CPU_DX].stored[i].mapped) {
+				ems_map_page(i, ems_handles[CPU_DX].stored[i].handle, ems_handles[CPU_DX].stored[i].page);
 			} else {
 				ems_unmap_page(i);
 			}
 		}
-		process->ems_pages_stored = false;
+		ems_handles[CPU_DX].ems_pages_stored = false;
 		CPU_AH = 0x00;
 	}
 }
