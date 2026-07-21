@@ -1395,12 +1395,7 @@ UINT32 read_word(UINT32 byteaddress)
 	if(byteaddress < MAX_MEM - 1) {
 		if(byteaddress == 0x41c) {
 			// pointer to first free slot in keyboard buffer
-			if(kbc_buffer != NULL) {
-				enter_key_buf_lock();
-				bool empty = pcbios_is_key_buffer_empty();
-				leave_key_buf_lock();
-				if(empty) maybe_idle();
-			}
+			if(pcbios_is_key_buffer_empty()) maybe_idle();
 		}
 		ret = *(UINT16 *)(mem + byteaddress);
 	} else if(byteaddress == MAX_MEM - 1) {
@@ -3865,11 +3860,7 @@ DWORD WINAPI debugger_thread(LPVOID)
 BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
 	if(dwCtrlType == CTRL_BREAK_EVENT) {
-		if(kbc_buffer != NULL) {
-			enter_key_buf_lock();
-			pcbios_clear_key_buffer();
-			leave_key_buf_lock();
-		}
+		pcbios_clear_key_buffer();
 //		key_code = key_recv = 0;
 		return TRUE;
 	} else if(dwCtrlType == CTRL_C_EVENT) {
@@ -5769,12 +5760,7 @@ bool update_key_buffer()
 	bool buf_empty = true;
 	bool kbc_empty = true;
 	
-	if(kbc_buffer != NULL) {
-		enter_key_buf_lock();
-		buf_empty = pcbios_is_key_buffer_empty();
-		leave_key_buf_lock();
-	}
-	if(buf_empty) {
+	if(pcbios_is_key_buffer_empty()) {
 		if(kbc_buffer != NULL) {
 			enter_key_buf_lock();
 			kbc_empty  = kbc_buffer->empty();
@@ -7486,14 +7472,8 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if(key_recv != 0) {
+	if((key_recv != 0) || !pcbios_is_key_buffer_empty()) {
 		return(1);
-	}
-	if(kbc_buffer != NULL) {
-		enter_key_buf_lock();
-		bool empty = pcbios_is_key_buffer_empty();
-		leave_key_buf_lock();
-		if(!empty) return(1);
 	}
 	try {
 		val = _kbhit();
@@ -7547,12 +7527,7 @@ retry:
 		key_recv >>= 16;
 	} else {
 		while(kbc_buffer != NULL && !msdos_exit) {
-			if(kbc_buffer != NULL) {
-				enter_key_buf_lock();
-				bool empty = pcbios_is_key_buffer_empty();
-				leave_key_buf_lock();
-				if(!empty) break;
-			}
+			if(!pcbios_is_key_buffer_empty()) break;
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {
@@ -7561,15 +7536,11 @@ retry:
 					if(chr1 == 0x00 || chr1 == 0xe0) {
 						chr2 = (UINT8)_getch();
 					}
-					if(kbc_buffer != NULL) {
-						enter_key_buf_lock();
-						if(chr1 == 0x00 || chr1 == 0xe0) {
-							pcbios_set_key_buffer(0x00, chr1);
-							pcbios_set_key_buffer(0x00, chr2);
-						} else {
-							pcbios_set_key_buffer(chr1, 0x00);
-						}
-						leave_key_buf_lock();
+					if(chr1 == 0x00 || chr1 == 0xe0) {
+						pcbios_set_key_buffer(0x00, chr1);
+						pcbios_set_key_buffer(0x00, chr2);
+					} else {
+						pcbios_set_key_buffer(chr1, 0x00);
 					}
 				} else {
 					Sleep(10);
@@ -7584,10 +7555,8 @@ retry:
 			// insert CR to terminate input loops
 			key_char = 0x0d;
 			key_scan = 0;
-		} else if(kbc_buffer != NULL) {
-			enter_key_buf_lock();
+		} else {
 			pcbios_get_key_buffer(&key_char, &key_scan);
-			leave_key_buf_lock();
 		}
 	}
 	if(echo && key_char) {
@@ -12816,11 +12785,16 @@ inline void pcbios_int_15h_e8h()
 
 bool pcbios_is_key_buffer_empty()
 {
-	return(*(UINT16 *)(mem + 0x41a) == *(UINT16 *)(mem + 0x41c));
+	bool ret;
+	enter_key_buf_lock();
+	ret = *(UINT16 *)(mem + 0x41a) == *(UINT16 *)(mem + 0x41c);
+	leave_key_buf_lock();
+	return(ret);
 }
 
 bool pcbios_is_key_buffer_full()
 {
+	enter_key_buf_lock();
 	// check only key buffer in work area
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
@@ -12828,33 +12802,40 @@ bool pcbios_is_key_buffer_full()
 	if(next >= *(UINT16 *)(mem + 0x482)) {
 		next = *(UINT16 *)(mem + 0x480);
 	}
+	leave_key_buf_lock();
 	return(next == head);
 }
 
 int pcbios_get_key_buffer_count()
 {
 	// check only key buffer in work area
+	enter_key_buf_lock();
 	int head = *(UINT16 *)(mem + 0x41a);
 	int tail = *(UINT16 *)(mem + 0x41c);
 	if((tail -= head) < 0) {
 		tail += *(UINT16 *)(mem + 0x482);
 		tail -= *(UINT16 *)(mem + 0x480);
 	}
+	leave_key_buf_lock();
 	return((int)(tail / 2));
 }
 
 void pcbios_clear_key_buffer()
 {
+	enter_key_buf_lock();
 	if(kbc_buffer != NULL) {
 		kbc_buffer->clear();
 	}
 	// update key buffer
 	*(UINT16 *)(mem + 0x41a) = *(UINT16 *)(mem + 0x41c); // head = tail
+	leave_key_buf_lock();
 }
 
 bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan)
 {
 	// update key buffer
+	bool ret = true;
+	enter_key_buf_lock();
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
 	UINT16 next = tail + 2;
@@ -12866,14 +12847,17 @@ bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan)
 		mem[0x400 + (tail++)] = key_char;
 		mem[0x400 + (tail++)] = key_scan;
 	} else {
-		return(false);
+		ret = false;
 	}
-	return(true);
+	leave_key_buf_lock();
+	return(ret);
 }
 
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 {
 	// update key buffer
+	bool ret;
+	enter_key_buf_lock();
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
 	UINT16 next = head + 2;
@@ -12884,12 +12868,14 @@ bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 		*(UINT16 *)(mem + 0x41a) = next;
 		*key_char = mem[0x400 + (head++)];
 		*key_scan = mem[0x400 + (head++)];
-		return(true);
+		ret = true;
 	} else {
 		*key_char = 0x00;
 		*key_scan = 0x00;
-		return(false);
+		ret = false;
 	}
+	leave_key_buf_lock();
+	return(ret);
 }
 
 void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data)
@@ -12902,37 +12888,35 @@ void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data)
 bool pcbios_check_key_buffer(int *key_char, int *key_scan)
 {
 	// do not remove from key buffer
+	bool ret;
+	enter_key_buf_lock();
 	UINT16 head = *(UINT16 *)(mem + 0x41a);
 	UINT16 tail = *(UINT16 *)(mem + 0x41c);
 	if(head != tail) {
 		*key_char = mem[0x400 + (head++)];
 		*key_scan = mem[0x400 + (head++)];
-		return(true);
+		ret = true;
 	} else {
 		*key_char = 0x00;
 		*key_scan = 0x00;
-		return(false);
+		ret = false;
 	}
+	leave_key_buf_lock();
+	return(ret);
 }
 
 void pcbios_update_key_code(bool wait)
 {
-	if(kbc_buffer != NULL) {
-		enter_key_buf_lock();
-		bool empty = pcbios_is_key_buffer_empty();
-		leave_key_buf_lock();
-		if(empty) {
-			if(!update_key_buffer()) {
-				if(wait) {
-					Sleep(10);
-				} else {
-					maybe_idle();
-				}
+	if(pcbios_is_key_buffer_empty()) {
+		if(!update_key_buffer()) {
+			if(wait) {
+				Sleep(10);
+			} else {
+				maybe_idle();
 			}
 		}
 	}
 	if(kbc_buffer != NULL) {
-		enter_key_buf_lock();
 		UINT8 key_char, key_scan;
 		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
 			key_code  = key_char << 0;
@@ -12954,7 +12938,6 @@ void pcbios_update_key_code(bool wait)
 			key_code |= key_scan << 24;
 			key_recv |= 0xffff0000;
 		}
-		leave_key_buf_lock();
 	}
 }
 
@@ -13070,12 +13053,11 @@ inline void pcbios_int_16h_03h()
 
 inline void pcbios_int_16h_05h()
 {
-	if(kbc_buffer != NULL) {
-		enter_key_buf_lock();
-		pcbios_set_key_buffer(CPU_CL, CPU_CH);
-		leave_key_buf_lock();
+	if(pcbios_set_key_buffer(CPU_CL, CPU_CH)) {
+		CPU_AL = 0x00;
+	} else {
+		CPU_AL = 0x01;
 	}
-	CPU_AL = 0x00;
 }
 
 inline void pcbios_int_16h_09h()
@@ -13296,25 +13278,20 @@ inline void pcbios_int_16h_f1h()
 
 inline void pcbios_int_16h_f5h()
 {
-	enter_key_buf_lock();
-	if(!pcbios_is_key_buffer_full()) {
-		pcbios_set_key_buffer(CPU_BL, CPU_BH);
+	if(!pcbios_set_key_buffer(CPU_BL, CPU_BH)) {
 		CPU_AX = pcbios_get_key_buffer_count();
 	} else {
 		CPU_AX = 0xffff;
 	}
-	leave_key_buf_lock();
 }
 
 inline void pcbios_int_16h_f6h()
 {
-	enter_key_buf_lock();
 	if(!pcbios_is_key_buffer_full()) {
 		CPU_AX = pcbios_get_key_buffer_count();
 	} else {
 		CPU_AX = 0xffff;
 	}
-	leave_key_buf_lock();
 //	CPU_BX = 0x3130; // J-3100
 }
 
