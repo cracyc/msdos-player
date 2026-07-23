@@ -7458,6 +7458,62 @@ int msdos_read(int fd, void *buffer, unsigned int count)
 	return(_read(fd, buffer, count));
 }
 
+int console_kbhit()
+{
+	if(!pcbios_is_key_buffer_empty()) return(1);
+	if((kbc_buffer == NULL) || !update_console_input()) return(0);
+	// if we are in vm86 mode, this probably won't work
+	enter_key_buf_lock();
+	if(*(UINT16 *)(mem + 4 * 9 + 0) == (IRET_SIZE + 5 * 9) &&
+	   *(UINT16 *)(mem + 4 * 9 + 2) == (IRET_TOP >> 4)) {
+		int ret = 0;
+		while(!kbc_buffer->empty()) {
+			int key_data = kbc_buffer->read();
+			if(!((key_data >> 16) & 0x80)) {
+				pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
+				ret = 1;
+				break;
+			}
+		}
+		leave_key_buf_lock();
+		return(ret);
+	}
+	if(!CPU_I_FLAG) {
+		leave_key_buf_lock();
+		return(0);  // can't do an irq with I flag clear
+	}
+	// fake a kbd irq without calling pic_req, if that causes problems
+	// then we need to make sure irq 1 is set in service and not irq 0
+	while(!msdos_exit && pcbios_is_key_buffer_empty() && !kbc_buffer->empty()) {
+		int key_data = kbc_buffer->read_not_remove(0);
+		kbd_data = (UINT8)((key_data >> 16) & 0xff);
+		key_port_has_key = true;
+		key_port_read = false;
+		kbd_status |= 1;
+		UINT16 tmp_cs = CPU_CS;
+		UINT32 tmp_eip = CPU_EIP;
+
+		CPU_PUSHF();
+		CPU_CALL_FAR(*(UINT16 *)(mem + 4 * 9 + 2), *(UINT16 *)(mem + 4 * 9 + 0));
+		CPU_SET_I_FLAG(0);
+		while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
+			try {
+				hardware_run_cpu();
+			} catch(...) {
+			}
+		}
+		// if the int 9 handler isn't reading the key then bail
+		// as it will loop infinitely, this should never happen
+		if(kbd_status & 1) break;
+		// if the bios int 9 handler isn't called, remove the stale key
+		// hopefully the new handler will fill the key buffer
+		if(key_port_read) kbc_buffer->read();
+	}
+	leave_key_buf_lock();
+	if(!pcbios_is_key_buffer_empty()) return(1);
+	return(0);
+}
+
 int msdos_kbhit()
 {
 	msdos_stdio_reopen();
@@ -12908,7 +12964,7 @@ bool pcbios_check_key_buffer(int *key_char, int *key_scan)
 void pcbios_update_key_code(bool wait)
 {
 	if(pcbios_is_key_buffer_empty()) {
-		if(!update_key_buffer()) {
+		if(!console_kbhit()) {
 			if(wait) {
 				Sleep(10);
 			} else {
@@ -12916,28 +12972,18 @@ void pcbios_update_key_code(bool wait)
 			}
 		}
 	}
-	if(kbc_buffer != NULL) {
-		UINT8 key_char, key_scan;
-		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
-			key_code  = key_char << 0;
-			key_code |= key_scan << 8;
-			key_recv  = 0x0000ffff;
-			// we want to read another code
-			if(pcbios_is_key_buffer_empty()) {
-				while(!kbc_buffer->empty()) {
-					int key_data = kbc_buffer->read();
-					if(!((key_data >> 16) & 0x80)) {
-						pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
-						break;
-					}
-				}
-			}
-		}
-		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
-			key_code |= key_char << 16;
-			key_code |= key_scan << 24;
-			key_recv |= 0xffff0000;
-		}
+	UINT8 key_char, key_scan;
+	if(pcbios_get_key_buffer(&key_char, &key_scan)) {
+		key_code  = key_char << 0;
+		key_code |= key_scan << 8;
+		key_recv  = 0x0000ffff;
+		// we want to read another code
+		console_kbhit();
+	}
+	if(pcbios_get_key_buffer(&key_char, &key_scan)) {
+		key_code |= key_char << 16;
+		key_code |= key_scan << 24;
+		key_recv |= 0xffff0000;
 	}
 }
 
