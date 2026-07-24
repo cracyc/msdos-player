@@ -5484,7 +5484,7 @@ bool update_console_input()
 					fprintf(fp_debug_log, "key %s %x %x\n", ir[i].Event.KeyEvent.bKeyDown ? "down" : "up", ir[i].Event.KeyEvent.wVirtualScanCode, ir[i].Event.KeyEvent.uChar.AsciiChar);
 #endif
 					// update keyboard flags in BIOS data area
-					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_INSERT) {
+					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_INSERT && ir[i].Event.KeyEvent.bKeyDown) {
 						if(!(mem[0x417] & 0x80)) {
 							mem[0x417] |= 0x80;
 						} else {
@@ -5584,6 +5584,7 @@ bool update_console_input()
 					// update dos key buffer
 					UINT8 chr = ir[i].Event.KeyEvent.uChar.AsciiChar;
 					UINT8 scn = ir[i].Event.KeyEvent.wVirtualScanCode & 0xff;
+					UINT8 enh = ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00;
 					UINT8 scn_old = scn;
 					
 					if(ir[i].Event.KeyEvent.bKeyDown) {
@@ -5673,7 +5674,7 @@ bool update_console_input()
 										if(scn >= 0x78 && scn != 0x84) {
 											set_kbc_buffer(0x00, 0x00, 0x00);
 										} else {
-											set_kbc_buffer(0x00, ir[i].Event.KeyEvent.dwControlKeyState & ENHANCED_KEY ? 0xe0 : 0x00, 0x00);
+											set_kbc_buffer(0x00, enh, enh);
 										}
 									}
 									set_kbc_buffer(chr, scn, port_data);
@@ -5733,6 +5734,7 @@ bool update_console_input()
 						}
 						else if(kbc_buffer != NULL) {
 							enter_key_buf_lock();
+							if(enh) set_kbc_buffer(0x00, enh, enh);
 							set_kbc_buffer(chr, scn, port_data);
 							leave_key_buf_lock();
 						}
@@ -7478,9 +7480,9 @@ int console_kbhit()
 		leave_key_buf_lock();
 		return(ret);
 	}
-	if(!CPU_I_FLAG) {
+	if(!CPU_I_FLAG || (pic[0].imr & 2)) {
 		leave_key_buf_lock();
-		return(0);  // can't do an irq with I flag clear
+		return(0);  // can't do an irq with I flag clear or irq 1 disabled
 	}
 	// fake a kbd irq without calling pic_req, if that causes problems
 	// then we need to make sure irq 1 is set in service and not irq 0
