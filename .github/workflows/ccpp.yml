@@ -11,6 +11,10 @@ jobs:
     - uses: actions/checkout@master
     - run: mkdir -p binary
       working-directory: .
+    - name: make i86
+      run: make -f Makefile.mingw i86
+    - name: make v30
+      run: make -f Makefile.mingw v30
     - name: make i286
       run: make -f Makefile.mingw i286
     - name: make i386
