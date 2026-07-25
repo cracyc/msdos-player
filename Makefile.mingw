@@ -62,7 +62,10 @@ endif
 .SUFFIXES:
 #.SUFFIXES: $(X) .$(A) .$(O) .cpp .c .h
 
-
+CFLAGS_I86 = $(CFLAGS) -I. -DHAS_I86
+CXXFLAGS_I86 = $(CFLAGS_I86)
+CFLAGS_V30 = $(CFLAGS) -I. -DHAS_V30
+CXXFLAGS_V30 = $(CFLAGS_V30)
 CFLAGS_I286 = $(CFLAGS) -I. -DHAS_I286
 CXXFLAGS_I286 = $(CFLAGS_I286) 
 CFLAGS_I386 = $(CFLAGS) -I. -DHAS_I386 -Imame/lib/softfloat/source/include
@@ -84,6 +87,8 @@ OUTD_BASE = .$(D)binary$(D)
 #TARGET_I286 = $(OUTD_BASE)i286$(D)msdos$(X)
 #TARGET_I386 = $(OUTD_BASE)i386$(D)msdos$(X)
 #TARGET_I486 = $(OUTD_BASE)i486$(D)msdos$(X)
+TARGET_I86 = $(OUTD_BASE)msdos_i86$(X)
+TARGET_V30 = $(OUTD_BASE)msdos_V30$(X)
 TARGET_I286 = $(OUTD_BASE)msdos_i286$(X)
 TARGET_I386 = $(OUTD_BASE)msdos_i386$(X)
 TARGET_I486 = $(OUTD_BASE)msdos_i486$(X)
@@ -92,23 +97,26 @@ TARGET_NTVDM = $(OUTD_BASE)ntvdm$(X)
 SRCS_I86 = \
 	$(SRCD_I86)ea.h \
 	$(SRCD_I86)host.h \
-	$(SRCD_I86)i286.c \
-	$(SRCD_I86)i286.h \
 	$(SRCD_I86)i86.c \
 	$(SRCD_I86)i86.h \
 	$(SRCD_I86)i86priv.h \
 	$(SRCD_I86)i86time.c \
 	$(SRCD_I86)instr186.c \
 	$(SRCD_I86)instr186.h \
-	$(SRCD_I86)instr286.c \
-	$(SRCD_I86)instr286.h \
 	$(SRCD_I86)instr86.c \
 	$(SRCD_I86)instr86.h \
 	$(SRCD_I86)modrm.h \
-	$(SRCD_I86)modrm286.h \
 	$(SRCD_I86)table186.h \
-	$(SRCD_I86)table286.h \
 	$(SRCD_I86)table86.h
+
+SRCS_I286 = \
+	$(SRCS_I86) \
+	$(SRCD_I86)i286.c \
+	$(SRCD_I86)instr286.c \
+	$(SRCD_I86)instr286.h \
+	$(SRCD_I86)i286.h \
+	$(SRCD_I86)modrm286.h \
+	$(SRCD_I86)table286.h
 
 SRCS_I386DASM = \
 	$(SRCD_I386)i386dasm.c
@@ -137,7 +145,11 @@ SRCS_PENTIUM = \
 	$(SRCS_I486) \
 	$(SRCD_I386)pentops.c
 
-all : i286 i386 i486 ntvdm
+all : i86 v30 i286 i386 i486 ntvdm
+
+i86: $(TARGET_I86)
+
+v30: $(TARGET_V30)
 
 i286: $(TARGET_I286)
 
@@ -147,7 +159,21 @@ i486: $(TARGET_I486)
 
 ntvdm: $(TARGET_NTVDM)
 
-$(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+$(TARGET_I86) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+	$(CXX) $(CXXFLAGS_I86) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
+$(TARGET_V30) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+	$(CXX) $(CXXFLAGS_V30) $(CFLAGS_EXTRA) \
+		$(CFLAGS_OX) \
+		$(SRCD_BASE)msdos.cpp \
+		$(LIBS) $(LIBS_EXTRA) \
+		$(LDFLAGS) $(LDFLAGS_EXTRA)
+
+$(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I286) $(SRCS_I86DASM)
 	$(CXX) $(CXXFLAGS_I286) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
 		$(SRCD_BASE)msdos.cpp \

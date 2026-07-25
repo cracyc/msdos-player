@@ -762,14 +762,6 @@ static void i80286_load_flags(UINT16 flags, int cpl)
 	else if(!PM) (flags &= ~0xf000);
 	ExpandFlags(flags);
 	m_flags = flags;
-
-	if (m_TF) PREFIX(_trap)();
-	/* if the IF is set, and an interrupt is pending, signal an interrupt */
-	if (m_IF && m_irq_state)
-	{
-		i80286_interrupt_descriptor(pic_ack(), 2, -1);
-		m_irq_state = CLEAR_LINE;
-	}
 }
 
 static void PREFIX286(_popf)()

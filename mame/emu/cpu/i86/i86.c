@@ -242,6 +242,14 @@ static CPU_EXECUTE( i8086 )
 		return;
 	}
 
+	if (m_TF) PREFIX(_trap)();
+	/* if the IF is set, and an interrupt is pending, signal an interrupt */
+	if (m_IF && m_irq_state)
+	{
+		PREFIX(_interrupt)((UINT32)-1);
+		m_irq_state = CLEAR_LINE;
+	}
+
 #ifdef USE_DEBUGGER
 	if(now_debugging) {
 		if(force_suspend) {
