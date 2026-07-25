@@ -2635,7 +2635,7 @@ static void PREFIX86(_f6pre)()
 	case 0x18:  /* NEG Eb */
 		tmp2=0;
 		SUBB(tmp2,tmp);
-		SetCFB(tmp2);
+		SetCFB(-tmp);
 		PutbackRMByte(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AL, Eb */
@@ -2740,7 +2740,7 @@ static void PREFIX86(_f7pre)()
 	case 0x18:  /* NEG Ew */
 		tmp2 = 0;
 		SUBW(tmp2,tmp);
-		SetCFW(tmp2);
+		SetCFW(-tmp);
 		PutbackRMWord(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AX, Ew */
