@@ -34,11 +34,6 @@
 
 #include "instructions/fpu/fp.h"
 
-#if defined(SUPPORT_IA32_HAXM)
-#include "i386hax/haxfunc.h"
-#include "i386hax/haxcore.h"
-#endif
-
 void
 ia32_initreg(void)
 {
@@ -116,9 +111,13 @@ ia32shut(void)
 void
 ia32a20enable(BOOL enable)
 {
+//	UINT32 newmask = (enable) ? 0xffffffff : 0x000fffff;
+	UINT32 newmask = (enable) ? (~0) : (~(1 << 20));
 
-//	CPU_ADRSMASK = (enable)?0xffffffff:0x00ffffff;
-	CPU_ADRSMASK = (enable)?(~0):(~(1 << 20));
+	if (CPU_ADRSMASK != newmask) {
+		CPU_ADRSMASK = newmask;
+		tlb_flush_all();
+	}
 }
 
 //#pragma optimize("", off)
@@ -225,20 +224,6 @@ ia32_interrupt(int vect, int soft)
 {
 
 //	TRACEOUT(("int (%x, %x) PE=%d VM=%d",  vect, soft, CPU_STAT_PM, CPU_STAT_VM86));
-#if defined(SUPPORT_IA32_HAXM)
-	if(np2hax.enable && !np2hax.emumode && np2hax.hVCPUDevice){
-		np2haxcore.hltflag = 0;
-		if(!soft){
-			HAX_TUNNEL *tunnel;
-			tunnel = (HAX_TUNNEL*)np2hax.tunnel.va;
-			if(np2haxstat.irq_reqidx_end - np2haxstat.irq_reqidx_cur < 250){
-				np2haxstat.irq_req[np2haxstat.irq_reqidx_end] = vect;
-				np2haxstat.irq_reqidx_end++;
-			}
-			//i386haxfunc_vcpu_interrupt(vect);
-		}
-	}else
-#endif
 	{
 		if (!soft) {
 			INTERRUPT(vect, INTR_TYPE_EXTINTR);

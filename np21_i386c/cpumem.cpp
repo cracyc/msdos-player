@@ -1,6 +1,6 @@
 //#include	"compiler.h"
 
-#if 1
+#if 0
 #undef	TRACEOUT
 //#define USE_TRACEOUT_VS
 //#define MEM_BDA_TRACEOUT
@@ -25,14 +25,27 @@ static void trace_fmt_ex(const char *fmt, ...)
 #ifndef NP2_MEMORY_ASM
 
 #include	"cpucore.h"
-#if defined(SUPPORT_IA32_HAXM)
-#include	"i386hax/haxfunc.h"
-#include	"i386hax/haxcore.h"
-#endif
+
+// ページング時にメモリ直接アクセス可能かどうか調べて可能ならポインタを返す。不可ならNULLを返す。
+// 複雑な判定は止めて少しでも怪しければNULLを返す
+UINT8 * MEMCALL memp_get_direct_host_page(UINT32 address)
+{
+	address &= CPU_ADRSMASK;
+	address &= 0xfffff000UL;
+
+	UINT8 *ptr = get_mem_ptr(address);
+
+	if (ptr != NULL) {
+		if ((ptr + CPU_PAGE_SIZE - 1) == get_mem_ptr(address + CPU_PAGE_SIZE - 1)) {
+			return ptr;
+		}
+	}
+	return NULL;
+}
 
 UINT32 codefetch_address;
 
-// ----
+// ---- 通常メモリ読み込み関数
 REG8 MEMCALL memp_read8(UINT32 address) {
 	
 	address = address & CPU_ADRSMASK;
@@ -51,7 +64,26 @@ UINT32 MEMCALL memp_read32(UINT32 address) {
 	return read_dword(address);
 }
 
-// ----
+// ----- 高速版読み込み　普通のメモリを優先的に処理する
+REG8 MEMCALL memp_read8_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_byte(address);
+}
+
+REG16 MEMCALL memp_read16_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_word(address);
+}
+
+UINT32 MEMCALL memp_read32_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_dword(address);
+}
+
+// ---- 通常メモリ読み込み関数（codefetch用）
 PF_UINT8 MEMCALL memp_read8_codefetch(UINT32 address) {
 	
 	codefetch_address = address & CPU_ADRSMASK;
@@ -70,7 +102,26 @@ UINT32 MEMCALL memp_read32_codefetch(UINT32 address) {
 	return read_dword(address);
 }
 
-// ----
+// ---- 高速版読み込み（codefetch用）　普通のメモリを優先的に処理する
+PF_UINT8 MEMCALL memp_read8_codefetch_fast(UINT32 address) {
+
+	codefetch_address = address & CPU_ADRSMASK;
+	return read_byte(codefetch_address);
+}
+
+PF_UINT16 MEMCALL memp_read16_codefetch_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_word(address);
+}
+
+PF_UINT32 MEMCALL memp_read32_codefetch_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_dword(address);
+}
+
+// ---- 通常メモリ読み込み関数（paging用）
 PF_UINT8 MEMCALL memp_read8_paging(UINT32 address) {
 	
 	address = address & CPU_ADRSMASK;
@@ -89,6 +140,25 @@ PF_UINT32 MEMCALL memp_read32_paging(UINT32 address) {
 	return read_dword(address);
 }
 
+PF_UINT8 MEMCALL memp_read8_paging_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_byte(address);
+}
+
+PF_UINT16 MEMCALL memp_read16_paging_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_word(address);
+}
+
+PF_UINT32 MEMCALL memp_read32_paging_fast(UINT32 address) {
+
+	address = address & CPU_ADRSMASK;
+	return read_dword(address);
+}
+
+// ---- 通常メモリ書き込み関数
 void MEMCALL memp_write8(UINT32 address, REG8 value) {
 	
 	address = address & CPU_ADRSMASK;
@@ -107,6 +177,26 @@ void MEMCALL memp_write32(UINT32 address, UINT32 value) {
 	write_dword(address, value);
 }
 
+// ---- 高速版書き込み　普通のメモリを優先的に処理する
+void MEMCALL memp_write8_fast(UINT32 address, REG8 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_byte(address, value);
+}
+
+void MEMCALL memp_write16_fast(UINT32 address, REG16 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_word(address, value);
+}
+
+void MEMCALL memp_write32_fast(UINT32 address, UINT32 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_dword(address, value);
+}
+
+// ---- 通常メモリ書き込み関数（paging用）
 void MEMCALL memp_write8_paging(UINT32 address, REG8 value) {
 	
 	address = address & CPU_ADRSMASK;
@@ -125,12 +215,40 @@ void MEMCALL memp_write32_paging(UINT32 address, UINT32 value) {
 	write_dword(address, value);
 }
 
+// ---- 高速版書き込み（paging用）　普通のメモリを優先的に処理する
+void MEMCALL memp_write8_paging_fast(UINT32 address, REG8 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_byte(address, value);
+}
+
+void MEMCALL memp_write16_paging_fast(UINT32 address, REG16 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_word(address, value);
+}
+
+void MEMCALL memp_write32_paging_fast(UINT32 address, UINT32 value) {
+
+	address = address & CPU_ADRSMASK;
+	write_dword(address, value);
+}
+
 
 void MEMCALL memp_reads(UINT32 address, void *dat, UINT leng) {
 
 	UINT8 *out = (UINT8 *)dat;
+	UINT8 *ptr;
 	
-	//address = address & CPU_ADRSMASK;
+	/* fast memory access */
+	address = address & CPU_ADRSMASK;
+
+	if ((ptr = get_mem_ptr(address)) != NULL) {
+		if ((ptr + leng - 1) == get_mem_ptr(address + leng - 1)) {
+			CopyMemory(dat, ptr, leng);
+			return;
+		}
+	}
 
 	/* slow memory access */
 	while (leng-- > 0) {
@@ -141,8 +259,17 @@ void MEMCALL memp_reads(UINT32 address, void *dat, UINT leng) {
 void MEMCALL memp_writes(UINT32 address, const void *dat, UINT leng) {
 
 	const UINT8 *out = (UINT8 *)dat;
+	UINT8 *ptr;
 
-	//address = address & CPU_ADRSMASK;
+	/* fast memory access */
+	address = address & CPU_ADRSMASK;
+
+	if ((ptr = get_mem_ptr(address)) != NULL) {
+		if ((ptr + leng - 1) == get_mem_ptr(address + leng - 1)) {
+			CopyMemory(ptr, dat, leng);
+			return;
+		}
+	}
 
 	/* slow memory access */
 	while (leng-- > 0) {

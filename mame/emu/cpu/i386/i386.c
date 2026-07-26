@@ -1051,7 +1051,7 @@ static void i386_trap_with_error(int irq, int irq_gate, int trap_level, UINT32 e
 				PUSH16(error);
 		}
 	}
-	catch(UINT64 e)
+	catch(UINT64)
 	{
 		trap_level++;
 		if(trap_level == 1)

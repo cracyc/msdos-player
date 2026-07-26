@@ -1329,6 +1329,24 @@ extern "C" {
 	memory accessors
 ---------------------------------------------------------------------------- */
 
+UINT8 *get_mem_ptr(UINT32 byteaddress)
+{
+	if(byteaddress < MEMORY_END) {
+		return mem + byteaddress;
+	} else if(byteaddress >= DUMMY_TOP) {
+#if defined(HAS_I386)
+		if(byteaddress < MAX_MEM) {
+			return mem + byteaddress;
+		} else if(byteaddress >= 0xffff8000) {
+			return mem + (byteaddress & 0xfffff);
+		}
+#else
+		return mem + byteaddress;
+#endif
+	}
+	return NULL;
+}
+
 #ifdef USE_DEBUGGER
 static void check_bp(UINT32 address, break_point_t *bp, int size)
 {
@@ -1395,7 +1413,9 @@ UINT32 read_word(UINT32 byteaddress)
 	if(byteaddress < MAX_MEM - 1) {
 		if(byteaddress == 0x41c) {
 			// pointer to first free slot in keyboard buffer
-			if(pcbios_is_key_buffer_empty()) maybe_idle();
+			if(pcbios_is_key_buffer_empty()) {
+				maybe_idle();
+			}
 		}
 		ret = *(UINT16 *)(mem + byteaddress);
 	} else if(byteaddress == MAX_MEM - 1) {
@@ -5731,12 +5751,13 @@ bool update_console_input()
 								}
 								ctrl_c_pressed = (scn == 0x2e);
 							}
-						}
-						else if(kbc_buffer != NULL) {
-							enter_key_buf_lock();
-							if(enh) set_kbc_buffer(0x00, enh, enh);
-							set_kbc_buffer(chr, scn, port_data);
-							leave_key_buf_lock();
+						} else {
+							if(kbc_buffer != NULL) {
+								enter_key_buf_lock();
+								if(enh) set_kbc_buffer(0x00, enh, enh);
+								set_kbc_buffer(chr, scn, port_data);
+								leave_key_buf_lock();
+							}
 						}
 					}
 					result = key_changed = true;
@@ -7551,7 +7572,7 @@ int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
 		}
 		cpr_pos = -1;
 	}
-
+	
 	msdos_stdio_reopen();
 	
 	process_t *process = msdos_process_info_get(current_psp);
@@ -7585,7 +7606,9 @@ retry:
 		key_recv >>= 16;
 	} else {
 		while(kbc_buffer != NULL && !msdos_exit) {
-			if(!pcbios_is_key_buffer_empty()) break;
+			if(!pcbios_is_key_buffer_empty()) {
+				break;
+			}
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 				if(_kbhit()) {

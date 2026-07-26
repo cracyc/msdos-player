@@ -63,6 +63,8 @@
 #define USE_CPU_INLINEINST
 #define USE_CPU_DIRECTREG
 #define USE_CPU_EIPMASK
+#define USE_CPU_BULKREP
+//#define USE_LEGACY_MEMORY_ACCESS
 //#define USE_CLOCK
 //#define IA32_INSTRUCTION_TRACE
 #define IA32_REBOOT_ON_PANIC
@@ -474,10 +476,6 @@ typedef struct {
 
 	/* protected by cpu shut */
 	UINT8		cpu_type;
-#if 0
-	UINT8		itfbank;
-	UINT16		ram_d0;
-#endif
 #if defined(USE_CLOCK)
 	SINT32		remainclock;
 	SINT32		baseclock;
@@ -1294,22 +1292,6 @@ do { \
 #define	CPU_MODE_SUPERVISER	0
 #define	CPU_MODE_USER		(1 << 3)
 
-#if defined(SUPPORT_IA32_HAXM)
-#define CPU_CLI \
-do { \
-	CPU_FLAG &= ~I_FLAG; \
-	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG); \
-	np2haxstat.update_regs = 1; \
-} while (/*CONSTCOND*/0)
-
-#define CPU_STI \
-do { \
-	CPU_FLAG |= I_FLAG; \
-	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG) ; \
-	np2haxstat.update_regs = 1; \
-} while (/*CONSTCOND*/0)
-
-#else
 #define CPU_CLI \
 do { \
 	CPU_FLAG &= ~I_FLAG; \
@@ -1321,7 +1303,6 @@ do { \
 	CPU_FLAG |= I_FLAG; \
 	CPU_TRAP = (CPU_FLAG & (T_FLAG)) == (T_FLAG) ; \
 } while (/*CONSTCOND*/0)
-#endif
 
 #define CPU_GDTR_LIMIT	CPU_STATSAVE.cpu_sysregs.gdtr_limit
 #define CPU_GDTR_BASE	CPU_STATSAVE.cpu_sysregs.gdtr_base

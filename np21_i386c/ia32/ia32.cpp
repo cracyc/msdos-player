@@ -27,11 +27,6 @@
 #include "cpu.h"
 #include "ia32.mcr"
 
-#if defined(SUPPORT_IA32_HAXM)
-#include "i386hax/haxfunc.h"
-#include "i386hax/haxcore.h"
-#endif
-
 #if defined(USE_CPU_EIPMASK)
 UINT32		cpu_eipMask;
 #endif
@@ -117,11 +112,7 @@ ia32_setextsize(UINT32 size)
 //			}else
 //#endif
 			{
-#if defined(SUPPORT_IA32_HAXM)
-				_aligned_free(extmem);
-#else
 				_MFREE(extmem);
-#endif
 			}
 			extmem = NULL;
 		}
@@ -142,11 +133,7 @@ ia32_setextsize(UINT32 size)
 //			}else
 //#endif
 			{
-#if defined(SUPPORT_IA32_HAXM)
-				extmem = (UINT8*)_aligned_malloc(size + 4096, 4096);
-#else
 				extmem = (UINT8 *)_MALLOC(size + 16, "EXTMEM");
-#endif
 			}
 		}
 		if (extmem != NULL) {

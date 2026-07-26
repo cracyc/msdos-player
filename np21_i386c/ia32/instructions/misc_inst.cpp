@@ -36,9 +36,6 @@
 #include "sse2/sse2.h"
 #endif
 
-#ifdef SUPPORT_IA32_HAXM
-#include "bios/bios.h"
-#endif
 void
 LEA_GwM(void)
 {
@@ -76,9 +73,6 @@ LEA_GdM(void)
 void
 _NOP(void)
 {
-#if defined(SUPPORT_IA32_HAXM) && defined(USE_CUSTOM_HOOKINST)
-	if(bioshookinfo.hookinst == 0x90)
-#endif
 	//ia32_bioscall();
 }
 
