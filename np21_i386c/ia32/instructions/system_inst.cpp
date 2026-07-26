@@ -334,6 +334,7 @@ MOV_CdRd(void)
 			}
 
 			CPU_STAT_WP = (CPU_CR0 & CPU_CR0_WP) ? 0x10 : 0;
+			tlb_update_access_flags();
 			break;
 
 		case 2: /* CR2 */
@@ -1156,20 +1157,9 @@ RDTSC(void)
 {
 #if defined(USE_TSC)
 #if !defined(USE_CLOCK)
-#if 0
-	LARGE_INTEGER li = {0};
-	LARGE_INTEGER qpf;
-	QueryPerformanceCounter(&li);
-	if (QueryPerformanceFrequency(&qpf)) {
-		li.QuadPart = li.QuadPart * /*pccore.realclock*/CPU_REALCLOCK / qpf.QuadPart;
-	}
-	CPU_EDX = li.HighPart;
-	CPU_EAX = li.LowPart;
-#else
 	UINT64 tsc_tmp = __rdtsc();
 	CPU_EDX = ((tsc_tmp >> 32) & 0xffffffff);
 	CPU_EAX = (tsc_tmp & 0xffffffff);
-#endif
 #else
 	if(/*np2cfg.consttsc*/0){
 		// CPUクロックに依存しないカウンタ値にする

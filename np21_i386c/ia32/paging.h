@@ -375,6 +375,9 @@ cpu_lmemorywrites(UINT32 laddr, void* dat, UINT leng, int ucrw)
  */
 void MEMCALL cpu_memory_access_la_region(UINT32 address, UINT length, int ucrw, UINT8 *data);
 UINT32 MEMCALL laddr2paddr(UINT32 laddr, int ucrw);
+#if defined(USE_CPU_BULKREP)
+UINT8 * MEMCALL cpu_lmemory_get_direct_host_ptr(UINT32 laddr, UINT leng, int ucrw);
+#endif
 
 STATIC_INLINE UINT32 MEMCALL
 laddr_to_paddr(UINT32 laddr, int ucrw)
@@ -390,6 +393,7 @@ laddr_to_paddr(UINT32 laddr, int ucrw)
  */
 struct tlb_entry;
 void tlb_init(void);
+void MEMCALL tlb_update_access_flags(void);
 void MEMCALL tlb_flush();
 void MEMCALL tlb_flush_all();
 void MEMCALL tlb_flush_page(UINT32 laddr);

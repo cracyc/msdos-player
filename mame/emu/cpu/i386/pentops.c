@@ -2857,7 +2857,7 @@ static void SSEOP(group_0fae)()  // Opcode 0f ae
 				for(int i = 0; i < 8; i++)
 				{
 					WRITE64(ea + i*16 + 32, m_x87_reg[i].low);
-					WRITE64(ea + i*16 + 40, m_x87_reg[i].high);
+					WRITE16(ea + i*16 + 40, m_x87_reg[i].high);
 				}
 				for(int i = 0; i < 8; i++)
 				{

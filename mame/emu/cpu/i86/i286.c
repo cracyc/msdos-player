@@ -213,6 +213,14 @@ static CPU_EXECUTE( i80286 )
 		return;
 	}
 
+	if (m_TF) PREFIX(_trap)();
+	/* if the IF is set, and an interrupt is pending, signal an interrupt */
+	if (m_IF && m_irq_state)
+	{
+		i80286_interrupt_descriptor(pic_ack(), 2, -1);
+		m_irq_state = CLEAR_LINE;
+	}
+
 	/* run until we're out */
 //	while(m_icount>0)
 //	{

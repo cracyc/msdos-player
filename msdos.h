@@ -66,8 +66,7 @@ public:
 		buf = (int *)malloc(size * sizeof(int));
 		cnt = rpt = wpt = 0;
 	}
-	void release()
-	{
+	~FIFO() {
 		if(buf != NULL) {
 			free(buf);
 			buf = NULL;
@@ -341,17 +340,19 @@ __attribute__ ((aligned(4096)))
 #define MAX_EMS_PAGES 2048	/* 32MB */
 
 typedef struct {
-	char name[8];
-	UINT8* buffer;
-	int pages;
-	bool allocated;
-} ems_handle_t;
-
-typedef struct {
 	UINT16 handle;
 	UINT16 page;
 	bool mapped;
 } ems_page_t;
+
+typedef struct {
+	char name[8];
+	UINT8* buffer;
+	int pages;
+	bool allocated;
+	ems_page_t stored[4];
+	bool ems_pages_stored;
+} ems_handle_t;
 
 ems_handle_t ems_handles[MAX_EMS_HANDLES + 1] = {0};
 ems_page_t ems_pages[4];
@@ -1238,12 +1239,6 @@ typedef struct {
 	UINT16 parent_bp;
 	UINT16 parent_si;
 	UINT16 parent_di;
-	struct {
-		UINT16 handle;
-		UINT16 page;
-		bool mapped;
-	} ems_pages[4];
-	bool ems_pages_stored;
 	bool called_by_int2eh;
 } process_t;
 
@@ -1333,14 +1328,18 @@ bool cursor_moved;
 bool cursor_moved_by_crtc;
 
 FIFO *kbc_buffer = NULL;
-FIFO *key_buffer = NULL;
 bool key_changed = false;
+bool key_port_read = false;
+bool key_port_has_key = false;
 UINT32 key_code = 0;
 UINT32 key_recv = 0;
 
+char cpr_buf[16];
+int cpr_pos = -1;
+
 bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
-void pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
+bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan);
 void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data);
 

@@ -443,6 +443,8 @@ typedef signed __int64 INT64;
 
 void msdos_syscall(unsigned num);
 
+UINT8 *get_mem_ptr(UINT32 byteaddress);
+
 UINT32 read_byte(UINT32 byteaddress);
 UINT32 read_word(UINT32 byteaddress);
 UINT32 read_dword(UINT32 byteaddress);

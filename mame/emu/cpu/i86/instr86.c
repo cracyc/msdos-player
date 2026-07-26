@@ -1828,15 +1828,6 @@ static void PREFIX86(_popf)()    /* Opcode 0x9d */
 	ExpandFlags(tmp);
 	m_flags = tmp;
 	m_flags = CompressFlags();
-
-	if (m_TF) PREFIX(_trap)();
-
-	/* if the IF is set, and an interrupt is pending, signal an interrupt */
-	if (m_IF && m_irq_state)
-	{
-		PREFIX(_interrupt)((UINT32)-1);
-		m_irq_state = CLEAR_LINE;
-	}
 }
 #endif
 
@@ -2182,13 +2173,6 @@ static void PREFIX86(_iret)()    /* Opcode 0xcf */
 	m_pc = (m_pc + m_base[CS]) & AMASK;
 	PREFIX(_popf)();
 	CHANGE_PC(m_pc);
-
-	/* if the IF is set, and an interrupt is pending, signal an interrupt */
-	if (m_IF && m_irq_state)
-	{
-		PREFIX(_interrupt)((UINT32)-1);
-		m_irq_state = CLEAR_LINE;
-	}
 
 	// Emulate system call on MS-DOS Player
 	if(IRET_TOP <= old && old < (IRET_TOP + IRET_SIZE)) {
@@ -2604,17 +2588,6 @@ static void PREFIX(_sti)()    /* Opcode 0xfb */
 #endif
 	SetIF(1);
 	PREFIX(_instruction)[FETCHOP](); /* no interrupt before next instruction */
-
-	/* if an interrupt is pending, signal an interrupt */
-	if (m_irq_state)
-	{
-#ifdef I80286
-		i80286_interrupt_descriptor(pic_ack(), 2, -1);
-#else
-		PREFIX86(_interrupt)((UINT32)-1);
-#endif
-		m_irq_state = CLEAR_LINE;
-	}
 }
 
 #ifndef I80186
@@ -2662,7 +2635,7 @@ static void PREFIX86(_f6pre)()
 	case 0x18:  /* NEG Eb */
 		tmp2=0;
 		SUBB(tmp2,tmp);
-		SetCFB(tmp2);
+		SetCFB(-tmp);
 		PutbackRMByte(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AL, Eb */
@@ -2767,7 +2740,7 @@ static void PREFIX86(_f7pre)()
 	case 0x18:  /* NEG Ew */
 		tmp2 = 0;
 		SUBW(tmp2,tmp);
-		SetCFW(tmp2);
+		SetCFW(-tmp);
 		PutbackRMWord(ModRM,tmp2);
 		break;
 	case 0x20:  /* MUL AX, Ew */
