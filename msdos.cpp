@@ -5521,12 +5521,12 @@ bool update_console_input()
 									enter_key_buf_lock();
 									if(chr == 0) {
 										if(scn >= 0x78 && scn != 0x84) {
-											set_kbc_buffer(0x00, 0x00, 0x00);
+											set_kbc_buffer(0x00, 0x00, 0x00, 1);
 										} else {
-											set_kbc_buffer(0x00, enh, enh);
+											set_kbc_buffer(0x00, enh, enh, 1);
 										}
 									}
-									set_kbc_buffer(chr, scn, port_data);
+									set_kbc_buffer(chr, scn, port_data, 1);
 									leave_key_buf_lock();
 								}
 							}
@@ -5551,9 +5551,9 @@ bool update_console_input()
 							if(kbc_buffer != NULL) {
 								enter_key_buf_lock();
 								if(chr == 0) {
-									set_kbc_buffer(0x00, 0x00, 0x00);
+									set_kbc_buffer(0x00, 0x00, 0x00, 1);
 								}
-								set_kbc_buffer(chr, scn, port_data);
+								set_kbc_buffer(chr, scn, port_data, 1);
 								leave_key_buf_lock();
 							}
 						}
@@ -5566,7 +5566,7 @@ bool update_console_input()
 							if(scn == 0x46) {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									set_kbc_buffer(0x00, 0x00, port_data);
+									set_kbc_buffer(0x00, 0x00, port_data, 0);
 									leave_key_buf_lock();
 								}
 								ctrl_break_pressed = true;
@@ -5575,7 +5575,7 @@ bool update_console_input()
 							} else {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									set_kbc_buffer(chr, scn, port_data);
+									set_kbc_buffer(chr, scn, port_data, 0);
 									leave_key_buf_lock();
 								}
 								ctrl_c_pressed = (scn == 0x2e);
@@ -5583,8 +5583,10 @@ bool update_console_input()
 						} else {
 							if(kbc_buffer != NULL) {
 								enter_key_buf_lock();
-								if(enh) set_kbc_buffer(0x00, enh, enh);
-								set_kbc_buffer(chr, scn, port_data);
+								if(enh) {
+									set_kbc_buffer(0x00, enh, enh, 0);
+								}
+								set_kbc_buffer(chr, scn, port_data, 0);
 								leave_key_buf_lock();
 							}
 						}
@@ -5629,7 +5631,7 @@ bool update_key_buffer()
 				enter_key_buf_lock();
 				while(!kbc_buffer->empty()) {
 					int key_data = kbc_buffer->read();
-					if(!((key_data >> 16) & 0x80)) {
+					if((key_data >> 24) != 0) { // pressed
 						pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 						kbd_read_data(); // clear OUTBF
 						buf_empty = false; //pcbios_is_key_buffer_empty();
@@ -7212,6 +7214,9 @@ int msdos_find_file_has_8dot3name(WIN32_FIND_DATAA *fd)
 	if(len > 12) {
 		return(0);
 	}
+	if(strcmp(fd->cFileName, ".") == 0 || strcmp(fd->cFileName, "..") == 0) {
+		return(1);
+	}
 	const char *ext = my_strrchr(fd->cFileName, '.');
 	if((ext ? ext - fd->cFileName : len) > 8) {
 		return(0);
@@ -7312,15 +7317,20 @@ int msdos_read(int fd, void *buffer, unsigned int count)
 int console_kbhit()
 {
 	if(!pcbios_is_key_buffer_empty()) return(1);
-	if((kbc_buffer == NULL) || !update_console_input()) return(0);
+	if(kbc_buffer == NULL) return(0);
+	update_console_input();
 	// if we are in vm86 mode, this probably won't work
 	enter_key_buf_lock();
+	if(kbc_buffer->empty()) {
+		leave_key_buf_lock();
+		return(0);
+	}
 	if(*(UINT16 *)(mem + 4 * 9 + 0) == (IRET_SIZE + 5 * 9) &&
 	   *(UINT16 *)(mem + 4 * 9 + 2) == (IRET_TOP >> 4)) {
 		int ret = 0;
 		while(!kbc_buffer->empty()) {
 			int key_data = kbc_buffer->read();
-			if(!((key_data >> 16) & 0x80)) {
+			if((key_data >> 24) != 0) { // pressed
 				pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 				ret = 1;
 				break;
@@ -12788,10 +12798,10 @@ bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 	return(ret);
 }
 
-void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data)
+void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data, UINT8 pressed)
 {
 	if(kbc_buffer != NULL) {
-		kbc_buffer->write(key_char | (key_scan << 8) | (port_data << 16));
+		kbc_buffer->write(key_char | (key_scan << 8) | (port_data << 16) | (pressed << 24));
 	}
 }
 
@@ -12833,11 +12843,11 @@ void pcbios_update_key_code(bool wait)
 		key_recv  = 0x0000ffff;
 		// we want to read another code
 		console_kbhit();
-	}
-	if(pcbios_get_key_buffer(&key_char, &key_scan)) {
-		key_code |= key_char << 16;
-		key_code |= key_scan << 24;
-		key_recv |= 0xffff0000;
+		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
+			key_code |= key_char << 16;
+			key_code |= key_scan << 24;
+			key_recv |= 0xffff0000;
+		}
 	}
 }
 
@@ -13756,7 +13766,8 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
-			msdos_getch(0x21, 0x0a);
+			while((chr = msdos_getch(0x21, 0x0a)) == 0x00) {
+			}
 		} else if(chr == 0x08) {
 			// back space
 			if(p > 0) {
@@ -15216,7 +15227,8 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
-			msdos_getch(0x21, 0x3f);
+			while((chr = msdos_getch(0x21, 0x3f)) == 0x00) {
+			}
 		} else if(chr == 0x0d) {
 			// carriage return
 			buf[p++] = 0x0d;
@@ -21892,7 +21904,7 @@ void msdos_syscall(unsigned num)
 			if(!pcbios_is_key_buffer_full()) {
 				// keyboard data is read by PC BIOS and pushed into key buffer
 				int key_data = kbc_buffer->read();
-				if(!((key_data >> 16) & 0x80)) {
+				if((key_data >> 24) != 0) { // pressed
 					pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 				}
 				kbd_read_data(); // clear OUTBF
