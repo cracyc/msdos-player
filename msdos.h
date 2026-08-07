@@ -1319,8 +1319,6 @@ FIFO *kbc_buffer = NULL;
 bool key_changed = false;
 bool key_port_read = false;
 bool key_port_has_key = false;
-UINT32 key_code = 0;
-UINT32 key_recv = 0;
 
 char cpr_buf[16];
 int cpr_pos = -1;
@@ -1329,7 +1327,7 @@ bool pcbios_is_key_buffer_empty();
 void pcbios_clear_key_buffer();
 bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan);
-void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data, UINT8 pressed);
+void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data);
 
 UINT8 ctrl_break_checking = 0x00; // ???
 bool ctrl_break_detected = false;

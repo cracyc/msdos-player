@@ -2637,6 +2637,11 @@ void debugger_main()
 	UINT32 dasm_adr = CPU_GET_NEXT_PC();
 	
 	while(!msdos_exit) {
+#ifdef EXPORT_DEBUG_TO_FILE
+		if(fp_debug_log != NULL) {
+			fflush(fp_debug_log);
+		}
+#endif
 		telnet_printf("- ");
 		command[0] = '\0';
 		
@@ -3881,7 +3886,6 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
 	if(dwCtrlType == CTRL_BREAK_EVENT) {
 		pcbios_clear_key_buffer();
-//		key_code = key_recv = 0;
 		return TRUE;
 	} else if(dwCtrlType == CTRL_C_EVENT) {
 		return TRUE;
@@ -5308,7 +5312,7 @@ void change_console_size(int width, int height)
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	SMALL_RECT rect;
 	COORD co;
-
+	
 	if(!use_vt) {  // window cannot be resized in vt mode
 		if(is_win10_or_later && active_code_page == 932) {
 			if(wcscmp(fi_new.FaceName, L"Terminal") != 0) {
@@ -5322,14 +5326,14 @@ void change_console_size(int width, int height)
 		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 		int cur_buffer_width  = csbi.dwSize.X;
 		int cur_buffer_height = csbi.dwSize.Y;
-
+		
 		// workaround win10 conhost v2 bug that crash when cursor is out of range
 		if(is_win10_or_later) {
 			co.X = 0;
 			co.Y = 0;
 			MySetConsoleCursorPosition(hStdout, co);
 		}
-
+		
 		if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
 			if(cur_window_width == width && cur_window_height == height) {
 				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
@@ -5349,35 +5353,46 @@ void change_console_size(int width, int height)
 			cursor_moved = true;
 			cursor_moved_by_crtc = false;
 		}
-
-		// workaround Windows 10 conhost v2 bug that crash when cursor is out of range
+		
+		// window can't be bigger than buffer,
+		// buffer can't be smaller than window,
+		// so make a tiny window,
+		// set the required buffer,
+		// then set the required window
+		int min_width  = min(cur_window_width,  width );
+		int min_height = min(cur_window_height, height);
+		
+		if(cur_window_width != min_width || cur_window_height != min_height) {
+			SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
+			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			}
+			cur_window_width  = min_width;
+			cur_window_height = min_height;
+		}
+		if(cur_buffer_width != width || cur_buffer_height != height) {
+			co.X = width;
+			co.Y = height;
+			SetConsoleScreenBufferSize(hStdout, co);
+		}
+		if(cur_window_width != width || cur_window_height != height) {
+			SET_RECT(rect, 0, 0, width - 1, height - 1);
+			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+			}
+		}
+		
+		// restore cursor position
 		if(is_win10_or_later) {
-			co.X = 0;
-			co.Y = 0;
+			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
+			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
 			SetConsoleCursorPosition(hStdout, co);
+			cursor_moved = true;
+			cursor_moved_by_crtc = false;
 		}
-
-		if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
-			if(cur_window_width == width && cur_window_height == height) {
-				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
-				SET_RECT(rect, 0, 0, width - 1, height - 1);
-			} else if(csbi.dwCursorPosition.Y > height - 1) {
-				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
-					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-					SetConsoleWindowInfo(hStdout, TRUE, &rect);
-				}
-			}
-
-			// restore cursor position
-			if(is_win10_or_later) {
-				co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
-				co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-				SetConsoleCursorPosition(hStdout, co);
-				cursor_moved = true;
-				cursor_moved_by_crtc = false;
-			}
-			restore_console_size = true;
-		}
+		restore_console_size = true;
 	}
 	
 	scr_width = scr_buf_size.X = width;
@@ -5488,14 +5503,14 @@ bool update_console_input()
 						ir[i].EventType = KEY_EVENT;
 						ir[i].Event.KeyEvent.bKeyDown = TRUE;
 						ir[i].Event.KeyEvent.wRepeatCount = 1;
-						ir[i].Event.KeyEvent.dwControlKeyState = 0x80000000;
+						ir[i].Event.KeyEvent.dwControlKeyState = 0x80000000 | ENHANCED_KEY;
 						ir[i].Event.KeyEvent.uChar.AsciiChar = 0;
 						if(wheeldir > 0) {
 							ir[i].Event.KeyEvent.wVirtualKeyCode = VK_UP;
-							ir[i].Event.KeyEvent.wVirtualScanCode = 0xe048;
+							ir[i].Event.KeyEvent.wVirtualScanCode = 0x48;
 						} else {
 							ir[i].Event.KeyEvent.wVirtualKeyCode = VK_DOWN;
-							ir[i].Event.KeyEvent.wVirtualScanCode = 0xe050;
+							ir[i].Event.KeyEvent.wVirtualScanCode = 0x50;
 						}
 					}
 				}
@@ -5690,14 +5705,13 @@ bool update_console_input()
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d && scn == scn_old)) {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									if(chr == 0) {
-										if(scn >= 0x78 && scn != 0x84) {
-											set_kbc_buffer(0x00, 0x00, 0x00, 1);
-										} else {
-											set_kbc_buffer(0x00, enh, enh, 1);
+									if(enh) {
+										if(!(scn >= 0x78 && scn != 0x84)) {
+											set_kbc_buffer(0x00, enh, enh);
+											chr = enh;
 										}
 									}
-									set_kbc_buffer(chr, scn, port_data, 1);
+									set_kbc_buffer(chr, scn, port_data);
 									leave_key_buf_lock();
 								}
 							}
@@ -5721,10 +5735,11 @@ bool update_console_input()
 							}
 							if(kbc_buffer != NULL) {
 								enter_key_buf_lock();
-								if(chr == 0) {
-									set_kbc_buffer(0x00, 0x00, 0x00, 1);
+								if(enh) {
+									set_kbc_buffer(0x00, enh, enh);
+									chr = enh;
 								}
-								set_kbc_buffer(chr, scn, port_data, 1);
+								set_kbc_buffer(chr, scn, port_data);
 								leave_key_buf_lock();
 							}
 						}
@@ -5737,7 +5752,7 @@ bool update_console_input()
 							if(scn == 0x46) {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									set_kbc_buffer(0x00, 0x00, port_data, 0);
+									set_kbc_buffer(0x00, 0x00, port_data);
 									leave_key_buf_lock();
 								}
 								ctrl_break_pressed = true;
@@ -5746,19 +5761,23 @@ bool update_console_input()
 							} else {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									set_kbc_buffer(chr, scn, port_data, 0);
+									set_kbc_buffer(chr, scn, port_data);
 									leave_key_buf_lock();
 								}
 								ctrl_c_pressed = (scn == 0x2e);
 							}
 						} else {
-							if(kbc_buffer != NULL) {
-								enter_key_buf_lock();
-								if(enh) {
-									set_kbc_buffer(0x00, enh, enh, 0);
+							// ignore Shift, Ctrl, Alt, Win and Menu keys also when released
+							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d)) {
+								if(kbc_buffer != NULL) {
+									enter_key_buf_lock();
+									if(enh) {
+										set_kbc_buffer(0x00, enh, enh);
+										chr = enh;
+									}
+									set_kbc_buffer(chr, scn, port_data);
+									leave_key_buf_lock();
 								}
-								set_kbc_buffer(chr, scn, port_data, 0);
-								leave_key_buf_lock();
 							}
 						}
 					}
@@ -5766,7 +5785,7 @@ bool update_console_input()
 					// IME may be on and it may causes screen scroll up and cursor position change
 					cursor_moved = true;
 					
-					if(ir[i].Event.KeyEvent.dwControlKeyState == 0x80000000) {
+					if((ir[i].Event.KeyEvent.dwControlKeyState >> 16) == 0x8000) {
 						ir[i].Event.KeyEvent.bKeyDown = FALSE;
 						ir[i].Event.KeyEvent.dwControlKeyState = 0;
 						i--;
@@ -5802,7 +5821,7 @@ bool update_key_buffer()
 				enter_key_buf_lock();
 				while(!kbc_buffer->empty()) {
 					int key_data = kbc_buffer->read();
-					if((key_data >> 24) != 0) { // pressed
+					if(!((key_data >> 16) & 0x80)) {
 						pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 						kbd_read_data(); // clear OUTBF
 						buf_empty = false; //pcbios_is_key_buffer_empty();
@@ -7497,12 +7516,19 @@ int console_kbhit()
 		leave_key_buf_lock();
 		return(0);
 	}
+	if(!(kbd_status & 1) && key_port_read && key_port_has_key) {
+		kbc_buffer->read();
+		if(kbc_buffer->empty()) {
+			leave_key_buf_lock();
+			return(0);
+		}
+	}
 	if(*(UINT16 *)(mem + 4 * 9 + 0) == (IRET_SIZE + 5 * 9) &&
 	   *(UINT16 *)(mem + 4 * 9 + 2) == (IRET_TOP >> 4)) {
 		int ret = 0;
 		while(!kbc_buffer->empty()) {
 			int key_data = kbc_buffer->read();
-			if((key_data >> 24) != 0) { // pressed
+			if(!((key_data >> 16) & 0x80)) {
 				pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 				ret = 1;
 				break;
@@ -7511,9 +7537,9 @@ int console_kbhit()
 		leave_key_buf_lock();
 		return(ret);
 	}
-	if(!CPU_I_FLAG || (pic[0].imr & 2)) {
+	if(!CPU_I_FLAG || (pic[0].imr & 2) || (pic[0].isr & 2)) {
 		leave_key_buf_lock();
-		return(0);  // can't do an irq with I flag clear or irq 1 disabled
+		return(0);  // can't do an irq with I flag clear or irq 1 disabled or irq 1 in service
 	}
 	// fake a kbd irq without calling pic_req, if that causes problems
 	// then we need to make sure irq 1 is set in service and not irq 0
@@ -7525,11 +7551,12 @@ int console_kbhit()
 		kbd_status |= 1;
 		UINT16 tmp_cs = CPU_CS;
 		UINT32 tmp_eip = CPU_EIP;
+		UINT32 tmp_sp = CPU_SP;  // save sp in case CS:EIP is reached while in the int 9 handler
 
 		CPU_PUSHF();
 		CPU_CALL_FAR(*(UINT16 *)(mem + 4 * 9 + 2), *(UINT16 *)(mem + 4 * 9 + 0));
 		CPU_SET_I_FLAG(0);
-		while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
+		while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP && tmp_sp == CPU_SP)) {
 			try {
 				hardware_run_cpu();
 			} catch(...) {
@@ -7561,19 +7588,20 @@ int msdos_kbhit()
 	}
 	
 	// check keyboard status
-	if((key_recv != 0) || !pcbios_is_key_buffer_empty()) {
+	if(!pcbios_is_key_buffer_empty()) {
 		return(1);
 	}
 	try {
-		val = _kbhit();
+		val = console_kbhit();
 	} catch(...) {
 	}
 	return(val);
 }
 
-int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
+int msdos_getch_ex(unsigned int_num, UINT8 reg_ah)
 {
 	static char prev = 0;
+	static char enhsc = 0;
 	
 	if(cpr_pos != -1) {
 		char ret = cpr_buf[cpr_pos++];
@@ -7609,61 +7637,52 @@ retry:
 	
 	// input from console
 	UINT8 key_char = 0, key_scan = 0;
-	if(key_recv != 0) {
-		key_char = (key_code >> 0) & 0xff;
-		key_scan = (key_code >> 8) & 0xff;
-		key_code >>= 16;
-		key_recv >>= 16;
-	} else {
-		while(kbc_buffer != NULL && !msdos_exit) {
-			if(!pcbios_is_key_buffer_empty()) {
-				break;
+	while(kbc_buffer != NULL && !msdos_exit) {
+		if(!pcbios_is_key_buffer_empty()) {
+			break;
+		}
+		if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
+			// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
+			if(!console_kbhit()) {
+				Sleep(10);
 			}
-			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
-				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
-				if(_kbhit()) {
-					UINT8 chr1 = (UINT8)_getch();
-					UINT8 chr2 = 0;
-					if(chr1 == 0x00 || chr1 == 0xe0) {
-						chr2 = (UINT8)_getch();
-					}
-					if(chr1 == 0x00 || chr1 == 0xe0) {
-						pcbios_set_key_buffer(0x00, chr1);
-						pcbios_set_key_buffer(0x00, chr2);
-					} else {
-						pcbios_set_key_buffer(chr1, 0x00);
-					}
-				} else {
-					Sleep(10);
-				}
-			} else {
-				if(!update_key_buffer()) {
-					Sleep(10);
-				}
+		} else {
+			if(!update_key_buffer()) {
+				Sleep(10);
 			}
 		}
-		if(msdos_exit) {
-			// insert CR to terminate input loops
-			key_char = 0x0d;
-			key_scan = 0;
+	}
+	if(msdos_exit) {
+		// insert CR to terminate input loops
+		key_char = 0x0d;
+		key_scan = 0;
+	} else {
+		if(enhsc) {
+			key_char = enhsc;
+			enhsc = 0;
 		} else {
 			pcbios_get_key_buffer(&key_char, &key_scan);
+			if(!key_char || (key_char == 0xe0)) {
+				enhsc = key_scan;
+				key_char = 0;
+			}
 		}
 	}
-	if(echo && key_char) {
-		msdos_putch(key_char, int_num, reg_ah);
-	}
-	return key_char ? key_char : (key_scan != 0xe0) ? key_scan : 0;
+	return key_char;
 }
 
 inline int msdos_getch(unsigned int_num, UINT8 reg_ah)
 {
-	return(msdos_getch_ex(0, int_num, reg_ah));
+	return(msdos_getch_ex(int_num, reg_ah));
 }
 
 inline int msdos_getche(unsigned int_num, UINT8 reg_ah)
 {
-	return(msdos_getch_ex(1, int_num, reg_ah));
+	int ret = msdos_getch_ex(int_num, reg_ah);
+	if(ret) {
+		msdos_putch(ret, int_num, reg_ah);
+	}
+	return(ret);
 }
 
 int msdos_write(int fd, const void *buffer, unsigned int count)
@@ -12969,14 +12988,14 @@ bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 	return(ret);
 }
 
-void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data, UINT8 pressed)
+void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data)
 {
 	if(kbc_buffer != NULL) {
-		kbc_buffer->write(key_char | (key_scan << 8) | (port_data << 16) | (pressed << 24));
+		kbc_buffer->write(key_char | (key_scan << 8) | (port_data << 16));
 	}
 }
 
-bool pcbios_check_key_buffer(int *key_char, int *key_scan)
+bool pcbios_check_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 {
 	// do not remove from key buffer
 	bool ret;
@@ -12996,7 +13015,7 @@ bool pcbios_check_key_buffer(int *key_char, int *key_scan)
 	return(ret);
 }
 
-void pcbios_update_key_code(bool wait)
+bool pcbios_update_key_code(bool wait, bool remove, UINT16 *key)
 {
 	if(pcbios_is_key_buffer_empty()) {
 		if(!console_kbhit()) {
@@ -13008,66 +13027,46 @@ void pcbios_update_key_code(bool wait)
 		}
 	}
 	UINT8 key_char, key_scan;
-	if(pcbios_get_key_buffer(&key_char, &key_scan)) {
-		key_code  = key_char << 0;
-		key_code |= key_scan << 8;
-		key_recv  = 0x0000ffff;
-		// we want to read another code
-		console_kbhit();
-		if(pcbios_get_key_buffer(&key_char, &key_scan)) {
-			key_code |= key_char << 16;
-			key_code |= key_scan << 24;
-			key_recv |= 0xffff0000;
-		}
+	bool ret;
+	if(remove) {
+		ret = pcbios_get_key_buffer(&key_char, &key_scan);
+	} else {
+		ret = pcbios_check_key_buffer(&key_char, &key_scan);
 	}
+	if(ret) {
+		*key  = key_char << 0;
+		*key |= key_scan << 8;
+	}
+	return(ret);
 }
 
 DWORD WINAPI pcbios_int_16h_00h_thread(LPVOID)
 {
-	while(key_recv == 0 && kbc_buffer != NULL && !msdos_exit) {
-		pcbios_update_key_code(true);
-	}
-	if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
-		if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
-			if((CPU_AX_in_service >> 8) == 0x10) {
-				key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
-			} else {
-				key_code = ((key_code >> 16) & 0xff00);
-			}
-			key_recv >>= 16;
+	UINT16 key;
+	bool ret = false;
+	while(kbc_buffer != NULL && !msdos_exit && !ret) {
+		ret = pcbios_update_key_code(true, true, &key);
+		if(((key & 0xff) == 0xe0) && !(CPU_AX >> 8)) { // some bioses toss extended keys in this case
+			key &= 0xff00;
 		}
 	}
-	CPU_AX_in_service = key_code & 0xffff;
-	
-	key_code >>= 16;
-	key_recv >>= 16;
-	
+	CPU_AX_in_service = key;
 	service_exit = true;
 	return(0);
 }
 
 inline void pcbios_int_16h_00h()
 {
-	if(key_recv == 0) {
-		pcbios_update_key_code(false);
-	}
-	if(key_recv != 0) {
-		// we don't need to use the service thread when key code is already received
-		if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
-			if((key_code & 0xffff) == 0x0000 || (key_code & 0xffff) == 0xe000) {
-				if(CPU_AH == 0x10) {
-					key_code = ((key_code >> 8) & 0xff) | ((key_code >> 16) & 0xff00);
-				} else {
-					key_code = ((key_code >> 16) & 0xff00);
-				}
-				key_recv >>= 16;
-			}
+	UINT16 key;
+	bool ret;
+	do {
+		ret = pcbios_update_key_code(false, true, &key);
+		if(!ret) break;
+		if(((key & 0xff) == 0xe0) && !(CPU_AX >> 8)) {
+			key &= 0xff00;
 		}
-		CPU_AX = key_code & 0xffff;
-		
-		key_code >>= 16;
-		key_recv >>= 16;
-	} else {
+	} while(!ret);
+	if(!ret) {
 		if(use_service_thread && !in_service && !in_service_29h) {
 			start_service_loop(pcbios_int_16h_00h_thread);
 		} else {
@@ -13076,26 +13075,22 @@ inline void pcbios_int_16h_00h()
 			cleanup_service_loop();
 			REQUEST_HARDWRE_UPDATE();
 		}
-	}
+	} else CPU_AX = key;
 }
 
 inline void pcbios_int_16h_01h()
 {
-	if(key_recv == 0) {
-		pcbios_update_key_code(false);
-	}
-	if(key_recv != 0) {
-		UINT32 key_code_tmp = key_code;
-		if((key_recv & 0x0000ffff) && (key_recv & 0xffff0000)) {
-			if((key_code_tmp & 0xffff) == 0x0000 || (key_code_tmp & 0xffff) == 0xe000) {
-				if(CPU_AH == 0x11) {
-					key_code_tmp = ((key_code_tmp >> 8) & 0xff) | ((key_code_tmp >> 16) & 0xff00);
-				} else {
-					key_code_tmp = ((key_code_tmp >> 16) & 0xff00);
-				}
-			}
+	UINT16 key;
+	bool ret;
+	do {
+		ret = pcbios_update_key_code(false, false, &key);
+		if(!ret) break;
+		if(((key & 0xff) == 0xe0) && ((CPU_AX >> 8) == 1)) {
+			key &= 0xff00;
 		}
-		CPU_AX = key_code_tmp & 0xffff;
+	} while(!ret);
+	if(ret) {
+		CPU_AX = key;
 		CPU_SET_Z_FLAG(0);
 	} else {
 		CPU_SET_Z_FLAG(1);
@@ -22075,7 +22070,7 @@ void msdos_syscall(unsigned num)
 			if(!pcbios_is_key_buffer_full()) {
 				// keyboard data is read by PC BIOS and pushed into key buffer
 				int key_data = kbc_buffer->read();
-				if((key_data >> 24) != 0) { // pressed
+				if(!((key_data >> 16) & 0x80)) {
 					pcbios_set_key_buffer((UINT8)(key_data & 0xff), (UINT8)((key_data >> 8) & 0xff));
 				}
 				kbd_read_data(); // clear OUTBF
@@ -22309,22 +22304,21 @@ void msdos_syscall(unsigned num)
 		}
 		// if key buffer is read and becomes empty, and keyboard controller buffer has data,
 		// raise IRQ 1 just now to update key buffer
-		if(!(kbd_status & 1) && key_buffer_head != *(UINT16 *)(mem + 0x41a)) {
-			if(kbc_buffer != NULL) {
-				enter_key_buf_lock();
-				if(pcbios_is_key_buffer_empty()) {
-					if(!kbc_buffer->empty()) {
-						int key_data = kbc_buffer->read_not_remove(0);
-						kbd_data = (UINT8)((key_data >> 16) & 0xff);
-						key_port_has_key = true;
-						key_port_read = false;
-						kbd_status |= 1;
-						pic_req(0, 1, 1);
-					}
-				}
-				leave_key_buf_lock();
+		enter_key_buf_lock();
+		if(!(kbd_status & 1) && (kbc_buffer != NULL) && !kbc_buffer->empty() && !pcbios_is_key_buffer_full()) {
+			if(key_port_read) { // XYWrite handles 0xe0 without calling bios int 9 so make sure it's purged
+				kbc_buffer->read();
+			}
+			if(!kbc_buffer->empty()) {
+				int key_data = kbc_buffer->read_not_remove(0);
+				kbd_data = (UINT8)((key_data >> 16) & 0xff);
+				key_port_has_key = true;
+				key_port_read = false;
+				kbd_status |= 1;
+				pic_req(0, 1, 1);
 			}
 		}
+		leave_key_buf_lock();
 		break;
 	case 0x17:
 		// PC BIOS - Printer
@@ -24110,6 +24104,13 @@ void hardware_run()
 
 inline void hardware_run_cpu()
 {
+#if defined(USE_DEBUGGER) && defined(ENABLE_DEBUG_LOG)
+	if(debug_trace && fp_debug_log != NULL) {
+		char buffer[256];
+		debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
+		fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
+	}
+#endif
 	CPU_EXECUTE();
 	if(CPU_EIP_CHANGED) {
 		idle_ops++;
