@@ -55,15 +55,11 @@ set_task_free(UINT16 selector)
 	UINT32 addr;
 	UINT32 h;
 
+	// freeは何度実行してもよい　実機確認済み
 	addr = CPU_GDTR_BASE + (selector & CPU_SEGMENT_SELECTOR_INDEX_MASK);
 	h = cpu_kmemoryread_d(addr + 4);
-	if (h & CPU_TSS_H_BUSY) {
-		h &= ~CPU_TSS_H_BUSY;
-		cpu_kmemorywrite_d(addr + 4, h);
-	} else {
-		ia32_panic("set_task_free: already free(%04x:%08x)",
-		    selector, h);
-	}
+	h &= ~CPU_TSS_H_BUSY;
+	cpu_kmemorywrite_d(addr + 4, h);
 }
 
 void CPUCALL
@@ -203,9 +199,28 @@ task_switch(selector_t *task_sel, task_switch_type_t type)
 	UINT32 task_base;	/* new task state */
 	UINT32 old_flags = REAL_EFLAGREG;
 	BOOL task16;
+	BOOL cur_task16;
 	UINT i;
 
 	VERBOSE(("task_switch: start"));
+
+	// TRで決まる
+	switch (CPU_TR_DESC.type) {
+	case CPU_SYSDESC_TYPE_TSS_32:
+	case CPU_SYSDESC_TYPE_TSS_BUSY_32:
+		cur_task16 = 0;
+		break;
+
+	case CPU_SYSDESC_TYPE_TSS_16:
+	case CPU_SYSDESC_TYPE_TSS_BUSY_16:
+		cur_task16 = 1;
+		break;
+
+	default:
+		ia32_panic("task_switch: current task descriptor type is invalid.");
+		cur_task16 = 0;		/* compiler happy */
+		break;
+	}
 
 	switch (task_sel->desc.type) {
 	case CPU_SYSDESC_TYPE_TSS_32:
@@ -285,7 +300,7 @@ task_switch(selector_t *task_sel, task_switch_type_t type)
 
 #if defined(DEBUG)
 	VERBOSE(("task_switch: current task"));
-	if (!task16) {
+	if (!cur_task16) {
 		VERBOSE(("task_switch: CR3     = 0x%08x", CPU_CR3));
 	}
 	VERBOSE(("task_switch: eip     = 0x%08x", CPU_EIP));
@@ -342,7 +357,7 @@ task_switch(selector_t *task_sel, task_switch_type_t type)
 	}
 
 	/* store current task state in current TSS */
-	if (!task16) {
+	if (!cur_task16) {
 		cpu_kmemorywrite_d(cur_base + 32, CPU_EIP);
 		cpu_kmemorywrite_d(cur_base + 36, old_flags);
 		for (i = 0; i < CPU_REG_NUM; i++) {

@@ -32,8 +32,8 @@
 #include "fpu/fp.h"
 #include "fpu/fpumem.h"
 
-#if defined(USE_FPU) && !defined(SUPPORT_FPU_DOSBOX) && !defined(SUPPORT_FPU_DOSBOX2) && !defined(SUPPORT_FPU_SOFTFLOAT)
-#error No FPU detected. Please define SUPPORT_FPU_DOSBOX, SUPPORT_FPU_DOSBOX2 or SUPPORT_FPU_SOFTFLOAT.
+#if defined(USE_FPU) && !defined(SUPPORT_FPU_DOSBOX) && !defined(SUPPORT_FPU_DOSBOX2) && !defined(SUPPORT_FPU_SOFTFLOAT) && !defined(SUPPORT_FPU_SOFTFLOAT3)
+#error No FPU detected. Please define SUPPORT_FPU_DOSBOX, SUPPORT_FPU_DOSBOX2, SUPPORT_FPU_SOFTFLOAT or SUPPORT_FPU_SOFTFLOAT3.
 #endif
 
 void CPUCALL
@@ -70,7 +70,7 @@ fpu_initialize(int initreg)
 			if (initreg) DB2_FPU_FINIT();
 			break;
 #endif
-#if defined(SUPPORT_FPU_SOFTFLOAT)
+#if defined(SUPPORT_FPU_SOFTFLOAT) || defined(SUPPORT_FPU_SOFTFLOAT3)
 		case FPU_TYPE_SOFTFLOAT:
 			insttable_2byte[0][0xae] = insttable_2byte[1][0xae] = SF_FPU_FXSAVERSTOR;
 			insttable_1byte[0][0xd8] = insttable_1byte[1][0xd8] = SF_ESC0;
@@ -85,7 +85,7 @@ fpu_initialize(int initreg)
 			break;
 #endif
 		default:
-#if defined(SUPPORT_FPU_SOFTFLOAT)
+#if defined(SUPPORT_FPU_SOFTFLOAT) || defined(SUPPORT_FPU_SOFTFLOAT3)
 			insttable_2byte[0][0xae] = insttable_2byte[1][0xae] = SF_FPU_FXSAVERSTOR;
 			insttable_1byte[0][0xd8] = insttable_1byte[1][0xd8] = SF_ESC0;
 			insttable_1byte[0][0xd9] = insttable_1byte[1][0xd9] = SF_ESC1;

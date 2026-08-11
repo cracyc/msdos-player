@@ -41,33 +41,7 @@
 
 #include "../../common.h"
 
-//#define SUPPORT_FPU_DOSBOX
-//#define SUPPORT_FPU_DOSBOX2
-#define SUPPORT_FPU_SOFTFLOAT
-#define USE_FPU
-#define USE_MMX
-#define USE_3DNOW
-#define USE_SSE
-#define USE_SSE2
-#define USE_SSE3
-#define USE_SSSE3
-#define USE_SSE4_1
-#define USE_SSE4_2
-#define USE_SSE4A
-#define USE_TSC
-#define USE_PAGING
-#define USE_FASTPAGING
-#define USE_VME
-//#define USE_CPU_MODRMPREFETCH
-#define USE_CPU_PLATFORMINT
-#define USE_CPU_INLINEINST
-#define USE_CPU_DIRECTREG
-#define USE_CPU_EIPMASK
-#define USE_CPU_BULKREP
-//#define USE_LEGACY_MEMORY_ACCESS
-//#define USE_CLOCK
-//#define IA32_INSTRUCTION_TRACE
-#define IA32_REBOOT_ON_PANIC
+#include "cpu_def.h"
 
 #ifdef __BIG_ENDIAN__
 	#define BYTESEX_BIG
@@ -165,8 +139,11 @@ enum {
 };
 
 #include "interface.h"
-#if defined(SUPPORT_FPU_SOFTFLOAT)
+#if defined(SUPPORT_FPU_SOFTFLOAT) && !defined(SUPPORT_FPU_SOFTFLOAT3)
 #include "instructions/fpu/softfloat/softfloat.h"
+#endif
+#if defined(SUPPORT_FPU_SOFTFLOAT3)
+#include "instructions/fpu/softfloat3/softfloat.h"
 #endif
 
 //#ifdef __cplusplus
@@ -392,7 +369,12 @@ typedef enum {
 } FP_RND;
 
 typedef union {
-    floatx80 d;
+#if defined(SUPPORT_FPU_SOFTFLOAT) && !defined(SUPPORT_FPU_SOFTFLOAT3)
+	floatx80 d;
+#endif
+#if defined(SUPPORT_FPU_SOFTFLOAT3)
+	sw_extFloat80_t d;
+#endif
     double d64;
     struct {
         UINT32 lower;
@@ -450,6 +432,9 @@ typedef struct {
 #if defined(SUPPORT_FPU_DOSBOX2) // XXX: 整数間だけ正確にするため用
 	FP_INT_REG	int_reg[FPU_REG_NUM+1];
 	UINT8		int_regvalid[FPU_REG_NUM+1];
+#elif defined(SUPPORT_FPU_DOSBOX2_COMPATIBLE) // XXX: 互換維持用　未使用
+	FP_INT_REG	reserved_fpu1[FPU_REG_NUM + 1];
+	UINT8		reserved_fpu2[FPU_REG_NUM + 1];
 #endif
 #ifdef USE_SSE
 	XMM_REG		xmm_reg[XMM_REG_NUM+1]; // xmm0 to xmm7	
@@ -487,23 +472,8 @@ typedef struct {
 #endif
 } I386STAT;
 
-#if 0
-typedef struct {
-	UINT8		*ext;
-	UINT32		extsize;
-	UINT8		*extbase;	/* = ext - 0x100000 */
-	UINT32		extlimit16mb;	/* = extsize + 0x100000 (MAX:16MB) */
-	UINT32		extlimit4gb;	/* = extsize + 0x100000 */
-	UINT32		inport;
-	UINT8		*ems[4];
-} I386EXT;
-#endif
-
 typedef struct {
 	I386STAT	s;		/* STATsave'ed */
-#if 0
-	I386EXT		e;
-#endif
 } I386CORE;
 
 #define I386CPUID_VERSION	1
@@ -560,23 +530,9 @@ extern UINT32		opCache;
 #define	CPU_BASECLOCK	i386core.s.baseclock
 #define	CPU_CLOCK	i386core.s.clock
 #endif
-#if 0
-#define	CPU_ITFBANK	i386core.s.itfbank
-#define	CPU_RAM_D000	i386core.s.ram_d0
-#endif
 
 #define CPU_TYPE	i386core.s.cpu_type
 #define CPUTYPE_V30	0x01
-
-#if 0
-#define	CPU_EXTMEM	i386core.e.ext
-#define	CPU_EXTMEMSIZE	i386core.e.extsize
-#define	CPU_EXTMEMBASE	i386core.e.extbase
-#define	CPU_EXTLIMIT16	i386core.e.extlimit16mb
-#define	CPU_EXTLIMIT	i386core.e.extlimit4gb
-#define	CPU_INPADRS	i386core.e.inport
-#define	CPU_EMSPTR	i386core.e.ems
-#endif
 
 #ifndef __cplusplus
 extern sigjmp_buf	exec_1step_jmpbuf;
@@ -1399,8 +1355,6 @@ do { \
 
 void ia32_init(void);
 void ia32_initreg(void);
-//void ia32_setextsize(UINT32 size);
-//void ia32_setemm(UINT frame, UINT32 addr);
 
 void ia32reset(void);
 void ia32shut(void);
@@ -1418,8 +1372,6 @@ void exec_1step(void);
 void ia32_printf(const char *buf, ...);
 void ia32_warning(const char *buf, ...);
 void ia32_panic(const char *buf, ...);
-
-//void ia32_bioscall(void);
 
 void CPUCALL change_pm(BOOL onoff);
 void CPUCALL change_vm(BOOL onoff);

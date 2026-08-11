@@ -296,39 +296,3 @@ ia32_printf(const char *str, ...)
 
 	msgbox("ia32_printf", buf);
 }
-
-
-/*
- * bios call interface
- */
-#if 0
-void
-ia32_bioscall(void)
-{
-	UINT32 adrs;
-
-	if (!CPU_STAT_PM || CPU_STAT_VM86) {
-#if 1
-		adrs = CPU_PREV_EIP + (CPU_CS << 4);
-#else
-		adrs = CPU_PREV_EIP + CPU_STAT_CS_BASE;
-#endif
-		if ((adrs >= 0xf8000) && (adrs < 0x100000)) {
-			if (biosfunc(adrs)) {
-				/* Nothing to do */
-			}
-			LOAD_SEGREG(CPU_ES_INDEX, CPU_ES);
-			LOAD_SEGREG(CPU_CS_INDEX, CPU_CS);
-			LOAD_SEGREG(CPU_SS_INDEX, CPU_SS);
-			LOAD_SEGREG(CPU_DS_INDEX, CPU_DS);
-		}
-	}else{
-#ifdef SUPPORT_PCI
-		adrs = CPU_EIP;
-		if (bios32func(adrs)) {
-			/* Nothing to do */
-		}
-#endif
-	}
-}
-#endif

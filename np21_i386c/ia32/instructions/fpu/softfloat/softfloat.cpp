@@ -24,8 +24,9 @@ code that are retained.
 =============================================================================*/
 
 //#include "compiler.h"
+#include "../../../cpu_def.h"
 
-//#ifdef SUPPORT_FPU_SOFTFLOAT
+#ifdef SUPPORT_FPU_SOFTFLOAT
 
 #ifndef INLINE
 	#ifdef __cplusplus
@@ -1296,7 +1297,6 @@ float32 int64_to_float32( int64 a )
     flag zSign;
     uint64 absA;
     int8 shiftCount;
-//    bits32 zSig;
 
     if ( a == 0 ) return 0;
     zSign = ( a < 0 );
@@ -2262,7 +2262,6 @@ flag float32_eq_signaling( float32 a, float32 b )
 flag float32_le_quiet( float32 a, float32 b )
 {
     flag aSign, bSign;
-//    int16 aExp, bExp;
 
     if (    ( ( extractFloat32Exp( a ) == 0xFF ) && extractFloat32Frac( a ) )
          || ( ( extractFloat32Exp( b ) == 0xFF ) && extractFloat32Frac( b ) )
@@ -3040,7 +3039,6 @@ float64 float64_sqrt( float64 a )
     int16 aExp, zExp;
     bits64 aSig, zSig, doubleZSig;
     bits64 rem0, rem1, term0, term1;
-//    float64 z;
 
     aSig = extractFloat64Frac( a );
     aExp = extractFloat64Exp( a );
@@ -3177,7 +3175,6 @@ flag float64_eq_signaling( float64 a, float64 b )
 flag float64_le_quiet( float64 a, float64 b )
 {
     flag aSign, bSign;
-//    int16 aExp, bExp;
 
     if (    ( ( extractFloat64Exp( a ) == 0x7FF ) && extractFloat64Frac( a ) )
          || ( ( extractFloat64Exp( b ) == 0x7FF ) && extractFloat64Frac( b ) )
@@ -5442,4 +5439,4 @@ floatx80 c_double_to_floatx80(double a){
 }
 #endif
 
-//#endif
+#endif
