@@ -7634,8 +7634,13 @@ retry:
 		return(EOF);
 	}
 	
-	// input from console
 	UINT8 key_char = 0, key_scan = 0;
+	if(enhsc) {
+		key_char = enhsc;
+		enhsc = 0;
+		return(key_char);
+	}
+	// input from console
 	while(kbc_buffer != NULL && !msdos_exit) {
 		if(!pcbios_is_key_buffer_empty()) {
 			break;
@@ -7656,18 +7661,13 @@ retry:
 		key_char = 0x0d;
 		key_scan = 0;
 	} else {
-		if(enhsc) {
-			key_char = enhsc;
-			enhsc = 0;
-		} else {
-			pcbios_get_key_buffer(&key_char, &key_scan);
-			if(!key_char || (key_char == 0xe0)) {
-				enhsc = key_scan;
-				key_char = 0;
-			}
+		pcbios_get_key_buffer(&key_char, &key_scan);
+		if(!key_char || (key_char == 0xe0)) {
+			enhsc = key_scan;
+			key_char = 0;
 		}
 	}
-	return key_char;
+	return(key_char);
 }
 
 inline int msdos_getch(unsigned int_num, UINT8 reg_ah)
