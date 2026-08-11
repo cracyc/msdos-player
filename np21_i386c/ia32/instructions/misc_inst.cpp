@@ -73,7 +73,7 @@ LEA_GdM(void)
 void
 _NOP(void)
 {
-	//ia32_bioscall();
+
 }
 
 void

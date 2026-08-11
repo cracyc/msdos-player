@@ -2885,7 +2885,11 @@ static void I386OP(decode_four_byte38f3)();
 #include "i386op16.c"
 #include "i386op32.c"
 #include "i486ops.c"
+#ifdef SUPPORT_FPU_SOFTFLOAT3
+#include "x87ops3.c"
+#else
 #include "x87ops.c"
+#endif
 #include "pentops.c"
 #include "i386ops.h"
 

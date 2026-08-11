@@ -33,14 +33,7 @@ UINT8 * MEMCALL memp_get_direct_host_page(UINT32 address)
 	address &= CPU_ADRSMASK;
 	address &= 0xfffff000UL;
 
-	UINT8 *ptr = get_mem_ptr(address);
-
-	if (ptr != NULL) {
-		if ((ptr + CPU_PAGE_SIZE - 1) == get_mem_ptr(address + CPU_PAGE_SIZE - 1)) {
-			return ptr;
-		}
-	}
-	return NULL;
+	return get_mem_ptr(address, CPU_PAGE_SIZE);
 }
 
 UINT32 codefetch_address;
@@ -243,11 +236,9 @@ void MEMCALL memp_reads(UINT32 address, void *dat, UINT leng) {
 	/* fast memory access */
 	address = address & CPU_ADRSMASK;
 
-	if ((ptr = get_mem_ptr(address)) != NULL) {
-		if ((ptr + leng - 1) == get_mem_ptr(address + leng - 1)) {
-			CopyMemory(dat, ptr, leng);
-			return;
-		}
+	if ((ptr = get_mem_ptr(address, leng)) != NULL) {
+		CopyMemory(dat, ptr, leng);
+		return;
 	}
 
 	/* slow memory access */
@@ -264,11 +255,9 @@ void MEMCALL memp_writes(UINT32 address, const void *dat, UINT leng) {
 	/* fast memory access */
 	address = address & CPU_ADRSMASK;
 
-	if ((ptr = get_mem_ptr(address)) != NULL) {
-		if ((ptr + leng - 1) == get_mem_ptr(address + leng - 1)) {
-			CopyMemory(ptr, dat, leng);
-			return;
-		}
+	if ((ptr = get_mem_ptr(address, leng)) != NULL) {
+		CopyMemory(ptr, dat, leng);
+		return;
 	}
 
 	/* slow memory access */

@@ -81,5 +81,8 @@ endlocal
 
 rmdir /s /q Release
 
+del msdos.plg
+del ntvdm.plg
+
 pause
 echo on

@@ -1329,16 +1329,15 @@ extern "C" {
 	memory accessors
 ---------------------------------------------------------------------------- */
 
-UINT8 *get_mem_ptr(UINT32 byteaddress)
+UINT8 *get_mem_ptr(UINT32 byteaddress, UINT32 size)
 {
-	if(byteaddress < MEMORY_END) {
+	UINT64 endaddress = (UINT64)byteaddress + size - 1;
+	if(endaddress < MEMORY_END) {
 		return mem + byteaddress;
-	} else if(byteaddress >= DUMMY_TOP) {
+	} else if(byteaddress >= 0x100000) {
 #if defined(HAS_I386)
-		if(byteaddress < MAX_MEM) {
+		if(endaddress < MAX_MEM) {
 			return mem + byteaddress;
-		} else if(byteaddress >= 0xffff8000) {
-			return mem + (byteaddress & 0xfffff);
 		}
 #else
 		return mem + byteaddress;
@@ -7401,12 +7400,12 @@ int msdos_find_file_has_8dot3name(WIN32_FIND_DATAA *fd)
 	if(fd->cAlternateFileName[0]) {
 		return(1);
 	}
+	if(strcmp(fd->cFileName, ".") == 0 || strcmp(fd->cFileName, "..") == 0) {
+		return(1);
+	}
 	size_t len = strlen(fd->cFileName);
 	if(len > 12) {
 		return(0);
-	}
-	if(strcmp(fd->cFileName, ".") == 0 || strcmp(fd->cFileName, "..") == 0) {
-		return(1);
 	}
 	const char *ext = my_strrchr(fd->cFileName, '.');
 	if((ext ? ext - fd->cFileName : len) > 8) {

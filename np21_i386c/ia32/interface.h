@@ -56,10 +56,8 @@
 #define	CPU_EXEC()			ia32()
 #define	CPU_EXECV30()			ia32()
 #define	CPU_SHUT()			ia32shut()
-//#define	CPU_SETEXTSIZE(size)		ia32_setextsize((UINT32)(size) << 20)
-//#define CPU_SETEMM(frame, addr)		ia32_setemm(frame, addr)
 
- // USE_LEGACY_MEMORY_ACCESSがある場合は旧ルーチンを使用する
+// USE_LEGACY_MEMORY_ACCESSがある場合は旧ルーチンを使用する
 #if defined(USE_LEGACY_MEMORY_ACCESS)
 // 旧版
 #define	cpu_memorywrite(a,v)	memp_write8(a,v)

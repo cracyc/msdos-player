@@ -65,14 +65,14 @@ check_limit_upstairs(descriptor_t *sdp, UINT32 offset, UINT len, BOOL is32bit)
 			 * |       |   +-------+ 0000FFFFh - len -1
 			 * |       |   | valid |
 			 * +-------+   +-------+ 00000000h
+			 * Expand-down segments start at limit + 1.  Therefore
+			 * offset 0 is not valid even when the descriptor limit is 0.
 			 */
-			if (!SEG_IS_32BIT(sdp)) {
-				if ((len > limit)		/* len check */
-				 || (end > limit)) {		/* [1] */
-					goto exc;
-				}
-			} else {
-				sdp->flag |= CPU_DESC_FLAG_WHOLEADR;
+			if ((len > limit)			/* len check */
+			 || (end < offset)			/* wrap check */
+			 || (offset == 0)			/* lower bound */
+			 || (end > limit)) {			/* upper bound */
+				goto exc;
 			}
 		} else {
 			/*
@@ -91,7 +91,7 @@ check_limit_upstairs(descriptor_t *sdp, UINT32 offset, UINT len, BOOL is32bit)
 			 */
 			if ((len > limit - sdp->u.seg.limit)	/* len check */
 			 || (end < offset)			/* wrap check */
-			 || (offset < sdp->u.seg.limit) 	/* [1] */
+			 || (offset <= sdp->u.seg.limit)	/* [1] */
 			 || (end > limit)) {			/* [2] */
 				goto exc;
 			}
@@ -125,7 +125,7 @@ check_limit_upstairs(descriptor_t *sdp, UINT32 offset, UINT len, BOOL is32bit)
 			 */
 			if ((len > sdp->u.seg.limit)		/* len check */
 			 || (end < offset)			/* wrap check */
-			 || (end > sdp->u.seg.limit + 1)) {	/* [1] */
+			 || (end > sdp->u.seg.limit)) {		/* [1] */
 				goto exc;
 			}
 		}
