@@ -1804,29 +1804,23 @@ BOOL MySetConsoleTextAttribute(HANDLE hConsoleOutput, WORD wAttributes)
 	return TRUE;
 }
 
-void read_cursor_pos(HANDLE hStdout, COORD *pos)
+void read_cursor_pos(HANDLE hStdout, HANDLE hStdin, COORD *pos)
 {
-	// we need the console stdin, this should be in MyGetConsoleScreenBufferInfo but it
-	// hangs in GetNumberOfConsoleInputEvents
-	HANDLE hStdin = CreateFile("CONIN$", GENERIC_READ, FILE_SHARE_READ, NULL, 3, FILE_ATTRIBUTE_NORMAL, NULL);
-	DWORD count;
+	DWORD count, mode;
 	INPUT_RECORD ir;
 	bool esc_found = false;
-	char buf[20];
+	char buf[20] = {0};
 	int bpos = 0;
-
-	if(hStdin == INVALID_HANDLE_VALUE) {
-		pos->X = 1;
-		pos->Y = 1;
-		return;
-	}
-	memset(&buf, 0, 20);
 	pos->X = 1;
 	pos->Y = 1;
+
+	if(hStdin == INVALID_HANDLE_VALUE) return;
+	GetConsoleMode(hStdin, &mode);
+	SetConsoleMode(hStdin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
 	
 	WriteConsoleA(hStdout, "\x1b[6n", 4, NULL, NULL);
 	while(ReadConsoleInputA(hStdin, &ir, 1, &count)) {
-		if((ir.EventType != KEY_EVENT)) {
+		if(ir.EventType != KEY_EVENT) {
 			continue;
 		}
 		if(esc_found) {
@@ -1852,14 +1846,15 @@ void read_cursor_pos(HANDLE hStdout, COORD *pos)
 		buf[i + 1] = 0;
 	}
 	sscanf(buf, "[%hd;%hdR", &pos->Y, &pos->X);
-	CloseHandle(hStdin);
+	SetConsoleMode(hStdin, mode);
 }
 				
 bool update_console_input();
 BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo)
 {
 	if(use_vt) {
-		HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+		// we need the real stdin handle; msdn lies, GENERIC_WRITE is needed for SetConsoleMode
+		HANDLE hStdin = CreateFile("CONIN$", GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ, NULL, 3, FILE_ATTRIBUTE_NORMAL, NULL);
 		COORD maxsize = {9998,9998};
 		enter_input_lock();
 		DWORD mode, events;
@@ -1870,9 +1865,9 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 			update_console_input();
 			ret = GetNumberOfConsoleInputEvents(hStdin, &events);
 		} while(ret && events);
-		read_cursor_pos(hConsoleOutput, &lpConsoleScreenBufferInfo->dwCursorPosition);
+		read_cursor_pos(hConsoleOutput, hStdin, &lpConsoleScreenBufferInfo->dwCursorPosition);
 		MySetConsoleCursorPosition(hConsoleOutput, maxsize);
-		read_cursor_pos(hConsoleOutput, &lpConsoleScreenBufferInfo->dwSize);
+		read_cursor_pos(hConsoleOutput, hStdin, &lpConsoleScreenBufferInfo->dwSize);
 		lpConsoleScreenBufferInfo->dwCursorPosition.X--;
 		lpConsoleScreenBufferInfo->dwCursorPosition.Y--;
 		MySetConsoleCursorPosition(hConsoleOutput, lpConsoleScreenBufferInfo->dwCursorPosition);
@@ -1883,6 +1878,7 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 		lpConsoleScreenBufferInfo->wAttributes = 7;
 		SetConsoleMode(hStdin, mode);
 		leave_input_lock();
+		CloseHandle(hStdin);
 	} else {
 		return GetConsoleScreenBufferInfo(hConsoleOutput, lpConsoleScreenBufferInfo);
 	}
