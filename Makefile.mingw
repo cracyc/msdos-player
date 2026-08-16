@@ -27,7 +27,7 @@ LDFLAGS_NTVDM = -shared -s -static-libgcc -Wl,--enable-stdcall-fixup -Wl,--kill-
 ifdef DEBUG
 CFLAGS += -Og -g
 else
-CFLAGS += -O3
+CFLAGS += -O3 -s
 endif
 
 ifdef DEBUGGER
