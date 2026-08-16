@@ -1814,7 +1814,6 @@ void read_cursor_pos(HANDLE hStdout, HANDLE hStdin, COORD *pos)
 	pos->X = 1;
 	pos->Y = 1;
 
-	if(hStdin == INVALID_HANDLE_VALUE) return;
 	GetConsoleMode(hStdin, &mode);
 	SetConsoleMode(hStdin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
 	
@@ -1855,8 +1854,20 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 	if(use_vt) {
 		// we need the real stdin handle; msdn lies, GENERIC_WRITE is needed for SetConsoleMode
 		HANDLE hStdin = CreateFile("CONIN$", GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ, NULL, 3, FILE_ATTRIBUTE_NORMAL, NULL);
-		COORD maxsize = {9998,9998};
+		lpConsoleScreenBufferInfo->srWindow.Left = 0;
+		lpConsoleScreenBufferInfo->srWindow.Top = 0;
+		lpConsoleScreenBufferInfo->wAttributes = 7;
+		if(hStdin == INVALID_HANDLE_VALUE) {
+			lpConsoleScreenBufferInfo->srWindow.Right = 79;
+			lpConsoleScreenBufferInfo->srWindow.Bottom = 24;
+			lpConsoleScreenBufferInfo->dwCursorPosition.X = 0;
+			lpConsoleScreenBufferInfo->dwCursorPosition.Y = 0;
+			lpConsoleScreenBufferInfo->dwSize.X = 80;
+			lpConsoleScreenBufferInfo->dwSize.Y = 25;
+			return TRUE;
+		}
 		enter_input_lock();
+		COORD maxsize = {9998,9998};
 		DWORD mode, events;
 		BOOL ret;
 		GetConsoleMode(hStdin, &mode);
@@ -1871,11 +1882,8 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 		lpConsoleScreenBufferInfo->dwCursorPosition.X--;
 		lpConsoleScreenBufferInfo->dwCursorPosition.Y--;
 		MySetConsoleCursorPosition(hConsoleOutput, lpConsoleScreenBufferInfo->dwCursorPosition);
-		lpConsoleScreenBufferInfo->srWindow.Left = 0;
-		lpConsoleScreenBufferInfo->srWindow.Top = 0;
 		lpConsoleScreenBufferInfo->srWindow.Right = lpConsoleScreenBufferInfo->dwSize.X - 1;
 		lpConsoleScreenBufferInfo->srWindow.Bottom = lpConsoleScreenBufferInfo->dwSize.Y - 1;
-		lpConsoleScreenBufferInfo->wAttributes = 7;
 		SetConsoleMode(hStdin, mode);
 		leave_input_lock();
 		CloseHandle(hStdin);
