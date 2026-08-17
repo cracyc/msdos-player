@@ -4578,7 +4578,7 @@ int main(int argc, char *argv[], char *envp[])
 		FILE* fp = my_fopen(full, "rb");
 		long offset = get_section_in_exec_file(fp, ".msdos");
 		if(offset != 0) {
-			UINT8 buffer[21];
+			UINT8 buffer[22];
 			fseek(fp, offset, SEEK_SET);
 			fread(buffer, sizeof(buffer), 1, fp);
 			
@@ -4626,14 +4626,19 @@ int main(int argc, char *argv[], char *envp[])
 				video_card_type = buffer[13];
 			}
 			int devices_len = buffer[14] | (buffer[15] << 8);
-			int name_len = buffer[16];
-			int file_len = buffer[17] | (buffer[18] << 8) | (buffer[19] << 16) | (buffer[20] << 24);
+			int title_len = buffer[16];
+			int name_len = buffer[17];
+			int file_len = buffer[18] | (buffer[19] << 8) | (buffer[20] << 16) | (buffer[21] << 24);
 			
 			// restore devices to load
 			if(devices_len) {
 				fread(devices_to_load, devices_len, 1, fp);
 			}
-			
+			if(title_len) {
+				title = (char *)malloc(title_len + 1);
+				fread(title, title_len, 1, fp);
+				title[title_len] = 0;
+			}
 			// restore command file name
 			memset(dummy_argv_1, 0, sizeof(dummy_argv_1));
 			fread(dummy_argv_1, name_len, 1, fp);
@@ -4805,6 +4810,12 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-h", 2) == 0) {
 			hide_cursor = true;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-t", 2) == 0) {
+			if(argv[i][2] != '\0') {
+				title = (char *)malloc(strlen(&argv[i][2]) + 1);
+				strcpy(title, &argv[i][2]);
+			}
 			arg_offset++;
 		} else {
 			break;
@@ -5000,6 +5011,10 @@ int main(int argc, char *argv[], char *envp[])
 					int devices_len = (int)strlen(devices_to_load);
 					fputc((devices_len >>  0) & 0xff, fo);
 					fputc((devices_len >>  8) & 0xff, fo);
+
+					// store title
+					int title_len = title ? (int)strlen(title) : 0;
+					fputc(title_len, fo);
 					
 					// store command file info
 					MyGetFullPathNameA(argv[arg_offset + 1], MAX_PATH, full, &name);
@@ -5015,6 +5030,9 @@ int main(int argc, char *argv[], char *envp[])
 					
 					if(devices_len) {
 						fwrite(devices_to_load, devices_len, 1, fo);
+					}
+					if(title_len) {
+						fwrite(title, title_len, 1, fo);
 					}
 					fwrite(name, name_len, 1, fo);
 					
@@ -10251,7 +10269,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		
 		*(UINT16 *)(mem + (ss << 4) + sp) = 0;
 		CPU_JMP_FAR(cs, ip);
-		MySetConsoleTitleA(process->module_path);
+		MySetConsoleTitleA(title ? title : process->module_path);
 		
 #ifdef SUPPORT_VDD
 		for(int i = 0; i < 5; i++) {
@@ -16747,7 +16765,7 @@ inline void msdos_int_21h_50h()
 inline void msdos_int_21h_51h()
 {
 	process_t *process = msdos_process_info_get(current_psp, false);
-	if(process) {
+	if(process && !title) {
 		MySetConsoleTitleA(process->module_path);
 	}
 	CPU_BX = current_psp;

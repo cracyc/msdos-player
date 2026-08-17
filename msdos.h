@@ -1314,6 +1314,7 @@ bool restore_console_font = false;
 bool cursor_moved;
 bool cursor_moved_by_crtc;
 bool use_vt = false;
+char *title = NULL;
 
 FIFO *kbc_buffer = NULL;
 bool key_changed = false;
