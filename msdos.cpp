@@ -5106,17 +5106,20 @@ int main(int argc, char *argv[], char *envp[])
 	}
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
 	CONSOLE_FONT_INFOEX fi;
 	
-	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
+	GetConsoleMode(hStdin, &dwConsoleMode);
 	SetFileApisToOEM();
 
 	if(use_vt) {
 		DWORD mode;
 		if(GetConsoleMode(hStdout, &mode)) {
 			SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+			dwConsoleMode &= ~ENABLE_LINE_INPUT;
+			SetConsoleMode(hStdin, dwConsoleMode);
 		} else {
 			use_vt = false;
 		}
