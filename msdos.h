@@ -1313,6 +1313,7 @@ bool restore_console_cursor = false;
 bool restore_console_font = false;
 bool cursor_moved;
 bool cursor_moved_by_crtc;
+bool cursor_moved_no_idle = false;
 bool use_vt = false;
 char *title = NULL;
 

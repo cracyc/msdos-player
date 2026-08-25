@@ -1138,6 +1138,18 @@ char devices_to_load[MAX_PATH]= {0};
 unsigned update_ops = 0;
 unsigned idle_ops = 0;
 
+void InputSleep(DWORD ms)
+{
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	DWORD ret = WAIT_TIMEOUT;
+	if(hStdin == INVALID_HANDLE_VALUE) {
+		Sleep(ms);
+	} else {
+		ret = WaitForSingleObject(hStdin, ms);
+	}
+	if(ret == WAIT_OBJECT_0) REQUEST_HARDWRE_UPDATE();
+}
+
 #ifdef _MSC_VC6
 inline void __cpuid(int cpu_info[4], int function_id)
 {
@@ -1190,17 +1202,14 @@ inline void maybe_idle()
 {
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
-	if(!stay_busy && idle_ops < 1024 && vram_length <= 1) {
+	if(!stay_busy && !cursor_moved_no_idle && idle_ops < 1024 && vram_length <= 1) {
 		if(is_sse2_ready()) {
 			_mm_pause();	// SSE2 pause
-		} else if(is_xp_64_or_later) {
-			Sleep(0);	// switch to other thread that is ready to run, without checking priority
-		} else {
-			Sleep(1);
-			REQUEST_HARDWRE_UPDATE();
 		}
+		InputSleep(10);
 	}
 	idle_ops = 0;
+	cursor_moved_no_idle = false;
 }
 
 inline void enter_input_lock()
@@ -7673,11 +7682,11 @@ retry:
 		if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 			// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
 			if(!console_kbhit()) {
-				Sleep(10);
+				InputSleep(10);
 			}
 		} else {
 			if(!update_key_buffer()) {
-				Sleep(10);
+				InputSleep(10);
 			}
 		}
 	}
@@ -13044,7 +13053,7 @@ bool pcbios_update_key_code(bool wait, bool remove, UINT16 *key)
 	if(pcbios_is_key_buffer_empty()) {
 		if(!console_kbhit()) {
 			if(wait) {
-				Sleep(10);
+				InputSleep(10);
 			} else {
 				maybe_idle();
 			}
@@ -19148,8 +19157,7 @@ inline void msdos_int_2fh_16h()
 #endif
 	case 0x80:
 	case 0x89:
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
+		InputSleep(10);
 		CPU_AL = 0x00;
 		break;
 	case 0x83:
@@ -21995,6 +22003,7 @@ void msdos_syscall(unsigned num)
 	if(cursor_moved) {
 		pcbios_update_cursor_position();
 		cursor_moved = false;
+		cursor_moved_no_idle = true;
 	}
 	// this is called from dummy loop to wait until a serive that waits input is done
 	if(!(use_service_thread && in_service)) {
@@ -22030,7 +22039,7 @@ void msdos_syscall(unsigned num)
 				} else if(opcode[2] == 0x51 && opcode[3] == 0x02) {
 					// WOW32 User/Task BOP, WOW_YIELD
 					CPU_EIP += 4;
-					Sleep(0);
+					InputSleep(0);
 					CPU_SET_C_FLAG(0);
 					CPU_AX = 0x0000;
 				} else if(opcode[2] == 0x54) {
@@ -22656,8 +22665,7 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x28:
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
+		InputSleep(10);
 		break;
 	case 0x29:
 		msdos_int_29h();
@@ -23101,6 +23109,7 @@ void msdos_syscall(unsigned num)
 	if(cursor_moved) {
 		pcbios_update_cursor_position();
 		cursor_moved = false;
+		cursor_moved_no_idle = true;
 	}
 #ifdef ENABLE_DEBUG_SYSCALL
 	if(num != 0x08 && num != 0x1c) {
