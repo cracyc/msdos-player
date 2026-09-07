@@ -69,11 +69,6 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-l	draw box lines with ank characters
 	-h	allow making cursor invisible
 
-ISH.COM contains any invalid instructions and it cause an error.
-Please specify the option '-i' to ignore the invalid instructions.
-
-	> msdos -i ish.com
-
 EDIT.COM does not work correctly when a free memory space is large.
 Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
 
