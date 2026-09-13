@@ -26886,7 +26886,7 @@ void cmd_req(char func)
 					DataStruct->NumDrives++;
 				}
 			}
-			if(process != NULL && strlen(process->module_dir) + 1 + strlen(process->module_path) < DataStruct->AppNameLen) {
+			if(_process != NULL && strlen(process->module_dir) + 1 + strlen(process->module_path) < DataStruct->AppNameLen) {
 				sprintf(AppName, "%s\\%s", process->module_dir, process->module_path);
 			} else {
 				strcpy(AppName, mcb_psp->prog_name);
