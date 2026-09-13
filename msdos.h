@@ -1483,8 +1483,6 @@ static BYTE bytIntelRegister[sizeof(X86_CONTEXT) + 15];
 static X86_CONTEXT* pIntelRegister = NULL;
 static VDM_ERROR_TYPE VdmParametersInfoError = VDM_NO_ERROR;
 
-void cmd_req(char fnc);
-
 void vdd_init();
 void vdd_finish();
 void vdd_req(char func);
@@ -1494,6 +1492,32 @@ void vdd_init_table(PVDD_FUNC_TABLE ptr);
 void vdd_store_intel_register();
 void vdd_restore_intel_register();
 #endif
+
+// from ReactOS/subsystem/mvdm/dos/dem.c
+#pragma pack(2)
+typedef struct {
+	WORD	EnvBlockSeg;
+	WORD	EnvBlockLen;
+	WORD	CurDrive;
+	WORD	NumDrives;
+	WORD	CmdLineSeg;
+	WORD	CmdLineOff;
+	WORD	Unknown0;
+	WORD	ExitCode;
+	WORD	Unknown1;
+	DWORD	Unknown2;
+	WORD	CodePage;
+	WORD	Unknown3;
+	WORD	Unknown4;
+	WORD	AppNameSeg;
+	WORD	AppNameOff;
+	WORD	AppNameLen;
+	WORD	Flags;
+} bop_next_cmd_t;
+#pragma pack()
+
+void bop_req(UINT8 *opcode);
+void cmd_req(char fnc);
 
 /* ----------------------------------------------------------------------------
 	tables

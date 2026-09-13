@@ -82,6 +82,11 @@ inline void CPU_SET_EIP(UINT32 value)
 	CPU_EIP = value;
 }
 
+inline void CPU_INC_EIP(UINT32 value)
+{
+	CPU_EIP += value;
+}
+
 #define CPU_C_FLAG			((CPU_FLAGL & C_FLAG) != 0)
 #define CPU_P_FLAG			((CPU_FLAGL & P_FLAG) != 0)
 #define CPU_A_FLAG			((CPU_FLAGL & A_FLAG) != 0)

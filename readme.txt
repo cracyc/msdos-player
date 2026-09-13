@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								7/2/2026
+								9/13/2026
 
 ----- What's This
 
@@ -68,6 +68,11 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-ld	load device drivers
 	-l	draw box lines with ank characters
 	-h	allow making cursor invisible
+
+Some software contain any invalid instructions and it cause an error.
+Please specify the option '-i' to ignore the invalid instructions.
+
+	> msdos -i ish.com
 
 EDIT.COM does not work correctly when a free memory space is large.
 Please specify the option '-m' to restrict free memory to 0x7FFF paragraphs.
@@ -1161,18 +1166,19 @@ VDD (Virtual Device Driver)
 
 Other BOP
 
-	C4H,C4H,00H	Terminate VDM BOP
+	C4H,C4H,11H	Get Equipment List BOP
 
-	C4H,C4H,51H	WOW32 User/Task BOP
-
-		02H	WOW_YIELD
+	C4H,C4H,12H	Get Memory Size BOP
 
 	C4H,C4H,54H	Command/Console BOP
 
-		00H	BOP_CMD_INIT
-		01H	BOP_CMD_XEC
-		02H	BOP_CMD_EXIT
-		93H	BOP_CMD_CURDIR
+		00H	Kill the VDM
+		01H	Get New App to Start
+		07H	Check Binary Format
+		08H	Start External Command
+		0AH	Start Default 32-bit Command Interpreter
+		0BH	Set Exit Code
+		10H	Get Start Information
 
 	C4H,C4H,60H	NTVDM Get Version BOP
 
@@ -1299,7 +1305,7 @@ INT 2FH AX=1613H (MS-DOS 7 kernel - Get SYSTEM.DAT PathName)
 INT 2FH AX=1614H (MS-DOS 7 kernel - Set SYSTEM.DAT PathName)
 are based on DOSBox-X.
 
-VDD is based on Mr. cracyc's fork and ReactOS.
+BOP and VDD are based on Mr. cracyc's fork and ReactOS.
 Device driver loading is based on Mr. N2583ZYOB6's fork and ReactOS.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
