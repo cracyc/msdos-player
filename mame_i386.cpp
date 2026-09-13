@@ -674,6 +674,12 @@ inline void CPU_SET_EIP(UINT32 value)
 	CHANGE_PC(m_eip);
 }
 
+inline void CPU_INC_EIP(UINT32 value)
+{
+	m_eip += value;
+	CHANGE_PC(m_pc);
+}
+
 #define CPU_GDTR_LIMIT			m_gdtr.limit
 #define CPU_GDTR_BASE			m_gdtr.base
 #define CPU_IDTR_LIMIT			m_idtr.limit

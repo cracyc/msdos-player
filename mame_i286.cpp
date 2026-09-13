@@ -545,6 +545,12 @@ inline void CPU_SET_PC(UINT32 value)
 	CHANGE_PC(m_pc);
 }
 
+inline void CPU_INC_EIP(UINT32 value)
+{
+	m_pc = (m_pc + value) & ADDR_MASK;
+	CHANGE_PC(m_pc);
+}
+
 #define CPU_GDTR_LIMIT			m_gdtr.limit
 #define CPU_GDTR_BASE			m_gdtr.base
 #define CPU_IDTR_LIMIT			m_idtr.limit
@@ -728,7 +734,6 @@ UINT32 CPU_TRANS_PAGING_ADDR(UINT32 addr)
 	return addr;
 }
 
-#ifdef USE_DEBUGGER
 UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 {
 #if defined(HAS_I286)
@@ -748,6 +753,7 @@ UINT32 CPU_TRANS_CODE_ADDR(UINT32 seg, UINT32 ofs)
 	return (seg << 4) + ofs;
 }
 
+#ifdef USE_DEBUGGER
 UINT32 CPU_GET_PREV_PC()
 {
 	return m_prevpc;

@@ -1135,6 +1135,18 @@ char devices_to_load[MAX_PATH]= {0};
 unsigned update_ops = 0;
 unsigned idle_ops = 0;
 
+void InputSleep(DWORD ms)
+{
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	DWORD ret = WAIT_TIMEOUT;
+	if(hStdin == INVALID_HANDLE_VALUE) {
+		Sleep(ms);
+	} else {
+		ret = WaitForSingleObject(hStdin, ms);
+	}
+	if(ret == WAIT_OBJECT_0) REQUEST_HARDWRE_UPDATE();
+}
+
 #ifdef _MSC_VC6
 inline void __cpuid(int cpu_info[4], int function_id)
 {
@@ -1187,17 +1199,14 @@ inline void maybe_idle()
 {
 	// if it appears to be in a tight loop, assume waiting for input
 	// allow for one updated video character, for a spinning cursor
-	if(!stay_busy && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
+	if(!stay_busy && !cursor_moved_no_idle && idle_ops < 1024 && vram_length_char <= 1 && vram_length_attr <= 1) {
 		if(is_sse2_ready()) {
 			_mm_pause();	// SSE2 pause
-		} else if(is_xp_64_or_later) {
-			Sleep(0);	// switch to other thread that is ready to run, without checking priority
-		} else {
-			Sleep(1);
-			REQUEST_HARDWRE_UPDATE();
 		}
+		InputSleep(10);
 	}
 	idle_ops = 0;
+	cursor_moved_no_idle = false;
 }
 
 inline void enter_input_lock()
@@ -2505,6 +2514,11 @@ void debugger_main()
 	UINT32 dasm_adr = CPU_GET_NEXT_PC();
 	
 	while(!msdos_exit) {
+#ifdef EXPORT_DEBUG_TO_FILE
+		if(fp_debug_log != NULL) {
+			fflush(fp_debug_log);
+		}
+#endif
 		telnet_printf("- ");
 		command[0] = '\0';
 		
@@ -3749,7 +3763,6 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType)
 {
 	if(dwCtrlType == CTRL_BREAK_EVENT) {
 		pcbios_clear_key_buffer();
-//		key_code = key_recv = 0;
 		return TRUE;
 	} else if(dwCtrlType == CTRL_C_EVENT) {
 		return TRUE;
@@ -4913,11 +4926,12 @@ int main(int argc, char *argv[], char *envp[])
 	}
 	
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
 	CONSOLE_FONT_INFOEX fi;
 	
-	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwConsoleMode);
+	GetConsoleMode(hStdin, &dwConsoleMode);
 	SetFileApisToOEM();
 	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 	
@@ -5316,20 +5330,22 @@ bool update_console_input()
 						ir[i].EventType = KEY_EVENT;
 						ir[i].Event.KeyEvent.bKeyDown = TRUE;
 						ir[i].Event.KeyEvent.wRepeatCount = 1;
-						ir[i].Event.KeyEvent.dwControlKeyState = 0x80000000;
+						ir[i].Event.KeyEvent.dwControlKeyState = 0x80000000 | ENHANCED_KEY;
 						ir[i].Event.KeyEvent.uChar.AsciiChar = 0;
 						if(wheeldir > 0) {
 							ir[i].Event.KeyEvent.wVirtualKeyCode = VK_UP;
-							ir[i].Event.KeyEvent.wVirtualScanCode = 0xe048;
+							ir[i].Event.KeyEvent.wVirtualScanCode = 0x48;
 						} else {
 							ir[i].Event.KeyEvent.wVirtualKeyCode = VK_DOWN;
-							ir[i].Event.KeyEvent.wVirtualScanCode = 0xe050;
+							ir[i].Event.KeyEvent.wVirtualScanCode = 0x50;
 						}
 					}
 				}
 				if(ir[i].EventType & KEY_EVENT) {
 #ifdef ENABLE_DEBUG_IOPORT
-					fprintf(fp_debug_log, "key %s %x %x\n", ir[i].Event.KeyEvent.bKeyDown ? "down" : "up", ir[i].Event.KeyEvent.wVirtualScanCode, ir[i].Event.KeyEvent.uChar.AsciiChar);
+					if(fp_debug_log != NULL) {
+						fprintf(fp_debug_log, "key %s %x %x\n", ir[i].Event.KeyEvent.bKeyDown ? "down" : "up", ir[i].Event.KeyEvent.wVirtualScanCode, ir[i].Event.KeyEvent.uChar.AsciiChar);
+					}
 #endif
 					// update keyboard flags in BIOS data area
 					if(ir[i].Event.KeyEvent.wVirtualKeyCode == VK_INSERT && ir[i].Event.KeyEvent.bKeyDown) {
@@ -5518,11 +5534,10 @@ bool update_console_input()
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d && scn == scn_old)) {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									if(chr == 0) {
-										if(scn >= 0x78 && scn != 0x84) {
-											set_kbc_buffer(0x00, 0x00, 0x00, 1);
-										} else {
+									if(enh) {
+										if(!(scn >= 0x78 && scn != 0x84)) {
 											set_kbc_buffer(0x00, enh, enh, 1);
+											chr = enh;
 										}
 									}
 									set_kbc_buffer(chr, scn, port_data, 1);
@@ -5549,8 +5564,9 @@ bool update_console_input()
 							}
 							if(kbc_buffer != NULL) {
 								enter_key_buf_lock();
-								if(chr == 0) {
-									set_kbc_buffer(0x00, 0x00, 0x00, 1);
+								if(enh) {
+									set_kbc_buffer(0x00, enh, enh, 1);
+									chr = enh;
 								}
 								set_kbc_buffer(chr, scn, port_data, 1);
 								leave_key_buf_lock();
@@ -5580,13 +5596,17 @@ bool update_console_input()
 								ctrl_c_pressed = (scn == 0x2e);
 							}
 						} else {
-							if(kbc_buffer != NULL) {
-								enter_key_buf_lock();
-								if(enh) {
-									set_kbc_buffer(0x00, enh, enh, 0);
+							// ignore Shift, Ctrl, Alt, Win and Menu keys also when released
+							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d)) {
+								if(kbc_buffer != NULL) {
+									enter_key_buf_lock();
+									if(enh) {
+										set_kbc_buffer(0x00, enh, enh, 0);
+										chr = enh;
+									}
+									set_kbc_buffer(chr, scn, port_data, 0);
+									leave_key_buf_lock();
 								}
-								set_kbc_buffer(chr, scn, port_data, 0);
-								leave_key_buf_lock();
 							}
 						}
 					}
@@ -5594,7 +5614,7 @@ bool update_console_input()
 					// IME may be on and it may causes screen scroll up and cursor position change
 					cursor_moved = true;
 					
-					if(ir[i].Event.KeyEvent.dwControlKeyState == 0x80000000) {
+					if((ir[i].Event.KeyEvent.dwControlKeyState >> 16) == 0x8000) {
 						ir[i].Event.KeyEvent.bKeyDown = FALSE;
 						ir[i].Event.KeyEvent.dwControlKeyState = 0;
 						i--;
@@ -7324,6 +7344,13 @@ int console_kbhit()
 		leave_key_buf_lock();
 		return(0);
 	}
+	if(!(kbd_status & 1) && key_port_read && key_port_has_key) {
+		kbc_buffer->read();
+		if(kbc_buffer->empty()) {
+			leave_key_buf_lock();
+			return(0);
+		}
+	}
 	if(*(UINT16 *)(mem + 4 * 9 + 0) == (IRET_SIZE + 5 * 9) &&
 	   *(UINT16 *)(mem + 4 * 9 + 2) == (IRET_TOP >> 4)) {
 		int ret = 0;
@@ -7338,9 +7365,9 @@ int console_kbhit()
 		leave_key_buf_lock();
 		return(ret);
 	}
-	if(!CPU_I_FLAG || (pic[0].imr & 2)) {
+	if(!CPU_I_FLAG || (pic[0].imr & 2) || (pic[0].isr & 2)) {
 		leave_key_buf_lock();
-		return(0);  // can't do an irq with I flag clear or irq 1 disabled
+		return(0);  // can't do an irq with I flag clear or irq 1 disabled or irq 1 in service
 	}
 	// fake a kbd irq without calling pic_req, if that causes problems
 	// then we need to make sure irq 1 is set in service and not irq 0
@@ -7352,11 +7379,12 @@ int console_kbhit()
 		kbd_status |= 1;
 		UINT16 tmp_cs = CPU_CS;
 		UINT32 tmp_eip = CPU_EIP;
+		UINT32 tmp_sp = CPU_SP;  // save sp in case CS:EIP is reached while in the int 9 handler
 
 		CPU_PUSHF();
 		CPU_CALL_FAR(*(UINT16 *)(mem + 4 * 9 + 2), *(UINT16 *)(mem + 4 * 9 + 0));
 		CPU_SET_I_FLAG(0);
-		while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
+		while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP && tmp_sp == CPU_SP)) {
 			try {
 				hardware_run_cpu();
 			} catch(...) {
@@ -7392,7 +7420,7 @@ int msdos_kbhit()
 		return(1);
 	}
 	try {
-		val = _kbhit();
+		val = console_kbhit();
 	} catch(...) {
 	}
 	return(val);
@@ -7448,24 +7476,12 @@ retry:
 			}
 			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
 				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
-				if(_kbhit()) {
-					UINT8 chr1 = (UINT8)_getch();
-					UINT8 chr2 = 0;
-					if(chr1 == 0x00 || chr1 == 0xe0) {
-						chr2 = (UINT8)_getch();
-					}
-					if(chr1 == 0x00 || chr1 == 0xe0) {
-						pcbios_set_key_buffer(0x00, chr1);
-						pcbios_set_key_buffer(0x00, chr2);
-					} else {
-						pcbios_set_key_buffer(chr1, 0x00);
-					}
-				} else {
-					Sleep(10);
+				if(!console_kbhit()) {
+					InputSleep(10);
 				}
 			} else {
 				if(!update_key_buffer()) {
-					Sleep(10);
+					InputSleep(10);
 				}
 			}
 		}
@@ -9685,6 +9701,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				dos_major_version = true_major_version = 8;
 				dos_minor_version = true_minor_version = 0;
 				break;
+			} else if(strncmp(s, "Microsoft(R) Windows DOS", 24) == 0) {
+				// Windows 2000
+				dos_major_version = true_major_version = 5;
+				dos_minor_version = 0;
+				true_minor_version = 50;
+				break;
 			} else if(strncmp(s, "MS-DOS", 6) == 0) {
 				s += 6;
 				if(strncmp(s, "(R)", 3) == 0) {
@@ -10116,13 +10138,16 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	
 	if(mem_free) {
 		int mcb_seg, umb_linked;
+		int prev_seg1 = -1, prev_seg2 = -1;
 		if((umb_linked = msdos_mem_get_umb_linked()) != 0) {
 			msdos_mem_unlink_umb();
 		}
-		while((mcb_seg = msdos_mem_get_last_mcb(first_mcb, psp_seg)) != -1) {
+		while((mcb_seg = msdos_mem_get_last_mcb(first_mcb, psp_seg)) != -1 && prev_seg1 != mcb_seg) {
+			prev_seg1 = mcb_seg;
 			msdos_mem_free(mcb_seg + 1);
 		}
-		while((mcb_seg = msdos_mem_get_last_mcb(UMB_TOP >> 4, psp_seg)) != -1) {
+		while((mcb_seg = msdos_mem_get_last_mcb(UMB_TOP >> 4, psp_seg)) != -1 && prev_seg2 != mcb_seg) {
+			prev_seg2 = mcb_seg;
 			msdos_mem_free(mcb_seg + 1);
 		}
 		if(umb_linked != 0) {
@@ -12804,7 +12829,8 @@ void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data, UINT8 press
 	}
 }
 
-bool pcbios_check_key_buffer(int *key_char, int *key_scan)
+#if 0
+bool pcbios_check_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 {
 	// do not remove from key buffer
 	bool ret;
@@ -12823,13 +12849,14 @@ bool pcbios_check_key_buffer(int *key_char, int *key_scan)
 	leave_key_buf_lock();
 	return(ret);
 }
+#endif
 
 void pcbios_update_key_code(bool wait)
 {
 	if(pcbios_is_key_buffer_empty()) {
 		if(!console_kbhit()) {
 			if(wait) {
-				Sleep(10);
+				InputSleep(10);
 			} else {
 				maybe_idle();
 			}
@@ -15126,12 +15153,16 @@ inline void msdos_int_21h_3ch()
 	if(msdos_is_device_path(path)) {
 		fd = msdos_open_device(path, _O_WRONLY | _O_BINARY, &sio_port, &lpt_port);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_3ch\tfd=%d\tw\t%s\n", fd, path);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_3ch\tfd=%d\tw\t%s\n", fd, path);
+		}
 #endif
 	} else {
 		fd = my_open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_3ch\tfd=%d\trw\t%s\n", fd, path);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_3ch\tfd=%d\trw\t%s\n", fd, path);
+		}
 #endif
 	}
 	if(fd != -1) {
@@ -15163,7 +15194,9 @@ inline void msdos_int_21h_3dh()
 			fd = msdos_open(path, file_mode[mode].mode);
 		}
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_3dh\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_3dh\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+		}
 #endif
 		if(fd != -1) {
 			CPU_AX = fd;
@@ -16397,7 +16430,9 @@ inline void msdos_int_21h_4bh()
 		{
 			int fd = my_open(command, _O_RDONLY | _O_BINARY);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-			fprintf(fp_debug_log, "int21h_4b03h\tfd=%d\tr\t%s\n", fd, command);
+			if(fp_debug_log != NULL) {
+				fprintf(fp_debug_log, "int21h_4b03h\tfd=%d\tr\t%s\n", fd, command);
+			}
 #endif
 			if(fd == -1) {
 				CPU_AX = 0x02;
@@ -16816,9 +16851,10 @@ inline void msdos_int_21h_5ah()
 	if(MyGetTempFileNameA(path, "TMP", 0, tmp)) {
 		int fd = my_open(tmp, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_5ah\tfd=%d\trw\t%s\n", fd, tmp);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_5ah\tfd=%d\trw\t%s\n", fd, tmp);
+		}
 #endif
-		
 		MySetFileAttributesA(tmp, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
 		CPU_AX = fd;
 		msdos_file_handler_open(fd, path, _isatty(fd), 2, msdos_drive_number(path), current_psp);
@@ -16846,16 +16882,19 @@ inline void msdos_int_21h_5bh()
 	if(msdos_is_device_path(path) || msdos_is_existing_file(path)) {
 		// already exists
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", -1, path);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", -1, path);
+		}
 #endif
 		CPU_AX = 0x50;
 		CPU_SET_C_FLAG(1);
 	} else {
 		int fd = my_open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-		fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", fd, path);
+		if(fp_debug_log != NULL) {
+			fprintf(fp_debug_log, "int21h_5bh\tfd=%d\trw\t%s\n", fd, path);
+		}
 #endif
-		
 		if(fd != -1) {
 			MySetFileAttributesA(path, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
 			CPU_AX = fd;
@@ -17424,7 +17463,9 @@ inline void msdos_int_21h_6ch(int lfn)
 					fd = msdos_open(path, file_mode[mode].mode);
 				}
 #ifdef ENABLE_DEBUG_OPEN_FILE
-				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				}
 #endif
 				if(fd != -1) {
 					CPU_AX = fd;
@@ -17447,7 +17488,9 @@ inline void msdos_int_21h_6ch(int lfn)
 					fd = my_open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 				}
 #ifdef ENABLE_DEBUG_OPEN_FILE
-				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				}
 #endif
 				if(fd != -1) {
 					if(attr == -1) {
@@ -17464,7 +17507,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				}
 			} else {
 #ifdef ENABLE_DEBUG_OPEN_FILE
-				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+				}
 #endif
 				CPU_AX = 0x50;
 				CPU_SET_C_FLAG(1);
@@ -17474,9 +17519,10 @@ inline void msdos_int_21h_6ch(int lfn)
 			if(CPU_DL & 0x10) {
 				int fd = my_open(path, _O_RDWR | _O_BINARY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE);
 #ifdef ENABLE_DEBUG_OPEN_FILE
-				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", fd, file_mode[mode].str, path);
+				}
 #endif
-				
 				if(fd != -1) {
 					MySetFileAttributesA(path, msdos_file_attribute_create(CPU_CX) & ~FILE_ATTRIBUTE_READONLY);
 					CPU_AX = fd;
@@ -17489,7 +17535,9 @@ inline void msdos_int_21h_6ch(int lfn)
 				}
 			} else {
 #ifdef ENABLE_DEBUG_OPEN_FILE
-				fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "int21h_6ch\tfd=%d\t%s\t%s\n", -1, file_mode[mode].str, path);
+				}
 #endif
 				CPU_AX = 0x02;
 				CPU_SET_C_FLAG(1);
@@ -18957,8 +19005,7 @@ inline void msdos_int_2fh_16h()
 #endif
 	case 0x80:
 	case 0x89:
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
+		InputSleep(10);
 		CPU_AL = 0x00;
 		break;
 	case 0x83:
@@ -21779,31 +21826,34 @@ void msdos_syscall(unsigned num)
 	UINT16 key_buffer_head = 0;
 	
 #ifdef ENABLE_DEBUG_SYSCALL
-	if(num == 0x08 || num == 0x1c) {
-		// don't log the timer interrupts
-//		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
-	} else if(num == 0x30) {
-		// dummy interrupt for call 0005h (call near)
-		fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x42) {
-		// dummy interrupt for EMS (int 67h)
-		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x43) {
-		// dummy interrupt for XMS (call far)
-		fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x4c) {
-		// dummy interrupt for ATOK5 (int 6Fh)
-		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x6f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
-	} else if(num == 0x40 || (num >= 0x44 && num <= 0x49)) {
-		// dummy interrupt
-	} else {
-		fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+	if(fp_debug_log != NULL) {
+		if(num == 0x08 || num == 0x1c) {
+			// don't log the timer interrupts
+//			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
+		} else if(num == 0x30) {
+			// dummy interrupt for call 0005h (call near)
+			fprintf(fp_debug_log, "call 0005h (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		} else if(num == 0x42) {
+			// dummy interrupt for EMS (int 67h)
+			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x67, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		} else if(num == 0x43) {
+			// dummy interrupt for XMS (call far)
+			fprintf(fp_debug_log, "call XMS (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		} else if(num == 0x4c) {
+			// dummy interrupt for ATOK5 (int 6Fh)
+			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", 0x6f, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		} else if(num == 0x40 || (num >= 0x44 && num <= 0x49)) {
+			// dummy interrupt
+		} else {
+			fprintf(fp_debug_log, "int %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X) %04X:%04X\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES, CPU_CS, CPU_EIP);
+		}
 	}
 #endif
 	// update cursor position
 	if(cursor_moved) {
 		pcbios_update_cursor_position();
 		cursor_moved = false;
+		cursor_moved_no_idle = true;
 	}
 	// this is called from dummy loop to wait until a serive that waits input is done
 	if(!(use_service_thread && in_service)) {
@@ -21828,57 +21878,19 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x06:
-#ifdef SUPPORT_VDD
 		try {
 			UINT8 *opcode = mem + CPU_TRANS_CODE_ADDR(CPU_CS, CPU_EIP);
 			if(opcode[0] == 0xc4 && opcode[1] == 0xc4) {
-				if(opcode[2] == 0x00) {
-					// Terminate VDM BOP
-					CPU_EIP += 3;
-					msdos_stat |= REQ_EXIT;
-				} else if(opcode[2] == 0x51 && opcode[3] == 0x02) {
-					// WOW32 User/Task BOP, WOW_YIELD
-					CPU_EIP += 4;
-					Sleep(0);
-					CPU_SET_C_FLAG(0);
-					CPU_AX = 0x0000;
-				} else if(opcode[2] == 0x54) {
-					// Command/Console BOP
-					CPU_EIP += 4;
-					cmd_req(opcode[3]);
-				} else if(opcode[2] == 0x58) {
-					// VDD BOP
-					CPU_EIP += 4;
-					vdd_req(opcode[3]);
-				} else if(opcode[2] == 0x60) {
-					// NTVDM Get Version BOP
-					CPU_EIP += 3;
-					CPU_SET_C_FLAG(0);
-					if(win_major_version >= 4) {
-						CPU_AX = 0x0400; // Windows NT 4.0 or later
-					} else {
-						CPU_AX = 0x0300; // Windows NT 3.51 or prior
-					}
-				} else if(opcode[2] == 0xfe) {
-					// VDDUnSimulate16 BOP
-					CPU_EIP += 3;
-					msdos_stat |= REQ_UNSIM16;
-				} else if(opcode[2] == 0x50 || opcode[2] == 0x51 || (opcode[2] >= 0x08 && opcode[2] <= 0x0f)) {
-					// Known BOP containing 4 bytes
-					CPU_EIP += 4;
-					CPU_SET_C_FLAG(1);
-					CPU_AX = 0xffff;
-				} else {
-					// Unknown BOP, probably 3 bytes
-					CPU_EIP += 3;
-					CPU_SET_C_FLAG(1);
-					CPU_AX = 0xffff;
+#ifdef ENABLE_DEBUG_SYSCALL
+				if(fp_debug_log != NULL) {
+					fprintf(fp_debug_log, "BOP C4h C4h %02Xh %02Xh\n", opcode[2], opcode[3]);
 				}
+#endif
+				bop_req(opcode);
 				break;
 			}
 		} catch(...) {
 		}
-#endif
 		// NOTE: ish.com has illegal instruction...
 		if(!ignore_illegal_insn) {
 			try {
@@ -22137,22 +22149,21 @@ void msdos_syscall(unsigned num)
 		}
 		// if key buffer is read and becomes empty, and keyboard controller buffer has data,
 		// raise IRQ 1 just now to update key buffer
-		if(!(kbd_status & 1) && key_buffer_head != *(UINT16 *)(mem + 0x41a)) {
-			if(kbc_buffer != NULL) {
-				enter_key_buf_lock();
-				if(pcbios_is_key_buffer_empty()) {
-					if(!kbc_buffer->empty()) {
-						int key_data = kbc_buffer->read_not_remove(0);
-						kbd_data = (UINT8)((key_data >> 16) & 0xff);
-						key_port_has_key = true;
-						key_port_read = false;
-						kbd_status |= 1;
-						pic_req(0, 1, 1);
-					}
-				}
-				leave_key_buf_lock();
+		enter_key_buf_lock();
+		if(!(kbd_status & 1) && (kbc_buffer != NULL) && !kbc_buffer->empty() && !pcbios_is_key_buffer_full()) {
+			if(key_port_read) { // XYWrite handles 0xe0 without calling bios int 9 so make sure it's purged
+				kbc_buffer->read();
+			}
+			if(!kbc_buffer->empty()) {
+				int key_data = kbc_buffer->read_not_remove(0);
+				kbd_data = (UINT8)((key_data >> 16) & 0xff);
+				key_port_has_key = true;
+				key_port_read = false;
+				kbd_status |= 1;
+				pic_req(0, 1, 1);
 			}
 		}
+		leave_key_buf_lock();
 		break;
 	case 0x17:
 		// PC BIOS - Printer
@@ -22466,8 +22477,7 @@ void msdos_syscall(unsigned num)
 		}
 		break;
 	case 0x28:
-		Sleep(10);
-		REQUEST_HARDWRE_UPDATE();
+		InputSleep(10);
 		break;
 	case 0x29:
 		msdos_int_29h();
@@ -22911,9 +22921,10 @@ void msdos_syscall(unsigned num)
 	if(cursor_moved) {
 		pcbios_update_cursor_position();
 		cursor_moved = false;
+		cursor_moved_no_idle = true;
 	}
 #ifdef ENABLE_DEBUG_SYSCALL
-	if(num != 0x08 && num != 0x1c) {
+	if(num != 0x08 && num != 0x1c && fp_debug_log != NULL) {
 		fprintf(fp_debug_log, "out %02Xh (AX=%04X BX=%04X CX=%04X DX=%04X SI=%04X DI=%04X DS=%04X ES=%04X)\n", num, CPU_AX, CPU_BX, CPU_CX, CPU_DX, CPU_SI, CPU_DI, CPU_DS, CPU_ES);
 	}
 #endif
@@ -23940,6 +23951,13 @@ void hardware_run()
 
 inline void hardware_run_cpu()
 {
+#if defined(USE_DEBUGGER) && defined(ENABLE_DEBUG_LOG)
+	if(debug_trace && fp_debug_log != NULL) {
+		char buffer[256];
+		debugger_dasm(buffer, 256, CPU_GET_NEXT_PC(), CPU_EIP);
+		fprintf(fp_debug_log, "%x:%x %s\n", CPU_CS, CPU_EIP, buffer);
+	}
+#endif
 	CPU_EXECUTE();
 	if(CPU_EIP_CHANGED) {
 		idle_ops++;
@@ -26574,52 +26592,179 @@ void write_io_dword(UINT32 addr, UINT32 val)
 #endif
 }
 
+void bop_req(UINT8 *opcode)
+{
+	if(opcode[2] == 0x11) {
+		// Get Equipment List BOP
+		CPU_INC_EIP(3);
+		CPU_AX = msdos_get_equipment();
+	} else if(opcode[2] == 0x12) {
+		// Get Memory Size BOP
+		CPU_INC_EIP(3);
+		CPU_AX = MEMORY_END >> 10;
+	} else if(opcode[2] == 0x2b) {
+		// DOS Loading and Initializing BOP
+		CPU_INC_EIP(3 + (UINT32)strlen((const char *)&opcode[3]) + 1);
+//		CPU_SET_C_FLAG(1);
+//		CPU_AX = 0xffff;
+	} else if(opcode[2] == 0x54) {
+		// Command/Console BOP
+		CPU_INC_EIP(4);
+		cmd_req(opcode[3]);
+	} else if(opcode[2] == 0x58) {
+		// VDD BOP
+		CPU_INC_EIP(4);
 #ifdef SUPPORT_VDD
+		vdd_req(opcode[3]);
+#else
+		CPU_SET_C_FLAG(1);
+		CPU_AX = 0x0001;
+#endif
+	} else if(opcode[2] == 0x5b) {
+		// DebugBreak BOP
+		CPU_INC_EIP(3);
+//		DebugBreak();
+	} else if(opcode[2] == 0x60) {
+		// NTVDM Get Version BOP
+		CPU_INC_EIP(3);
+		if(win_major_version >= 4) {
+			CPU_AX = 0x0400; // Windows NT 4.0 or later
+		} else {
+			CPU_AX = 0x0300; // Windows NT 3.51 or prior
+		}
+	} else if(opcode[2] == 0xfe) {
+		// VDDUnSimulate16 BOP
+		CPU_INC_EIP(3);
+		msdos_stat |= REQ_UNSIM16;
+	} else if(opcode[2] == 0x50 || opcode[2] == 0x52 || opcode[2] == 0x57) {
+		// Known BOP containing 4 bytes
+		CPU_INC_EIP(4);
+//		CPU_SET_C_FLAG(1);
+//		CPU_AX = 0xffff;
+	} else {
+		// Unknown BOP, probably 3 bytes
+		CPU_INC_EIP(3);
+//		CPU_SET_C_FLAG(1);
+//		CPU_AX = 0xffff;
+	}
+}
+
 void cmd_req(char func)
 {
 	switch(func) {
-	case 0x00: // BOP_CMD_INIT
-	case 0x02: // BOP_CMD_EXIT
-		CPU_SET_C_FLAG(0);
-		CPU_AX = 0x0000;
+	case 0x00: // Kill the VDM
+		msdos_stat |= REQ_EXIT;
 		break;
-	case 0x01: // BOP_CMD_EXEC
+	case 0x01: // Get New App to Start
 		{
-			// NOTE: BOP_CMD_EXEC is usually used to execute Win32 executables in INT 21h, AH=4Bh
-			// but msdos_process_exec() will execute Win32 executables directly,
-			// so this function is called only in the case application dare calls it
-			const char *path = (const char *)(mem + CPU_DS_BASE + CPU_DX);
-			param_block_t *param = (param_block_t *)(mem + CPU_ES_BASE + CPU_BX);
-			char opt[MAX_PATH], cmd[MAX_PATH * 2];
-			int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
-			memset(opt, 0, sizeof(opt));
-			memcpy(opt, mem + opt_ofs + 1, (unsigned int)mem[opt_ofs]);
-			_snprintf(cmd, sizeof(cmd), "\"%s\" %s", path, opt);
-			if(system(cmd) == -1) {
+#if 0
+			static BOOL First = TRUE;
+			if(!First) {
 				CPU_SET_C_FLAG(1);
-				CPU_AX = 0x0002; // file not found
+//				CPU_AX = 0x8000; // Windows 2000 command.com check if AX=8000h
+				break;
+			}
+			First = FALSE;
+#endif
+			bop_next_cmd_t *DataStruct = (bop_next_cmd_t *)(mem + CPU_DS_BASE + CPU_DX);
+			char *CmdLine = (char *)(mem + (DataStruct->CmdLineSeg << 4) + DataStruct->CmdLineOff);
+			char *AppName = (char *)(mem + (DataStruct->AppNameSeg << 4) + DataStruct->AppNameOff);
+
+			process_t *_process = msdos_process_info_get(current_psp);
+			psp_t *psp = (psp_t *)(mem + (current_psp << 4));
+			mcb_t *mcb_psp = (mcb_t *)(mem + ((current_psp - 1) << 4));
+			mcb_t *mcb_env = (mcb_t *)(mem + ((psp->env_seg - 1) << 4));
+
+			if(DataStruct->EnvBlockSeg == 0) {
+				DataStruct->EnvBlockSeg = psp->env_seg;
+				DataStruct->EnvBlockLen = mcb_env->paragraphs * 16;
+			}
+			DataStruct->CurDrive = _getdrive() - 1;
+			DataStruct->NumDrives = 0;
+			for(int i = 0; i < 26; i++) {
+				if(msdos_is_valid_drive(i)) {
+					DataStruct->NumDrives++;
+				}
+			}
+			if(process != NULL && strlen(process->module_dir) + 1 + strlen(process->module_path) < DataStruct->AppNameLen) {
+				sprintf(AppName, "%s\\%s", process->module_dir, process->module_path);
+			} else {
+				strcpy(AppName, mcb_psp->prog_name);
+			}
+//			DataStruct->AppNameLen = (WORD)strlen(AppName);
+			memcpy(CmdLine, psp->buffer, psp->buffer[0] + 1);
+			DataStruct->ExitCode = 0;
+			DataStruct->Unknown1 = 0; // Windows 2000 command.com calls BOP 54h 06h if this value is 1/2/4/7
+			DataStruct->CodePage = active_code_page;
+			CPU_SET_C_FLAG(0);
+		}
+		break;
+	case 0x06: // Unknown
+		// Windows 2000 command.com calls this service
+		break;
+	case 0x07: // Check Binary Format
+		{
+			DWORD dwBinaryType;
+			if(!GetBinaryTypeA((const char *)(mem + CPU_DS_BASE + CPU_DX), &dwBinaryType)) {
+				CPU_AX = GetLastError();
+				CPU_SET_C_FLAG(1);
+			} else if(dwBinaryType != SCS_DOS_BINARY) {
+				CPU_AX = 0x00c1; // bad exec format
+				CPU_SET_C_FLAG(1);
 			} else {
 				CPU_SET_C_FLAG(0);
-				CPU_AX = 0x0000;
 			}
 		}
 		break;
-	case 0x03: // BOP_CMD_CURDIR
-		if(my_chdir((char *)(mem + CPU_DS_BASE + CPU_SI))) {
-			CPU_SET_C_FLAG(1);
-			CPU_AX = 0x0003; // path not found
-		} else {
+	case 0x08: // Start External Command
+		{
+			int ret;
+			char command[MAX_PATH];
+			_snprintf(command, MAX_PATH, "cmd.exe /c %s", (const char *)(mem + CPU_DS_BASE + CPU_SI));
+			while(strlen(command) > 0 && (command[strlen(command) - 1] == '\r' || command[strlen(command) - 1] == '\n')) {
+				command[strlen(command) - 1] = '\0';
+			}
+			if((ret = system(command)) == -1) {
+				CPU_AL = 0x02; // file not found
+			} else {
+				CPU_AL = ret;
+			}
 			CPU_SET_C_FLAG(0);
-			CPU_AX = 0x0000;
 		}
 		break;
+	case 0x09: // Unknown
+		// Windows 2000 command.com calls this service
+		break;
+	case 0x0a: // Start Default 32-bit Command Interpreter
+		{
+			int ret;
+			if((ret = system("cmd.exe")) == -1) {
+				CPU_AL = 0x02; // file not found
+			} else {
+				CPU_AL = ret;
+			}
+			CPU_SET_C_FLAG(0);
+		}
+		break;
+	case 0x0b: // Set Exit Code
+		retval = CPU_DX;
+		CPU_SET_C_FLAG(0);
+		break;
+	case 0x0e: // Unknown
+		// if DX is not zero, Windows 200 command.com tries to start null process
+		CPU_DX = 0x0000;
+		break;
+	case 0x10: // Get Start Information
+		CPU_AL = 0x00; // started from an existing console
+		break;
 	default:
-		CPU_SET_C_FLAG(1);
-		CPU_AX = 0xffff;
+//		CPU_SET_C_FLAG(1);
+//		CPU_AX = 0xffff;
 		break;
 	}
 }
 
+#ifdef SUPPORT_VDD
 void vdd_init()
 {
 /*
