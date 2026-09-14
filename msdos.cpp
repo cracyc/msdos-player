@@ -7686,15 +7686,9 @@ retry:
 			if(!console_kbhit()) {
 				InputSleep(10);
 			}
-			if(!(fd < process->max_files && file_handler[fd].valid && file_handler[fd].atty && file_mode[file_handler[fd].mode].in)) {
-				// NOTE: stdin is redirected to stderr when we do "type (file) | more" on freedos's command.com
-				if(!console_kbhit()) {
-					InputSleep(10);
-				}
-			} else {
-				if(!update_key_buffer()) {
-					InputSleep(10);
-				}
+		} else {
+			if(!update_key_buffer()) {
+				InputSleep(10);
 			}
 		}
 	}
