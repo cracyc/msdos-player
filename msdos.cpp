@@ -1138,14 +1138,16 @@ char devices_to_load[MAX_PATH]= {0};
 unsigned update_ops = 0;
 unsigned idle_ops = 0;
 
+HANDLE hConOut = NULL;
+HANDLE hConIn = NULL;
+
 void InputSleep(DWORD ms)
 {
-	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD ret = WAIT_TIMEOUT;
-	if(hStdin == INVALID_HANDLE_VALUE) {
+	if(hConIn == INVALID_HANDLE_VALUE) {
 		Sleep(ms);
 	} else {
-		ret = WaitForSingleObject(hStdin, ms);
+		ret = WaitForSingleObject(hConIn, ms);
 	}
 	if(ret == WAIT_OBJECT_0) REQUEST_HARDWRE_UPDATE();
 }
@@ -1793,10 +1795,9 @@ BOOL MySetConsoleCursorPosition(HANDLE hConsoleOutput, COORD dwCursorPosition)
 BOOL MySetConsoleTitleA(LPCSTR lpConsoleTitle)
 {
 	if(use_vt) {
-		HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-		WriteConsoleA(hStdOut, "\x1b];", 3, NULL, NULL);
-		WriteConsoleA(hStdOut, lpConsoleTitle, strlen(lpConsoleTitle), NULL, NULL);
-		WriteConsoleA(hStdOut, "\x07", 1, NULL, NULL);
+		WriteConsoleA(hConOut, "\x1b];", 3, NULL, NULL);
+		WriteConsoleA(hConOut, lpConsoleTitle, strlen(lpConsoleTitle), NULL, NULL);
+		WriteConsoleA(hConOut, "\x07", 1, NULL, NULL);
 	} else {
 		return SetConsoleTitleA(lpConsoleTitle);
 	}
@@ -1861,12 +1862,10 @@ bool update_console_input();
 BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo)
 {
 	if(use_vt) {
-		// we need the real stdin handle; msdn lies, GENERIC_WRITE is needed for SetConsoleMode
-		HANDLE hStdin = CreateFile("CONIN$", GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ, NULL, 3, FILE_ATTRIBUTE_NORMAL, NULL);
 		lpConsoleScreenBufferInfo->srWindow.Left = 0;
 		lpConsoleScreenBufferInfo->srWindow.Top = 0;
 		lpConsoleScreenBufferInfo->wAttributes = 7;
-		if(hStdin == INVALID_HANDLE_VALUE) {
+		if(hConIn == INVALID_HANDLE_VALUE) {
 			lpConsoleScreenBufferInfo->srWindow.Right = 79;
 			lpConsoleScreenBufferInfo->srWindow.Bottom = 24;
 			lpConsoleScreenBufferInfo->dwCursorPosition.X = 0;
@@ -1879,23 +1878,22 @@ BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_
 		COORD maxsize = {9998,9998};
 		DWORD mode, events;
 		BOOL ret;
-		GetConsoleMode(hStdin, &mode);
-		SetConsoleMode(hStdin, mode & ~ENABLE_MOUSE_INPUT);
+		GetConsoleMode(hConIn, &mode);
+		SetConsoleMode(hConIn, mode & ~ENABLE_MOUSE_INPUT);
 		do {
 			update_console_input();
-			ret = GetNumberOfConsoleInputEvents(hStdin, &events);
+			ret = GetNumberOfConsoleInputEvents(hConIn, &events);
 		} while(ret && events);
-		read_cursor_pos(hConsoleOutput, hStdin, &lpConsoleScreenBufferInfo->dwCursorPosition);
+		read_cursor_pos(hConsoleOutput, hConIn, &lpConsoleScreenBufferInfo->dwCursorPosition);
 		MySetConsoleCursorPosition(hConsoleOutput, maxsize);
-		read_cursor_pos(hConsoleOutput, hStdin, &lpConsoleScreenBufferInfo->dwSize);
+		read_cursor_pos(hConsoleOutput, hConIn, &lpConsoleScreenBufferInfo->dwSize);
 		lpConsoleScreenBufferInfo->dwCursorPosition.X--;
 		lpConsoleScreenBufferInfo->dwCursorPosition.Y--;
 		MySetConsoleCursorPosition(hConsoleOutput, lpConsoleScreenBufferInfo->dwCursorPosition);
 		lpConsoleScreenBufferInfo->srWindow.Right = lpConsoleScreenBufferInfo->dwSize.X - 1;
 		lpConsoleScreenBufferInfo->srWindow.Bottom = lpConsoleScreenBufferInfo->dwSize.Y - 1;
-		SetConsoleMode(hStdin, mode);
+		SetConsoleMode(hConIn, mode);
 		leave_input_lock();
-		CloseHandle(hStdin);
 	} else {
 		return GetConsoleScreenBufferInfo(hConsoleOutput, lpConsoleScreenBufferInfo);
 	}
@@ -2090,7 +2088,7 @@ void vram_flush()
 {
 	if(vram_length != 0) {
 		EnterCriticalSection(&vram_crit_sect);
-		MyWriteConsoleOutputCharAttrA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, vram_length, vram_coord);
+		MyWriteConsoleOutputCharAttrA(hConOut, scr_char, scr_attr, vram_length, vram_coord);
 		vram_length = vram_last_length = 0;
 		LeaveCriticalSection(&vram_crit_sect);
 	}
@@ -2150,7 +2148,7 @@ void write_text_vram(UINT32 offset, UINT8 chr, UINT8 attr)
 		co.Y = (offset >> 1) / scr_width;
 		scr_char[0] = chr;
 		scr_attr[0] = attr;
-		MyWriteConsoleOutputCharAttrA(GetStdHandle(STD_OUTPUT_HANDLE), scr_char, scr_attr, 1, co);
+		MyWriteConsoleOutputCharAttrA(hConOut, scr_char, scr_attr, 1, co);
 	}
 }
 
@@ -2203,7 +2201,7 @@ void write_word(UINT32 byteaddress, UINT16 data)
 				COORD co;
 				co.X = data & 0xff;
 				co.Y = (data >> 8) + scr_top;
-				MySetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), co);
+				MySetConsoleCursorPosition(hConOut, co);
 				cursor_moved = false;
 				cursor_moved_by_crtc = false;
 			}
@@ -3925,8 +3923,8 @@ void exit_handler()
 	}
 #endif
 	if(use_vt) {
-		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[!p\x1b[0 q", 9, NULL, NULL);
-		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[?1049l", 8, NULL, NULL);
+		WriteConsoleA(hConOut, "\x1b[!p\x1b[0 q", 9, NULL, NULL);
+		WriteConsoleA(hConOut, "\x1b[?1049l", 8, NULL, NULL);
 	}
 #ifdef SUPPORT_XMS
 	msdos_xms_release();
@@ -4038,7 +4036,7 @@ bool is_started_from_console()
 			FreeLibrary(hLibrary);
 		}
 	}
-	if(GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+	if(GetConsoleScreenBufferInfo(hConOut, &csbi)) {
 		// If cursor position is (0,0) then we may be launched in a separate console
 		// Notice: a Windows NT 4 console window without scrollback and run with `cls && msdos.exe` can trigger this as well
 		return !(csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0);
@@ -4216,7 +4214,6 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 	if(use_vt) {
 		return false;
 	}
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	
 	set_default_console_font_info(fi);
@@ -4227,7 +4224,7 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			typedef BOOL (WINAPI* GetCurrentConsoleFontExFunction)(HANDLE, BOOL, PCONSOLE_FONT_INFOEX);
 			GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
 			if(lpfnGetCurrentConsoleFontEx) {
-				if(lpfnGetCurrentConsoleFontEx(hStdout, FALSE, fi)) {
+				if(lpfnGetCurrentConsoleFontEx(hConOut, FALSE, fi)) {
 //					if(is_started_from("cmd.exe")) {
 						// GetCurrentConsoleFontEx sets font name in fi->FaceName with UNICODE wide char
 						// But SetCurrentConsoleFontEx seems to request fi->FaceName contains font name with ANSI multi byte char code (why?)
@@ -4252,7 +4249,7 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			GetCurrentConsoleFontFunction lpfnGetCurrentConsoleFont = reinterpret_cast<GetCurrentConsoleFontFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFont"));
 			if(lpfnGetCurrentConsoleFont) { // Windows XP or later
 				CONSOLE_FONT_INFO fi_tmp;
-				if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi_tmp)) {
+				if(lpfnGetCurrentConsoleFont(hConOut, FALSE, &fi_tmp)) {
 					fi->nFont = fi_tmp.nFont;
 					fi->dwFontSize.X = fi_tmp.dwFontSize.X;
 					fi->dwFontSize.Y = fi_tmp.dwFontSize.Y;
@@ -4265,7 +4262,7 @@ bool get_console_font_info(CONSOLE_FONT_INFOEX *fi)
 	if(!result) {
 		CONSOLE_SCREEN_BUFFER_INFO csbi;
 		RECT rect;
-		if(GetConsoleScreenBufferInfo(hStdout, &csbi) && GetClientRect(get_console_window_handle(), &rect)) {
+		if(GetConsoleScreenBufferInfo(hConOut, &csbi) && GetClientRect(get_console_window_handle(), &rect)) {
 			int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 			int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 			fi->dwFontSize.X = rect.right / cols;
@@ -4282,7 +4279,6 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 		return false;
 	}
 	// http://d.hatena.ne.jp/aharisu/20090427/1240852598
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	bool result = false;
 	HMODULE hLibrary = LoadLibraryA("Kernel32.dll");
 	
@@ -4293,7 +4289,7 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 			SetCurrentConsoleFontExFunction lpfnSetCurrentConsoleFontEx = reinterpret_cast<SetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "SetCurrentConsoleFontEx"));
 			GetCurrentConsoleFontExFunction lpfnGetCurrentConsoleFontEx = reinterpret_cast<GetCurrentConsoleFontExFunction>(::GetProcAddress(hLibrary, "GetCurrentConsoleFontEx"));
 			if(lpfnSetCurrentConsoleFontEx && lpfnGetCurrentConsoleFontEx) {
-				if(lpfnSetCurrentConsoleFontEx(hStdout, FALSE, fi)) {
+				if(lpfnSetCurrentConsoleFontEx(hConOut, FALSE, fi)) {
 					CONSOLE_FONT_INFOEX fi_tmp;
 					if(get_console_font_info(&fi_tmp)) {
 						if(wcscmp(fi->FaceName, fi_tmp.FaceName) == 0 && fi->dwFontSize.X == fi_tmp.dwFontSize.X && fi->dwFontSize.Y == fi_tmp.dwFontSize.Y) {
@@ -4320,20 +4316,20 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 				if(dwFontNum) {
 					CONSOLE_SCREEN_BUFFER_INFO csbi;
 					RECT rect;
-					GetConsoleScreenBufferInfo(hStdout, &csbi);
+					GetConsoleScreenBufferInfo(hConOut, &csbi);
 					int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 					int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 					
 					CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
-					lpfnGetConsoleFontInfo(hStdout, FALSE, dwFontNum, fonts);
+					lpfnGetConsoleFontInfo(hConOut, FALSE, dwFontNum, fonts);
 					
 					for(int i = 0; i < dwFontNum; i++) {
-						fonts[i].dwFontSize = lpfnGetConsoleFontSize(hStdout, fonts[i].nFont);
+						fonts[i].dwFontSize = lpfnGetConsoleFontSize(hConOut, fonts[i].nFont);
 						if(fonts[i].dwFontSize.X == fi->dwFontSize.X && fonts[i].dwFontSize.Y == fi->dwFontSize.Y) {
-							if(lpfnSetConsoleFont(hStdout, fonts[i].nFont)) {
+							if(lpfnSetConsoleFont(hConOut, fonts[i].nFont)) {
 								if(is_winxp_or_later && lpfnGetCurrentConsoleFont) { // Windows XP or later
 									CONSOLE_FONT_INFO fi_tmp;
-									if(lpfnGetCurrentConsoleFont(hStdout, FALSE, &fi_tmp)) {
+									if(lpfnGetCurrentConsoleFont(hConOut, FALSE, &fi_tmp)) {
 										if(fonts[i].dwFontSize.X == fi_tmp.dwFontSize.X && fonts[i].dwFontSize.Y == fi_tmp.dwFontSize.Y) {
 											result = true;
 											break;
@@ -4522,7 +4518,7 @@ void get_sio_port_numbers()
 void switch_alt_buffer()
 {
 	if(use_vt) {
-		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), "\x1b[?1049h", 8, NULL, NULL);
+		WriteConsoleA(hConOut, "\x1b[?1049h", 8, NULL, NULL);
 		alt_buffer = true;
 	}
 }
@@ -5114,21 +5110,23 @@ int main(int argc, char *argv[], char *envp[])
 		return(retval);
 	}
 	
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	hConOut = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	hConIn = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	CONSOLE_CURSOR_INFO ci;
 	CONSOLE_FONT_INFOEX fi;
 	
-	GetConsoleMode(hStdin, &dwConsoleMode);
+	GetConsoleMode(hConIn, &dwConsoleMode);
 	SetFileApisToOEM();
 
 	if(use_vt) {
 		DWORD mode;
-		if(GetConsoleMode(hStdout, &mode)) {
-			SetConsoleMode(hStdout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+		if(GetConsoleMode(hConOut, &mode)) {
+			SetConsoleMode(hConOut, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 			dwConsoleMode &= ~ENABLE_LINE_INPUT;
-			SetConsoleMode(hStdin, dwConsoleMode);
+			SetConsoleMode(hConIn, dwConsoleMode);
 		} else {
 			use_vt = false;
 		}
@@ -5147,8 +5145,8 @@ int main(int argc, char *argv[], char *envp[])
 		set_input_code_page(code_page);
 		set_output_code_page(code_page);
 	}
-	get_console_buffer_success = (MyGetConsoleScreenBufferInfo(hStdout, &csbi) != 0);
-	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hStdout, &ci) != 0);
+	get_console_buffer_success = (MyGetConsoleScreenBufferInfo(hConOut, &csbi) != 0);
+	get_console_cursor_success = use_vt ? false : (GetConsoleCursorInfo(hConOut, &ci) != 0);
 	get_console_font_success = get_console_font_info(&fi);
 	
 	if(!get_console_cursor_success) {
@@ -5240,9 +5238,6 @@ int main(int argc, char *argv[], char *envp[])
 		}
 		timeEndPeriod(caps.wPeriodMin);
 		
-		// hStdin/hStdout (and all handles) will be closed in msdos_finish()...
-		hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-		
 		// restore console settings
 		if(restore_multibyte_cp) {
 			set_multibyte_code_page(multibyte_cp);
@@ -5262,17 +5257,17 @@ int main(int argc, char *argv[], char *envp[])
 				// then set the required window
 				CONSOLE_SCREEN_BUFFER_INFO cur_csbi;
 				SMALL_RECT rect;
-				GetConsoleScreenBufferInfo(hStdout, &cur_csbi);
+				GetConsoleScreenBufferInfo(hConOut, &cur_csbi);
 				int min_width  = min(cur_csbi.srWindow.Right - cur_csbi.srWindow.Left + 1, csbi.srWindow.Right - csbi.srWindow.Left + 1);
 				int min_height = min(cur_csbi.srWindow.Bottom - cur_csbi.srWindow.Top + 1, csbi.srWindow.Bottom - csbi.srWindow.Top + 1);
 				
 				SET_RECT(rect, 0, cur_csbi.srWindow.Top, min_width - 1, cur_csbi.srWindow.Top + min_height - 1);
-				SetConsoleWindowInfo(hStdout, TRUE, &rect);
-				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
+				SetConsoleWindowInfo(hConOut, TRUE, &rect);
+				SetConsoleScreenBufferSize(hConOut, csbi.dwSize);
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
-				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				if(!SetConsoleWindowInfo(hConOut, TRUE, &rect)) {
 					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-					SetConsoleWindowInfo(hStdout, TRUE, &rect);
+					SetConsoleWindowInfo(hConOut, TRUE, &rect);
 				}
 			}
 		}
@@ -5284,27 +5279,27 @@ int main(int argc, char *argv[], char *envp[])
 		if(get_console_buffer_success) {
 			if(restore_console_size && !use_vt) {
 				SMALL_RECT rect;
-				SetConsoleScreenBufferSize(hStdout, csbi.dwSize);
+				SetConsoleScreenBufferSize(hConOut, csbi.dwSize);
 				SET_RECT(rect, 0, 0, csbi.srWindow.Right - csbi.srWindow.Left, csbi.srWindow.Bottom - csbi.srWindow.Top);
-				if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+				if(!SetConsoleWindowInfo(hConOut, TRUE, &rect)) {
 					SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-					SetConsoleWindowInfo(hStdout, TRUE, &rect);
+					SetConsoleWindowInfo(hConOut, TRUE, &rect);
 				}
 			}
-			MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
+			MySetConsoleTextAttribute(hConOut, csbi.wAttributes);
 		}
 		if(get_console_cursor_success) {
 			if(restore_console_cursor) {
-				SetConsoleCursorInfo(hStdout, &ci);
+				SetConsoleCursorInfo(hConOut, &ci);
 			}
 		}
 		if(use_vt) {
-			WriteConsoleA(hStdout, "\x1b[!p\x1b[0 q", 9, NULL, NULL);
+			WriteConsoleA(hConOut, "\x1b[!p\x1b[0 q", 9, NULL, NULL);
 		}
 		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+			SetConsoleMode(hConIn, dwConsoleMode | ENABLE_EXTENDED_FLAGS);
 		} else {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+			SetConsoleMode(hConIn, dwConsoleMode);
 		}
 		
 		msdos_finish();
@@ -5326,6 +5321,8 @@ int main(int argc, char *argv[], char *envp[])
 		DeleteCriticalSection(&key_buf_crit_sect);
 		DeleteCriticalSection(&putch_crit_sect);
 	}
+	CloseHandle(hConOut);
+	CloseHandle(hConIn);
 	if(!is_win2k_or_later) {
 		SetErrorMode(old_error_mode);
 	}
@@ -5341,7 +5338,6 @@ int main(int argc, char *argv[], char *envp[])
 
 void change_console_size(int width, int height)
 {
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	SMALL_RECT rect;
 	COORD co;
@@ -5353,7 +5349,7 @@ void change_console_size(int width, int height)
 			}
 		}
 	
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		GetConsoleScreenBufferInfo(hConOut, &csbi);
 	
 		int cur_window_width  = csbi.srWindow.Right - csbi.srWindow.Left + 1;
 		int cur_window_height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
@@ -5364,25 +5360,25 @@ void change_console_size(int width, int height)
 		if(is_win10_or_later) {
 			co.X = 0;
 			co.Y = 0;
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 		}
 		
 		if(csbi.srWindow.Top != 0 || csbi.dwCursorPosition.Y > height - 1) {
 			if(cur_window_width == width && cur_window_height == height) {
-				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
+				ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &csbi.srWindow);
 				SET_RECT(rect, 0, 0, width - 1, height - 1);
-				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 			} else if(csbi.dwCursorPosition.Y > height - 1) {
 				SET_RECT(rect, 0, csbi.dwCursorPosition.Y - (height - 1), width - 1, csbi.dwCursorPosition.Y);
-				ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 				SET_RECT(rect, 0, 0, width - 1, height - 1);
-				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 			}
 		}
 		if(!is_win10_or_later && (csbi.dwCursorPosition.X > width - 1 || csbi.dwCursorPosition.Y > height - 1)) {
 			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
 			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-			SetConsoleCursorPosition(hStdout, co);
+			SetConsoleCursorPosition(hConOut, co);
 			cursor_moved = true;
 			cursor_moved_by_crtc = false;
 		}
@@ -5397,9 +5393,9 @@ void change_console_size(int width, int height)
 		
 		if(cur_window_width != min_width || cur_window_height != min_height) {
 			SET_RECT(rect, 0, csbi.srWindow.Top, min_width - 1, csbi.srWindow.Top + min_height - 1);
-			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+			if(!SetConsoleWindowInfo(hConOut, TRUE, &rect)) {
 				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				SetConsoleWindowInfo(hConOut, TRUE, &rect);
 			}
 			cur_window_width  = min_width;
 			cur_window_height = min_height;
@@ -5407,13 +5403,13 @@ void change_console_size(int width, int height)
 		if(cur_buffer_width != width || cur_buffer_height != height) {
 			co.X = width;
 			co.Y = height;
-			SetConsoleScreenBufferSize(hStdout, co);
+			SetConsoleScreenBufferSize(hConOut, co);
 		}
 		if(cur_window_width != width || cur_window_height != height) {
 			SET_RECT(rect, 0, 0, width - 1, height - 1);
-			if(!SetConsoleWindowInfo(hStdout, TRUE, &rect)) {
+			if(!SetConsoleWindowInfo(hConOut, TRUE, &rect)) {
 				SetWindowPos(get_console_window_handle(), NULL, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-				SetConsoleWindowInfo(hStdout, TRUE, &rect);
+				SetConsoleWindowInfo(hConOut, TRUE, &rect);
 			}
 		}
 		
@@ -5421,7 +5417,7 @@ void change_console_size(int width, int height)
 		if(is_win10_or_later) {
 			co.X = min(width - 1, csbi.dwCursorPosition.X - csbi.srWindow.Left);
 			co.Y = min(height - 1, csbi.dwCursorPosition.Y - csbi.srWindow.Top);
-			SetConsoleCursorPosition(hStdout, co);
+			SetConsoleCursorPosition(hConOut, co);
 			cursor_moved = true;
 			cursor_moved_by_crtc = false;
 		}
@@ -5475,22 +5471,21 @@ bool update_console_input()
 {
 	enter_input_lock();
 	
-	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD dwNumberOfEvents = 0;
 	DWORD dwRead;
 	INPUT_RECORD ir[16];
 	CONSOLE_SCREEN_BUFFER_INFO csbi = {0};
 	bool result = false;
 	
-	if(GetNumberOfConsoleInputEvents(hStdin, &dwNumberOfEvents) && dwNumberOfEvents) {
-		if(ReadConsoleInputA(hStdin, ir, 16, &dwRead)) {
+	if(GetNumberOfConsoleInputEvents(hConIn, &dwNumberOfEvents) && dwNumberOfEvents) {
+		if(ReadConsoleInputA(hConIn, ir, 16, &dwRead)) {
 			for(int i = 0; i < dwRead; i++) {
 				if(ir[i].EventType & MOUSE_EVENT) {
 					if(ir[i].Event.MouseEvent.dwEventFlags & MOUSE_MOVED) {
 						if(mouse.hidden == 0 || mouse.enabled_ps2) {
 							// NOTE: if restore_console_size, console is not scrolled
 							if(!restore_console_size && csbi.srWindow.Bottom == 0 && !use_vt) {
-								GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+								GetConsoleScreenBufferInfo(hConOut, &csbi);
 							}
 							// FIXME: character size is always 8x8 ???
 							int x = 8 * (ir[i].Event.MouseEvent.dwMousePosition.X);
@@ -5878,6 +5873,7 @@ bool update_key_buffer()
 void msdos_psp_set_file_table(int fd, UINT8 value, int psp_seg);
 int msdos_psp_get_file_table(int fd, int psp_seg);
 void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah);
+void msdos_putch_noredir(UINT8 data, unsigned int_num, UINT8 reg_ah);
 void msdos_putch_fast(UINT8 data, unsigned int_num, UINT8 reg_ah);
 void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah);
 const char *msdos_short_path(const char *path);
@@ -7791,14 +7787,20 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	
 	process_t *process = msdos_process_info_get(current_psp);
 	int fd = msdos_psp_get_file_table(1, current_psp);
-	bool skip_int29h = false;
 	
 	if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
 		// stdout is redirected to file
 		msdos_write(fd, &data, 1);
 		return;
 	}
-	
+
+	msdos_putch_noredir(data, int_num, reg_ah);
+}
+
+void msdos_putch_noredir(UINT8 data, unsigned int_num, UINT8 reg_ah)
+{
+	bool skip_int29h = false;
+
 	// call int 29h ?
 	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
@@ -7880,8 +7882,6 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	static WORD stored_a;
 	static char tmp[256], out[256];
 	
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	
 	// output to console
 	tmp[p++] = data;
 	
@@ -7895,7 +7895,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		// escape sequense
 		if(use_vt) {
 			if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z')) {
-				WriteConsoleA(hStdout, tmp, p, NULL, NULL);
+				WriteConsoleA(hConOut, tmp, p, NULL, NULL);
 				p = is_esc = 0;
 			}
 			return;
@@ -7904,7 +7904,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		} else if(tmp[1] == '=' && p == 4) {
 			co.X = tmp[3] - 0x20;
 			co.Y = tmp[2] - 0x20 + scr_top;
-			SetConsoleCursorPosition(hStdout, co);
+			SetConsoleCursorPosition(hConOut, co);
 			mem[0x450 + mem[0x462] * 2] = co.X;
 			mem[0x451 + mem[0x462] * 2] = co.Y - scr_top;
 			cursor_moved = false;
@@ -7913,15 +7913,15 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		} else if((data >= 'a' && data <= 'z') || (data >= 'A' && data <= 'Z') || data == '*') {
 			if(cursor_moved_by_crtc) {
 				if(!restore_console_size) {
-					GetConsoleScreenBufferInfo(hStdout, &csbi);
+					GetConsoleScreenBufferInfo(hConOut, &csbi);
 					scr_top = csbi.srWindow.Top;
 				}
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				SetConsoleCursorPosition(hStdout, co);
+				SetConsoleCursorPosition(hConOut, co);
 				cursor_moved_by_crtc = false;
 			}
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			GetConsoleScreenBufferInfo(hConOut, &csbi);
 			co.X = csbi.dwCursorPosition.X;
 			co.Y = csbi.dwCursorPosition.Y;
 			WORD wAttributes = csbi.wAttributes;
@@ -7935,7 +7935,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 				co.Y--;
 			} else if(tmp[1] == '*') {
 				SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-				WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+				WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 				co.X = 0;
 				co.Y = csbi.srWindow.Top;
 			} else if(tmp[1] == '[') {
@@ -7968,46 +7968,46 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						if(co.Y < csbi.srWindow.Bottom) {
 							SET_RECT(rect, 0, co.Y + 1, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-							WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+							WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						}
 					} else if(param[0] == 1) {
 						if(co.Y > csbi.srWindow.Top) {
 							SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, co.Y - 1);
-							WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+							WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						}
 						SET_RECT(rect, 0, co.Y, co.X, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 2) {
 						SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						co.X = co.Y = 0;
 					}
 				} else if(data == 'K') {
 					clear_scr_buffer(csbi.wAttributes);
 					if(param[0] == 0) {
 						SET_RECT(rect, co.X, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 1) {
 						SET_RECT(rect, 0, co.Y, co.X, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else if(param[0] == 2) {
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, co.Y);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					}
 				} else if(data == 'L') {
 					if(params == 0) {
 						param[0] = 1;
 					}
 					SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-					ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					SET_RECT(rect, 0, co.Y + param[0], csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-					WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					clear_scr_buffer(csbi.wAttributes);
 					SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, co.Y + param[0] - 1);
-					WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+					WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					co.X = 0;
 				} else if(data == 'M') {
 					if(params == 0) {
@@ -8016,12 +8016,12 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 					if(co.Y + param[0] > csbi.srWindow.Bottom) {
 						clear_scr_buffer(csbi.wAttributes);
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 					} else {
 						SET_RECT(rect, 0, co.Y + param[0], csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						SET_RECT(rect, 0, co.Y, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-						WriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+						WriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 						clear_scr_buffer(csbi.wAttributes);
 					}
 					co.X = 0;
@@ -8122,13 +8122,13 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 				co.Y = csbi.srWindow.Bottom;
 			}
 			if(co.X != csbi.dwCursorPosition.X || co.Y != csbi.dwCursorPosition.Y) {
-				SetConsoleCursorPosition(hStdout, co);
+				SetConsoleCursorPosition(hConOut, co);
 				mem[0x450 + mem[0x462] * 2] = co.X;
 				mem[0x451 + mem[0x462] * 2] = co.Y - csbi.srWindow.Top;
 				cursor_moved = false;
 			}
 			if(wAttributes != csbi.wAttributes) {
-				SetConsoleTextAttribute(hStdout, wAttributes);
+				SetConsoleTextAttribute(hConOut, wAttributes);
 			}
 			p = is_esc = 0;
 		}
@@ -8161,18 +8161,18 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 	
 	if(cursor_moved_by_crtc) {
 		if(!restore_console_size && !use_vt) {
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			GetConsoleScreenBufferInfo(hConOut, &csbi);
 			scr_top = csbi.srWindow.Top;
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		MySetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hConOut, co);
 		cursor_moved_by_crtc = false;
 	}
 	if(q == 1 && msdos_symbol_code_check(out[0], int_num, reg_ah)) {
 		const char *dummy = " ";
-		WriteConsoleA(hStdout, dummy, 1, &num, NULL);
-		MyGetConsoleScreenBufferInfo(hStdout, &csbi);
+		WriteConsoleA(hConOut, dummy, 1, &num, NULL);
+		MyGetConsoleScreenBufferInfo(hConOut, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
 			co.Y = csbi.dwCursorPosition.Y;
@@ -8183,29 +8183,29 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 			// XXX: in usually we should not reach here
 			co.X = co.Y = 0;
 		}
-		MySetConsoleCursorPosition(hStdout, co);
-		WriteConsoleA(hStdout, out, 1, &num, NULL);
+		MySetConsoleCursorPosition(hConOut, co);
+		WriteConsoleA(hConOut, out, 1, &num, NULL);
 	} else if(q == 1 && out[0] == 0x08) {
 		// back space
-		MyGetConsoleScreenBufferInfo(hStdout, &csbi);
+		MyGetConsoleScreenBufferInfo(hConOut, &csbi);
 		if(csbi.dwCursorPosition.X > 0) {
 			co.X = csbi.dwCursorPosition.X - 1;
 			co.Y = csbi.dwCursorPosition.Y;
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 		} else if(csbi.dwCursorPosition.Y > 0) {
 			co.X = csbi.dwSize.X - 1;
 			co.Y = csbi.dwCursorPosition.Y - 1;
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 		} else {
-			WriteConsoleA(hStdout, out, 1, &num, NULL); // to make sure
+			WriteConsoleA(hConOut, out, 1, &num, NULL); // to make sure
 		}
 	} else {
-		WriteConsoleA(hStdout, out, q, &num, NULL);
+		WriteConsoleA(hConOut, out, q, &num, NULL);
 	}
 	p = 0;
 	
 	if(!restore_console_size && !use_vt) {
-		GetConsoleScreenBufferInfo(hStdout, &csbi);
+		GetConsoleScreenBufferInfo(hConOut, &csbi);
 		scr_top = csbi.srWindow.Top;
 	}
 	cursor_moved = true;
@@ -10608,7 +10608,6 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 	shadow_buffer_end_address = shadow_buffer_top_address + width * height * 2;
 	cursor_position_address = 0x450 + mem[0x462] * 2;
 	
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	if(clr_screen) {
 		for(int ofs = shadow_buffer_top_address; ofs < shadow_buffer_end_address;) {
 			mem[ofs++] = 0x20;
@@ -10623,23 +10622,23 @@ void pcbios_set_console_size(int width, int height, bool clr_screen)
 		}
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + clr_height - 1);
-		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		MyWriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		vram_length = vram_last_length = 0;
 		leave_vram_lock();
 	}
 	COORD co;
 	co.X = 0;
 	co.Y = scr_top;
-	MySetConsoleCursorPosition(hStdout, co);
+	MySetConsoleCursorPosition(hConOut, co);
 	cursor_moved = true;
 	cursor_moved_by_crtc = false;
-	MySetConsoleTextAttribute(hStdout, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+	MySetConsoleTextAttribute(hConOut, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
 
 void pcbios_update_cursor_position()
 {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	MyGetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+	MyGetConsoleScreenBufferInfo(hConOut, &csbi);
 	if(!restore_console_size) {
 		scr_top = csbi.srWindow.Top;
 	}
@@ -10760,9 +10759,8 @@ inline void pcbios_int_10h_02h()
 		
 		// some programs hide the cursor by moving it off screen
 		static bool hidden = false;
-		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		
-		if(CPU_DH >= scr_height || !MySetConsoleCursorPosition(hStdout, co)) {
+		if(CPU_DH >= scr_height || !MySetConsoleCursorPosition(hConOut, co)) {
 			if(ci_new.bVisible) {
 				ci_new.bVisible = FALSE;
 				hidden = true;
@@ -10796,10 +10794,9 @@ inline void pcbios_int_10h_05h()
 		if(use_vram_thread) {
 			vram_flush();
 		}
-		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		SMALL_RECT rect;
 		SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-		ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
 		for(int y = 0, ofs = pcbios_get_shadow_buffer_address(mem[0x462]); y < scr_height; y++) {
 			for(int x = 0; x < scr_width; x++) {
@@ -10813,13 +10810,13 @@ inline void pcbios_int_10h_05h()
 				SCR_BUF(y,x).Attributes = mem[ofs++];
 			}
 		}
-		MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+		MyWriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 		
 		COORD co;
 		co.X = mem[0x450 + CPU_AL * 2];
 		co.Y = mem[0x451 + CPU_AL * 2] + scr_top;
 		if(co.Y < scr_top + scr_height) {
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 		}
 		cursor_moved_by_crtc = false;
 	}
@@ -10842,10 +10839,9 @@ inline void pcbios_int_10h_06h()
 	if(use_vram_thread) {
 		vram_flush();
 	}
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	
 	int right = min(CPU_DL, scr_width - 1);
 	int bottom = min(CPU_DH, scr_height - 1);
@@ -10871,7 +10867,7 @@ inline void pcbios_int_10h_06h()
 			}
 		}
 	}
-	MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	MyWriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_07h()
@@ -10883,10 +10879,9 @@ inline void pcbios_int_10h_07h()
 	if(use_vram_thread) {
 		vram_flush();
 	}
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, scr_top, scr_width - 1, scr_top + scr_height - 1);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	
 	int right = min(CPU_DL, scr_width - 1);
 	int bottom = min(CPU_DH, scr_height - 1);
@@ -10912,7 +10907,7 @@ inline void pcbios_int_10h_07h()
 			}
 		}
 	}
-	MyWriteConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	MyWriteConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 }
 
 inline void pcbios_int_10h_08h()
@@ -10926,13 +10921,12 @@ inline void pcbios_int_10h_08h()
 	co.Y = mem[0x451 + (CPU_BH % vram_pages) * 2];
 	
 	if(mem[0x462] == CPU_BH) {
-		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		co.Y += scr_top;
 		if(use_vram_thread) {
 			vram_flush();
 		}
-		ReadConsoleOutputCharacterA(hStdout, scr_char, scr_width, co, &num);
-		ReadConsoleOutputAttribute(hStdout, scr_attr, scr_width, co, &num);
+		ReadConsoleOutputCharacterA(hConOut, scr_char, scr_width, co, &num);
+		ReadConsoleOutputAttribute(hConOut, scr_attr, scr_width, co, &num);
 		CPU_AL = scr_char[co_X];
 		CPU_AH = scr_attr[co_X];
 	} else {
@@ -11043,19 +11037,18 @@ inline void pcbios_int_10h_0dh()
 
 inline void pcbios_int_10h_0eh()
 {
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
 	DWORD num;
 	COORD co;
 	
 	if(cursor_moved_by_crtc) {
 		if(!restore_console_size && !use_vt) {
-			GetConsoleScreenBufferInfo(hStdout, &csbi);
+			GetConsoleScreenBufferInfo(hConOut, &csbi);
 			scr_top = csbi.srWindow.Top;
 		}
 		co.X = mem[0x450 + CPU_BH * 2];
 		co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-		MySetConsoleCursorPosition(hStdout, co);
+		MySetConsoleCursorPosition(hConOut, co);
 		cursor_moved_by_crtc = false;
 	}
 	co.X = mem[0x450 + mem[0x462] * 2];
@@ -11067,7 +11060,7 @@ inline void pcbios_int_10h_0eh()
 		if(CPU_AL == 10 && use_vram_thread) {
 			vram_flush();
 		}
-		WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), &CPU_AL, 1, &num, NULL);
+		WriteConsoleA(hConOut, &CPU_AL, 1, &num, NULL);
 		cursor_moved = true;
 	} else {
 		int dest = pcbios_get_shadow_buffer_address(mem[0x462], co.X, co.Y);
@@ -11081,13 +11074,13 @@ inline void pcbios_int_10h_0eh()
 				if(use_vram_thread) {
 					vram_flush();
 				}
-				WriteConsoleA(hStdout, "\n", 1, &num, NULL);
+				WriteConsoleA(hConOut, "\n", 1, &num, NULL);
 				cursor_moved = true;
 			}
 		}
 		if(!cursor_moved) {
 			co.Y += scr_top;
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 			cursor_moved = true;
 		}
 		mem[dest] = CPU_AL;
@@ -11305,27 +11298,26 @@ inline void pcbios_int_10h_13h()
 	case 0x00:
 	case 0x01:
 		if(mem[0x462] == CPU_BH) {
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			MyGetConsoleScreenBufferInfo(hStdout, &csbi);
-			MySetConsoleCursorPosition(hStdout, co);
+			MyGetConsoleScreenBufferInfo(hConOut, &csbi);
+			MySetConsoleCursorPosition(hConOut, co);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				MySetConsoleTextAttribute(hStdout, CPU_BL);
+				MySetConsoleTextAttribute(hConOut, CPU_BL);
 			}
-			WriteConsoleA(hStdout, &mem[ofs], CPU_CX, &num, NULL);
+			WriteConsoleA(hConOut, &mem[ofs], CPU_CX, &num, NULL);
 			
 			if(csbi.wAttributes != CPU_BL) {
-				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hConOut, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x00) {
 				if(!restore_console_size && !use_vt) {
-					GetConsoleScreenBufferInfo(hStdout, &csbi);
+					GetConsoleScreenBufferInfo(hConOut, &csbi);
 					scr_top = csbi.srWindow.Top;
 				}
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				MySetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hConOut, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -11337,26 +11329,25 @@ inline void pcbios_int_10h_13h()
 	case 0x02:
 	case 0x03:
 		if(mem[0x462] == CPU_BH) {
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			CONSOLE_SCREEN_BUFFER_INFO csbi;
-			MyGetConsoleScreenBufferInfo(hStdout, &csbi);
-			MySetConsoleCursorPosition(hStdout, co);
+			MyGetConsoleScreenBufferInfo(hConOut, &csbi);
+			MySetConsoleCursorPosition(hConOut, co);
 			
 			WORD wAttributes = -1;
 			for(int i = 0; i < CPU_CX; i++, ofs += 2) {
 				if(wAttributes != mem[ofs + 1]) {
-					MySetConsoleTextAttribute(hStdout, mem[ofs + 1]);
+					MySetConsoleTextAttribute(hConOut, mem[ofs + 1]);
 					wAttributes = mem[ofs + 1];
 				}
-				WriteConsoleA(hStdout, &mem[ofs], 1, &num, NULL);
+				WriteConsoleA(hConOut, &mem[ofs], 1, &num, NULL);
 			}
 			if(csbi.wAttributes != wAttributes) {
-				MySetConsoleTextAttribute(hStdout, csbi.wAttributes);
+				MySetConsoleTextAttribute(hConOut, csbi.wAttributes);
 			}
 			if(CPU_AL == 0x02) {
 				co.X = mem[0x450 + CPU_BH * 2];
 				co.Y = mem[0x451 + CPU_BH * 2] + scr_top;
-				MySetConsoleCursorPosition(hStdout, co);
+				MySetConsoleCursorPosition(hConOut, co);
 			} else {
 				cursor_moved = true;
 			}
@@ -11368,9 +11359,8 @@ inline void pcbios_int_10h_13h()
 	case 0x10:
 	case 0x11:
 		if(mem[0x462] == CPU_BH) {
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-			ReadConsoleOutputCharacterA(hStdout, scr_char, CPU_CX, co, &num);
-			ReadConsoleOutputAttribute(hStdout, scr_attr, CPU_CX, co, &num);
+			ReadConsoleOutputCharacterA(hConOut, scr_char, CPU_CX, co, &num);
+			ReadConsoleOutputAttribute(hConOut, scr_attr, CPU_CX, co, &num);
 			for(int i = 0; i < num; i++) {
 				mem[ofs++] = scr_char[i];
 				mem[ofs++] = scr_attr[i];
@@ -11401,7 +11391,6 @@ inline void pcbios_int_10h_13h()
 	case 0x20:
 	case 0x21:
 		if(mem[0x462] == CPU_BH) {
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			int len = min(CPU_CX, scr_width * scr_height);
 			for(int i = 0; i < len; i++) {
 				scr_char[i] = mem[ofs++];
@@ -11410,7 +11399,7 @@ inline void pcbios_int_10h_13h()
 					ofs += 2;
 				}
 			}
-			MyWriteConsoleOutputCharAttrA(hStdout, scr_char, scr_attr, len, co);
+			MyWriteConsoleOutputCharAttrA(hConOut, scr_char, scr_attr, len, co);
 		} else {
 			for(int i = 0, dest = pcbios_get_shadow_buffer_address(CPU_BH, co.X, co.Y - scr_top); i < CPU_CX; i++) {
 				mem[dest++] = mem[ofs++];
@@ -11642,12 +11631,11 @@ inline void pcbios_int_10h_85h()
 	co.X = 0;
 	co.Y = mem[0x451];
 	
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	co.Y += scr_top;
 	if(use_vram_thread) {
 		vram_flush();
 	}
-	ReadConsoleOutputCharacterA(hStdout, scr_char, scr_width, co, &num);
+	ReadConsoleOutputCharacterA(hConOut, scr_char, scr_width, co, &num);
 	
 	if(co_X > 0 && IS_SJIS(scr_char[co_X - 1], scr_char[co_X])) {
 		CPU_AL = 0x02;
@@ -11908,7 +11896,6 @@ inline void pcbios_int_10h_feh()
 inline void pcbios_int_10h_ffh()
 {
 	if(mem[0x449] == 0x03 || mem[0x449] == 0x70 || mem[0x449] == 0x71 || mem[0x449] == 0x73) {
-		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 		COORD co;
 		int size = CPU_CX;
 		
@@ -11929,7 +11916,7 @@ inline void pcbios_int_10h_ffh()
 			scr_attr[len] = mem[ofs++];
 		}
 		co.Y += scr_top;
-		MyWriteConsoleOutputCharAttrA(hStdout, scr_char, scr_attr, len, co);
+		MyWriteConsoleOutputCharAttrA(hConOut, scr_char, scr_attr, len, co);
 	}
 	int_10h_ffh_called = true;
 }
@@ -12731,15 +12718,15 @@ inline void pcbios_int_15h_c2h()
 	case 0x00:
 		if(CPU_BH == 0x00) {
 			if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
-				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+				SetConsoleMode(hConIn, dwConsoleMode | ENABLE_EXTENDED_FLAGS);
 			} else {
-				SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+				SetConsoleMode(hConIn, dwConsoleMode);
 			}
 			pic[1].imr |= 0x10; // disable IRQ 12
 			mouse.enabled_ps2 = false;
 			CPU_AH = 0x00; // successful
 		} else if(CPU_BH == 0x01) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
+			SetConsoleMode(hConIn, (dwConsoleMode | ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE);
 			pic[1].imr &= ~0x10; // enable IRQ 12
 			mouse.enabled_ps2 = true;
 			CPU_AH = 0x00; // successful
@@ -12753,9 +12740,9 @@ inline void pcbios_int_15h_c2h()
 		CPU_BL = 0xaa; // mouse
 	case 0x05:
 		if(dwConsoleMode & (ENABLE_INSERT_MODE | ENABLE_QUICK_EDIT_MODE)) {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode | ENABLE_EXTENDED_FLAGS);
+			SetConsoleMode(hConIn, dwConsoleMode | ENABLE_EXTENDED_FLAGS);
 		} else {
-			SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), dwConsoleMode);
+			SetConsoleMode(hConIn, dwConsoleMode);
 		}
 		pic[1].imr |= 0x10; // disable IRQ 12
 		mouse.enabled_ps2 = false;
@@ -15575,7 +15562,7 @@ inline void msdos_int_21h_40h()
 				if(file_handler[fd].atty) {
 					// BX is stdout/stderr or is redirected to stdout
 					for(int i = 0; i < CPU_CX; i++) {
-						msdos_putch(mem[CPU_DS_BASE + CPU_DX + i], 0x21, 0x40);
+						msdos_putch_noredir(mem[CPU_DS_BASE + CPU_DX + i], 0x21, 0x40);
 					}
 					CPU_AX = CPU_CX;
 				} else {
@@ -23177,11 +23164,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	msdos_dta_info_init();
 	
 	// BIOS data area
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	MyGetConsoleScreenBufferInfo(hStdout, &csbi);
+	MyGetConsoleScreenBufferInfo(hConOut, &csbi);
 //	CONSOLE_FONT_INFO cfi;
-//	GetCurrentConsoleFont(hStdout, FALSE, &cfi);
+//	GetCurrentConsoleFont(hConOut, FALSE, &cfi);
 	
 	int regen = min(scr_width * scr_height * 2, 0x8000);
 	if(video_card_type == VIDEO_CARD_MDA) {
@@ -23273,7 +23259,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// initial screen
 	SMALL_RECT rect;
 	SET_RECT(rect, 0, csbi.srWindow.Top, csbi.dwSize.X - 1, csbi.srWindow.Bottom);
-	ReadConsoleOutputA(hStdout, scr_buf, scr_buf_size, scr_buf_pos, &rect);
+	ReadConsoleOutputA(hConOut, scr_buf, scr_buf_size, scr_buf_pos, &rect);
 	for(int y = 0, ofs1 = TEXT_VRAM_TOP, ofs2 = SHADOW_BUF_TOP; y < scr_height; y++) {
 		for(int x = 0; x < scr_width; x++) {
 			mem[ofs1++] = mem[ofs2++] = SCR_BUF(y,x).Char.AsciiChar;
@@ -24287,13 +24273,12 @@ void hardware_update()
 				pcbios_update_cursor_position();
 				cursor_moved = false;
 			}
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			int position = crtc_regs[14] * 256 + crtc_regs[15];
 			int width = *(UINT16 *)(mem + 0x44a);
 			COORD co;
 			co.X = position % width;
 			co.Y = position / width + scr_top;
-			MySetConsoleCursorPosition(hStdout, co);
+			MySetConsoleCursorPosition(hConOut, co);
 			
 			crtc_changed[14] = crtc_changed[15] = 0;
 			cursor_moved_by_crtc = true;
@@ -24304,7 +24289,6 @@ void hardware_update()
 			ci_new.bVisible = TRUE;
 		}
 		if(!(ci_old.dwSize == ci_new.dwSize && ci_old.bVisible == ci_new.bVisible)) {
-			HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 			if(use_vt) {
 				const char *buf;
 				if(!ci_new.bVisible) {
@@ -24314,9 +24298,9 @@ void hardware_update()
 				} else {
 					buf = "\x1b[?25h\x1b[1 q";
 				}
-				WriteConsoleA(hStdout, buf, strlen(buf), NULL, NULL);
+				WriteConsoleA(hConOut, buf, strlen(buf), NULL, NULL);
 			} else {
-				SetConsoleCursorInfo(hStdout, &ci_new);
+				SetConsoleCursorInfo(hConOut, &ci_new);
 				restore_console_cursor = true;
 			}
 		}
