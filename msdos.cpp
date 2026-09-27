@@ -1857,7 +1857,7 @@ void read_cursor_pos(HANDLE hStdout, HANDLE hStdin, COORD *pos)
 	sscanf(buf, "[%hd;%hdR", &pos->Y, &pos->X);
 	SetConsoleMode(hStdin, mode);
 }
-				
+
 bool update_console_input();
 BOOL MyGetConsoleScreenBufferInfo(HANDLE hConsoleOutput, PCONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo)
 {
@@ -7793,14 +7793,14 @@ void msdos_putch(UINT8 data, unsigned int_num, UINT8 reg_ah)
 		msdos_write(fd, &data, 1);
 		return;
 	}
-
+	
 	msdos_putch_noredir(data, int_num, reg_ah);
 }
 
 void msdos_putch_noredir(UINT8 data, unsigned int_num, UINT8 reg_ah)
 {
 	bool skip_int29h = false;
-
+	
 	// call int 29h ?
 	if(*(UINT16 *)(mem + 4 * 0x29 + 0) == (IRET_SIZE + 5 * 0x29) &&
 	   *(UINT16 *)(mem + 4 * 0x29 + 2) == (IRET_TOP >> 4)) {
@@ -15303,7 +15303,9 @@ inline void msdos_int_21h_3bh(int lfn)
 		} else {
 			sprintf(cds->path_name, "%c:\\", 'A' + drv);
 		}
-		if(drv == (_getdrive() - 1)) my_chdir(path);
+		if(drv == (_getdrive() - 1)) {
+			my_chdir(path);
+		}
 		CPU_AX = 0x00; // AX isdestroyed
 	}
 }
@@ -16712,7 +16714,7 @@ inline void msdos_int_21h_4eh()
 		CPU_AX = 0;
 	} else {
 		DWORD error = GetLastError();
-		CPU_AX = error == ERROR_FILE_NOT_FOUND ? ERROR_NO_MORE_FILES : msdos_error_code(error);
+		CPU_AX = (error == ERROR_FILE_NOT_FOUND) ? ERROR_NO_MORE_FILES : msdos_error_code(error);
 		CPU_SET_C_FLAG(1);
 	}
 }

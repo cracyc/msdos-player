@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								9/13/2026
+								9/27/2026
 
 ----- What's This
 
@@ -1313,7 +1313,7 @@ https://github.com/cracyc/msdos-player
 
 Patched by Mr. Sagawa, Mr. sava (lukewarm), Mr. Kimura (emk), Mr. Jason Hood,
 Mr. N2583ZYOB6, Mr. Fujita, Mr. Mark Ogden, Mr. cacyc, Mr. roytam, Mr. Nmlgc,
-and Mr. 0957811.
+Mr. 0957811, and Mr. vyv03354
 
 ----------------------------------------
 TAKEDA, toshiya
