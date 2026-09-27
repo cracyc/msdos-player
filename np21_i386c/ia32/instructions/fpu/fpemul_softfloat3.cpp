@@ -46,19 +46,19 @@
 
  /*
  Short Real
-	31: sign (符号)
+    31: sign (符号)
  30-23: exp-8 (指数部: exponet)
  22-00: num-23 (小数部)
 
  Long Real
-	63: sign
+    63: sign
  62-52: exp-11
  51-00: num-52
 
  Temp Real
-	79: sign
+    79: sign
  78-64: exp-15
-	63: 1(?)
+    63: 1(?)
  62-00: num-63
 
  --
@@ -89,11 +89,34 @@
 
 #define FPU_WORKCLOCK	6
 
-#define PI		3.1415926535897932384626433832795
-#define L2E		1.4426950408889634073599246810019
-#define L2T		3.3219280948873623478703194294894
-#define LN2		0.6931471805599453094172321214582
-#define LG2		0.3010299956639811952137388947245
+static const uint64_t fpu_const_l2t_sig[4] = {
+	UINT64_C(0xD49A784BCD1B8AFE), UINT64_C(0xD49A784BCD1B8AFE),
+	UINT64_C(0xD49A784BCD1B8AFF), UINT64_C(0xD49A784BCD1B8AFE)
+};
+static const uint64_t fpu_const_l2e_sig[4] = {
+	UINT64_C(0xB8AA3B295C17F0BC), UINT64_C(0xB8AA3B295C17F0BB),
+	UINT64_C(0xB8AA3B295C17F0BC), UINT64_C(0xB8AA3B295C17F0BB)
+};
+static const uint64_t fpu_const_pi_sig[4] = {
+	UINT64_C(0xC90FDAA22168C235), UINT64_C(0xC90FDAA22168C234),
+	UINT64_C(0xC90FDAA22168C235), UINT64_C(0xC90FDAA22168C234)
+};
+static const uint64_t fpu_const_lg2_sig[4] = {
+	UINT64_C(0x9A209A84FBCFF799), UINT64_C(0x9A209A84FBCFF798),
+	UINT64_C(0x9A209A84FBCFF799), UINT64_C(0x9A209A84FBCFF798)
+};
+static const uint64_t fpu_const_ln2_sig[4] = {
+	UINT64_C(0xB17217F7D1CF79AC), UINT64_C(0xB17217F7D1CF79AB),
+	UINT64_C(0xB17217F7D1CF79AC), UINT64_C(0xB17217F7D1CF79AB)
+};
+
+static INLINE sw_extFloat80_t FPU_MakeConst(UINT16 signExp, const uint64_t *signif)
+{
+	sw_extFloat80_t value;
+	value.signExp = signExp;
+	value.signif = signif[((UINT)FPU_STAT.round) & 3];
+	return value;
+}
 
 static INLINE void FPU_SetCW(UINT16 cword)
 {
@@ -121,6 +144,33 @@ static INLINE void FPU_SetCW(UINT16 cword)
  * x87 exception flags are sticky, so each operation starts with an empty
  * SoftFloat flag set and merges only newly raised exceptions into the x87
  * status word when it completes. */
+static INLINE uint_fast8_t FPU_BeginPrecisionControl(void)
+{
+	uint_fast8_t oldPrecision = extF80_roundingPrecision;
+
+	/* x87 PC: 00=24-bit, 10=53-bit, 11=64-bit significand.
+	 * SoftFloat names the equivalent formats by total width: 32/64/80.
+	 * PC=01 is reserved; retain full extended precision for compatibility. */
+	switch ((FPU_CTRLWORD >> 8) & 3) {
+	case 0:
+		extF80_roundingPrecision = 32;
+		break;
+	case 2:
+		extF80_roundingPrecision = 64;
+		break;
+	case 3:
+	default:
+		extF80_roundingPrecision = 80;
+		break;
+	}
+	return oldPrecision;
+}
+
+static INLINE void FPU_EndPrecisionControl(uint_fast8_t oldPrecision)
+{
+	extF80_roundingPrecision = oldPrecision;
+}
+
 static INLINE void FPU_SoftFloatBegin(void)
 {
 	softfloat_exceptionFlags = 0;
@@ -215,20 +265,14 @@ static INLINE bool floatx80_lt(sw_extFloat80_t a, sw_extFloat80_t b) {
 	return extF80_lt(a, b);
 }
 static INLINE bool floatx80_is_nan(sw_extFloat80_t a) {
-#if 0
-	return extF80_isSignalingNaN(a);
-#else
-	return ((a.signExp & 0x7FFF) == 0x7FFF) && ((a.signif & UINT64_C(0x7FFFFFFFFFFFFFFF)) != 0);
-#endif
+	const uint16_t exponent = a.signExp & 0x7FFF;
+	const uint64_t significand = a.signif;
+	return (exponent == 0x7FFF) && ((significand & UINT64_C(0x7FFFFFFFFFFFFFFF)) != 0);
 }
 static INLINE bool floatx80_is_inf(sw_extFloat80_t a) {
-#if 0
 	uint16_t exponent = a.signExp & 0x7FFF;
 	uint64_t significand = a.signif;
 	return (exponent == 0x7FFF) && (significand == UINT64_C(0x8000000000000000));
-#else
-	return ((a.signExp & 0x7FFF) == 0x7FFF) && ((a.signif & UINT64_C(0x7FFFFFFFFFFFFFFF)) == 0);
-#endif
 }
 static INLINE sw_extFloat80_t floatx80_sqrt(sw_extFloat80_t a) {
 	return extF80_sqrt(a);
@@ -373,36 +417,24 @@ static INLINE void FPU_FST_I64(UINT32 addr) {
 
 static void FPU_FBST(UINT32 addr)
 {
-	SINT64 val;
-	REG80 bcdbuf = { 0 };
-	UINT i;
+    SINT64 val;
+    REG80 bcdbuf = { 0 };
+    UINT i;
 
-	uint_fast8_t oldrnd = softfloat_roundingMode;
-	softfloat_roundingMode = softfloat_round_min;
-
-	FPU_SoftFloatBegin();
-	val = floatx80_to_int64(FPU_STAT.reg[FPU_STAT_TOP].d);
-
-	// 9byte目は符号のみ意味がある
-	if (val < 0)
-	{
-		bcdbuf.b[9] = 0x80;
-		val = -val;
-	}
-
-	// 0～8byte目の処理 BCD
-	for (i = 0; i < 9; i++) {
-		bcdbuf.b[i] = (UINT8)(val % 10);
-		val /= 10;
-		bcdbuf.b[i] |= (UINT8)(val % 10) << 4;
-		val /= 10;
-	}
-
-	// 80bitまとめて書き込み
-	fpu_memorywrite_f(addr, &bcdbuf);
-
-	softfloat_roundingMode = oldrnd;
-	FPU_SoftFloatEnd();
+    FPU_SoftFloatBegin();
+    val = floatx80_to_int64(FPU_STAT.reg[FPU_STAT_TOP].d);
+    if (val < 0) {
+        bcdbuf.b[9] = 0x80;
+        val = -val;
+    }
+    for (i = 0; i < 9; i++) {
+        bcdbuf.b[i] = (UINT8)(val % 10);
+        val /= 10;
+        bcdbuf.b[i] |= (UINT8)(val % 10) << 4;
+        val /= 10;
+    }
+    fpu_memorywrite_f(addr, &bcdbuf);
+    FPU_SoftFloatEnd();
 }
 
 
@@ -612,23 +644,23 @@ static void FPU_FLD1(void) {
 }
 static void FPU_FLDL2T(void) {
 	FPU_prepush();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(L2T);
+	FPU_STAT.reg[FPU_STAT_TOP].d = FPU_MakeConst(0x4000, fpu_const_l2t_sig);
 }
 static void FPU_FLDL2E(void) {
 	FPU_prepush();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(L2E);
+	FPU_STAT.reg[FPU_STAT_TOP].d = FPU_MakeConst(0x3FFF, fpu_const_l2e_sig);
 }
 static void FPU_FLDPI(void) {
 	FPU_prepush();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(PI);
+	FPU_STAT.reg[FPU_STAT_TOP].d = FPU_MakeConst(0x4000, fpu_const_pi_sig);
 }
 static void FPU_FLDLG2(void) {
 	FPU_prepush();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(LG2);
+	FPU_STAT.reg[FPU_STAT_TOP].d = FPU_MakeConst(0x3FFD, fpu_const_lg2_sig);
 }
 static void FPU_FLDLN2(void) {
 	FPU_prepush();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(LN2);
+	FPU_STAT.reg[FPU_STAT_TOP].d = FPU_MakeConst(0x3FFE, fpu_const_ln2_sig);
 }
 static void FPU_FLDZ(void) {
 	FPU_prepush();
@@ -639,38 +671,56 @@ static void FPU_FLDZ(void) {
 
 // 四則演算
 static INLINE void FPU_FADD(UINT op1, UINT op2) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[op1].d = floatx80_add(FPU_STAT.reg[op1].d, FPU_STAT.reg[op2].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
 static INLINE void FPU_FMUL(UINT st, UINT other) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[st].d = floatx80_mul(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
 static INLINE void FPU_FSUB(UINT st, UINT other) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[st].d = floatx80_sub(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
 static INLINE void FPU_FSUBR(UINT st, UINT other) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[st].d = floatx80_sub(FPU_STAT.reg[other].d, FPU_STAT.reg[st].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
 static INLINE void FPU_FDIV(UINT st, UINT other) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[st].d = floatx80_div(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
 static INLINE void FPU_FDIVR(UINT st, UINT other) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[st].d = floatx80_div(FPU_STAT.reg[other].d, FPU_STAT.reg[st].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
@@ -692,10 +742,39 @@ static INLINE void FPU_FDIV_EA(UINT op1) {
 static INLINE void FPU_FDIVR_EA(UINT op1) {
 	FPU_FDIVR(op1, 8);
 }
+static int FPU_FPREM_partial(void) {
+    sw_extFloat80_t val = FPU_STAT.reg[FPU_STAT_TOP].d;
+    sw_extFloat80_t div = FPU_STAT.reg[FPU_ST(1)].d;
+    sw_extFloat80_t reduced, product;
+    const SINT32 e0 = val.signExp & 0x7fff;
+    const SINT32 e1 = div.signExp & 0x7fff;
+    SINT32 shift;
+    SINT64 quotient;
+
+    if (!e0 || !e1 || e0 == 0x7fff || e1 == 0x7fff ||
+        !(val.signif & UINT64_C(0x8000000000000000)) ||
+        !(div.signif & UINT64_C(0x8000000000000000)) || e0 - e1 < 64) return 0;
+    /* Reduce the dividend by 2^(D-60); the partial quotient fits in int64. */
+    shift = e0 - e1 - 60;
+    reduced = val;
+    reduced.signExp = (UINT16)((val.signExp & 0x8000) | (e1 + 60));
+    FPU_SoftFloatBegin();
+    quotient = floatx80_to_int64_round_to_zero(floatx80_div(reduced, div));
+    product = floatx80_mul(int64_to_floatx80(quotient), div);
+    product.signExp = (UINT16)((product.signExp & 0x8000) |
+        ((product.signExp & 0x7fff) + shift));
+    FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_sub(val, product);
+    FPU_STATUSWORD |= FP_C2_FLAG;
+    softfloat_exceptionFlags &= ~softfloat_flag_inexact;
+    FPU_SoftFloatEnd();
+    return 1;
+}
+
 static void FPU_FPREM(void) {
 	sw_extFloat80_t val, div;
 	SINT64 qint;
 
+	if (FPU_FPREM_partial()) return;
 	FPU_SoftFloatBegin();
 	val = FPU_STAT.reg[FPU_STAT_TOP].d;
 	div = FPU_STAT.reg[FPU_ST(1)].d;
@@ -707,66 +786,91 @@ static void FPU_FPREM(void) {
 	if(qint & 2) FPU_STATUSWORD |= FP_C3_FLAG; // 商のbit1
 	if(qint & 1) FPU_STATUSWORD |= FP_C1_FLAG; // 商のbit0
 	// C2クリアで完了扱い
+	softfloat_exceptionFlags &= ~softfloat_flag_inexact;
 	FPU_SoftFloatEnd();
 }
 
 static void FPU_FPREM1(void) {
-	sw_extFloat80_t val, div, q;
-	SINT64 qint;
-	uint_fast8_t oldrnd = softfloat_roundingMode;
-
-	// IEEE 754 剰余　商を最も近い整数値とする。余りが負値になることが有り得る
-
-	FPU_SoftFloatBegin();
-	val = FPU_STAT.reg[FPU_STAT_TOP].d;
-	div = FPU_STAT.reg[FPU_ST(1)].d;
-	q = floatx80_add(floatx80_div(val, div), c_double_to_floatx80(0.5)); // floor(値 + 0.5)で四捨五入 厳密には負値の境界で違うが微々たる差として気にしないことにする。
-	softfloat_roundingMode = softfloat_round_min;
-	qint = floatx80_to_int64(q); // 四捨五入(被除数 / 除数) = 最も整数に近い商
-
-	FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_sub(val, floatx80_mul(int64_to_floatx80(qint), div)); // 被除数 - 商 x 除数 = 剰余
-	FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C1_FLAG | FP_C2_FLAG | FP_C3_FLAG);
-	if(qint & 4) FPU_STATUSWORD |= FP_C0_FLAG; // 商のbit2
-	if(qint & 2) FPU_STATUSWORD |= FP_C3_FLAG; // 商のbit1
-	if(qint & 1) FPU_STATUSWORD |= FP_C1_FLAG; // 商のbit0
-	// C2クリアで完了扱い
-	softfloat_roundingMode = oldrnd;
+    sw_extFloat80_t val, div, q;
+    SINT64 qint;
+    uint_fast8_t saved = softfloat_roundingMode;
+    
+	if (FPU_FPREM_partial()) return;
+    FPU_SoftFloatBegin();
+    val = FPU_STAT.reg[FPU_STAT_TOP].d;
+    div = FPU_STAT.reg[FPU_ST(1)].d;
+    softfloat_roundingMode = softfloat_round_near_even;
+    q = floatx80_div(val, div);
+    
+    qint = extF80_to_i64(q, softfloat_round_near_even, false);
+    
+    FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_sub(val, floatx80_mul(int64_to_floatx80(qint), div));
+    FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C1_FLAG | FP_C2_FLAG | FP_C3_FLAG);
+    if (qint & 4) FPU_STATUSWORD |= FP_C0_FLAG;
+    if (qint & 2) FPU_STATUSWORD |= FP_C3_FLAG;
+    if (qint & 1) FPU_STATUSWORD |= FP_C1_FLAG;
+    softfloat_exceptionFlags &= ~softfloat_flag_inexact;
+    softfloat_roundingMode = saved;
 	FPU_SoftFloatEnd();
 }
 
 // 数学関数
 static void FPU_FSIN(void) {
-	FPU_SoftFloatBegin();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(sin(floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d)));
-	FPU_STATUSWORD &= ~FP_C2_FLAG;
-	FPU_SoftFloatEnd();
-	return;
+    const sw_extFloat80_t value = FPU_STAT.reg[FPU_STAT_TOP].d;
+    /* |x| >= 2^63 is out of range; C2 is set and no stack change occurs. */
+    if (((value.signExp & 0x7fff) >= 0x403e) &&
+        !floatx80_is_nan(value) && !floatx80_is_inf(value)) {
+        FPU_STATUSWORD |= FP_C2_FLAG;
+        return;
+    }
+    FPU_SoftFloatBegin();
+    FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(sin(floatx80_to_c_double(value)));
+    
+    FPU_STATUSWORD &= ~FP_C2_FLAG;
+    FPU_SoftFloatEnd();
 }
 static void FPU_FCOS(void) {
-	FPU_SoftFloatBegin();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(cos(floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d)));
-	FPU_STATUSWORD &= ~FP_C2_FLAG;
-	FPU_SoftFloatEnd();
-	return;
+    const sw_extFloat80_t value = FPU_STAT.reg[FPU_STAT_TOP].d;
+    /* |x| >= 2^63 is out of range; C2 is set and no stack change occurs. */
+    if (((value.signExp & 0x7fff) >= 0x403e) &&
+        !floatx80_is_nan(value) && !floatx80_is_inf(value)) {
+        FPU_STATUSWORD |= FP_C2_FLAG;
+        return;
+    }
+    FPU_SoftFloatBegin();
+    FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(cos(floatx80_to_c_double(value)));
+    
+    FPU_STATUSWORD &= ~FP_C2_FLAG;
+    FPU_SoftFloatEnd();
 }
 static void FPU_FSINCOS(void) {
-	double temp;
-
-	FPU_SoftFloatBegin();
-	temp = floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d);
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(sin(temp));
-	FPU_push(c_double_to_floatx80(cos(temp)));
-	FPU_STATUSWORD &= ~FP_C2_FLAG;
-	FPU_SoftFloatEnd();
-	return;
+    double temp;
+    const sw_extFloat80_t value = FPU_STAT.reg[FPU_STAT_TOP].d;
+    if (((value.signExp & 0x7fff) >= 0x403e) &&
+        !floatx80_is_nan(value) && !floatx80_is_inf(value)) {
+        FPU_STATUSWORD |= FP_C2_FLAG;
+        return;
+    }
+    FPU_SoftFloatBegin();
+    temp = floatx80_to_c_double(value);
+    FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(sin(temp));
+    FPU_push(c_double_to_floatx80(cos(temp)));
+    FPU_STATUSWORD &= ~FP_C2_FLAG;
+    FPU_SoftFloatEnd();
 }
 static void FPU_FPTAN(void) {
-	FPU_SoftFloatBegin();
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(tan(floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d)));
-	FPU_push(c_double_to_floatx80(1.0));
-	FPU_STATUSWORD &= ~FP_C2_FLAG;
-	FPU_SoftFloatEnd();
-	return;
+    const sw_extFloat80_t value = FPU_STAT.reg[FPU_STAT_TOP].d;
+    /* |x| >= 2^63 is out of range; C2 is set and no stack change occurs. */
+    if (((value.signExp & 0x7fff) >= 0x403e) &&
+        !floatx80_is_nan(value) && !floatx80_is_inf(value)) {
+        FPU_STATUSWORD |= FP_C2_FLAG;
+        return;
+    }
+    FPU_SoftFloatBegin();
+    FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(tan(floatx80_to_c_double(value)));
+    FPU_push(c_double_to_floatx80(1.0));
+    FPU_STATUSWORD &= ~FP_C2_FLAG;
+    FPU_SoftFloatEnd();
 }
 static void FPU_FPATAN(void) {
 	FPU_SoftFloatBegin();
@@ -776,8 +880,11 @@ static void FPU_FPATAN(void) {
 	return;
 }
 static void FPU_FSQRT(void) {
+	uint_fast8_t oldPrecision;
 	FPU_SoftFloatBegin();
+	oldPrecision = FPU_BeginPrecisionControl();
 	FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_sqrt(FPU_STAT.reg[FPU_STAT_TOP].d);
+	FPU_EndPrecisionControl(oldPrecision);
 	FPU_SoftFloatEnd();
 	return;
 }
@@ -787,18 +894,73 @@ static void FPU_FRNDINT(void) {
 	FPU_SoftFloatEnd();
 }
 static void FPU_F2XM1(void) {
-	FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(pow(2.0, floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d)) - 1);
+    const double x = floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d);
+    const double y = x * 0.69314718055994530942;
+    /* Avoid losing 2^x-1 when 2^x rounds to 1 in host double. */
+    if (fabs(x) < 1.0e-8) {
+        FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(
+            y * (1.0 + y * (0.5 + y * (1.0 / 6.0 + y / 24.0))));
+        if (x != 0.0) FPU_STATUSWORD |= 0x0020;
+    } else {
+        FPU_STAT.reg[FPU_STAT_TOP].d = c_double_to_floatx80(pow(2.0, x) - 1.0);
+    }
 }
 static void FPU_FYL2X(void) {
 	FPU_STAT.reg[FPU_ST(1)].d = floatx80_mul(FPU_STAT.reg[FPU_ST(1)].d, c_double_to_floatx80(log(floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d)) / log(2.0)));
 	FPU_pop();
 }
 static void FPU_FYL2XP1(void) {
-	FPU_STAT.reg[FPU_ST(1)].d = floatx80_mul(FPU_STAT.reg[FPU_ST(1)].d, c_double_to_floatx80(log(floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d) + 1.0) / log(2.0)));
-	FPU_pop();
+    const double x = floatx80_to_c_double(FPU_STAT.reg[FPU_STAT_TOP].d);
+    double logarithm;
+    /* Avoid losing x in the host-double addition 1+x. */
+    if (fabs(x) < 1.0e-8) {
+        logarithm = x * (1.0 + x * (-0.5 + x * (1.0 / 3.0 - x * 0.25))) / 0.69314718055994530942;
+        if (x != 0.0) FPU_STATUSWORD |= 0x0020;
+    } else {
+        logarithm = log(1.0 + x) / 0.69314718055994530942;
+    }
+    FPU_STAT.reg[FPU_ST(1)].d = floatx80_mul(
+        FPU_STAT.reg[FPU_ST(1)].d, c_double_to_floatx80(logarithm));
+    FPU_pop();
 }
 static void FPU_FSCALE(void) {
-	FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_mul(FPU_STAT.reg[FPU_STAT_TOP].d, c_double_to_floatx80(pow(2.0, floatx80_to_c_double(FPU_STAT.reg[FPU_ST(1)].d))));
+    sw_extFloat80_t scale = FPU_STAT.reg[FPU_ST(1)].d;
+    sw_extFloat80_t integer, factor;
+    SINT32 remaining, step;
+    const UINT16 exponent = (UINT16)(scale.signExp & 0x7fff);
+
+    FPU_SoftFloatBegin();
+    if (exponent == 0x7fff) {
+        /* Leave NaN and infinity classification to the SoftFloat arithmetic. */
+        FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_mul(
+            FPU_STAT.reg[FPU_STAT_TOP].d,
+            c_double_to_floatx80(pow(2.0, floatx80_to_c_double(scale))));
+    } else {
+        
+        integer = extF80_roundToInt(scale, softfloat_round_minMag, false);
+        /* A larger magnitude can only overflow or underflow the 80-bit result. */
+        if (exponent >= 0x400f) {
+            remaining = (scale.signExp & 0x8000) ? -65536 : 65536;
+        } else {
+            remaining = extF80_to_i32(integer, softfloat_round_minMag, false);
+        }
+        
+        if (remaining == 0) {
+            /* Preserve arithmetic and exception handling when the scale is zero. */
+            factor.signExp = 0x3fff;
+            factor.signif = UINT64_C(0x8000000000000000);
+            FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_mul(FPU_STAT.reg[FPU_STAT_TOP].d, factor);
+        }
+        while (remaining) {
+            step = remaining > 16000 ? 16000 :
+                   remaining < -16000 ? -16000 : remaining;
+            factor.signExp = (UINT16)(0x3fff + step);
+            factor.signif = ((UINT64)1 << 63);
+            FPU_STAT.reg[FPU_STAT_TOP].d = floatx80_mul(FPU_STAT.reg[FPU_STAT_TOP].d, factor);
+            remaining -= step;
+        }
+    }
+    FPU_SoftFloatEnd();
 }
 static void FPU_FCHS(void) {
 	FPU_STAT.reg[FPU_STAT_TOP].b[9] ^= 0x80;
@@ -808,19 +970,32 @@ static void FPU_FABS(void) {
 }
 
 // 比較
+static void FPU_Compare(UINT st, UINT other, int ordered) {
+    sw_extFloat80_t a, b;
+    int nan;
+    const int invalid_tag =
+        ((FPU_STAT.tag[st] != TAG_Valid) && (FPU_STAT.tag[st] != TAG_Zero)) ||
+        ((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero));
+    FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C2_FLAG | FP_C3_FLAG);
+    if (invalid_tag) {
+        FPU_STATUSWORD |= FP_C0_FLAG | FP_C2_FLAG | FP_C3_FLAG | FP_IE_FLAG;
+        return;
+    }
+    a = FPU_STAT.reg[st].d;
+    b = FPU_STAT.reg[other].d;
+    nan = floatx80_is_nan(a) || floatx80_is_nan(b);
+    if (nan) {
+        FPU_STATUSWORD |= FP_C0_FLAG | FP_C2_FLAG | FP_C3_FLAG;
+        if ((ordered && nan) ||
+            extF80_isSignalingNaN(a) || extF80_isSignalingNaN(b)) FPU_STATUSWORD |= FP_IE_FLAG;
+    } else if (floatx80_eq(a, b)) {
+        FPU_STATUSWORD |= FP_C3_FLAG;
+    } else if (floatx80_lt(a, b)) {
+        FPU_STATUSWORD |= FP_C0_FLAG;
+    }
+}
 static void FPU_FCOM(UINT st, UINT other) {
-	FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C2_FLAG | FP_C3_FLAG);
-	if (((FPU_STAT.tag[st] != TAG_Valid) && (FPU_STAT.tag[st] != TAG_Zero)) ||
-		((FPU_STAT.tag[other] != TAG_Valid) && (FPU_STAT.tag[other] != TAG_Zero)) ||
-		(floatx80_is_nan(FPU_STAT.reg[st].d) || floatx80_is_nan(FPU_STAT.reg[other].d))) {
-		FPU_STATUSWORD |= FP_C3_FLAG|FP_C2_FLAG|FP_C0_FLAG;
-	}
-	else if (floatx80_eq(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d)) {
-		FPU_STATUSWORD |= FP_C3_FLAG;
-	}
-	else if (floatx80_lt(FPU_STAT.reg[st].d, FPU_STAT.reg[other].d)) {
-		FPU_STATUSWORD |= FP_C0_FLAG;
-	}
+    FPU_Compare(st, other, 1);
 }
 static void FPU_FCOMI(UINT st, UINT other) {
 	CPU_FLAGL &= ~(Z_FLAG|P_FLAG|C_FLAG);
@@ -837,8 +1012,7 @@ static void FPU_FCOMI(UINT st, UINT other) {
 	}
 }
 static void FPU_FUCOM(UINT st, UINT other) {
-	// 例外絡みの挙動が違うがほぼ同じとしてスルー
-	FPU_FCOM(st, other);
+    FPU_Compare(st, other, 0);
 }
 static void FPU_FUCOMI(UINT st, UINT other) {
 	// 例外絡みの挙動が違うがほぼ同じとしてスルー
@@ -904,39 +1078,42 @@ static void FPU_FCMOVNU(UINT st, UINT other) {
 
 // 浮動小数点数操作
 static void FPU_FXAM(void) {
-	FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C1_FLAG | FP_C2_FLAG | FP_C3_FLAG);
-	if (FPU_STAT.reg[FPU_STAT_TOP].d.signExp & 0x8000) {
-		FPU_STATUSWORD |= FP_C1_FLAG;
-	}
-
-	if (FPU_STAT.tag[FPU_STAT_TOP] == TAG_Empty) {
-		FPU_STATUSWORD |= FP_C3_FLAG;
-		FPU_STATUSWORD |= FP_C0_FLAG;
-	}
-	else if (floatx80_is_nan(FPU_STAT.reg[FPU_STAT_TOP].d)) {
-		FPU_STATUSWORD |= FP_C0_FLAG;
-	}
-	else if (floatx80_is_inf(FPU_STAT.reg[FPU_STAT_TOP].d)) {
-		FPU_STATUSWORD |= FP_C2_FLAG;
-		FPU_STATUSWORD |= FP_C0_FLAG;
-	}
-	else if (floatx80_eq(FPU_STAT.reg[FPU_STAT_TOP].d, c_double_to_floatx80(0.0))) {
-		FPU_STATUSWORD |= FP_C3_FLAG;
-	}
-	else {
-		FPU_STATUSWORD |= FP_C2_FLAG;
-	}
+    const sw_extFloat80_t value = FPU_STAT.reg[FPU_STAT_TOP].d;
+    FPU_STATUSWORD &= ~(FP_C0_FLAG | FP_C1_FLAG | FP_C2_FLAG | FP_C3_FLAG);
+    if (value.signExp & 0x8000) FPU_STATUSWORD |= FP_C1_FLAG;
+    if (FPU_STAT.tag[FPU_STAT_TOP] == TAG_Empty) {
+        FPU_STATUSWORD |= FP_C3_FLAG | FP_C0_FLAG;
+    } else if (floatx80_is_nan(value)) {
+        FPU_STATUSWORD |= FP_C0_FLAG;
+    } else if (floatx80_is_inf(value)) {
+        FPU_STATUSWORD |= FP_C2_FLAG | FP_C0_FLAG;
+    } else if ((value.signExp & 0x7fff) == 0) {
+        if (value.signif == 0) FPU_STATUSWORD |= FP_C3_FLAG;
+        else FPU_STATUSWORD |= FP_C3_FLAG | FP_C2_FLAG;
+    } else {
+        FPU_STATUSWORD |= FP_C2_FLAG;
+    }
 }
 
 static void FPU_FXTRACT(void) {
-	SINT32 expval;
-	sw_extFloat80_t fracval;
+    SINT32 expval;
+    sw_extFloat80_t fracval = FPU_STAT.reg[FPU_STAT_TOP].d;
+    const UINT16 exponent = (UINT16)(fracval.signExp & 0x7fff);
 
-	fracval = FPU_STAT.reg[FPU_STAT_TOP].d;
-	expval = (SINT32)((UINT16)fracval.signExp & 0x7FFF) - 0x3FFF; // 指数部分を抽出、バイアス分を引く
-	fracval.signExp = (SINT16)(((UINT16)fracval.signExp & 0x8000) | 0x3FFF); // 符号は残し、指数部分を0x3FFF（バイアス分=0）にして仮数だけにする
-	FPU_STAT.reg[FPU_STAT_TOP].d = int64_to_floatx80(expval); // 指数の書き込み
-	FPU_push(fracval); // 仮数のpush
+    if (exponent == 0 && fracval.signif == 0) {
+        /* Masked divide-by-zero: signed zero significand and -infinity exponent. */
+        sw_extFloat80_t minus_inf;
+        minus_inf.signExp = 0xFFFF;
+        minus_inf.signif = UINT64_C(0x8000000000000000);
+        FPU_STATUSWORD |= 0x0004;
+        FPU_STAT.reg[FPU_STAT_TOP].d = minus_inf;
+        FPU_push(fracval);
+        return;
+    }
+    expval = (SINT32)exponent - 0x3fff;
+    fracval.signExp = (UINT16)((fracval.signExp & 0x8000) | 0x3fff);
+    FPU_STAT.reg[FPU_STAT_TOP].d = int64_to_floatx80(expval);
+    FPU_push(fracval);
 }
 
 // 環境ロード・ストア
@@ -1777,7 +1954,7 @@ SF_ESC3(void)
 		case 1:	/* FISTTP (DWORD) */
 			{
 				uint_fast8_t oldrnd = softfloat_roundingMode;
-				softfloat_roundingMode = softfloat_round_min;
+				softfloat_roundingMode = softfloat_round_minMag;
 				FPU_FST_I32(madr);
 				softfloat_roundingMode = oldrnd;
 			}
@@ -1948,7 +2125,7 @@ SF_ESC5(void)
 		case 1:	/* FISTTP (QWORD) */
 			{
 				uint_fast8_t oldrnd = softfloat_roundingMode;
-				softfloat_roundingMode = softfloat_round_min;
+				softfloat_roundingMode = softfloat_round_minMag;
 				FPU_FST_I64(madr);
 				softfloat_roundingMode = oldrnd;
 			}
@@ -2134,7 +2311,7 @@ SF_ESC7(void)
 		case 1:	/* FISTTP (WORD) */
 			{
 				uint_fast8_t oldrnd = softfloat_roundingMode;
-				softfloat_roundingMode = softfloat_round_min;
+				softfloat_roundingMode = softfloat_round_minMag;
 				FPU_FST_I16(madr);
 				softfloat_roundingMode = oldrnd;
 			}

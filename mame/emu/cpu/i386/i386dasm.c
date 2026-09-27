@@ -1902,7 +1902,7 @@ static const I386_OPCODE group0FAE_table[8] =
 	{"fxsave",          0,              PARAM_RM,           0,                  0               },
 	{"fxrstor",         0,              PARAM_RM,           0,                  0               },
 	{"ldmxcsr",         0,              PARAM_RM,           0,                  0               },
-	{"stmxscr",         0,              PARAM_RM,           0,                  0               },
+	{"stmxcsr",         0,              PARAM_RM,           0,                  0               },
 	{"???",             0,              0,                  0,                  0               },
 	{"lfence",          0,              0,                  0,                  0               },
 	{"mfence",          0,              0,                  0,                  0               },
