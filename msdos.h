@@ -558,7 +558,7 @@ void kbd_write_command(UINT8 val);
 // beep
 
 WAVEFORMATEX wfe;
-HWAVEOUT hWaveOut;
+HWAVEOUT hwo;
 WAVEHDR whdr[2];
 double beep_freq;
 bool beep_playing;
@@ -581,6 +581,10 @@ UINT8 crtc_addr = 0;
 UINT8 crtc_regs[32] = {0};
 UINT8 crtc_changed[32] = {0};
 
+void crtc_write_addr(UINT8 data);
+void crtc_write_data(UINT8 data);
+UINT8 crtc_read_data();
+
 UINT8 vga_attrib_mode = 0;
 UINT8 vga_attrib_addr = 0;
 UINT8 vga_attrib_regs[32] = {0};
@@ -594,6 +598,31 @@ UINT8 vga_gfx_addr = 0;
 UINT8 vga_gfx_regs[16] = {0};
 UINT8 vga_ctrl = 0x01;
 
+void vga_write_attrib(UINT8 data);
+UINT8 vga_read_attrib();
+void vga_write_seq_addr(UINT8 data);
+void vga_write_seq_data(UINT8 data);
+UINT8 vga_read_seq_data();
+void vga_write_pixel_mask(UINT8 data);
+UINT8 vga_read_pixel_mask();
+UINT8 vga_read_dac_stat();
+void vga_write_dac_addr(UINT32 port, UINT8 data);
+void vga_write_dac_data(UINT8 data);
+UINT8 vga_read_dac_data();
+void vga_write_gfx_addr(UINT8 data);
+void vga_write_gfx_data(UINT8 data);
+UINT8 vga_read_gfx_data();
+void vga_write_ctrl(UINT8 data);
+UINT8 vga_read_ctrl();
+UINT8 vga_read_status0();
+UINT8 mda_read_status();
+UINT8 vga_read_status();
+
+#ifdef SUPPORT_GRAPHIC_SCREEN
+// VRAM
+static UINT32 vga_read(UINT32 addr, int size);
+static void vga_write(UINT32 addr, UINT32 data, int size);
+#endif
 
 /* ----------------------------------------------------------------------------
 	Device Drivers from ReactOS
@@ -1264,7 +1293,7 @@ file_handler_t file_handler[MAX_FILES] = {0};
 int max_files = 20;
 UINT8 file_buffer[0x100000];
 
-process_t process[MAX_PROCESS];
+process_t process_table[MAX_PROCESS];
 dtainfo_t dtalist[MAX_DTAINFO];
 
 UINT16 malloc_strategy = 0;
@@ -1326,10 +1355,14 @@ char cpr_buf[16];
 int cpr_pos = -1;
 
 bool pcbios_is_key_buffer_empty();
+bool pcbios_is_key_buffer_full();
+int pcbios_get_key_buffer_count();
 void pcbios_clear_key_buffer();
 bool pcbios_set_key_buffer(UINT8 key_char, UINT8 key_scan);
 bool pcbios_get_key_buffer(UINT8 *key_char, UINT8 *key_scan);
 void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data);
+//bool pcbios_check_key_buffer(UINT8 *key_char, UINT8 *key_scan)
+void pcbios_update_key_code(bool wait);
 
 UINT8 ctrl_break_checking = 0x00; // ???
 bool ctrl_break_detected = false;

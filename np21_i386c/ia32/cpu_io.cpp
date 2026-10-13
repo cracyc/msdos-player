@@ -32,6 +32,36 @@
 
 static void CPUCALL check_io(UINT port, UINT len);
 
+BOOL CPUCALL
+cpu_io_is_trapped_vm86(UINT port, UINT len)
+{
+	UINT off;
+	UINT16 map;
+	UINT16 mask;
+
+	/*
+	 * Predict exactly what cpu_in()/cpu_out() will do for a VM86 I/O.
+	 * np21/w currently calls check_io() for every VM86 I/O regardless of
+	 * IOPL, so do not special-case IOPL here.
+	 */
+	if (!CPU_STAT_PM || !CPU_STAT_VM86) {
+		return FALSE;
+	}
+
+	/* Keep this test in sync with check_io() below. */
+	if (CPU_STAT_IOLIMIT == 0) {
+		return TRUE;
+	}
+	if ((port + len) / 8 >= CPU_STAT_IOLIMIT) {
+		return TRUE;
+	}
+
+	off = port / 8;
+	mask = ((1 << len) - 1) << (port % 8);
+	map = cpu_kmemoryread_w(CPU_STAT_IOADDR + off);
+	return (map & mask) != 0;
+}
+
 static void CPUCALL
 check_io(UINT port, UINT len) 
 {

@@ -38,6 +38,7 @@ UINT32 IOINPCALL cpu_in_d(UINT port);
 void IOOUTCALL cpu_out(UINT port, UINT8 val);
 void IOOUTCALL cpu_out_w(UINT port, UINT16 val);
 void IOOUTCALL cpu_out_d(UINT port, UINT32 val);
+BOOL CPUCALL cpu_io_is_trapped_vm86(UINT port, UINT len);
 
 //#ifdef __cplusplus
 //}
