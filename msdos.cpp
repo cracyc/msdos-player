@@ -1723,7 +1723,7 @@ void MyWriteConsoleOutputCharAttrA(HANDLE hConsoleOutput, LPCSTR lpCharacter, LP
 				}
 				if(res) {
 					DWORD written_tmp = 0;
-					ret = WriteConsoleOutputCharacterA(hConsoleOutput, &replace, 1, shift_coord(dwWriteCoord, pos), &written_tmp);
+					res = WriteConsoleOutputCharacterA(hConsoleOutput, &replace, 1, shift_coord(dwWriteCoord, pos), &written_tmp);
 					written += written_tmp;
 				}
 				start_pos = pos + 1;
