@@ -265,14 +265,11 @@ static INLINE bool floatx80_lt(sw_extFloat80_t a, sw_extFloat80_t b) {
 	return extF80_lt(a, b);
 }
 static INLINE bool floatx80_is_nan(sw_extFloat80_t a) {
-	const uint16_t exponent = a.signExp & 0x7FFF;
-	const uint64_t significand = a.signif;
-	return (exponent == 0x7FFF) && ((significand & UINT64_C(0x7FFFFFFFFFFFFFFF)) != 0);
+	return ((a.signExp & 0x7FFF) == 0x7FFF) && ((a.signif & UINT64_C(0x7FFFFFFFFFFFFFFF)) != 0);
 }
 static INLINE bool floatx80_is_inf(sw_extFloat80_t a) {
-	uint16_t exponent = a.signExp & 0x7FFF;
-	uint64_t significand = a.signif;
-	return (exponent == 0x7FFF) && (significand == UINT64_C(0x8000000000000000));
+	// TODO: 本来はpseudo-infinityを#IAにする必要あり　そのうち実装する
+	return ((a.signExp & 0x7FFF) == 0x7FFF) && ((a.signif & UINT64_C(0x7FFFFFFFFFFFFFFF)) == 0);
 }
 static INLINE sw_extFloat80_t floatx80_sqrt(sw_extFloat80_t a) {
 	return extF80_sqrt(a);

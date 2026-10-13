@@ -158,11 +158,18 @@ errno_t my_wcscat_s(wchar_t *dest, rsize_t dest_size, const wchar_t *src)
 #define my_wcscat_s(dest, dest_size, src) wcscat_s((dest), (dest_size), (src))
 #endif
 
-size_t my_strlcpy(char *dst, const char *src, size_t size)
+int my_snprintf(char* buffer, size_t count, const char* format, ...)
 {
-	strncpy(dst, src, size - 1);
-	dst[size - 1] = '\0';
-	return strlen(src);
+	// this is for pre C99 environment
+	if(count == 0 || buffer == NULL) {
+		return 0; 
+	}
+	va_list ap;
+	va_start(ap, format);
+	int res = _vsnprintf(buffer, count, format, ap);
+	va_end(ap);
+	buffer[count - 1] = '\0';
+	return res;
 }
 
 #if 1
@@ -334,7 +341,7 @@ BOOL MyDeleteFileA(LPCSTR lpFileName)
 HANDLE MyFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 {
 	HANDLE hFind = INVALID_HANDLE_VALUE;
-	WIN32_FIND_DATAW fd;
+	WIN32_FIND_DATAW fd = {0};
 	wchar_t wcFileName[MAX_PATH];
 	UINT uCodePage = GetFileApisCP();
 	
@@ -357,7 +364,7 @@ HANDLE MyFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 		// Check if cFileName contains non-ANSI characters
 		if(uCodePage != uCodePageOEM && lpFindFileData->cAlternateFileName[0]) {
 			if(my_strchr(lpFindFileData->cFileName, '?') && my_strchr(lpFindFileData->cAlternateFileName, '?') == NULL) {
-				strcpy(lpFindFileData->cFileName, lpFindFileData->cAlternateFileName);
+				my_strcpy_s(lpFindFileData->cFileName, sizeof(lpFindFileData->cFileName), lpFindFileData->cAlternateFileName);
 			}
 		}
 #endif
@@ -368,7 +375,7 @@ HANDLE MyFindFirstFileA(LPCSTR lpFileName, LPWIN32_FIND_DATAA lpFindFileData)
 BOOL MyFindNextFileA(HANDLE hFindFile, LPWIN32_FIND_DATAA lpFindFileData)
 {
 	BOOL bResult = FALSE;
-	WIN32_FIND_DATAW fd;
+	WIN32_FIND_DATAW fd = {0};
 	UINT uCodePage = GetFileApisCP();
 	
 	if((bResult = FindNextFileW(hFindFile, &fd)) != 0) {
@@ -389,7 +396,7 @@ BOOL MyFindNextFileA(HANDLE hFindFile, LPWIN32_FIND_DATAA lpFindFileData)
 		// Check if cFileName contains non-ANSI characters
 		if(uCodePage != uCodePageOEM && lpFindFileData->cAlternateFileName[0]) {
 			if(my_strchr(lpFindFileData->cFileName, '?') && my_strchr(lpFindFileData->cAlternateFileName, '?') == NULL) {
-				strcpy(lpFindFileData->cFileName, lpFindFileData->cAlternateFileName);
+				my_strcpy_s(lpFindFileData->cFileName, sizeof(lpFindFileData->cFileName), lpFindFileData->cAlternateFileName);
 			}
 		}
 #endif
@@ -405,9 +412,9 @@ BOOL MyGetSingleLevelLongName(LPCSTR lpszShortPath, LPSTR lpszLongName, DWORD cc
 		}
 	}
 	HANDLE hFind;
-	WIN32_FIND_DATAA ffd;
-	if((hFind = MyFindFirstFileA(lpszShortPath, &ffd)) != INVALID_HANDLE_VALUE) {
-		my_strlcpy(lpszLongName, ffd.cFileName, ccBuffer);
+	WIN32_FIND_DATAA fd = {0};
+	if((hFind = MyFindFirstFileA(lpszShortPath, &fd)) != INVALID_HANDLE_VALUE) {
+		my_strcpy_s(lpszLongName, ccBuffer, fd.cFileName);
 		FindClose(hFind);
 		return TRUE;
 	}
@@ -427,28 +434,28 @@ DWORD MyOldGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchB
 	DWORD dwLength;
 	int nPos;
 	
-	my_strlcpy(szTempShortPath, lpszShortPath, sizeof(szTempShortPath));
+	my_strcpy_s(szTempShortPath, sizeof(szTempShortPath), lpszShortPath);
 	
 	while((lpSeparator = my_strstr(szTempShortPath, "\\.\\")) != NULL) {
-		strcpy(szTempPath, lpSeparator + 2);
-		strcpy(lpSeparator, szTempPath);
+		my_strcpy_s(szTempPath, sizeof(szTempPath), lpSeparator + 2);
+		my_strcpy_s(lpSeparator, sizeof(szTempShortPath) - (lpSeparator - szTempShortPath), szTempPath);
 	}
 	do {
 		lpSeparator = my_strrchr(szTempShortPath, '\\');
 		
 		if(!MyGetSingleLevelLongName(szTempShortPath, szTempLongName, sizeof(szTempLongName))) {
 			LPCSTR lpLastPart = (lpSeparator != NULL) ? (lpSeparator + 1) : szTempShortPath;
-			my_strlcpy(szTempLongName, lpLastPart, sizeof(szTempLongName));
+			my_strcpy_s(szTempLongName, sizeof(szTempLongName), lpLastPart);
 		}
 		if(strlen(szLongPath) == 0) {
-			my_strlcpy(szLongPath, szTempLongName, sizeof(szLongPath));
+			my_strcpy_s(szLongPath, sizeof(szLongPath), szTempLongName);
 		} else {
 			if(my_str_endswith(szTempLongName, '\\')) {
-				_snprintf(szTempPath, sizeof(szTempPath), "%s%s", szTempLongName, szLongPath);
+				my_snprintf(szTempPath, sizeof(szTempPath), "%s%s", szTempLongName, szLongPath);
 			} else {
-				_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempLongName, szLongPath);
+				my_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempLongName, szLongPath);
 			}
-			my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
+			my_strcpy_s(szLongPath, sizeof(szLongPath), szTempPath);
 		}
 		if(lpSeparator != NULL) {
 			if((nPos = lpSeparator - szTempShortPath) == 0) {
@@ -456,8 +463,8 @@ DWORD MyOldGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchB
 			}
 			if(nPos == 2 && szTempShortPath[1] == ':') {
 				szTempShortPath[nPos] = '\0';
-				_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempShortPath, szLongPath);
-				my_strlcpy(szLongPath, szTempPath, sizeof(szLongPath));
+				my_snprintf(szTempPath, sizeof(szTempPath), "%s\\%s", szTempShortPath, szLongPath);
+				my_strcpy_s(szLongPath, sizeof(szLongPath), szTempPath);
 				break; 
 			}
 			szTempShortPath[nPos] = '\0';
@@ -467,7 +474,7 @@ DWORD MyOldGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchB
 	if((dwLength = (DWORD)strlen(szLongPath)) >= cchBuffer) {
 		return dwLength + 1;
 	}
-	my_strlcpy(lpszLongPath, szLongPath, cchBuffer);
+	my_strcpy_s(lpszLongPath, cchBuffer, szLongPath);
 	return dwLength;
 }
 
@@ -487,13 +494,13 @@ DWORD MyGetLongPathNameA(LPCSTR lpszShortPath, LPSTR lpszLongPath, DWORD cchBuff
 		
 		if((hLibrary = LoadLibraryA("Kernel32.dll")) != NULL) {
 			DWORD dwResult = 0;
-			my_strcpy_s(szTempPath, 1024, lpszShortPath);
+			my_strcpy_s(szTempPath, sizeof(szTempPath), lpszShortPath);
 			if((lpfnGetLongPathNameA = reinterpret_cast<GetLongPathNameFunction>(::GetProcAddress(hLibrary, "GetLongPathNameA"))) != NULL) {
 				dwResult = lpfnGetLongPathNameA(szTempPath, szTempPath, cchBuffer);
 			}
 			FreeLibrary(hLibrary);
 			if(dwResult != 0 && my_strchr(szTempPath, '?') == NULL) {
-				my_strlcpy(lpszLongPath, szTempPath, cchBuffer);
+				my_strcpy_s(lpszLongPath, cchBuffer, szTempPath);
 				return dwResult;
 			}
 		}
@@ -526,7 +533,7 @@ DWORD MyGetShortPathNameA(LPCSTR lpszLongPath, LPSTR lpszShortPath, DWORD cchBuf
 	if(my_access(lpszLongPath, 0) == 0) {
 		return GetShortPathNameA(lpszLongPath, lpszShortPath, cchBuffer);
 	}
-	my_strcpy_s(szTempPath, 1024, lpszLongPath);
+	my_strcpy_s(szTempPath, sizeof(szTempPath), lpszLongPath);
 	lpSeparator = my_strrchr(szTempPath, '\\');
 	if(lpSeparator != NULL && *(lpSeparator + 1) == '\0') {
 		LPSTR lpTemp = lpSeparator;
@@ -560,7 +567,7 @@ DWORD MyGetShortPathNameW(LPCWSTR lpszLongPath, LPWSTR lpszShortPath, DWORD cchB
 	if(_waccess(lpszLongPath, 0) == 0) {
 		return GetShortPathNameW(lpszLongPath, lpszShortPath, cchBuffer);
 	}
-	my_wcscpy_s(szTempPath, 1024, lpszLongPath);
+	my_wcscpy_s(szTempPath, array_length(szTempPath), lpszLongPath);
 	lpSeparator = wcsrchr(szTempPath, L'\\');
 	if(lpSeparator != NULL && *(lpSeparator + 1) == L'\0') {
 		LPWSTR lpTemp = lpSeparator;
@@ -608,7 +615,7 @@ DWORD MyGetFullPathNameA(LPCSTR lpFileName, DWORD nBufferLength, LPSTR lpBuffer,
 	if(GetFullPathNameW(wcFileName, MAX_PATH, wcBuffer, NULL) != 0 && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
 		MyWideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 		if((dwResult = MyOldGetLongPathNameA(szShortPath, lpBuffer, nBufferLength)) == 0) {
-			my_strlcpy(lpBuffer, szShortPath, nBufferLength);
+			my_strcpy_s(lpBuffer, nBufferLength, szShortPath);
 			dwResult = (DWORD)strlen(lpBuffer);
 		}
 		if(lpFilePart) {
@@ -636,8 +643,8 @@ DWORD MyGetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 		if((dwResult = GetModuleFileNameA(hModule, lpFilename, nSize)) != 0 && my_strchr(lpFilename, '?') == NULL) {
 			char tmp[MAX_PATH], *p;
 			while((p = my_strstr(lpFilename, "\\.\\")) != NULL) {
-				strcpy(tmp, p + 2);
-				strcpy(p, tmp);
+				my_strcpy_s(tmp, sizeof(tmp), p + 2);
+				my_strcpy_s(p, nSize - (p - lpFilename), tmp);
 			}
 			return dwResult;
 		}
@@ -649,13 +656,13 @@ DWORD MyGetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize)
 	
 	if(GetModuleFileNameW(hModule, wcFilename, MAX_PATH) != 0) {
 		while((p = wcsstr(wcFilename, L"\\.\\")) != NULL) {
-			wcscpy(wcShortPath, p + 2);
-			wcscpy(p, wcShortPath);
+			my_wcscpy_s(wcShortPath, array_length(wcShortPath), p + 2);
+			my_wcscpy_s(p, array_length(wcFilename) - (p - wcFilename), wcShortPath);
 		}
 		if(MyGetShortPathNameW(wcFilename, wcShortPath, MAX_PATH) != 0) {
 			MyWideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 			if((dwResult = MyOldGetLongPathNameA(szShortPath, lpFilename, nSize)) == 0) {
-				my_strlcpy(lpFilename, szShortPath, nSize);
+				my_strcpy_s(lpFilename, nSize, szShortPath);
 				dwResult = (DWORD)strlen(lpFilename);
 			}
 			return dwResult;
@@ -749,9 +756,9 @@ const char *MyGetVolumePathNameA(LPCSTR lpRootPathName)
 	static char szVolumePath[MAX_PATH];
 	
 	if(lpRootPathName[0] >= 'A' && lpRootPathName[0] <= 'Z' && lpRootPathName[1] == ':') {
-		sprintf(szVolumePath, "%c:\\", lpRootPathName[0]);
+		my_snprintf(szVolumePath, sizeof(szVolumePath), "%c:\\", lpRootPathName[0]);
 	} else if(lpRootPathName[0] >= 'a' && lpRootPathName[0] <= 'z' && lpRootPathName[1] == ':') {
-		sprintf(szVolumePath, "%c:\\", (lpRootPathName[0] - 'a') + 'A');
+		my_snprintf(szVolumePath, sizeof(szVolumePath), "%c:\\", (lpRootPathName[0] - 'a') + 'A');
 	} else if(MyGetFullPathNameA(lpRootPathName, MAX_PATH, szVolumePath, NULL) >= 3 && szVolumePath[1] == ':' && szVolumePath[2] == '\\') {
 		// Just in case...
 		if(szVolumePath[0] >= 'a' && szVolumePath[0] <= 'z') {
@@ -766,10 +773,10 @@ const char *MyGetVolumePathNameA(LPCSTR lpRootPathName)
 			}
 		}
 		if(!my_str_endswith(szVolumePath, '\\')) {
-			my_strcat_s(szVolumePath, MAX_PATH, "\\");
+			my_strcat_s(szVolumePath, sizeof(szVolumePath), "\\");
 		}
 	} else {
-		sprintf(szVolumePath, "%c:\\", 'A' + _getdrive() - 1);
+		my_snprintf(szVolumePath, sizeof(szVolumePath), "%c:\\", 'A' + _getdrive() - 1);
 	}
 	return szVolumePath;
 }
@@ -823,7 +830,7 @@ char *my_getdcwd(int drive, char *buffer, int maxlen)
 	if(_wgetdcwd(drive, wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
 		MyWideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 		if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
-			my_strlcpy(buffer, szShortPath, maxlen);
+			my_strcpy_s(buffer, maxlen, szShortPath);
 		}
 		return buffer;
 	}
@@ -849,7 +856,7 @@ char *my_getcwd(char *buffer,int maxlen)
 	if(_wgetcwd(wcBuffer, MAX_PATH) != NULL && MyGetShortPathNameW(wcBuffer, wcShortPath, MAX_PATH) != 0) {
 		MyWideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wcShortPath, -1, szShortPath, MAX_PATH, NULL, NULL);
 		if(MyOldGetLongPathNameA(szShortPath, buffer, maxlen) == 0) {
-			my_strlcpy(buffer, szShortPath, maxlen);
+			my_strcpy_s(buffer, maxlen, szShortPath);
 		}
 		return buffer;
 	}
@@ -1651,35 +1658,48 @@ COORD shift_coord(COORD origin, DWORD pos)
 
 BOOL MyWriteConsoleOutputCharacterA(HANDLE hConsoleOutput, LPCSTR lpCharacter, DWORD nLength, COORD dwWriteCoord, LPDWORD lpNumberOfCharsWritten)
 {
-//	if(is_win10_or_later && active_code_page == 932) {
+	DWORD written = 0;
+	WCHAR wchar[80 * 25];
+	BOOL res = TRUE;
+	
 	if(box_line) {
-		DWORD written = 0, written_tmp;
-		
-		for(DWORD pos = 0, start_pos = 0; pos < nLength; pos++) {
+		for(DWORD pos = 0, start_pos = 0; pos < nLength && res; pos++) {
 			CHAR code = lpCharacter[pos], replace;
-			
 			if(code >= 0x01 && code <= 0x19 && (replace = box_drawings_char[(int)code]) != 0) {
 				if(pos > start_pos) {
-					WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos, shift_coord(dwWriteCoord, start_pos), &written_tmp);
+					DWORD written_tmp = 0;
+					res = WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos, shift_coord(dwWriteCoord, start_pos), &written_tmp);
 					written += written_tmp;
 				}
-				WriteConsoleOutputCharacterA(hConsoleOutput, &replace, 1, shift_coord(dwWriteCoord, pos), &written_tmp);
-				written += written_tmp;
+				if(res) {
+					DWORD written_tmp = 0;
+					res = WriteConsoleOutputCharacterA(hConsoleOutput, &replace, 1, shift_coord(dwWriteCoord, pos), &written_tmp);
+					written += written_tmp;
+				}
 				start_pos = pos + 1;
 			} else if(pos == nLength - 1) {
 				if(pos > start_pos) {
-					WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos + 1, shift_coord(dwWriteCoord, start_pos), &written_tmp);
+					DWORD written_tmp = 0;
+					res = WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter + start_pos, pos - start_pos + 1, shift_coord(dwWriteCoord, start_pos), &written_tmp);
 					written += written_tmp;
 				}
 			}
 		}
-		*lpNumberOfCharsWritten = written;
-		return TRUE;
+		if(lpNumberOfCharsWritten != NULL) {
+			*lpNumberOfCharsWritten = written;
+		}
+		return res;
 	} else if(active_code_page == 437) {
-		WCHAR *wchar = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, nLength * 2);
-		MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter, nLength, wchar, nLength);
-		BOOL res = WriteConsoleOutputCharacterW(hConsoleOutput, wchar, nLength, dwWriteCoord, lpNumberOfCharsWritten);
-		HeapFree(GetProcessHeap(), 0, wchar);
+		for(DWORD pos = 0; pos < nLength && res; pos += array_length(wchar)) {
+			DWORD nLen = min(nLength - pos, array_length(wchar));
+			MultiByteToWideChar(active_code_page, MB_USEGLYPHCHARS, lpCharacter + pos, nLen, wchar, array_length(wchar));
+			DWORD written_tmp = 0;
+			res = WriteConsoleOutputCharacterW(hConsoleOutput, wchar, nLen, shift_coord(dwWriteCoord, pos), &written_tmp);
+			written += written_tmp;
+		}
+		if(lpNumberOfCharsWritten != NULL) {
+			*lpNumberOfCharsWritten = written;
+		}
 		return res;
 	} else {
 		return WriteConsoleOutputCharacterA(hConsoleOutput, lpCharacter, nLength, dwWriteCoord, lpNumberOfCharsWritten);
@@ -2159,12 +2179,12 @@ void telnet_send(const char *buffer, int len)
 void telnet_send(const char *string)
 {
 	char buffer[8192], *ptr;
-	strcpy(buffer, string);
+	my_strcpy_s(buffer, sizeof(buffer), string);
 	while((ptr = my_strstr(buffer, "\n")) != NULL) {
 		char tmp[8192];
 		*ptr = '\0';
-		sprintf(tmp, "%s\033E%s", buffer, ptr + 1);
-		strcpy(buffer, tmp);
+		my_snprintf(tmp, sizeof(tmp), "%s\033E%s", buffer, ptr + 1);
+		my_strcpy_s(buffer, sizeof(buffer), tmp);
 	}
 	telnet_send(buffer, (int)strlen(buffer));
 }
@@ -2385,8 +2405,8 @@ void debugger_process_info(char *buffer)
 		while((s = my_strstr(file, "\\")) != NULL) {
 			file = s + 1;
 		}
-		sprintf(tmp, "PSP=%04X  ENV=%04X  RETURN=%04X:%04X  PROGRAM=%s\n", psp_seg, psp->env_seg, psp->int_22h.w.h, psp->int_22h.w.l, my_strupr(file));
-		strcat(tmp, buffer);
+		my_snprintf(tmp, sizeof(tmp), "PSP=%04X  ENV=%04X  RETURN=%04X:%04X  PROGRAM=%s\n", psp_seg, psp->env_seg, psp->int_22h.w.h, psp->int_22h.w.l, my_strupr(file));
+		my_strcat_s(tmp, sizeof(tmp), buffer);
 		strcpy(buffer, tmp);
 		
 		check[psp_seg] = true;
@@ -2401,7 +2421,7 @@ UINT32 debugger_get_val(const char *str)
 	if(str == NULL || strlen(str) == 0) {
 		return(0);
 	}
-	strcpy(tmp, str);
+	my_strcpy_s(tmp, sizeof(tmp), str);
 	
 	if(strlen(tmp) == 3 && tmp[0] == '\'' && tmp[2] == '\'') {
 		// ank
@@ -2420,7 +2440,7 @@ UINT32 debugger_get_seg(const char *str, UINT32 val)
 	if(str == NULL || strlen(str) == 0) {
 		return(val);
 	}
-	strcpy(tmp, str);
+	my_strcpy_s(tmp, sizeof(tmp), str);
 	
 	if((s = my_strstr(tmp, ":")) != NULL) {
 		// 0000:0000
@@ -2437,7 +2457,7 @@ UINT32 debugger_get_ofs(const char *str)
 	if(str == NULL || strlen(str) == 0) {
 		return(0);
 	}
-	strcpy(tmp, str);
+	my_strcpy_s(tmp, sizeof(tmp), str);
 	
 	if((s = my_strstr(tmp, ":")) != NULL) {
 		// 0000:0000
@@ -2545,9 +2565,9 @@ void debugger_main()
 			}
 		}
 		if(command[0] == '\0') {
-			strcpy(command, prev_command);
+			my_strcpy_s(command, sizeof(command), prev_command);
 		} else {
-			strcpy(prev_command, command);
+			my_strcpy_s(prev_command, sizeof(prev_command), command);
 		}
 		if(fp_debugger != NULL) {
 			fprintf(fp_debugger, "%s\n", command);
@@ -2661,7 +2681,7 @@ void debugger_main()
 				if(num >= 3) {
 					UINT32 seg = debugger_get_seg(params[1], data_seg);
 					UINT32 ofs = debugger_get_ofs(params[1]);
-					strcpy(buffer, prev_command);
+					my_strcpy_s(buffer, sizeof(buffer), prev_command);
 					if((token = my_strtok(buffer, "\"")) != NULL && (token = my_strtok(NULL, "\"")) != NULL) {
 						int len = (int)strlen(token);
 						for(int i = 0; i < len; i++) {
@@ -2912,10 +2932,10 @@ void debugger_main()
 						for(int i = 0; i < 16; i++) {
 							int len = debugger_dasm(buffer, sizeof(buffer), dasm_adr, dasm_ofs);
 							telnet_printf("%08X(%04X:%04X)  ", dasm_adr, dasm_seg, dasm_ofs);
-							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", read_byte((dasm_adr + i) & ADDR_MASK));
+							for(int j = 0; j < len; j++) {
+								telnet_printf("%02X", read_byte((dasm_adr + j) & ADDR_MASK));
 							}
-							for(int i = len; i < 8; i++) {
+							for(int j = len; j < 8; j++) {
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
@@ -2938,10 +2958,10 @@ void debugger_main()
 						if(cpu_trace[index].pc != 0) {
 							int len = debugger_dasm(buffer, sizeof(buffer), cpu_trace[index].pc, cpu_trace[index].eip);
 							telnet_printf("%08X(%04X:%04X)  ", cpu_trace[index].pc, cpu_trace[index].cs, cpu_trace[index].eip);
-							for(int i = 0; i < len; i++) {
-								telnet_printf("%02X", read_byte((cpu_trace[index].pc + i) & ADDR_MASK));
+							for(int j = 0; j < len; j++) {
+								telnet_printf("%02X", read_byte((cpu_trace[index].pc + j) & ADDR_MASK));
 							}
-							for(int i = len; i < 8; i++) {
+							for(int j = len; j < 8; j++) {
 								telnet_printf("  ");
 							}
 							telnet_printf("  %s\n", buffer);
@@ -2962,12 +2982,12 @@ void debugger_main()
 				if(num >= 2 && params[1][0] == '\"') {
 					my_strcpy_s(buffer, sizeof(buffer), prev_command);
 					if((token = my_strtok_s(buffer, "\"", &context)) != NULL && (token = my_strtok_s(NULL, "\"", &context)) != NULL) {
-						my_strcpy_s(file_path, MAX_PATH, token);
+						my_strcpy_s(file_path, sizeof(file_path), token);
 					} else {
 						telnet_printf("invalid parameter\n");
 					}
 				} else if(num == 2) {
-					my_strcpy_s(file_path, MAX_PATH, params[1]);
+					my_strcpy_s(file_path, sizeof(file_path), params[1]);
 				} else {
 					telnet_printf("invalid parameter number\n");
 				}
@@ -3311,7 +3331,7 @@ void debugger_main()
 						break_points_stored = true;
 						
 						break_point.table[0].seg = CPU_CS;
-						break_point.table[0].ofs = CPU_EIP + debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);;
+						break_point.table[0].ofs = CPU_EIP + debugger_dasm(buffer, sizeof(buffer), CPU_GET_NEXT_PC(), CPU_EIP);
 						break_point.table[0].status = 1;
 					} else if(num >= 2) {
 						memcpy(&break_point_stored, &break_point, sizeof(break_point_t));
@@ -3613,9 +3633,9 @@ const char *debugger_get_ttermpro_path()
 	char *env = getenv("ProgramFiles");
 	
 	if(env != NULL) {
-		sprintf(path, "%s\\teraterm5\\ttermpro.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\teraterm5\\ttermpro.exe", env);
 		if(_access(path, 0) != 0) {
-			sprintf(path, "%s\\teraterm\\ttermpro.exe", env);
+			my_snprintf(path, sizeof(path), "%s\\teraterm\\ttermpro.exe", env);
 		}
 	}
 	return(path);
@@ -3627,9 +3647,9 @@ const char *debugger_get_ttermpro_x86_path()
 	char *env = getenv("ProgramFiles(x86)");
 	
 	if(env != NULL) {
-		sprintf(path, "%s\\teraterm5\\ttermpro.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\teraterm5\\ttermpro.exe", env);
 		if(_access(path, 0) != 0) {
-			sprintf(path, "%s\\teraterm\\ttermpro.exe", env);
+			my_snprintf(path, sizeof(path), "%s\\teraterm\\ttermpro.exe", env);
 		}
 	}
 	return(path);
@@ -3641,7 +3661,7 @@ const char *debugger_get_putty_path()
 	char *env = getenv("ProgramFiles");
 	
 	if(env != NULL) {
-		sprintf(path, "%s\\PuTTY\\putty.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\PuTTY\\putty.exe", env);
 	}
 	return(path);
 }
@@ -3652,7 +3672,7 @@ const char *debugger_get_putty_x86_path()
 	char *env = getenv("ProgramFiles(x86)");
 	
 	if(env != NULL) {
-		sprintf(path, "%s\\PuTTY\\putty.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\PuTTY\\putty.exe", env);
 	}
 	return(path);
 }
@@ -3664,10 +3684,10 @@ const char *debugger_get_telnet_path()
 	
 	if(env != NULL) {
 #ifdef _WIN64
-		sprintf(path, "%s\\System32\\telnet.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\System32\\telnet.exe", env);
 #else
 		// prevent System32 is redirected to SysWOW64 in 32bit process on Windows x64
-		sprintf(path, "%s\\Sysnative\\telnet.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\Sysnative\\telnet.exe", env);
 #endif
 	}
 	return(path);
@@ -3680,10 +3700,10 @@ const char *debugger_get_telnet_x86_path()
 	
 	if(env != NULL) {
 #ifdef _WIN64
-		sprintf(path, "%s\\SysWOW64\\telnet.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\SysWOW64\\telnet.exe", env);
 #else
 		// System32 will be redirected to SysWOW64 in 32bit process on Windows x64
-		sprintf(path, "%s\\System32\\telnet.exe", env);
+		my_snprintf(path, sizeof(path), "%s\\System32\\telnet.exe", env);
 #endif
 	}
 	return(path);
@@ -3727,22 +3747,25 @@ DWORD WINAPI debugger_thread(LPVOID)
 			PROCESS_INFORMATION pi;
 			
 			if((path = debugger_get_ttermpro_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s localhost:%d /T=1", path, port);
+				my_snprintf(command, sizeof(command), "%s localhost:%d /T=1", path, port);
 			} else if((path = debugger_get_ttermpro_x86_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s localhost:%d /T=1", path, port);
+				my_snprintf(command, sizeof(command), "%s localhost:%d /T=1", path, port);
 			} else if((path = debugger_get_putty_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s -telnet localhost %d", path, port);
+				my_snprintf(command, sizeof(command), "%s -telnet localhost %d", path, port);
 			} else if((path = debugger_get_putty_x86_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s -telnet localhost %d", path, port);
+				my_snprintf(command, sizeof(command), "%s -telnet localhost %d", path, port);
 			} else if((path = debugger_get_telnet_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s -t vt100 localhost %d", path, port);
+				my_snprintf(command, sizeof(command), "%s -t vt100 localhost %d", path, port);
 			} else if((path = debugger_get_telnet_x86_path()) != NULL && _access(path, 0) == 0) {
-				sprintf(command, "%s -t vt100 localhost %d", path, port);
+				my_snprintf(command, sizeof(command), "%s -t vt100 localhost %d", path, port);
 			}
 			if(command[0] != '\0') {
 				memset(&si, 0, sizeof(STARTUPINFOA));
 				memset(&pi, 0, sizeof(PROCESS_INFORMATION));
-				CreateProcessA(NULL, command, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi);
+				if(CreateProcessA(NULL, command, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+					CloseHandle(pi.hThread);
+					CloseHandle(pi.hProcess);
+				}
 			}
 			
 			while(!msdos_exit) {
@@ -3985,7 +4008,7 @@ HWND get_console_window_handle()
 		char pszOldWindowTitle[1024];
 		
 		GetConsoleTitleA(pszOldWindowTitle, 1024);
-		wsprintfA(pszNewWindowTitle, "%d/%d", GetTickCount(), GetCurrentProcessId());
+		wsprintfA(pszNewWindowTitle, "%u/%u", timeGetTime(), GetCurrentProcessId());
 		SetConsoleTitleA(pszNewWindowTitle);
 		Sleep(100);
 		hwndFound = FindWindowA(NULL, pszNewWindowTitle);
@@ -4183,33 +4206,35 @@ bool set_console_font_info(CONSOLE_FONT_INFOEX *fi)
 					int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 					
 					CONSOLE_FONT_INFO* fonts = (CONSOLE_FONT_INFO*)malloc(sizeof(CONSOLE_FONT_INFO) * dwFontNum);
-					lpfnGetConsoleFontInfo(hConOut, FALSE, dwFontNum, fonts);
-					
-					for(int i = 0; i < dwFontNum; i++) {
-						fonts[i].dwFontSize = lpfnGetConsoleFontSize(hConOut, fonts[i].nFont);
-						if(fonts[i].dwFontSize.X == fi->dwFontSize.X && fonts[i].dwFontSize.Y == fi->dwFontSize.Y) {
-							if(lpfnSetConsoleFont(hConOut, fonts[i].nFont)) {
-								if(is_winxp_or_later && lpfnGetCurrentConsoleFont) { // Windows XP or later
-									CONSOLE_FONT_INFO fi_tmp;
-									if(lpfnGetCurrentConsoleFont(hConOut, FALSE, &fi_tmp)) {
-										if(fonts[i].dwFontSize.X == fi_tmp.dwFontSize.X && fonts[i].dwFontSize.Y == fi_tmp.dwFontSize.Y) {
-											result = true;
-											break;
+					if(fonts) {
+						lpfnGetConsoleFontInfo(hConOut, FALSE, dwFontNum, fonts);
+						
+						for(int i = 0; i < dwFontNum; i++) {
+							fonts[i].dwFontSize = lpfnGetConsoleFontSize(hConOut, fonts[i].nFont);
+							if(fonts[i].dwFontSize.X == fi->dwFontSize.X && fonts[i].dwFontSize.Y == fi->dwFontSize.Y) {
+								if(lpfnSetConsoleFont(hConOut, fonts[i].nFont)) {
+									if(is_winxp_or_later && lpfnGetCurrentConsoleFont) { // Windows XP or later
+										CONSOLE_FONT_INFO fi_tmp;
+										if(lpfnGetCurrentConsoleFont(hConOut, FALSE, &fi_tmp)) {
+											if(fonts[i].dwFontSize.X == fi_tmp.dwFontSize.X && fonts[i].dwFontSize.Y == fi_tmp.dwFontSize.Y) {
+												result = true;
+												break;
+											}
 										}
-									}
-								} else {
-									Sleep(10);
-									if(GetClientRect(get_console_window_handle(), &rect)) {
-										if(fonts[i].dwFontSize.X * cols == rect.right && fonts[i].dwFontSize.Y * rows == rect.bottom) {
-											result = true;
-											break;
+									} else {
+										Sleep(10);
+										if(GetClientRect(get_console_window_handle(), &rect)) {
+											if(fonts[i].dwFontSize.X * cols == rect.right && fonts[i].dwFontSize.Y * rows == rect.bottom) {
+												result = true;
+												break;
+											}
 										}
 									}
 								}
 							}
 						}
+						free(fonts);
 					}
-					free(fonts);
 				}
 			}
 		}
@@ -4498,7 +4523,7 @@ int main(int argc, char *argv[], char *envp[])
 					if(MyGetTempFileNameA(path, "DOS", 0, dummy_argv_1) != 0) {
 						MyDeleteFileA(dummy_argv_1);
 					} else {
-						sprintf(dummy_argv_1, "%s$DOSPRG$.TMP", path);
+						my_snprintf(dummy_argv_1, sizeof(dummy_argv_1), "%s$DOSPRG$.TMP", path);
 					}
 				}
 				// check the command file type
@@ -4518,7 +4543,7 @@ int main(int argc, char *argv[], char *envp[])
 			}
 			fclose(fo);
 			
-			MyGetFullPathNameA(dummy_argv_1, MAX_PATH, temp_file_path, NULL);
+			MyGetFullPathNameA(dummy_argv_1, sizeof(dummy_argv_1), temp_file_path, NULL);
 			temp_file_created = true;
 			MySetFileAttributesA(temp_file_path, FILE_ATTRIBUTE_HIDDEN);
 			
@@ -4537,9 +4562,9 @@ int main(int argc, char *argv[], char *envp[])
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-c", 2) == 0) {
 			if(argv[i][2] != '\0') {
-				strcpy(new_exec_file, &argv[i][2]);
+				my_strcpy_s(new_exec_file, sizeof(new_exec_file), &argv[i][2]);
 			} else {
-				strcpy(new_exec_file, "new_exec_file.exe");
+				my_strcpy_s(new_exec_file, sizeof(new_exec_file), "new_exec_file.exe");
 			}
 			convert_cmd_file = true;
 			arg_offset++;
@@ -4640,7 +4665,7 @@ int main(int argc, char *argv[], char *envp[])
 			ansi_sys = false;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-ld", 3) == 0) {
-			my_strcpy_s(devices_to_load, MAX_PATH, &argv[i][3]);
+			my_strcpy_s(devices_to_load, sizeof(devices_to_load), &argv[i][3]);
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-l", 2) == 0) {
 			box_line = true;
@@ -5535,10 +5560,11 @@ bool update_console_input()
 							if(scn != 0x1d && scn != 0x2a && scn != 0x36 && scn != 0x38 && !(scn >= 0x5b && scn <= 0x5d && scn == scn_old)) {
 								if(kbc_buffer != NULL) {
 									enter_key_buf_lock();
-									if(enh) {
-										if(!(scn >= 0x78 && scn != 0x84)) {
+									if(chr == 0) {
+										if(scn >= 0x78 && scn != 0x84) {
+											set_kbc_buffer(0x00, 0x00, 0x00, 1);
+										} else {
 											set_kbc_buffer(0x00, enh, enh, 1);
-											chr = enh;
 										}
 									}
 									set_kbc_buffer(chr, scn, port_data, 1);
@@ -5565,9 +5591,8 @@ bool update_console_input()
 							}
 							if(kbc_buffer != NULL) {
 								enter_key_buf_lock();
-								if(enh) {
-									set_kbc_buffer(0x00, enh, enh, 1);
-									chr = enh;
+								if(chr == 0) {
+									set_kbc_buffer(0x00, 0x00, 0x00, 1);
 								}
 								set_kbc_buffer(chr, scn, port_data, 1);
 								leave_key_buf_lock();
@@ -5603,7 +5628,6 @@ bool update_console_input()
 									enter_key_buf_lock();
 									if(enh) {
 										set_kbc_buffer(0x00, enh, enh, 0);
-										chr = enh;
 									}
 									set_kbc_buffer(chr, scn, port_data, 0);
 									leave_key_buf_lock();
@@ -5692,30 +5716,30 @@ const char *msdos_comspec_path(int env_seg);
 process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 {
 	for(int i = 0; i < MAX_PROCESS; i++) {
-		if(process[i].psp == 0 || process[i].psp == psp_seg) {
-			memset(&process[i], 0, sizeof(process_t));
-			process[i].psp = psp_seg;
+		if(process_table[i].psp == 0 || process_table[i].psp == psp_seg) {
+			memset(&process_table[i], 0, sizeof(process_t));
+			process_table[i].psp = psp_seg;
 
-			strcpy(process[i].module_dir, msdos_short_full_dir(path));
+			my_strcpy_s(process_table[i].module_dir, sizeof(process_table[i].module_dir), msdos_short_full_dir(path));
 //#ifdef USE_DEBUGGER
-			strcpy(process[i].module_path, path);
+			my_strcpy_s(process_table[i].module_path, sizeof(process_table[i].module_path), path);
 //#endif
-			process[i].dta.w.l = 0x80;
-			process[i].dta.w.h = psp_seg;
-			process[i].switchar = '/';
-			process[i].max_files = max_files;
+			process_table[i].dta.w.l = 0x80;
+			process_table[i].dta.w.h = psp_seg;
+			process_table[i].switchar = '/';
+			process_table[i].max_files = max_files;
 			for(int j = 20; j < MAX_FILES; j++) {
-				process[i].file_table[j - 20] = 0xff;
+				process_table[i].file_table[j - 20] = 0xff;
 			}
-			process[i].parent_int_10h_feh_called = int_10h_feh_called;
-			process[i].parent_int_10h_ffh_called = int_10h_ffh_called;
-			process[i].parent_ds = CPU_DS;
-			process[i].parent_es = CPU_ES;
-			process[i].parent_bp = CPU_BP;
-			process[i].parent_si = CPU_SI;
-			process[i].parent_di = CPU_DI;
+			process_table[i].parent_int_10h_feh_called = int_10h_feh_called;
+			process_table[i].parent_int_10h_ffh_called = int_10h_ffh_called;
+			process_table[i].parent_ds = CPU_DS;
+			process_table[i].parent_es = CPU_ES;
+			process_table[i].parent_bp = CPU_BP;
+			process_table[i].parent_si = CPU_SI;
+			process_table[i].parent_di = CPU_DI;
 
-			return(&process[i]);
+			return(&process_table[i]);
 		}
 	}
 	fatalerror("too many processes\n");
@@ -5725,8 +5749,8 @@ process_t *msdos_process_info_create(UINT16 psp_seg, const char *path)
 process_t *msdos_process_info_get(UINT16 psp_seg, bool show_error = true)
 {
 	for(int i = 0; i < MAX_PROCESS; i++) {
-		if(process[i].psp == psp_seg) {
-			return(&process[i]);
+		if(process_table[i].psp == psp_seg) {
+			return(&process_table[i]);
 		}
 	}
 	if(show_error) {
@@ -5740,11 +5764,11 @@ void msdos_sda_update(int psp_seg)
 	sda_t *sda = (sda_t *)(mem + SDA_TOP);
 	
 	for(int i = 0; i < MAX_PROCESS; i++) {
-		if(process[i].psp == psp_seg) {
-			sda->switchar = process[i].switchar;
-			sda->current_dta.w.l = process[i].dta.w.l;
-			sda->current_dta.w.h = process[i].dta.w.h;
-			sda->current_psp = process[i].psp;
+		if(process_table[i].psp == psp_seg) {
+			sda->switchar = process_table[i].switchar;
+			sda->current_dta.w.l = process_table[i].dta.w.l;
+			sda->current_dta.w.h = process_table[i].dta.w.h;
+			sda->current_psp = process_table[i].psp;
 			break;
 		}
 	}
@@ -5839,7 +5863,7 @@ bool msdos_cds_update(int drv)
 		}
 	}
 	if(cds->path_name[0] == '\0') {
-		sprintf(cds->path_name, "%c:\\", 'A' + drv);
+		my_snprintf(cds->path_name, sizeof(cds->path_name), "%c:\\", 'A' + drv);
 		need_to_chdir = valid_drive; // this may not be current directory of this drive
 	}
 	cds->dpb_ptr.w.h = DPB_TOP >> 4;
@@ -6077,12 +6101,12 @@ int msdos_kanji_2nd_byte_check(UINT8 *buf, int n)
 
 char *msdos_strupr(char *str)
 {
-	for(int i = 0, is_kanji = 0; str[i] != '\0'; i++) {
+	for(int i = 0, is_lead_byte = 0; str[i] != '\0'; i++) {
 		UINT8 c = str[i];
-		if(is_kanji) {
-			is_kanji = 0;
+		if(is_lead_byte) {
+			is_lead_byte = 0;
 		} else if(msdos_lead_byte_check(c)) {
-			is_kanji = 1;
+			is_lead_byte = 1;
 		} else if(c >= 'a' && c <= 'z') {
 			str[i] = (str[i] - 'a') + 'A';
 		}
@@ -6097,10 +6121,10 @@ const char *msdos_remove_double_quote(const char *path)
 	static char tmp[MAX_PATH];
 	
 	if(strlen(path) >= 2 && path[0] == '"' && my_str_endswith(path, '"')) {
-		strcpy(tmp, path + 1);
-		tmp[strlen(tmp) - 1] = '\0';
+		my_strcpy_s(tmp, sizeof(tmp), path + 1);
+		if(my_str_endswith(tmp, '"')) tmp[strlen(tmp) - 1] = '\0';
 	} else {
-		strcpy(tmp, path);
+		my_strcpy_s(tmp, sizeof(tmp), path);
 	}
 	return(tmp);
 }
@@ -6110,10 +6134,10 @@ const wchar_t *msdos_remove_double_quote(const wchar_t *path)
 	static wchar_t tmp[MAX_PATH];
 	
 	if(wcslen(path) >= 2 && path[0] == L'"' && my_wcstr_endswith(path, L'"')) {
-		wcscpy(tmp, path + 1);
-		tmp[wcslen(tmp) - 1] = L'\0';
+		my_wcscpy_s(tmp, array_length(tmp), path + 1);
+		if(my_wcstr_endswith(tmp, L'"')) tmp[wcslen(tmp) - 1] = L'\0';
 	} else {
-		wcscpy(tmp, path);
+		my_wcscpy_s(tmp, array_length(tmp), path);
 	}
 	return(tmp);
 }
@@ -6122,7 +6146,7 @@ const char *msdos_remove_end_separator(const char *path)
 {
 	static char tmp[MAX_PATH];
 	
-	strcpy(tmp, path);
+	my_strcpy_s(tmp, sizeof(tmp), path);
 	
 	// for example "C:\" case, the end separator should not be removed
 	if(strlen(tmp) > 3 && my_str_endswith(tmp, '\\')) {
@@ -6135,7 +6159,7 @@ const wchar_t *msdos_remove_end_separator(const wchar_t *path)
 {
 	static wchar_t tmp[MAX_PATH];
 	
-	wcscpy(tmp, path);
+	my_wcscpy_s(tmp, array_length(tmp), path);
 	
 	// for example "C:\" case, the end separator should not be removed
 	if(wcslen(tmp) > 3 && my_wcstr_endswith(tmp, L'\\')) {
@@ -6150,11 +6174,11 @@ const char *msdos_combine_path(const char *dir, const char *file)
 	const char *tmp_dir = msdos_remove_double_quote(dir);
 	
 	if(strlen(tmp_dir) == 0) {
-		strcpy(tmp, file);
+		my_strcpy_s(tmp, sizeof(tmp), file);
 	} else if(my_str_endswith(tmp_dir, '\\')) {
-		sprintf(tmp, "%s%s", tmp_dir, file);
+		my_snprintf(tmp, sizeof(tmp), "%s%s", tmp_dir, file);
 	} else {
-		sprintf(tmp, "%s\\%s", tmp_dir, file);
+		my_snprintf(tmp, sizeof(tmp), "%s\\%s", tmp_dir, file);
 	}
 	return(tmp);
 }
@@ -6167,7 +6191,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 	psp_t *psp = (psp_t *)(mem + (current_psp << 4));
 	
 	if(lfn) {
-		strcpy(tmp, path);
+		my_strcpy_s(tmp, sizeof(tmp), path);
 	} else {
 		// remove space in the path
 		const char *src = path;
@@ -6187,7 +6211,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 	}
 	if(_stricmp(tmp, msdos_comspec_value(psp->env_seg)) == 0) {
 		// redirect C:\COMMAND.COM to comspec_path
-		strcpy(tmp, msdos_comspec_path(psp->env_seg));
+		my_strcpy_s(tmp, sizeof(tmp), msdos_comspec_path(psp->env_seg));
 	} else if(is_vista_or_later && my_access(tmp, 0) != 0 && !dir) {
 		// redirect new files (without wildcards) in C:\ to %TEMP%, since C:\ is not usually writable
 		static int root_drive_protected = -1;
@@ -6196,7 +6220,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 		
 		if(MyGetFullPathNameA(tmp, MAX_PATH, temp, &name_temp) != 0 &&
 		   name_temp != NULL && my_strstr(name_temp, "?") == NULL && my_strstr(name_temp, "*") == NULL) {
-			strcpy(name, name_temp);
+			my_strcpy_s(name, sizeof(name), name_temp);
 			name_temp[0] = '\0';
 			
 			if((temp[0] == 'A' + dos_info->boot_drive - 1 || temp[0] == 'a' + dos_info->boot_drive - 1) &&
@@ -6204,7 +6228,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 				if(root_drive_protected == -1) {
 					FILE *fp = NULL;
 					
-					sprintf(temp, "%c:\\MS-DOS_Player.$$$", 'A' + dos_info->boot_drive - 1);
+					my_snprintf(temp, sizeof(temp), "%c:\\MS-DOS_Player.$$$", 'A' + dos_info->boot_drive - 1);
 					root_drive_protected = 1;
 					try {
 						if((fp = my_fopen(temp, "w")) != NULL) {
@@ -6224,7 +6248,7 @@ const char *msdos_trimmed_path(const char *path, int lfn, int dir)
 				if(root_drive_protected == 1) {
 					if(GetEnvironmentVariableA("TEMP", temp, MAX_PATH) != 0 ||
 					   GetEnvironmentVariableA("TMP",  temp, MAX_PATH) != 0) {
-						strcpy(tmp, msdos_combine_path(temp, name));
+						my_strcpy_s(tmp, sizeof(tmp), msdos_combine_path(temp, name));
 					}
 				}
 			}
@@ -6251,14 +6275,14 @@ const char *msdos_get_multiple_short_path(const char *src, bool only_existing_pa
 			token[len] = '\0';
 			src = sep + 1;
 		} else {
-			strcpy(token, src);
+			my_strcpy_s(token, sizeof(token), src);
 			src += strlen(src);
 		}
 		if(token[0] != '\0') {
 			const char *path = msdos_remove_double_quote(token);
 			if(path != NULL && *path != '\0') {
 				if(is_windows_x64 && _strnicmp(path + 1, ":\\Windows\\System32", 18) == 0) {
-					sprintf(temp_path, "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
+					my_snprintf(temp_path, sizeof(temp_path), "%c:\\WINDOWS\\SYSWOW64%s", path[0], path + 19);
 					if(my_access(temp_path, 0) == 0) {
 						path = temp_path;
 					}
@@ -6274,9 +6298,9 @@ const char *msdos_get_multiple_short_path(const char *src, bool only_existing_pa
 					continue;
 				}
 				if(env_path[0] != '\0') {
-					strcat(env_path, ";");
+					my_strcat_s(env_path, sizeof(env_path), ";");
 				}
-				strcat(env_path, path);
+				my_strcat_s(env_path, sizeof(env_path), path);
 			}
 		}
 	}
@@ -6308,7 +6332,7 @@ const char *msdos_get_multiple_short_path(const wchar_t *src, bool only_existing
 			token[len] = L'\0';
 			src = sep + 1;
 		} else {
-			wcscpy(token, src);
+			my_wcscpy_s(token, array_length(token), src);
 			src += wcslen(src);
 		}
 		if(token[0] != L'\0') {
@@ -6331,10 +6355,10 @@ const char *msdos_get_multiple_short_path(const wchar_t *src, bool only_existing
 					continue;
 				}
 				if(env_path[0] != '\0') {
-					strcat(env_path, ";");
+					my_strcat_s(env_path, sizeof(env_path), ";");
 				}
 				WideCharToMultiByte(uCodePage, 0, path, -1, ansi_path, MAX_PATH, NULL, NULL);
-				strcat(env_path, ansi_path);
+				my_strcat_s(env_path, sizeof(env_path), ansi_path);
 			}
 		}
 	}
@@ -6373,7 +6397,7 @@ bool msdos_match_volume_label(const char *path, const char *volume)
 		return msdos_match_volume_label(p + 1, volume);
 	} else if((p = my_strchr(path, '.')) != NULL) {
 		char tmp[MAX_PATH];
-		sprintf(tmp, "%.*s%s", (int)(p - path), path, p + 1);
+		my_snprintf(tmp, sizeof(tmp), "%.*s%s", (int)(p - path), path, p + 1);
 		return match(volume, tmp);
 	} else {
 		return match(volume, path);
@@ -6396,7 +6420,7 @@ void msdos_init_fcb_in_psp(fcb_t *fcb, const char *argv)
 				fcb->drive = path[0] - 'A' + 1;
 			}
 		}
-		strcpy(tmp, msdos_short_full_path(path));
+		my_strcpy_s(tmp, sizeof(tmp), msdos_short_full_path(path));
 		if((name = my_strrchr(tmp, '\\')) != NULL) {
 			name++;
 		} else {
@@ -6434,7 +6458,7 @@ const char *msdos_fcb_path(fcb_t *fcb)
 		}
 	}
 	if(ext[0] == '\0') {
-		strcpy(tmp, name);
+		my_strcpy_s(tmp, sizeof(tmp), name);
 	} else {
 		for(int i = 0; i < 3; i++) {
 			if(strncmp(ext + i, "???", 3 - i) == 0) {
@@ -6442,7 +6466,7 @@ const char *msdos_fcb_path(fcb_t *fcb)
 				break;
 			}
 		}
-		sprintf(tmp, "%s.%s", name, ext);
+		my_snprintf(tmp, sizeof(tmp), "%s.%s", name, ext);
 	}
 	return(tmp);
 }
@@ -6451,7 +6475,7 @@ void msdos_set_fcb_path(fcb_t *fcb, const char *path)
 {
 	char tmp[MAX_PATH], *ext;
 	
-	strcpy(tmp, path);
+	my_strcpy_s(tmp, sizeof(tmp), path);
 	msdos_strupr(tmp);
 	memset(fcb->file_name, 0x20, 8 + 3);
 	if((ext = my_strrchr(tmp, '.')) != NULL) {
@@ -6466,7 +6490,7 @@ const char *msdos_short_path(const char *path)
 	static char tmp[MAX_PATH];
 	
 	if(MyGetShortPathNameA(path, tmp, MAX_PATH) == 0) {
-		strcpy(tmp, path);
+		my_strcpy_s(tmp, sizeof(tmp), path);
 	}
 	msdos_strupr(tmp);
 	return(tmp);
@@ -6479,7 +6503,7 @@ const char *msdos_short_path(const wchar_t *path)
 	UINT uCodePage = GetFileApisCP();
 	
 	if(MyGetShortPathNameW(path, wc_tmp, MAX_PATH) == 0) {
-		wcscpy(wc_tmp, path);
+		my_wcscpy_s(wc_tmp, array_length(wc_tmp), path);
 	}
 	MyWideCharToMultiByte(uCodePage, WC_NO_BEST_FIT_CHARS, wc_tmp, -1, tmp, MAX_PATH, NULL, NULL);
 	msdos_strupr(tmp);
@@ -6491,9 +6515,9 @@ const char *msdos_short_name(WIN32_FIND_DATAA *fd)
 	static char tmp[MAX_PATH];
 	
 	if(fd->cAlternateFileName[0]) {
-		strcpy(tmp, fd->cAlternateFileName);
+		my_strcpy_s(tmp, sizeof(tmp), fd->cAlternateFileName);
 	} else {
-		strcpy(tmp, fd->cFileName);
+		my_strcpy_s(tmp, sizeof(tmp), fd->cFileName);
 	}
 	msdos_strupr(tmp);
 	return(tmp);
@@ -6507,10 +6531,10 @@ const char *msdos_short_full_path(const char *path)
 	// Full works with non-existent files, but Short does not
 	if(MyGetFullPathNameA(path, MAX_PATH, full, NULL) != 0) {
 		if(MyGetShortPathNameA(full, tmp, MAX_PATH) == 0) {
-			strcpy(tmp, full);
+			my_strcpy_s(tmp, sizeof(tmp), full);
 		}
 	} else {
-		strcpy(tmp, path);
+		my_strcpy_s(tmp, sizeof(tmp), path);
 	}
 	msdos_strupr(tmp);
 	return(tmp);
@@ -6521,7 +6545,7 @@ const char *msdos_short_full_dir(const char *path)
 	static char tmp[MAX_PATH];
 	char *sep = NULL;
 	
-	strcpy(tmp, msdos_short_full_path(path));
+	my_strcpy_s(tmp, sizeof(tmp), msdos_short_full_path(path));
 	
 	if((sep = my_strrchr(tmp, '\\')) != NULL) {
 		sep[0] = '\0';
@@ -6534,20 +6558,20 @@ const char *msdos_local_file_path(const char *path, int lfn)
 	static char trimmed[MAX_PATH];
 	char tmp_path[MAX_PATH];
 	
-	my_strlcpy(tmp_path, path, MAX_PATH);
+	my_strcpy_s(tmp_path, sizeof(tmp_path), path);
 	
 	// fix lack of null terminator (‚‹´”Å VZ Editor)
 	if(strncmp(tmp_path, "$IBMAIAS", 8) == 0) {
 		tmp_path[8] = '\0';
 	}
-	strcpy(trimmed, msdos_trimmed_path(tmp_path, lfn));
+	my_strcpy_s(trimmed, sizeof(trimmed), msdos_trimmed_path(tmp_path, lfn));
 #if 0
 	// I have forgotten the reason of this routine... :-(
 	if(my_access(trimmed, 0) != 0) {
 		process_t *process = msdos_process_info_get(current_psp);
 		static char tmp[MAX_PATH];
 		
-		sprintf(tmp, "%s\\%s", process->module_dir, trimmed);
+		my_snprintf(tmp, sizeof(tmp), "%s\\%s", process->module_dir, trimmed);
 		if(my_access(tmp, 0) == 0) {
 			return(tmp);
 		}
@@ -6562,9 +6586,9 @@ const char *msdos_file_name(const char *path)
 	const char *sep = my_strrchr(path, '\\');
 	
 	if(sep) {
-		strcpy(tmp, sep + 1);
+		my_strcpy_s(tmp, sizeof(tmp), sep + 1);
 	} else {
-		strcpy(tmp, path);
+		my_strcpy_s(tmp, sizeof(tmp), path);
 	}
 	return(tmp);
 }
@@ -6773,7 +6797,7 @@ bool msdos_is_subst_drive(int drv)
 bool msdos_is_existing_file(const char *path)
 {
 	// http://d.hatena.ne.jp/yu-hr/20100317/1268826458
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	HANDLE hFind;
 	
 	if((hFind = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
@@ -6786,7 +6810,7 @@ bool msdos_is_existing_file(const char *path)
 bool msdos_is_existing_dir(const char *path)
 {
 	// http://d.hatena.ne.jp/yu-hr/20100317/1268826458
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	HANDLE hFind;
 	
 	if((hFind = MyFindFirstFileA(path, &fd)) != INVALID_HANDLE_VALUE) {
@@ -6805,7 +6829,7 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	// check if COMMAND.COM is in the same directory as the target program file
 	if(MyGetFullPathNameA(command_path, MAX_PATH, tmp, &file_name) != 0 && file_name != NULL) {
 		*file_name = '\0';
-		my_strcat_s(tmp, MAX_PATH, "COMMAND.COM");
+		my_strcat_s(tmp, sizeof(tmp), "COMMAND.COM");
 		if(my_access(tmp, 0) == 0) {
 			return(tmp);
 		}
@@ -6814,7 +6838,7 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 	// check if COMMAND.COM is in the same directory as the running msdos.exe
 	if(MyGetModuleFileNameA(NULL, path, MAX_PATH) != 0 && MyGetFullPathNameA(path, MAX_PATH, tmp, &file_name) != 0 && file_name != NULL) {
 		*file_name = '\0';
-		my_strcat_s(tmp, MAX_PATH, "COMMAND.COM");
+		my_strcat_s(tmp, sizeof(tmp), "COMMAND.COM");
 		if(my_access(tmp, 0) == 0) {
 			return(tmp);
 		}
@@ -6835,11 +6859,11 @@ const char *msdos_search_command_com(const char *command_path, const char *env_p
 			path[len] = '\0';
 			env_path = sep + 1;
 		} else {
-			strcpy(path, env_path);
+			my_strcpy_s(path, sizeof(path), env_path);
 			env_path += strlen(env_path);
 		}
 		if(path[0] != '\0' && path[0] != '%') {
-			strcpy(tmp, msdos_combine_path(path, "COMMAND.COM"));
+			my_strcpy_s(tmp, sizeof(tmp), msdos_combine_path(path, "COMMAND.COM"));
 			if(my_access(tmp, 0) == 0) {
 				return(tmp);
 			}
@@ -6881,11 +6905,11 @@ const char *msdos_short_volume_label(const char *label)
 	char source[MAX_PATH];
 	char *name = source, *ext;
 	
-	my_strlcpy(source, label, MAX_PATH);
+	my_strcpy_s(source, sizeof(source), label);
 	if((ext = my_strrchr(source, '.')) != NULL) {
 		*ext++ = '\0';
 	}
-	strcpy(tmp, "        .   ");
+	my_strcpy_s(tmp, sizeof(tmp), "        .   ");
 	
 	for(int i = 0; i < 8 && *name != '\0'; i++) {
 		if(msdos_lead_byte_check(*name)) {
@@ -6925,9 +6949,9 @@ static inline UINT16 msdos_error_code(unsigned long oserrno)
 	return (UINT16)oserrno;
 }
 
-int msdos_error_class(UINT16 error_code)
+int msdos_error_class(UINT16 code)
 {
-	switch(error_code) {
+	switch(code) {
 	case  4: // Too many open files
 	case  8: // Insufficient memory
 		return 1; // Out of resource
@@ -7101,9 +7125,9 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 	char full[MAX_PATH], *name;
 	
 	if(MyGetFullPathNameA(path, MAX_PATH, full, &name) != 0 && !(info & DOS_DEVATTR_IOCTL)) {
-		strcpy(file_handler[fd].path, full);
+		my_strcpy_s(file_handler[fd].path, sizeof(file_handler[fd].path), full);
 	} else {
-		strcpy(file_handler[fd].path, path);
+		my_strcpy_s(file_handler[fd].path, sizeof(file_handler[fd].path), path);
 	}
 	// isatty makes no distinction between CON & NUL
 	// GetFileSize fails on CON, succeeds on NUL
@@ -7171,7 +7195,7 @@ void msdos_file_handler_open(int fd, const char *path, int atty, int mode, UINT1
 
 void msdos_file_handler_dup(int dst, int src, UINT16 psp_seg)
 {
-	strcpy(file_handler[dst].path, file_handler[src].path);
+	my_strcpy_s(file_handler[dst].path, sizeof(file_handler[dst].path), file_handler[src].path);
 	file_handler[dst].valid = 1;
 	file_handler[dst].id = file_handler[src].id;
 	file_handler[dst].atty = file_handler[src].atty;
@@ -7276,23 +7300,23 @@ void msdos_find_file_conv_local_time(WIN32_FIND_DATAA *fd)
 void msdos_stdio_reopen()
 {
 	if(!file_handler[0].valid) {
-		_dup2(DUP_STDIN, 0);
+		int res = _dup2(DUP_STDIN, 0);
 		msdos_file_handler_open(0, "STDIN", _isatty(0), 0, 0x80d3, 0);
 	}
 	if(!file_handler[1].valid) {
-		_dup2(DUP_STDOUT, 1);
+		int res = _dup2(DUP_STDOUT, 1);
 		msdos_file_handler_open(1, "STDOUT", _isatty(1), 1, 0x80d3, 0);
 	}
 	if(!file_handler[2].valid) {
-		_dup2(DUP_STDERR, 2);
+		int res = _dup2(DUP_STDERR, 2);
 		msdos_file_handler_open(2, "STDERR", _isatty(2), 1, 0x80d3, 0);
 	}
 	if(!file_handler[3].valid) {
-		_dup2(DUP_STDAUX, 3);
+		int res = _dup2(DUP_STDAUX, 3);
 		msdos_file_handler_open(3, "STDAUX", 0, 2, 0x80c0, 0);
 	}
 	if(!file_handler[4].valid) {
-		_dup2(DUP_STDPRN, 4);
+		int res = _dup2(DUP_STDPRN, 4);
 //		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
 		msdos_file_handler_open(4, "STDPRN", 0, 1, 0x80a0, 0, 0, 1); // LPT1
 	}
@@ -7303,7 +7327,7 @@ void msdos_stdio_reopen()
 	}
 }
 
-int msdos_read(int fd, void *buffer, unsigned int count)
+int msdos_read(process_t *process, int fd, void *buffer, unsigned int count)
 {
 	if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].sio_port >= 1 && file_handler[fd].sio_port <= 4) {
 		// read from serial port
@@ -7449,7 +7473,7 @@ int msdos_getch_ex(int echo, unsigned int_num, UINT8 reg_ah)
 		// stdin is redirected to file
 retry:
 		char data;
-		if(msdos_read(fd, &data, 1) == 1) {
+		if(msdos_read(process, fd, &data, 1) == 1) {
 			char tmp = data;
 			if(data == 0x0a) {
 				if(prev == 0x0d) {
@@ -7887,7 +7911,7 @@ void msdos_putch_tmp(UINT8 data, unsigned int_num, UINT8 reg_ah)
 					}
 				} else if(data == 'n') {
 					if(param[0] == 6) {
-						sprintf(cpr_buf, "\x1b[%d;%dR", co.Y + 1, co.X + 1);
+						my_snprintf(cpr_buf, sizeof(cpr_buf), "\x1b[%d;%dR", co.Y + 1, co.X + 1);
 						cpr_pos = 0;
 					}
 				} else if(data == 's') {
@@ -8025,7 +8049,7 @@ int msdos_aux_in()
 	
 	if(fd < process->max_files && file_handler[fd].valid && !eof(fd)) {
 		char data = 0;
-		msdos_read(fd, &data, 1);
+		msdos_read(process, fd, &data, 1);
 		return(data);
 	} else {
 		return(EOF);
@@ -8505,8 +8529,7 @@ const char *msdos_env_get(int env_seg, const char *name)
 
 void msdos_env_set(int env_seg, const char *name, const char *value)
 {
-	char *buf = (char *)malloc(env_size + 1);
-	char *src = buf;
+	char *src = (char *)file_buffer;
 	char *env = (char *)(mem + (env_seg << 4));
 	char *dst = env;
 	char argv[MAX_PATH];
@@ -8545,7 +8568,6 @@ void msdos_env_set(int env_seg, const char *name, const char *value)
 	dst += strlen(argv);
 	*dst++ = 0;
 	*dst++ = 0;
-	free(buf);
 	
 	if(dst - env > env_size) {
 		fatalerror("not enough variable table size (size:%d written:%d)\nspecify /E:nnnn option to COMMAND.COM to make the table enlarge\n", env_size, (int)(dst - env));
@@ -8558,9 +8580,9 @@ const char *msdos_comspec_value(int env_seg)
 	const char *env = msdos_env_get(env_seg, "COMSPEC");
 	
 	if(env != NULL && _stricmp(env, "C:\\COMMAND.COM") != 0) {
-		strcpy(tmp, env);
+		my_strcpy_s(tmp, sizeof(tmp), env);
 	} else {
-		strcpy(tmp, "C:\\COMMAND.COM");
+		my_strcpy_s(tmp, sizeof(tmp), "C:\\COMMAND.COM");
 	}
 	return(tmp);
 }
@@ -8571,9 +8593,9 @@ const char *msdos_comspec_path(int env_seg)
 	const char *env = msdos_env_get(env_seg, "COMSPEC");
 	
 	if(env != NULL && _stricmp(env, "C:\\COMMAND.COM") != 0) {
-		strcpy(tmp, env);
+		my_strcpy_s(tmp, sizeof(tmp), env);
 	} else {
-		strcpy(tmp, comspec_path);
+		my_strcpy_s(tmp, sizeof(tmp), comspec_path);
 	}
 	return(tmp);
 }
@@ -8589,7 +8611,7 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 		if(first_process && !check_file_extension(command, ".COM") && !check_file_extension(command, ".EXE") && !check_file_extension(command, ".BAT")) {
 			return false;
 		}
-		strcpy(path, command);
+		my_strcpy_s(path, sizeof(path), command);
 		if(my_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 			// search path in parent environments
 			const char *env = msdos_env_get(env_seg, "PATH");
@@ -8600,11 +8622,11 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 					token[len] = '\0';
 					env = sep + 1;
 				} else {
-					strcpy(token, env);
+					my_strcpy_s(token, sizeof(token), env);
 					env += strlen(env);
 				}
 				if(token[0] != '\0') {
-					strcpy(path, msdos_combine_path(token, command));
+					my_strcpy_s(path, sizeof(path), msdos_combine_path(token, command));
 					if(my_access(path, 0) == 0) {
 						break;
 					}
@@ -8613,11 +8635,11 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 		}
 	} else {
 		// no file extension specified, expect COM/EXE/BAT extension is omitted
-		sprintf(path, "%s.COM", command);
+		my_snprintf(path, sizeof(path), "%s.COM", command);
 		if(my_access(path, 0) != 0) {
-			sprintf(path, "%s.EXE", command);
+			my_snprintf(path, sizeof(path), "%s.EXE", command);
 			if(my_access(path, 0) != 0) {
-				sprintf(path, "%s.BAT", command);
+				my_snprintf(path, sizeof(path), "%s.BAT", command);
 				if(my_access(path, 0) != 0 && my_strchr(command, ':') == NULL && my_strchr(command, '\\') == NULL) {
 					// search path in parent environments
 					const char *env = msdos_env_get(env_seg, "PATH");
@@ -8628,19 +8650,19 @@ bool msdos_search_command_file(const char *command, int env_seg, char *dest_path
 							token[len] = '\0';
 							env = sep + 1;
 						} else {
-							strcpy(token, env);
+							my_strcpy_s(token, sizeof(token), env);
 							env += strlen(env);
 						}
 						if(token[0] != '\0') {
-							sprintf(path, "%s.COM", msdos_combine_path(token, command));
+							my_snprintf(path, sizeof(path), "%s.COM", msdos_combine_path(token, command));
 							if(my_access(path, 0) == 0) {
 								break;
 							}
-							sprintf(path, "%s.EXE", msdos_combine_path(token, command));
+							my_snprintf(path, sizeof(path), "%s.EXE", msdos_combine_path(token, command));
 							if(my_access(path, 0) == 0) {
 								break;
 							}
-							sprintf(path, "%s.BAT", msdos_combine_path(token, command));
+							my_snprintf(path, sizeof(path), "%s.BAT", msdos_combine_path(token, command));
 							if(my_access(path, 0) == 0) {
 								break;
 							}
@@ -8967,8 +8989,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	
 	int opt_ofs = (param->cmd_line.w.h << 4) + param->cmd_line.w.l;
 	int opt_len = mem[opt_ofs];
-	memset(opt, 0, sizeof(opt));
 	memcpy(opt, mem + opt_ofs + 1, opt_len);
+	opt[opt_len] = '\0';
 	
 	psp_t *parent_psp = (psp_t *)(mem + (current_psp << 4));
 	process_t *parent_process = msdos_process_info_get(current_psp, false);
@@ -8976,11 +8998,11 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	// search command file
 	if(_stricmp(cmd, msdos_comspec_value(parent_psp->env_seg)) == 0) {
 		// redirect C:\COMMAND.COM to comspec_path
-		strcpy(path, msdos_comspec_path(parent_psp->env_seg));
+		my_strcpy_s(path, sizeof(path), msdos_comspec_path(parent_psp->env_seg));
 	} else if(!msdos_search_command_file(cmd, parent_psp->env_seg, path, first_process)) {
 		if(_stricmp(cmd, "COMMAND.COM") == 0 || _stricmp(cmd, "COMMAND") == 0) {
 			// COMMAND.COM not found in the path, so open comspec_path
-			strcpy(path, msdos_comspec_path(parent_psp->env_seg));
+			my_strcpy_s(path, sizeof(path), msdos_comspec_path(parent_psp->env_seg));
 		} else {
 			return(-1);
 		}
@@ -8988,25 +9010,25 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	if(check_file_extension(path, ".BAT")) {
 		// this is a batch file, so run COMMAND.COM
 		if(opt[0] != '\0') {
-			sprintf(tmp, "/C %s %s", path, opt);
+			my_snprintf(tmp, sizeof(tmp), "/C %s %s", path, opt);
 		} else {
-			sprintf(tmp, "/C %s", path);
+			my_snprintf(tmp, sizeof(tmp), "/C %s", path);
 		}
 		// size of command line buffer in PSP is 128 bytes, and it contains 2 bytes for string length and terminator
 		if(strlen(tmp) > 126) {
 			if(check_file_extension(cmd, ".BAT")) {
-				strcpy(path, cmd);
+				my_strcpy_s(path, sizeof(path), cmd);
 			} else {
-				sprintf(path, "%s.BAT", cmd);
+				my_snprintf(path, sizeof(path), "%s.BAT", cmd);
 			}
 			if(opt[0] != '\0') {
-				sprintf(tmp, "/C %s %s", path, opt);
+				my_snprintf(tmp, sizeof(tmp), "/C %s %s", path, opt);
 			} else {
-				sprintf(tmp, "/C %s", path);
+				my_snprintf(tmp, sizeof(tmp), "/C %s", path);
 			}
 		}
-		strcpy(opt, tmp);
-		strcpy(path, msdos_comspec_path(parent_psp->env_seg));
+		my_strcpy_s(opt, sizeof(opt), tmp);
+		my_strcpy_s(path, sizeof(path), msdos_comspec_path(parent_psp->env_seg));
 		changed = true;
 	} else if(_stricmp(msdos_file_name(path), "COMMAND.COM") == 0 && al == 0) {
 #if 0
@@ -9018,8 +9040,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 //			process_t *current_process = msdos_process_info_get(current_psp);
 			process_t *current_process = NULL;
 			for(int i = 0; i < MAX_PROCESS; i++) {
-				if(process[i].psp == current_psp) {
-					current_process = &process[i];
+				if(process_table[i].psp == current_psp) {
+					current_process = &process_table[i];
 					break;
 				}
 			}
@@ -9028,8 +9050,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				opt_len = mem[opt_ofs];
 				if(opt_len > 0 && opt_len <= 126) {
 					if(mem[opt_ofs + 1 + opt_len] == 0x0d || mem[opt_ofs + 1 + opt_len] == 0x0a) {
-						memset(opt, 0, sizeof(opt));
 						memcpy(opt, mem + opt_ofs + 1, opt_len);
+						opt[opt_len] = '\0';
 					}
 				}
 			}
@@ -9040,8 +9062,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		char command_line[MAX_PATH] = {0};
 		char command[MAX_PATH] = {0};
 		
-		strcpy(path_tmp, path);
-		strcpy(opt_tmp, opt);
+		my_strcpy_s(path_tmp, sizeof(path_tmp), path);
+		my_strcpy_s(opt_tmp, sizeof(opt_tmp), opt);
 		
 		// search /C option, and get program and remaining command line
 		if((opt_len = (int)strlen(opt)) > 0 && (my_strstr(opt, "/C ") != NULL || my_strstr(opt, "/c ") != NULL)) {
@@ -9053,31 +9075,31 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					if(opt[j] == ' ') {
 						continue;
 					}
-					strcpy(command_line, opt + j);
+					my_strcpy_s(command_line, sizeof(command_line), opt + j);
 					
 					// split to command and options
 					tmp[0] = '\0';
 					for(int k = j; k < opt_len; k++) {
 						if(opt[k] == ' ' || opt[k] == '/' || opt[k] == '<' || opt[k] == '>' || opt[k] == '|') {
-							strcpy(tmp, opt + k);
+							my_strcpy_s(tmp, sizeof(tmp), opt + k);
 							break;
 						}
 						// for example CD.. and DIR\ should be splitted to command and option
 						if((opt[k] == '.' || opt[k] == '\\') && (opt[k + 1] == '.' || opt[k + 1] == '\\' || opt[k + 1] == ' ' || opt[k + 1] == '\0')) {
-							strcpy(tmp, opt + k);
+							my_strcpy_s(tmp, sizeof(tmp), opt + k);
 							break;
 						}
-						sprintf(command + (k - j), "%c", opt[k]);
+						my_snprintf(command + (k - j), sizeof(command) - (k - j),"%c", opt[k]);
 					}
 					opt[0] = '\0';
 					for(int k = 0; k < strlen(tmp); k++) {
 						if(tmp[k] != ' ') {
 							// need space at the beginning of option string
-							sprintf(opt, " %s", tmp + k);
+							my_snprintf(opt, sizeof(opt), " %s", tmp + k);
 							break;
 						}
 					}
-					strcpy(tmp, opt);
+					my_strcpy_s(tmp, sizeof(tmp), opt);
 					
 					#define GET_FILE_PATH() { \
 						if(token[0] != '>' && token[0] != '<') { \
@@ -9097,18 +9119,18 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					
 					if((token = my_strstr(opt, "0<")) != NULL || (token = my_strstr(opt, "<")) != NULL) {
 						GET_FILE_PATH();
-						strcpy(pipe_stdin_path, token);
-						strcpy(opt, tmp);
+						my_strcpy_s(pipe_stdin_path, sizeof(pipe_stdin_path), token);
+						my_strcpy_s(opt, sizeof(opt), tmp);
 					}
 					if((token = my_strstr(opt, "1>")) != NULL || (token = my_strstr(opt, ">")) != NULL) {
 						GET_FILE_PATH();
-						strcpy(pipe_stdout_path, token);
-						strcpy(opt, tmp);
+						my_strcpy_s(pipe_stdout_path, sizeof(pipe_stdout_path), token);
+						my_strcpy_s(opt, sizeof(opt), tmp);
 					}
 					if((token = my_strstr(opt, "2>")) != NULL) {
 						GET_FILE_PATH();
-						strcpy(pipe_stderr_path, token);
-						strcpy(opt, tmp);
+						my_strcpy_s(pipe_stderr_path, sizeof(pipe_stderr_path), token);
+						my_strcpy_s(opt, sizeof(opt), tmp);
 					}
 					#undef GET_FILE_PATH
 					
@@ -9130,8 +9152,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 					if((token = my_strstr(opt, "|")) != NULL) {
 						*token = '\0';
 					}
-					for(int i = (int)strlen(opt) - 1; i >= 0 && opt[i] == ' '; i--) {
-						opt[i] = '\0';
+					for(int k = (int)strlen(opt) - 1; k >= 0 && opt[k] == ' '; k--) {
+						opt[k] = '\0';
 					}
 					break;
 				}
@@ -9179,8 +9201,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				
 				// remove space at the beginning of option string
 				while(opt[0] == ' ') {
-					strcpy(tmp, opt + 1);
-					strcpy(opt, tmp);
+					my_strcpy_s(tmp, sizeof(tmp), opt + 1);
+					my_strcpy_s(opt, sizeof(opt), tmp);
 				}
 				
 				// changing drive and current directory in child process seems not to affect to DOS environment
@@ -9363,12 +9385,12 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 							if(_strnicmp(&opt[s], "%PATH%", 6) == 0) {
 								const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
 								if(env != NULL) {
-									strcpy(&val[d], env);
+									my_strcpy_s(&val[d], sizeof(val) - d, env);
 									d += (int)strlen(env);
 								}
 								s += 6;
 							} else if(d > 0 && val[d - 1] == ';' && opt[s] == ';') {
-								s++; // skip ;;
+								s++; // skip
 							} else {
 								val[d++] = opt[s++];
 							}
@@ -9660,8 +9682,8 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		}
 		// restore to run COMMAND.COM normally
 		if(!changed) {
-			strcpy(path, path_tmp);
-			strcpy(opt, opt_tmp);
+			my_strcpy_s(path, sizeof(path), path_tmp);
+			my_strcpy_s(opt, sizeof(opt), opt_tmp);
 			pipe_stdin_path[0] = pipe_stdout_path[0] = pipe_stderr_path[0] = '\0';
 		}
 	}
@@ -9812,16 +9834,16 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 			UINT16 machine = *(UINT16 *)(file_buffer + e_lfanew + 0x04);
 			UINT16 subsys = *(UINT16 *)(file_buffer + e_lfanew + 0x5c);
 			if(sign_nt == IMAGE_NT_SIGNATURE && (machine == IMAGE_FILE_MACHINE_I386 || machine == IMAGE_FILE_MACHINE_AMD64)) {
-				char tmp[MAX_PATH * 2];
+				char tmp_cmd[MAX_PATH * 2];
 				if(opt[0] != '\0') {
-					sprintf(tmp, "\"%s\" %s", path, opt);
+					my_snprintf(tmp_cmd, sizeof(tmp_cmd), "\"%s\" %s", path, opt);
 				} else {
-					sprintf(tmp, "\"%s\"", path);
+					my_snprintf(tmp_cmd, sizeof(tmp_cmd), "\"%s\"", path);
 				}
 				if(subsys == IMAGE_SUBSYSTEM_WINDOWS_CUI) {
-					retval = win32_exec(tmp);
+					retval = win32_exec(tmp_cmd);
 				} else {
-					retval = system(tmp);
+					retval = system(tmp_cmd);
 				}
 				return(0);
 			}
@@ -9957,7 +9979,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 		char *token = my_strtok(opt, " ");
 		for(; token && argc < 2;) {
 			if(strlen(token) != 0) {
-				strcpy(argv[argc++], token);
+				my_strcpy_s(argv[argc++], sizeof(argv[0]), token);
 			}
 			token = my_strtok(NULL, " ");
 		}
@@ -9981,7 +10003,7 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 	mcb_psp->psp = mcb_env->psp = psp_seg;
 	
 	memset(tmp, 0, sizeof(tmp));
-	strcpy(tmp, msdos_file_name(path));
+	my_strcpy_s(tmp, sizeof(tmp), msdos_file_name(path));
 	
 	for(int i = 0; i < 8; i++) {
 		if(tmp[i] == '.') {
@@ -10123,8 +10145,8 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 //	process_t *current_process = msdos_process_info_get(psp_seg);
 	process_t *current_process = NULL;
 	for(int i = 0; i < MAX_PROCESS; i++) {
-		if(process[i].psp == psp_seg) {
-			current_process = &process[i];
+		if(process_table[i].psp == psp_seg) {
+			current_process = &process_table[i];
 			break;
 		}
 	}
@@ -10291,7 +10313,13 @@ void start_service_loop(LPTHREAD_START_ROUTINE lpStartAddress)
 	CPU_CALL_FAR(DUMMY_TOP >> 4, 0x0013);
 	in_service = true;
 	service_exit = false;
-	CloseHandle(CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL));
+	
+	HANDLE hThread = CreateThread(NULL, 0, lpStartAddress, NULL, 0, NULL);
+	if(hThread != NULL) {
+		CloseHandle(hThread);
+	} else {
+		lpStartAddress(NULL);
+	}
 	
 	// run cpu until dummy loop routine is done
 	while(!msdos_exit && !(tmp_cs == CPU_CS && tmp_eip == CPU_EIP)) {
@@ -11725,7 +11753,7 @@ int pcbios_update_drive_param(int drive_num, int force_update)
 		if(force_update || !drive_param->initialized) {
 			drive_param->valid = 0;
 			char dev[64];
-			sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+			my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + drive_num);
 			
 			HANDLE hFile = CreateFileA(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 			if(hFile != INVALID_HANDLE_VALUE) {
@@ -11746,15 +11774,18 @@ inline void pcbios_int_13h_00h()
 {
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
-	if(pcbios_update_drive_param(drive_num, 1)) {
-		CPU_AH = 0x00; // successful completion
-	} else {
+	if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // no such drive
+		CPU_SET_C_FLAG(1);
+	} else if(!pcbios_update_drive_param(drive_num, 1)) {
 		if(CPU_DL & 0x80) {
 			CPU_AH = 0x05; // reset failed (hard disk)
 		} else {
 			CPU_AH = 0x80; // timeout (not ready)
 		}
 		CPU_SET_C_FLAG(1);
+	} else {
+		CPU_AH = 0x00; // successful completion
 	}
 }
 
@@ -11763,20 +11794,25 @@ inline void pcbios_int_13h_02h()
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
 	if(CPU_AL == 0) {
-		CPU_AH = 0x01; // invalid function in AH or invalid parameter
+		CPU_AH = 0x01; // invalid function in AH
+		CPU_SET_C_FLAG(1);
+	} else if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // no such drive
 		CPU_SET_C_FLAG(1);
 	} else if(!pcbios_update_drive_param(drive_num, 0)) {
 		CPU_AH = 0xff; // sense operation failed (hard disk)
+		CPU_AL = 0x00;
 		CPU_SET_C_FLAG(1);
 	} else {
 		drive_param_t *drive_param = &drive_params[drive_num];
 		DISK_GEOMETRY *geo = &drive_param->geometry;
 		char dev[64];
-		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + drive_num);
 		
 		HANDLE hFile = CreateFileA(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
 		if(hFile == INVALID_HANDLE_VALUE) {
 			CPU_AH = 0xff; // sense operation failed (hard disk)
+			CPU_AL = 0x00;
 			CPU_SET_C_FLAG(1);
 		} else {
 			UINT32 sector_num = CPU_AL;
@@ -11786,19 +11822,32 @@ inline void pcbios_int_13h_02h()
 			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
 			UINT32 buffer_addr = CPU_ES_BASE + CPU_BX;
 			DWORD dwSize;
+			// buffer address must be page-aligned to a 4KB boundary
+			UINT8 *tmp_buffer = (UINT8 *)VirtualAlloc(NULL, sector_num * geo->BytesPerSector, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			
-//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
-//				CPU_AH = 0xff; // sense operation failed (hard disk)
-//				CPU_SET_C_FLAG(1);
-//			} else 
-			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
-			} else if(ReadFile(hFile, mem + buffer_addr, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
+			if(tmp_buffer != NULL) {
+//				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//					CPU_AH = 0xff; // sense operation failed (hard disk)
+//					CPU_AL = 0x00;
+//					CPU_SET_C_FLAG(1);
+//				} else 
+				if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else if(ReadFile(hFile, tmp_buffer, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else {
+					memcpy(mem + buffer_addr, tmp_buffer, sector_num * geo->BytesPerSector);
+					CPU_AH = 0x00; // successful completion
+				}
+				VirtualFree(tmp_buffer, 0, MEM_RELEASE);
 			} else {
-				CPU_AH = 0x00; // successful completion
+				CPU_AH = 0x20; // controller failure
+				CPU_AL = 0x00;
+				CPU_SET_C_FLAG(1);
 			}
 			CloseHandle(hFile);
 		}
@@ -11811,23 +11860,29 @@ inline void pcbios_int_13h_03h()
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
 	if(CPU_AL == 0) {
-		CPU_AH = 0x01; // invalid function in AH or invalid parameter
+		CPU_AH = 0x01; // invalid function in AH
+		CPU_SET_C_FLAG(1);
+	} else if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // no such drive
 		CPU_SET_C_FLAG(1);
 	} else if(!pcbios_update_drive_param(drive_num, 0)) {
 		CPU_AH = 0xff; // sense operation failed (hard disk)
+		CPU_AL = 0x00;
 		CPU_SET_C_FLAG(1);
 	} else if(!drive_params[drive_num].is_fdd()) {
 		CPU_AH = 0xff; // sense operation failed (hard disk)
+		CPU_AL = 0x00;
 		CPU_SET_C_FLAG(1);
 	} else {
 		drive_param_t *drive_param = &drive_params[drive_num];
 		DISK_GEOMETRY *geo = &drive_param->geometry;
 		char dev[64];
-		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + drive_num);
 		
-		HANDLE hFile = CreateFileA(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+		HANDLE hFile = CreateFileA(dev, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
 		if(hFile == INVALID_HANDLE_VALUE) {
 			CPU_AH = 0xff; // sense operation failed (hard disk)
+			CPU_AL = 0x00;
 			CPU_SET_C_FLAG(1);
 		} else {
 			UINT32 sector_num = CPU_AL;
@@ -11837,19 +11892,32 @@ inline void pcbios_int_13h_03h()
 			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
 			UINT32 buffer_addr = CPU_ES_BASE + CPU_BX;
 			DWORD dwSize;
+			// buffer address must be page-aligned to a 4KB boundary
+			UINT8 *tmp_buffer = (UINT8 *)VirtualAlloc(NULL, sector_num * geo->BytesPerSector, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			
-//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
-//				CPU_AH = 0xff; // sense operation failed (hard disk)
-//				CPU_SET_C_FLAG(1);
-//			} else 
-			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
-			} else if(WriteFile(hFile, mem + buffer_addr, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
+			if(tmp_buffer != NULL) {
+				memcpy(tmp_buffer, mem + buffer_addr, sector_num * geo->BytesPerSector);
+//				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//					CPU_AH = 0xff; // sense operation failed (hard disk)
+//					CPU_AL = 0x00;
+//					CPU_SET_C_FLAG(1);
+//				} else 
+				if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else if(WriteFile(hFile, tmp_buffer, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else {
+					CPU_AH = 0x00; // successful completion
+				}
+				VirtualFree(tmp_buffer, 0, MEM_RELEASE);
 			} else {
-				CPU_AH = 0x00; // successful completion
+				CPU_AH = 0x20; // controller failure
+				CPU_AL = 0x00;
+				CPU_SET_C_FLAG(1);
 			}
 			CloseHandle(hFile);
 		}
@@ -11861,20 +11929,25 @@ inline void pcbios_int_13h_04h()
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
 	if(CPU_AL == 0) {
-		CPU_AH = 0x01; // invalid function in AH or invalid parameter
+		CPU_AH = 0x01; // invalid function in AH
+		CPU_SET_C_FLAG(1);
+	} else if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // no such drive
 		CPU_SET_C_FLAG(1);
 	} else if(!pcbios_update_drive_param(drive_num, 0)) {
-		CPU_AH = 0xff; // sense operation failed (hard disk)
+		CPU_AH = 0x01; // drive inactive
+		CPU_AL = 0x00;
 		CPU_SET_C_FLAG(1);
 	} else {
 		drive_param_t *drive_param = &drive_params[drive_num];
 		DISK_GEOMETRY *geo = &drive_param->geometry;
 		char dev[64];
-		sprintf(dev, "\\\\.\\%c:", 'A' + drive_num);
+		my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + drive_num);
 		
 		HANDLE hFile = CreateFileA(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
 		if(hFile == INVALID_HANDLE_VALUE) {
 			CPU_AH = 0xff; // sense operation failed (hard disk)
+			CPU_AL = 0x00;
 			CPU_SET_C_FLAG(1);
 		} else {
 			UINT32 sector_num = CPU_AL;
@@ -11884,25 +11957,35 @@ inline void pcbios_int_13h_04h()
 			UINT32 top_sector = ((cylinder * drive_param->head_num() + head) * geo->SectorsPerTrack) + sector - 1;
 			UINT32 buffer_addr = CPU_ES_BASE + CPU_BX;
 			DWORD dwSize;
-			UINT8 *tmp_buffer = (UINT8 *)malloc(sector_num * geo->BytesPerSector);
+			// buffer address must be page-aligned to a 4KB boundary
+			UINT8 *tmp_buffer = (UINT8 *)VirtualAlloc(NULL, sector_num * geo->BytesPerSector, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			
-//			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
-//				CPU_AH = 0xff; // sense operation failed (hard disk)
-//				CPU_SET_C_FLAG(1);
-//			} else 
-			if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
-			} else if(ReadFile(hFile, tmp_buffer, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
-				CPU_AH = 0x04; // sector not found/read error
-				CPU_SET_C_FLAG(1);
-			} else if(memcmp(mem + buffer_addr, tmp_buffer, sector_num * geo->BytesPerSector) != 0) {
-				CPU_AH = 0x05; // data did not verify correctly (TI Professional PC)
-				CPU_SET_C_FLAG(1);
+			if(tmp_buffer != NULL) {
+//				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
+//					CPU_AH = 0xff; // sense operation failed (hard disk)
+//					CPU_SET_C_FLAG(1);
+//				} else 
+				if(SetFilePointer(hFile, top_sector * geo->BytesPerSector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else if(ReadFile(hFile, tmp_buffer, sector_num * geo->BytesPerSector, &dwSize, NULL) == 0) {
+					CPU_AH = 0x04; // sector not found/read error
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else if(memcmp(mem + buffer_addr, tmp_buffer, sector_num * geo->BytesPerSector) != 0) {
+					CPU_AH = 0x05; // data did not verify correctly (TI Professional PC)
+					CPU_AL = 0x00;
+					CPU_SET_C_FLAG(1);
+				} else {
+					CPU_AH = 0x00; // successful completion
+				}
+				VirtualFree(tmp_buffer, 0, MEM_RELEASE);
 			} else {
-				CPU_AH = 0x00; // successful completion
+				CPU_AH = 0x20; // controller failure
+				CPU_AL = 0x00;
+				CPU_SET_C_FLAG(1);
 			}
-			free(tmp_buffer);
 			CloseHandle(hFile);
 		}
 	}
@@ -11912,73 +11995,69 @@ inline void pcbios_int_13h_08h()
 {
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
-	if(pcbios_update_drive_param(drive_num, 1)) {
-		drive_param_t *drive_param = &drive_params[drive_num];
-		DISK_GEOMETRY *geo = &drive_param->geometry;
-		
-		CPU_AX = 0x0000;
-		switch(geo->MediaType) {
-		case F5_360_512:
-		case F5_320_512:
-		case F5_320_1024:
-		case F5_180_512:
-		case F5_160_512:
-			CPU_BX = 0x01; // 320K/360K disk
-			break;
-		case F5_1Pt2_512:
-		case F3_1Pt2_512:
-		case F3_1Pt23_1024:
-		case F5_1Pt23_1024:
-			CPU_BX = 0x02; // 1.2M disk
-			break;
-		case F3_720_512:
-		case F3_640_512:
-		case F5_640_512:
-		case F5_720_512:
-			CPU_BX = 0x03; // 720K disk
-			break;
-		case F3_1Pt44_512:
-			CPU_BX = 0x04; // 1.44M disk
-			break;
-		case F3_2Pt88_512:
-			CPU_BX = 0x06; // 2.88M disk
-			break;
-		case RemovableMedia:
-			CPU_BX = 0x10; // ATAPI Removable Media Device
-			break;
-		default:
-			CPU_BX = 0x00; // unknown
-			break;
+	if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // invalid function in AH
+		CPU_SET_C_FLAG(1);
+	} else {
+		if(!pcbios_update_drive_param(drive_num, 1)) {
+			CPU_AX = CPU_BX = CPU_CX = 0x0000;
+		} else {
+			drive_param_t *drive_param = &drive_params[drive_num];
+			DISK_GEOMETRY *geo = &drive_param->geometry;
+			
+			CPU_AX = 0x0000;
+			switch(geo->MediaType) {
+			case F5_360_512:
+			case F5_320_512:
+			case F5_320_1024:
+			case F5_180_512:
+			case F5_160_512:
+				CPU_BX = 0x01; // 320K/360K disk
+				break;
+			case F5_1Pt2_512:
+			case F3_1Pt2_512:
+			case F3_1Pt23_1024:
+			case F5_1Pt23_1024:
+				CPU_BX = 0x02; // 1.2M disk
+				break;
+			case F3_720_512:
+			case F3_640_512:
+			case F5_640_512:
+			case F5_720_512:
+				CPU_BX = 0x03; // 720K disk
+				break;
+			case F3_1Pt44_512:
+				CPU_BX = 0x04; // 1.44M disk
+				break;
+			case F3_2Pt88_512:
+				CPU_BX = 0x06; // 2.88M disk
+				break;
+			case RemovableMedia:
+				CPU_BX = 0x10; // ATAPI Removable Media Device
+				break;
+			default:
+				CPU_BX = 0x00; // unknown
+				break;
+			}
+			int cyl = (geo->Cylinders.QuadPart > 0) ? (geo->Cylinders.QuadPart - 1) : 0;
+			if(cyl > 0x3ff) cyl = 0x3ff;
+			int sec = (geo->SectorsPerTrack > 0x3f) ? 0x3f : geo->SectorsPerTrack;
+			CPU_CH = cyl & 0xff;
+			CPU_CL = (sec & 0x3f) | ((cyl >> 2) & 0xC0);
+			CPU_DH = drive_param->head_num() - 1;
 		}
 		if(CPU_DL & 0x80) {
-			switch(GetLogicalDrives() & 0x0c) {
-			case 0x00: CPU_DL = 0x00; break;
-			case 0x04:
-			case 0x08: CPU_DL = 0x01; break;
-			case 0x0c: CPU_DL = 0x02; break;
-			}
+			CPU_DL = mem[0x475];
 		} else {
-			switch(GetLogicalDrives() & 0x03) {
-			case 0x00: CPU_DL = 0x00; break;
-			case 0x01:
-			case 0x02: CPU_DL = 0x01; break;
-			case 0x03: CPU_DL = 0x02; break;
+			UINT16 equip = *(UINT16 *)(mem + 0x410);
+			if(equip & 0x0001) {
+				CPU_DL = ((equip >> 6) & 0x03) + 1;
+			} else {
+				CPU_DL = 0;
 			}
+			// drive parameter table (floppies only)
+			CPU_ES = CPU_DI = 0x0000;
 		}
-		CPU_DH = drive_param->head_num();
-		CPU_DL = 0;
-		for(int i = 0; i < 2; i++) {
-			if(msdos_is_valid_drive(i) && msdos_is_removable_drive(i)) {
-				CPU_DL++;
-			}
-		}
-		int cyl = (geo->Cylinders.QuadPart > 0x3ff) ? 0x3ff : geo->Cylinders.QuadPart;
-		int sec = (geo->SectorsPerTrack > 0x3f) ? 0x3f : geo->SectorsPerTrack;
-		CPU_CH = cyl & 0xff;
-		CPU_CL = (sec & 0x3f) | ((cyl & 0x300) >> 2);
-	} else {
-		CPU_AH = 0x07;
-		CPU_SET_C_FLAG(1);
 	}
 }
 
@@ -11986,15 +12065,15 @@ inline void pcbios_int_13h_10h()
 {
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
-	if(pcbios_update_drive_param(drive_num, 1)) {
-		CPU_AH = 0x00; // successful completion
-	} else {
+	if(!(drive_num >= 0 && drive_num < 26) || !pcbios_update_drive_param(drive_num, 1)) {
 		if(CPU_DL & 0x80) {
 			CPU_AH = 0xaa; // drive not ready (hard disk)
 		} else {
 			CPU_AH = 0x80; // timeout (not ready)
 		}
 		CPU_SET_C_FLAG(1);
+	} else {
+		CPU_AH = 0x00; // successful completion
 	}
 }
 
@@ -12002,12 +12081,29 @@ inline void pcbios_int_13h_15h()
 {
 	int drive_num = (CPU_DL & 0x80) ? ((CPU_DL & 0x7f) + 2) : (CPU_DL < 2) ? CPU_DL : -1;
 	
-	if(pcbios_update_drive_param(drive_num, 1)) {
+	if(!(drive_num >= 0 && drive_num < 26)) {
+		CPU_AH = 0x01; // no such drive
+		CPU_SET_C_FLAG(1);
+	} else if(!pcbios_update_drive_param(drive_num, 1)) {
+		CPU_AH = 0x00; // drive inactive
+		CPU_CX = CPU_DX = 0x0000;
+	} else {
 		drive_param_t *drive_param = &drive_params[drive_num];
 		DISK_GEOMETRY *geo = &drive_param->geometry;
 		
 		if(CPU_DL & 0x80) {
 			CPU_AH = 0x03; // hard disk
+			UINT64 length = geo->BytesPerSector;
+			length *= geo->SectorsPerTrack;
+			length *= geo->TracksPerCylinder;
+			length *= geo->Cylinders.QuadPart;
+			length /= 512;
+			if((length >> 32) != 0) {
+				CPU_CX = CPU_DX = 0xffff;
+			} else {
+				CPU_DX = length & 0xffff;
+				CPU_CX = length >> 16;
+			}
 		} else {
 			switch(geo->MediaType) {
 			case F5_360_512:
@@ -12022,20 +12118,6 @@ inline void pcbios_int_13h_15h()
 				break;
 			}
 		}
-		UINT64 length = geo->BytesPerSector;
-		length *= geo->SectorsPerTrack;
-		length *= geo->TracksPerCylinder;
-		length *= geo->Cylinders.QuadPart;
-		length /= 512;
-		if((length >> 32) != 0) {
-			CPU_CX = CPU_DX = 0xffff;
-		} else {
-			CPU_DX = length & 0xffff;
-			CPU_CX = length >> 16;
-		}
-	} else {
-		CPU_AH = 0x00; // no such drive
-		CPU_CX = CPU_DX = 0x0000;
 	}
 }
 
@@ -13918,8 +14000,7 @@ inline void msdos_int_21h_0dh()
 
 inline void msdos_int_21h_0eh()
 {
-	if(CPU_DL < 26) {
-		_chdrive(CPU_DL + 1);
+	if(CPU_DL < 26 && _chdrive(CPU_DL + 1) == 0) {
 		msdos_cds_update(CPU_DL);
 		msdos_sda_update(current_psp);
 	}
@@ -13980,14 +14061,14 @@ inline void msdos_int_21h_11h()
 	ext_fcb_t *ext_find = (ext_fcb_t *)(mem + dta_laddr);
 	find_fcb_t *find = (find_fcb_t *)(mem + dta_laddr + (ext_fcb->flag == 0xff ? 7 : 0));
 	const char *path = msdos_fcb_path(fcb);
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, dta_laddr);
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
 		FindClose(dtainfo->find_handle);
 		dtainfo->find_handle = INVALID_HANDLE_VALUE;
 	}
-	strcpy(process->volume_label, msdos_volume_label(path));
+	my_strcpy_s(process->volume_label, sizeof(process->volume_label), msdos_volume_label(path));
 	dtainfo->allowable_mask = (ext_fcb->flag == 0xff) ? ext_fcb->attribute : 0x20;
 	bool label_only = (dtainfo->allowable_mask == 8);
 	
@@ -14062,7 +14143,7 @@ inline void msdos_int_21h_12h()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	ext_fcb_t *ext_find = (ext_fcb_t *)(mem + dta_laddr);
 	find_fcb_t *find = (find_fcb_t *)(mem + dta_laddr + (ext_fcb->flag == 0xff ? 7 : 0));
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, dta_laddr);
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
@@ -14131,7 +14212,7 @@ inline void msdos_int_21h_12h()
 
 inline void msdos_int_21h_13h()
 {
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	HANDLE hFind;
 	DWORD error = ERROR_FILE_NOT_FOUND;
 	
@@ -14173,17 +14254,21 @@ inline void msdos_int_21h_14h()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	DWORD num = 0;
 	
-	memset(mem + dta_laddr, 0, fcb->record_size);
-	SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN);
-	
-	if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else {
-		if(++fcb->cur_record >= 128) {
-			fcb->current_block += fcb->cur_record / 128;
-			fcb->cur_record %= 128;
+		if(!ReadFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL) || num == 0) {
+			CPU_AL = 1;
+		} else if(num == fcb->record_size) {
+			if(++fcb->cur_record >= 128) {
+				fcb->current_block += fcb->cur_record / 128;
+				fcb->cur_record %= 128;
+			}
+			CPU_AL = 0;
+		} else {
+			memset(mem + dta_laddr + num, 0, fcb->record_size - num);
+			CPU_AL = 3;
 		}
-		CPU_AL = (num == fcb->record_size) ? 0 : 3;
 	}
 }
 
@@ -14198,18 +14283,23 @@ inline void msdos_int_21h_15h()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	DWORD num = 0;
 	
-	SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN);
-	WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL);
-	fcb->file_size = GetFileSize(fcb->handle, NULL);
-	
-	if(num != fcb->record_size) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * (fcb->current_block * 128 + fcb->cur_record), NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else {
-		if(++fcb->cur_record >= 128) {
-			fcb->current_block += fcb->cur_record / 128;
-			fcb->cur_record %= 128;
+		BOOL res = WriteFile(fcb->handle, mem + dta_laddr, fcb->record_size, &num, NULL);
+		fcb->file_size = GetFileSize(fcb->handle, NULL);
+		
+		if(!res) {
+			CPU_AL = 1;
+		} else if(num != fcb->record_size) {
+			CPU_AL = (num == 0) ? 1 : 2;
+		} else {
+			if(++fcb->cur_record >= 128) {
+				fcb->current_block += fcb->cur_record / 128;
+				fcb->cur_record %= 128;
+			}
+			CPU_AL = 0;
 		}
-		CPU_AL = 0;
 	}
 }
 
@@ -14244,7 +14334,7 @@ inline void msdos_int_21h_17h()
 	fcb_t *fcb_src = (fcb_t *)(ext_fcb_src + (ext_fcb_src->flag == 0xff ? 1 : 0));
 	fcb_t *fcb_dst = (fcb_t *)(mem + CPU_DS_BASE + CPU_DX + 16 + (ext_fcb_src->flag == 0xff ? 7 : 0));
 	
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	HANDLE hFind;
 	DWORD error = ERROR_FILE_NOT_FOUND;
 	
@@ -14256,7 +14346,7 @@ inline void msdos_int_21h_17h()
 				char path[MAX_PATH], *ext = NULL;
 				char new_name[MAX_PATH] = {0}, new_ext[MAX_PATH] = {0};
 				
-				strcpy(path, fd.cFileName);
+				my_strcpy_s(path, sizeof(path), fd.cFileName);
 				
 				if((ext = my_strrchr(path, '.')) != NULL) {
 					*ext++ = '\0';
@@ -14270,9 +14360,9 @@ inline void msdos_int_21h_17h()
 					new_name[i] = (c == '?') ? path[i] : (c == ' ') ? '\0' : c;
 				}
 				if(new_ext[0] != '\0') {
-					sprintf(path, "%s.%s", new_name, new_ext);
+					my_snprintf(path, sizeof(path), "%s.%s", new_name, new_ext);
 				} else {
-					strcpy(path, new_name);
+					my_strcpy_s(path, sizeof(path), new_name);
 				}
 				msdos_strupr(path);
 				
@@ -14397,7 +14487,7 @@ inline void msdos_int_21h_21h()
 	fcb->current_block = rec / 128;
 	fcb->cur_record = rec % 128;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
@@ -14424,7 +14514,7 @@ inline void msdos_int_21h_22h()
 	fcb->current_block = rec / 128;
 	fcb->cur_record = rec % 128;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else {
 		process_t *process = msdos_process_info_get(current_psp);
@@ -14505,7 +14595,7 @@ inline void msdos_int_21h_27h()
 	}
 	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else if(CPU_CX == 0) {
 		CPU_AL = 0;
@@ -14542,7 +14632,7 @@ inline void msdos_int_21h_28h()
 	}
 	UINT32 rec = (fcb->record_size >= 64) ? fcb->rand_record & 0xffffff : fcb->rand_record;
 	
-	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+	if(SetFilePointer(fcb->handle, fcb->record_size * rec, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 		CPU_AL = 1;
 	} else if(CPU_CX == 0) {
 		if(!SetEndOfFile(fcb->handle)) {
@@ -14605,12 +14695,12 @@ inline void msdos_int_21h_29h()
 			}
 		}
 	}
-	for(int i = 0, is_kanji = 0; i < MAX_PATH; i++) {
+	for(int i = 0, is_lead_byte = 0; i < MAX_PATH; i++) {
 		UINT8 c = buffer[ofs];
-		if(is_kanji) {
-			is_kanji = 0;
+		if(is_lead_byte) {
+			is_lead_byte = 0;
 		} else if(msdos_lead_byte_check(c)) {
-			is_kanji = 1;
+			is_lead_byte = 1;
 		} else if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 			break;
 		} else if(c >= 'a' && c <= 'z') {
@@ -14621,12 +14711,12 @@ inline void msdos_int_21h_29h()
 	}
 	if(buffer[ofs] == '.') {
 		ofs++;
-		for(int i = 0, is_kanji = 0; i < MAX_PATH; i++) {
+		for(int i = 0, is_lead_byte = 0; i < MAX_PATH; i++) {
 			UINT8 c = buffer[ofs];
-			if(is_kanji) {
-				is_kanji = 0;
+			if(is_lead_byte) {
+				is_lead_byte = 0;
 			} else if(msdos_lead_byte_check(c)) {
-				is_kanji = 1;
+				is_lead_byte = 1;
 			} else if(c <= 0x20 || my_strchr(end_chars, c) || my_strchr(sep_chars, c)) {
 				break;
 			} else if(c >= 'a' && c <= 'z') {
@@ -15123,7 +15213,7 @@ inline void msdos_int_21h_3bh(int lfn)
 		if(my_getdcwd(drv + 1, cur_path, MAX_PATH) != NULL) {
 			my_strcpy_s(cds->path_name, sizeof(cds->path_name), msdos_short_path(cur_path));
 		} else {
-			sprintf(cds->path_name, "%c:\\", 'A' + drv);
+			my_snprintf(cds->path_name, sizeof(cds->path_name), "%c:\\", 'A' + drv);
 		}
 		if(drv == (_getdrive() - 1)) {
 			my_chdir(path);
@@ -15348,7 +15438,7 @@ inline void msdos_int_21h_3fh()
 						
 						while(count > 0) {
 							// Mr.cracyc's original code considered the page fault
-							int page_total = msdos_read(fd, mem + CPU_TRANS_PAGING_ADDR(addr), page_count);
+							int page_total = msdos_read(process, fd, mem + CPU_TRANS_PAGING_ADDR(addr), page_count);
 							total += page_total;
 							if(page_total != page_count) {
 								break;
@@ -15360,7 +15450,7 @@ inline void msdos_int_21h_3fh()
 						CPU_AX = total;
 					} else
 #endif
-					CPU_AX = msdos_read(fd, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
+					CPU_AX = msdos_read(process, fd, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
 				} else {
 					CPU_AX = 0;
 				}
@@ -16306,7 +16396,7 @@ inline void msdos_int_21h_47h(int lfn)
 	
 	if(my_getdcwd(CPU_DL, path, MAX_PATH) != NULL) {
 		if(!lfn) {
-			strcpy(path, msdos_short_path(path));
+			my_strcpy_s(path, sizeof(path), msdos_short_path(path));
 		} else {
 			MyGetLongPathNameA(path, path, MAX_PATH);
 		}
@@ -16452,7 +16542,7 @@ inline void msdos_int_21h_4bh()
 				}
 				memcpy(mem + (overlay[0] << 4), file_buffer + header_size, load_size);
 			} else {
-				memcpy(mem + (overlay[0] << 4), file_buffer, file_size);
+				memcpy(mem + (overlay[0] << 4), file_buffer, min(file_size, sizeof(file_buffer)));
 			}
 		}
 		break;
@@ -16495,12 +16585,12 @@ inline void msdos_int_21h_4eh()
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	find_t *find = (find_t *)(mem + dta_laddr);
 	const char *path = msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX));
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, LFN_DTA_LADDR);
 	find->find_magic = FIND_MAGIC;
 	find->dta_index = dtainfo - dtalist;
-	strcpy(process->volume_label, msdos_volume_label(path));
+	my_strcpy_s(process->volume_label, sizeof(process->volume_label), msdos_volume_label(path));
 	dtainfo->allowable_mask = CPU_CL;
 	// note: SO1 dir command sets 0x3f, but only directories and volue label are found if bit3 is set :-(
 	if((dtainfo->allowable_mask & 0x3f) == 0x3f) {
@@ -16526,12 +16616,12 @@ inline void msdos_int_21h_4eh()
 		msdos_find_file_conv_local_time(&fd);
 		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->date, &find->time);
 		find->size = fd.nFileSizeLow;
-		strcpy(find->name, msdos_short_name(&fd));
+		my_strcpy_s(find->name, sizeof(find->name), msdos_short_name(&fd));
 		CPU_AX = 0;
 	} else if(dtainfo->allowable_mask & 8) {
 		find->attrib = 8;
 		find->size = 0;
-		strcpy(find->name, msdos_short_volume_label(process->volume_label));
+		my_strcpy_s(find->name, sizeof(find->name), msdos_short_volume_label(process->volume_label));
 		dtainfo->allowable_mask &= ~8;
 		CPU_AX = 0;
 	} else {
@@ -16546,7 +16636,7 @@ inline void msdos_int_21h_4fh()
 	process_t *process = msdos_process_info_get(current_psp);
 	UINT32 dta_laddr = (process->dta.w.h << 4) + process->dta.w.l;
 	find_t *find = (find_t *)(mem + dta_laddr);
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	if(find->find_magic != FIND_MAGIC || find->dta_index >= MAX_DTAINFO) {
 		CPU_AX = 0x12;
@@ -16574,12 +16664,12 @@ inline void msdos_int_21h_4fh()
 		msdos_find_file_conv_local_time(&fd);
 		FileTimeToDosDateTime(&fd.ftLastWriteTime, &find->date, &find->time);
 		find->size = fd.nFileSizeLow;
-		strcpy(find->name, msdos_short_name(&fd));
+		my_strcpy_s(find->name, sizeof(find->name), msdos_short_name(&fd));
 		CPU_AX = 0;
 	} else if(dtainfo->allowable_mask & 8) {
 		find->attrib = 8;
 		find->size = 0;
-		strcpy(find->name, msdos_short_volume_label(process->volume_label));
+		my_strcpy_s(find->name, sizeof(find->name), msdos_short_volume_label(process->volume_label));
 		dtainfo->allowable_mask &= ~8;
 		CPU_AX = 0;
 	} else {
@@ -16686,8 +16776,8 @@ inline void msdos_int_21h_55h()
 inline void msdos_int_21h_56h(int lfn)
 {
 	char src[MAX_PATH], dst[MAX_PATH];
-	strcpy(src, msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn));
-	strcpy(dst, msdos_trimmed_path((char *)(mem + CPU_ES_BASE + CPU_DI), lfn));
+	my_strcpy_s(src, sizeof(src), msdos_trimmed_path((char *)(mem + CPU_DS_BASE + CPU_DX), lfn));
+	my_strcpy_s(dst, sizeof(dst), msdos_trimmed_path((char *)(mem + CPU_ES_BASE + CPU_DI), lfn));
 	
 	if(msdos_is_existing_file(dst) || msdos_is_existing_dir(dst)) {
 		CPU_AX = 0x05; // access denied
@@ -17071,7 +17161,9 @@ inline void msdos_int_21h_5fh()
 					volume[0] = 'A' + i;
 					DWORD dwSize = 128;
 					strcpy((char *)(mem + CPU_DS_BASE + CPU_SI), volume);
-					WNetGetConnectionA(volume, (char *)(mem + CPU_ES_BASE + CPU_DI), &dwSize);
+					if(WNetGetConnectionA(volume, (char *)(mem + CPU_ES_BASE + CPU_DI), &dwSize) != NO_ERROR) {
+						*(char *)(mem + CPU_ES_BASE + CPU_DI) = '\0';
+					}
 					CPU_BH = 0x00; // valid
 					CPU_BL = 0x04; // disk drive
 					CPU_CX = 0x00; // LANtastic
@@ -17250,8 +17342,6 @@ UINT16 get_extended_country_info(UINT8 func)
 
 inline void msdos_int_21h_65h()
 {
-	char tmp[0x10000];
-	
 	switch(CPU_AL) {
 	case 0x00:
 		if(CPU_CX >= 7) {
@@ -17281,17 +17371,17 @@ inline void msdos_int_21h_65h()
 		break;
 	case 0x20:
 	case 0xa0:
-		memset(tmp, 0, sizeof(tmp));
-		tmp[0] = CPU_DL;
-		msdos_strupr(tmp);
-		CPU_DL = tmp[0];
+		file_buffer[0] = CPU_DL;
+		file_buffer[1] = '\0';
+		msdos_strupr((char *)file_buffer);
+		CPU_DL = file_buffer[0];
 		break;
 	case 0x21:
 	case 0xa1:
-		memset(tmp, 0, sizeof(tmp));
-		memcpy(tmp, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
-		msdos_strupr(tmp);
-		memcpy(mem + CPU_DS_BASE + CPU_DX, tmp, CPU_CX);
+		memcpy(file_buffer, mem + CPU_DS_BASE + CPU_DX, CPU_CX);
+		file_buffer[CPU_CX] = '\0';
+		msdos_strupr((char *)file_buffer);
+		memcpy(mem + CPU_DS_BASE + CPU_DX, file_buffer, CPU_CX);
 		break;
 	case 0x22:
 	case 0xa2:
@@ -17361,7 +17451,7 @@ inline void msdos_int_21h_67h()
 				return;
 			}
 		}
-		for(int i = process->max_files; i < num; i++) {
+		for(int i = max(process->max_files, 20); i < num; i++) {
 			process->file_table[i - 20] = 0xff;
 		}
 		process->max_files = num;
@@ -17584,32 +17674,28 @@ inline void msdos_int_21h_7141h()
 		CPU_SET_C_FLAG(1);
 	}
 	/* wild card and matching attributes... */
-	char tmp[MAX_PATH * 2];
+	char tmp[MAX_PATH * 2], *tmp_name;
 	// copy search pathname (and quick check overrun)
-	memset(tmp, 0, sizeof(tmp));
-	tmp[MAX_PATH - 1] = '\0';
-	tmp[MAX_PATH] = 1;
-	strncpy(tmp, (char *)(mem + CPU_DS_BASE + CPU_DX), MAX_PATH);
-	
-	if(tmp[MAX_PATH - 1] != '\0' || tmp[MAX_PATH] != 1) {
+	if(strlen((char *)(mem + CPU_DS_BASE + CPU_DX)) >= MAX_PATH) {
 		CPU_AX = 1;
 		CPU_SET_C_FLAG(1);
 		return;
 	}
+	my_strcpy_s(tmp, sizeof(tmp), (char *)(mem + CPU_DS_BASE + CPU_DX));
+	
 	for(char *s = tmp; *s; ++s) {
 		if(*s == '/') {
 			*s = '\\';
 		}
 	}
-	char *tmp_name = my_strrchr(tmp, '\\');
-	if(tmp_name) {
+	if((tmp_name = my_strrchr(tmp, '\\')) != NULL) {
 		++tmp_name;
 	} else {
 		tmp_name = my_strchr(tmp, ':');
 		tmp_name = tmp_name ? tmp_name + 1 : tmp;
 	}
 	
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	HANDLE fh = MyFindFirstFileA(tmp, &fd);
 	if(fh == INVALID_HANDLE_VALUE) {
 		CPU_AX = 2;
@@ -17618,7 +17704,7 @@ inline void msdos_int_21h_7141h()
 	}
 	do {
 		if(msdos_find_file_check_attribute(fd.dwFileAttributes, CPU_CL, CPU_CH) && msdos_find_file_has_8dot3name(&fd)) {
-			strcpy(tmp_name, fd.cFileName);
+			my_strcpy_s(tmp_name, sizeof(tmp) - (tmp_name - tmp), fd.cFileName);
 			if(my_remove(msdos_trimmed_path(tmp, 1))) {
 				CPU_AX = 5;
 				CPU_SET_C_FLAG(1);
@@ -17641,7 +17727,7 @@ inline void msdos_int_21h_714eh()
 	find_lfn_t *find = (find_lfn_t *)(mem + CPU_ES_BASE + CPU_DI);
 	const char *path = (const char *)(mem + CPU_DS_BASE + CPU_DX);
 	const char *tmp = "*";
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	dtainfo_t *dtainfo = msdos_dta_info_get(current_psp, LFN_DTA_LADDR);
 	if(dtainfo->find_handle != INVALID_HANDLE_VALUE) {
@@ -17651,7 +17737,7 @@ inline void msdos_int_21h_714eh()
 	if(strlen(path) == 0) {
 		path = tmp;
 	}
-	strcpy(process->volume_label, msdos_volume_label(path));
+	my_strcpy_s(process->volume_label, sizeof(process->volume_label), msdos_volume_label(path));
 	dtainfo->allowable_mask = CPU_CL;
 	dtainfo->required_mask = CPU_CH;
 	bool label_only = (dtainfo->allowable_mask == 8);
@@ -17685,15 +17771,15 @@ inline void msdos_int_21h_714eh()
 		}
 		find->size_hi = fd.nFileSizeHigh;
 		find->size_lo = fd.nFileSizeLow;
-		strcpy(find->full_name, fd.cFileName);
-		strcpy(find->short_name, fd.cAlternateFileName);
+		my_strcpy_s(find->full_name, sizeof(find->full_name), fd.cFileName);
+		my_strcpy_s(find->short_name, sizeof(find->short_name), fd.cAlternateFileName);
 		CPU_AX = dtainfo - dtalist + 1;
 	} else if(dtainfo->allowable_mask & 8) {
 		// volume label
 		find->attrib = 8;
 		find->size_hi = find->size_lo = 0;
-		strcpy(find->full_name, process->volume_label);
-		strcpy(find->short_name, msdos_short_volume_label(process->volume_label));
+		my_strcpy_s(find->full_name, sizeof(find->full_name), process->volume_label);
+		my_strcpy_s(find->short_name, sizeof(find->short_name), msdos_short_volume_label(process->volume_label));
 		dtainfo->allowable_mask &= ~8;
 		CPU_AX = dtainfo - dtalist + 1;
 	} else {
@@ -17706,7 +17792,7 @@ inline void msdos_int_21h_714fh()
 {
 	process_t *process = msdos_process_info_get(current_psp);
 	find_lfn_t *find = (find_lfn_t *)(mem + CPU_ES_BASE + CPU_DI);
-	WIN32_FIND_DATAA fd;
+	WIN32_FIND_DATAA fd = {0};
 	
 	if(CPU_BX - 1u >= MAX_DTAINFO) {
 		CPU_AX = 6;
@@ -17745,14 +17831,14 @@ inline void msdos_int_21h_714fh()
 		}
 		find->size_hi = fd.nFileSizeHigh;
 		find->size_lo = fd.nFileSizeLow;
-		strcpy(find->full_name, fd.cFileName);
-		strcpy(find->short_name, fd.cAlternateFileName);
+		my_strcpy_s(find->full_name, sizeof(find->full_name), fd.cFileName);
+		my_strcpy_s(find->short_name, sizeof(find->short_name), fd.cAlternateFileName);
 	} else if(dtainfo->allowable_mask & 8) {
 		// volume label
 		find->attrib = 8;
 		find->size_hi = find->size_lo = 0;
-		strcpy(find->full_name, process->volume_label);
-		strcpy(find->short_name, msdos_short_volume_label(process->volume_label));
+		my_strcpy_s(find->full_name, sizeof(find->full_name), process->volume_label);
+		my_strcpy_s(find->short_name, sizeof(find->short_name), msdos_short_volume_label(process->volume_label));
 		dtainfo->allowable_mask &= ~8;
 	} else {
 		CPU_AX = 0x12;
@@ -17863,7 +17949,7 @@ inline void msdos_int_21h_71a8h()
 {
 	if(CPU_DH == 0) {
 		char tmp[MAX_PATH], fcb[MAX_PATH];
-		strcpy(tmp, msdos_short_path((char *)(mem + CPU_DS_BASE + CPU_SI)));
+		my_strcpy_s(tmp, sizeof(tmp), msdos_short_path((char *)(mem + CPU_DS_BASE + CPU_SI)));
 		memset(fcb, 0x20, sizeof(fcb));
 		int len = (int)strlen(tmp);
 		for(int i = 0, pos = 0; i < len; i++) {
@@ -18236,7 +18322,7 @@ inline void msdos_int_24h()
 		key = _getch();
 		
 		if(key == 0x00 || key == 0xe0) {
-			_getch();
+			int res = _getch();
 		} else if(key == 'I' || key == 'i') {
 			if(CPU_AH & 0x20) {
 				CPU_AL = 0;
@@ -18279,7 +18365,7 @@ inline void msdos_int_25h()
 	} else {
 		dpb_t *dpb = (dpb_t *)(mem + (seg << 4) + ofs);
 		char dev[64];
-		sprintf(dev, "\\\\.\\%c:", 'A' + CPU_AL);
+		my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + CPU_AL);
 		
 		HANDLE hFile = CreateFileA(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
 		if(hFile == INVALID_HANDLE_VALUE) {
@@ -18291,17 +18377,17 @@ inline void msdos_int_25h()
 			UINT32 buffer_addr = CPU_DS_BASE + CPU_BX;
 			
 			if(sector_num == 0xffff) {
-				top_sector  = *(UINT32 *)(mem + buffer_addr + 0);
-				sector_num  = *(UINT16 *)(mem + buffer_addr + 4);
-				UINT16 ofs  = *(UINT16 *)(mem + buffer_addr + 6);
-				UINT16 seg  = *(UINT16 *)(mem + buffer_addr + 8);
-				buffer_addr = (seg << 4) + ofs;
+				top_sector = *(UINT32 *)(mem + buffer_addr + 0);
+				sector_num = *(UINT16 *)(mem + buffer_addr + 4);
+				UINT16 tmp_ofs = *(UINT16 *)(mem + buffer_addr + 6);
+				UINT16 tmp_seg = *(UINT16 *)(mem + buffer_addr + 8);
+				buffer_addr = (tmp_seg << 4) + tmp_ofs;
 			}
 //			if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
 //				CPU_AL = 0x02; // drive not ready
 //				CPU_SET_C_FLAG(1);
 //			} else 
-			if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+			if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 				CPU_AL = 0x08; // sector not found
 				CPU_SET_C_FLAG(1);
 			} else if(ReadFile(hFile, mem + buffer_addr, sector_num * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
@@ -18330,7 +18416,7 @@ inline void msdos_int_26h()
 	} else {
 		dpb_t *dpb = (dpb_t *)(mem + (seg << 4) + ofs);
 		char dev[64];
-		sprintf(dev, "\\\\.\\%c:", 'A' + CPU_AL);
+		my_snprintf(dev, sizeof(dev), "\\\\.\\%c:", 'A' + CPU_AL);
 		
 		if(dpb->media_type == 0xf8) {
 			// this drive is not a floppy
@@ -18350,16 +18436,16 @@ inline void msdos_int_26h()
 				UINT32 buffer_addr = CPU_DS_BASE + CPU_BX;
 				
 				if(sector_num == 0xffff) {
-					top_sector  = *(UINT32 *)(mem + buffer_addr + 0);
-					sector_num  = *(UINT16 *)(mem + buffer_addr + 4);
-					UINT16 ofs  = *(UINT16 *)(mem + buffer_addr + 6);
-					UINT16 seg  = *(UINT16 *)(mem + buffer_addr + 8);
-					buffer_addr = (seg << 4) + ofs;
+					top_sector = *(UINT32 *)(mem + buffer_addr + 0);
+					sector_num = *(UINT16 *)(mem + buffer_addr + 4);
+					UINT16 tmp_ofs = *(UINT16 *)(mem + buffer_addr + 6);
+					UINT16 tmp_seg = *(UINT16 *)(mem + buffer_addr + 8);
+					buffer_addr = (tmp_seg << 4) + tmp_ofs;
 				}
 				if(DeviceIoControl(hFile, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &dwSize, NULL) == 0) {
 					CPU_AL = 0x02; // drive not ready
 					CPU_SET_C_FLAG(1);
-				} else if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+				} else if(SetFilePointer(hFile, top_sector * dpb->bytes_per_sector, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR) {
 					CPU_AL = 0x08; // sector not found
 					CPU_SET_C_FLAG(1);
 				} else if(WriteFile(hFile, mem + buffer_addr, sector_num * dpb->bytes_per_sector, &dwSize, NULL) == 0) {
@@ -18400,10 +18486,10 @@ inline void msdos_int_2eh()
 {
 	char tmp[MAX_PATH], command[MAX_PATH], opt[MAX_PATH];
 	memset(tmp, 0, sizeof(tmp));
-	strcpy(tmp, (char *)(mem + CPU_DS_BASE + CPU_SI));
+	my_strcpy_s(tmp, sizeof(tmp), (char *)(mem + CPU_DS_BASE + CPU_SI));
 	char *token = my_strtok(tmp, " ");
-	strcpy(command, token);
-	strcpy(opt, token + strlen(token) + 1);
+	my_strcpy_s(command, sizeof(command), token);
+	my_strcpy_s(opt, sizeof(opt), token + strlen(token) + 1);
 	
 	param_block_t *param = (param_block_t *)(mem + WORK_TOP);
 	param->env_seg = 0;
@@ -18416,16 +18502,16 @@ inline void msdos_int_2eh()
 	
 	char argv[2][MAX_PATH];
 	int argc = 0;
-	strcpy(tmp, opt);
+	my_strcpy_s(tmp, sizeof(tmp), opt);
 	token = my_strtok(tmp, " ");
 	for(; token && argc < 2;) {
 		if(strlen(token) != 0) {
-			strcpy(argv[argc++], token);
+			my_strcpy_s(argv[argc++], sizeof(argv[0]), token);
 		}
 		token = my_strtok(NULL, " ");
 	}
-	for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
-		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+	for(int i = 0, tmp_ofs = 24; i < 2; i++, tmp_ofs += 16) {
+		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + tmp_ofs);
 		if(i < argc) {
 			msdos_init_fcb_in_psp(fcb, argv[i]);
 		} else {
@@ -18435,7 +18521,7 @@ inline void msdos_int_2eh()
 	
 	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	cmd_line->len = (UINT8)strlen(opt);
-	strcpy(cmd_line->cmd, opt);
+	my_strcpy_s(cmd_line->cmd, sizeof(cmd_line->cmd), opt);
 	cmd_line->cmd[cmd_line->len] = 0x0d;
 	
 	try {
@@ -18599,7 +18685,7 @@ inline void msdos_int_2fh_12h()
 	case 0x11:
 		{
 			char path[MAX_PATH], *p;
-			strcpy(path, (char *)(mem + CPU_DS_BASE + CPU_SI));
+			my_strcpy_s(path, sizeof(path), (char *)(mem + CPU_DS_BASE + CPU_SI));
 			msdos_strupr(path);
 			while((p = my_strchr(path, '/')) != NULL) {
 				*p = '\\';
@@ -18990,7 +19076,7 @@ inline void msdos_int_2fh_16h()
 		CPU_CX = (UINT16)strlen(reg_file_path);
 		break;
 	case 0x14:
-		strcpy(reg_file_path, (char *)(mem + CPU_ES_BASE + CPU_SI));
+		my_strcpy_s(reg_file_path, sizeof(reg_file_path), (char *)(mem + CPU_ES_BASE + CPU_SI));
 		CPU_AX = 0x0000;
 		break;
 #endif
@@ -19694,12 +19780,12 @@ inline void msdos_int_2fh_aeh()
 			char *token = my_strtok(tmp, " ");
 			for(; token && argc < 2;) {
 				if(strlen(token) != 0) {
-					strcpy(argv[argc++], token);
+					my_strcpy_s(argv[argc++], sizeof(argv[0]), token);
 				}
 				token = my_strtok(NULL, " ");
 			}
-			for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
-				fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+			for(int i = 0, tmp_ofs = 24; i < 2; i++, tmp_ofs += 16) {
+				fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + tmp_ofs);
 				if(i < argc) {
 					msdos_init_fcb_in_psp(fcb, argv[i]);
 				} else {
@@ -21206,9 +21292,10 @@ inline void atok_int_6fh_66h()
 
 void msdos_xms_init()
 {
-	emb_handle_top = (emb_handle_t *)calloc(1, sizeof(emb_handle_t));
-	emb_handle_top->address = EMB_TOP;
-	emb_handle_top->size_kb = (EMB_END - EMB_TOP) >> 10;
+	if((emb_handle_top = (emb_handle_t *)calloc(1, sizeof(emb_handle_t))) != NULL) {
+		emb_handle_top->address = EMB_TOP;
+		emb_handle_top->size_kb = (EMB_END - EMB_TOP) >> 10;
+	}
 	xms_a20_local_enb_count = 0;
 }
 
@@ -21267,14 +21354,16 @@ void msdos_xms_split_emb_handle(emb_handle_t *emb_handle, int size_kb)
 	if(emb_handle->size_kb > size_kb) {
 		emb_handle_t *new_handle = (emb_handle_t *)calloc(1, sizeof(emb_handle_t));
 		
-		new_handle->address = emb_handle->address + size_kb * 1024;
-		new_handle->size_kb = emb_handle->size_kb - size_kb;
-		emb_handle->size_kb = size_kb;
-		
-		new_handle->prev = emb_handle;
-		new_handle->next = emb_handle->next;
-		if(emb_handle->next != NULL) {
-			emb_handle->next->prev = new_handle;
+		if(new_handle != NULL) {
+			new_handle->address = emb_handle->address + size_kb * 1024;
+			new_handle->size_kb = emb_handle->size_kb - size_kb;
+			emb_handle->size_kb = size_kb;
+			
+			new_handle->prev = emb_handle;
+			new_handle->next = emb_handle->next;
+			if(emb_handle->next != NULL) {
+				emb_handle->next->prev = new_handle;
+			}
 		}
 		emb_handle->next = new_handle;
 	}
@@ -21618,6 +21707,8 @@ inline void msdos_call_xms_0eh()
 void msdos_call_xms_0fh(int size_kb)
 {
 	emb_handle_t *emb_handle = msdos_xms_get_emb_handle(CPU_DX);
+	emb_handle_t *new_handle = NULL;
+	UINT8 *buffer = NULL;
 	
 	if(emb_handle == NULL) {
 		CPU_AX = 0x0000;
@@ -21635,17 +21726,24 @@ void msdos_call_xms_0fh(int size_kb)
 			} else {
 				int old_handle = emb_handle->handle;
 				int old_size_kb = emb_handle->size_kb;
-				UINT8 *buffer = (UINT8 *)malloc(old_size_kb * 1024);
 				
-				memcpy(buffer, mem + emb_handle->address, old_size_kb * 1024);
-				msdos_xms_free_emb_handle(emb_handle);
-				
-				if((emb_handle = msdos_xms_alloc_emb_handle(size_kb)) == NULL) {
-					emb_handle = msdos_xms_alloc_emb_handle(old_size_kb); // should be always successed
+				if((buffer = (UINT8 *)malloc(old_size_kb * 1024)) == NULL) {
+					CPU_AX = 0x0000;
+					CPU_BL = 0xa0;
+					return;
 				}
-				emb_handle->handle = old_handle;
-				memcpy(mem + emb_handle->address, buffer, old_size_kb * 1024);
+				if((new_handle = msdos_xms_alloc_emb_handle(size_kb)) == NULL) {
+					free(buffer);
+					CPU_AX = 0x0000;
+					CPU_BL = 0xa0;
+					return;
+				}
+				memcpy(buffer, mem + emb_handle->address, old_size_kb * 1024);
+				memcpy(mem + new_handle->address, buffer, old_size_kb * 1024);
 				free(buffer);
+				msdos_xms_free_emb_handle(emb_handle);
+				new_handle->handle = old_handle;
+				emb_handle = new_handle;
 			}
 		} else if(emb_handle->size_kb > size_kb) {
 			msdos_xms_split_emb_handle(emb_handle, size_kb);
@@ -21796,6 +21894,17 @@ UINT16 msdos_get_equipment()
 //		}
 	}
 	return(equip);
+}
+
+int msdos_get_total_hard_drives()
+{
+	int num = 0;
+	for(int i = 2; i < 26; i++) {
+		if(MyGetDriveType(i) == DRIVE_FIXED) {
+			num++;
+		}
+	}
+	return(num);
 }
 
 inline void msdos_inc_indos()
@@ -22008,6 +22117,7 @@ void msdos_syscall(unsigned num)
 		// PC BIOS - Disk I/O
 		{
 			static UINT8 last = 0x00;
+			CPU_SET_C_FLAG(0);
 			switch(CPU_AH) {
 			case 0x00: pcbios_int_13h_00h(); break;
 			case 0x01: // get last status
@@ -22955,11 +23065,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 //		msdos_file_handler_open(4, "STDPRN", 0, 1, 0xa8c0, 0, 0, 1); // LPT1
 		msdos_file_handler_open(4, "STDPRN", 0, 1, 0x80a0, 0, 0, 1); // LPT1
 	}
-	_dup2(0, DUP_STDIN);
-	_dup2(1, DUP_STDOUT);
-	_dup2(2, DUP_STDERR);
-	_dup2(3, DUP_STDAUX);
-	_dup2(4, DUP_STDPRN);
+	int res;
+	res = _dup2(0, DUP_STDIN);
+	res = _dup2(1, DUP_STDOUT);
+	res = _dup2(2, DUP_STDERR);
+	res = _dup2(3, DUP_STDAUX);
+	res = _dup2(4, DUP_STDPRN);
 	
 	// init mouse
 #if 0
@@ -23055,6 +23166,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	*(UINT8  *)(mem + 0x465) = 0x09;
 	*(UINT32 *)(mem + 0x46c) = get_ticks_since_midnight();
 	*(UINT16 *)(mem + 0x472) = 0x4321; // preserve memory in cpu reset
+	*(UINT8  *)(mem + 0x475) = msdos_get_total_hard_drives();
 	*(UINT8  *)(mem + 0x478) = 1; // lpt1 timeout
 	*(UINT8  *)(mem + 0x479) = 1; // lpt2 timeout
 	*(UINT8  *)(mem + 0x47a) = 1; // lpt3 timeout
@@ -23164,52 +23276,51 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	if(GetEnvironmentVariableW(L"MSDOS_APPEND", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-			strcpy(env_append, short_path);
+			my_strcpy_s(env_append, sizeof(env_append), short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"APPEND", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_append[0] != '\0') {
-				strcat(env_append, ";");
+				my_strcat_s(env_append, sizeof(env_append), ";");
 			}
-			strcat(env_append, short_path);
-			strcpy(env_append, short_path);
+			my_strcat_s(env_append, sizeof(env_append), short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"MSDOS_PATH", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-			strcpy(env_msdos_path, short_path);
-			strcpy(env_path, short_path);
+			my_strcpy_s(env_msdos_path, sizeof(env_msdos_path), short_path);
+			my_strcpy_s(env_path, sizeof(env_path), short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"PATH", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_path[0] != '\0') {
-				strcat(env_path, ";");
+				my_strcat_s(env_path, sizeof(env_path), ";");
 			}
-			strcat(env_path, short_path);
+			my_strcat_s(env_path, sizeof(env_path), short_path);
 		}
 	}
 	
 	if((path = msdos_search_command_com(argv[0], env_path)) != NULL) {
 		if((short_path = msdos_short_path(path)) != NULL && short_path[0] != '\0') {
-			strcpy(comspec_path, short_path);
+			my_strcpy_s(comspec_path, sizeof(comspec_path), short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"MSDOS_COMSPEC", wc_path, ENV_SIZE) != 0 && _waccess(wc_path, 0) == 0)  {
 		if((short_path = msdos_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-			strcpy(comspec_path, short_path);
+			my_strcpy_s(comspec_path, sizeof(comspec_path), short_path);
 		}
 	}
 	
 	if(GetTempPathW(ENV_SIZE, wc_path) != 0) {
-		strcpy(env_temp, msdos_short_path(wc_path));
+		my_strcpy_s(env_temp, sizeof(env_temp), msdos_short_path(wc_path));
 	}
 	for(int i = 0; i < 4; i++) {
 		static const wchar_t *name[4] = {L"MSDOS_TEMP", L"MSDOS_TMP", L"TEMP", L"TMP"};
 		if(GetEnvironmentVariableW(name[i], wc_path, ENV_SIZE) != 0 && _waccess(wc_path, 0) == 0)  {
 			if((short_path = msdos_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-				strcpy(env_temp, short_path);
+				my_strcpy_s(env_temp, sizeof(env_temp), short_path);
 				break;
 			}
 		}
@@ -23226,7 +23337,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			if(tmp[i] == '=') {
 				value = tmp + i + 1;
 				name[i] = '\0';
-				sprintf(name2, ";%s;", name);
+				my_snprintf(name2, sizeof(name2), ";%s;", name);
 				break;
 			} else if(tmp[i] >= 'a' && tmp[i] <= 'z') {
 				name[i] = (tmp[i] - 'a') + 'A';
@@ -23368,7 +23479,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 				LONG result = RegEnumKeyExA(hKey, i, reg_name, &(size = array_length(reg_name)), NULL, NULL, NULL, &ftTime);
 				
 				if(result == ERROR_SUCCESS) {
-					sprintf(sub_key, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Time Zones\\%s", reg_name);
+					my_snprintf(sub_key, sizeof(sub_key), "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Time Zones\\%s", reg_name);
 					if(RegOpenKeyExA(HKEY_LOCAL_MACHINE, sub_key, 0, KEY_QUERY_VALUE, &hSubKey) == ERROR_SUCCESS) {
 						if(RegQueryValueExA(hSubKey, "Std", NULL, NULL, (LPBYTE)std_name, &(size = array_length(std_name))) == ERROR_SUCCESS) {
 							// search english timezone name from table
@@ -23376,10 +23487,10 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 								for(int j = 0; j < array_length(tz_table); j++) {
 									if(strcmp(reg_name, tz_table[j].name) == 0 && (tz_table[j].lcid == 0 || tz_table[j].lcid == GetUserDefaultLCID())) {
 										if(tz_table[j].std != NULL) {
-											strcpy(tz_std, tz_table[j].std);
+											my_strcpy_s(tz_std, sizeof(tz_std), tz_table[j].std);
 										}
 										if(tz_table[j].dlt != NULL) {
-											strcpy(tz_dlt, tz_table[j].dlt);
+											my_strcpy_s(tz_dlt, sizeof(tz_dlt), tz_table[j].dlt);
 										}
 										tz_added = 1;
 										break;
@@ -23396,12 +23507,12 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			RegCloseKey(hKey);
 		}
 		if((tzi.Bias % 60) != 0) {
-			sprintf(tz_value, "%s%ld:%2ld", tz_std, tzi.Bias / 60, abs(tzi.Bias % 60));
+			my_snprintf(tz_value, sizeof(tz_value), "%s%ld:%2ld", tz_std, tzi.Bias / 60, abs(tzi.Bias % 60));
 		} else {
-			sprintf(tz_value, "%s%ld", tz_std, tzi.Bias / 60);
+			my_snprintf(tz_value, sizeof(tz_value), "%s%ld", tz_std, tzi.Bias / 60);
 		}
 		if(daylight) {
-			strcat(tz_value, tz_dlt);
+			my_strcat_s(tz_value, sizeof(tz_value), tz_dlt);
 		}
 		SET_ENV("TZ", tz_value);
 	}
@@ -23712,8 +23823,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	param->fcb2.w.l = 40;
 	param->fcb2.w.h = (WORK_TOP >> 4);
 	
-	for(int i = 0, ofs = 24; i < 2; i++, ofs += 16) {
-		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + ofs);
+	for(int i = 0, tmp_ofs = 24; i < 2; i++, tmp_ofs += 16) {
+		fcb_t *fcb = (fcb_t *)(mem + WORK_TOP + tmp_ofs);
 		if(i + 1 < argc) {
 			msdos_init_fcb_in_psp(fcb, argv[i + 1]);
 		} else {
@@ -23724,18 +23835,18 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	cmd_line_t *cmd_line = (cmd_line_t *)(mem + WORK_TOP + 56);
 	if(argc > 1) {
 		if(my_strchr(argv[1], ' ')) {
-			sprintf(cmd_line->cmd, " \"%s\"", argv[1]);
+			my_snprintf(cmd_line->cmd, sizeof(cmd_line->cmd), " \"%s\"", argv[1]);
 		} else {
-			sprintf(cmd_line->cmd, " %s", argv[1]);
+			my_snprintf(cmd_line->cmd, sizeof(cmd_line->cmd), " %s", argv[1]);
 		}
 		for(int i = 2; i < argc; i++) {
 			char tmp[128];
 			if(my_strchr(argv[i], ' ')) {
-				sprintf(tmp, "%s \"%s\"", cmd_line->cmd, argv[i]);
+				my_snprintf(tmp, sizeof(tmp), "%s \"%s\"", cmd_line->cmd, argv[i]);
 			} else {
-				sprintf(tmp, "%s %s", cmd_line->cmd, argv[i]);
+				my_snprintf(tmp, sizeof(tmp), "%s %s", cmd_line->cmd, argv[i]);
 			}
-			strcpy(cmd_line->cmd, tmp);
+			my_strcpy_s(cmd_line->cmd, sizeof(cmd_line->cmd), tmp);
 		}
 		cmd_line->len = (UINT8)strlen(cmd_line->cmd);
 	} else {
@@ -23762,7 +23873,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	for(int i = 0; i < 2; i++) {
 		// may be a floppy drive
 		cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * i);
-		sprintf(cds->path_name, "%c:\\", 'A' + i);
+		my_snprintf(cds->path_name, sizeof(cds->path_name), "%c:\\", 'A' + i);
 		cds->drive_attrib = 0x4000;	// physical drive
 		cds->dpb_ptr.w.l = (UINT16)(sizeof(dpb_t) * i);
 		cds->dpb_ptr.w.h = DPB_TOP >> 4;
@@ -23781,8 +23892,8 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			cds_t *cds = (cds_t *)(mem + CDS_TOP + sizeof(cds_t) * i);
 			my_chdir(cds->path_name);
 		}
-		UINT16 seg, ofs;
-		msdos_drive_param_block_update(i, &seg, &ofs, 1);
+		UINT16 tmp_seg, tmp_ofs;
+		msdos_drive_param_block_update(i, &tmp_seg, &tmp_ofs, 1);
 	}
 	
 	// load device drivers specified with -ld
@@ -24783,20 +24894,23 @@ UINT8 pio_read(int c, UINT32 addr)
 
 void printer_out(int c, UINT8 data)
 {
-	SYSTEMTIME time;
+	SYSTEMTIME time = {0};
 	bool jis_mode = false;
 	
 	GetLocalTime(&time);
 	
 	if(pio[c].fp != NULL) {
 		// if at least 1000ms passed from last written, close the current file
-		FILETIME ftime1;
-		FILETIME ftime2;
+		FILETIME ftime1 = {0};
+		FILETIME ftime2 = {0};
 		SystemTimeToFileTime(&pio[c].time, &ftime1);
 		SystemTimeToFileTime(&time, &ftime2);
-		INT64 *time1 = (INT64 *)&ftime1;
-		INT64 *time2 = (INT64 *)&ftime2;
-		INT64 msec = (*time2 - *time1) / 10000;
+		ULARGE_INTEGER u1, u2;
+		u1.LowPart  = ftime1.dwLowDateTime;
+		u1.HighPart = ftime1.dwHighDateTime;
+		u2.LowPart  = ftime2.dwLowDateTime;
+		u2.HighPart = ftime2.dwHighDateTime;
+		INT64 msec = (u2.QuadPart - u1.QuadPart) / 10000;
 		
 		if(msec >= 1000) {
 			if(pio[c].jis_mode) {
@@ -24812,11 +24926,11 @@ void printer_out(int c, UINT8 data)
 		// create a new file in the temp folder
 		char file_name[MAX_PATH];
 		
-		sprintf(file_name, "%d-%0.2d-%0.2d_%0.2d-%0.2d-%0.2d.PRN", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
+		my_snprintf(file_name, sizeof(file_name), "%u-%0.2u-%0.2u_%0.2u-%0.2u-%0.2u.PRN", time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
 		if(GetTempPathA(MAX_PATH, pio[c].path)) {
-			strcat(pio[c].path, file_name);
+			my_strcat_s(pio[c].path, sizeof(pio[c].path), file_name);
 		} else {
-			strcpy(pio[c].path, file_name);
+			my_strcpy_s(pio[c].path, sizeof(pio[c].path), file_name);
 		}
 		pio[c].fp = fopen(pio[c].path, "w+b");
 	}
@@ -24924,21 +25038,20 @@ void pit_write(int ch, UINT8 val)
 					pit_latch_count(ch);
 				}
 			}
-			break;
-		}
-		ch = (val >> 6) & 3;
-		if(val & 0x30) {
-			static const int modes[8] = {0, 1, 2, 3, 4, 5, 2, 3};
-			pit[ch].mode = modes[(val >> 1) & 7];
-			pit[ch].count_latched = 0;
-			pit[ch].low_read = pit[ch].high_read = 0;
-			pit[ch].low_write = pit[ch].high_write = 0;
-			pit[ch].ctrl_reg = val;
-			// stop count
-			pit[ch].prev_time = pit[ch].expired_time = 0;
-			pit[ch].count_reg = 0;
-		} else if(!pit[ch].count_latched) {
-			pit_latch_count(ch);
+		} else if((ch = (val >> 6) & 3) < 3) { // NOTE: this is always true, only for avoiding warnings of code analysis
+			if(val & 0x30) {
+				static const int modes[8] = {0, 1, 2, 3, 4, 5, 2, 3};
+				pit[ch].mode = modes[(val >> 1) & 7];
+				pit[ch].count_latched = 0;
+				pit[ch].low_read = pit[ch].high_read = 0;
+				pit[ch].low_write = pit[ch].high_write = 0;
+				pit[ch].ctrl_reg = val;
+				// stop count
+				pit[ch].prev_time = pit[ch].expired_time = 0;
+				pit[ch].count_reg = 0;
+			} else if(!pit[ch].count_latched) {
+				pit_latch_count(ch);
+			}
 		}
 		break;
 	}
@@ -25390,7 +25503,7 @@ DWORD WINAPI sio_thread(void *lpx)
 	char name[] = "COM1";
 	name[3] = '0' + sio_port_number[p->channel];
 	HANDLE hComm = NULL;
-	COMMPROP commProp;
+	COMMPROP commProp = {0};
 	DCB dcb;
 	DWORD dwSettableBaud = 0xffb; // 75, 110, 150, 300, 600, 1200, 1800, 2400, 4800, 7200, and 9600bps
 	BYTE bytBuffer[SIO_BUFFER_SIZE];
@@ -25909,7 +26022,7 @@ void kbd_write_command(UINT8 val)
 
 void beep_init()
 {
-	hWaveOut = NULL;
+	hwo = NULL;
 	ZeroMemory(&wfe, sizeof(wfe));
 	ZeroMemory(whdr, sizeof(whdr));
 	beep_freq = 0;
@@ -25925,14 +26038,14 @@ void beep_release()
 {
 	void *buf = (void *)whdr[0].lpData;
 	
-	if(hWaveOut != NULL) {
+	if(hwo != NULL) {
 		if(beep_playing) {
 			whdr[0].dwUser = 1; // stop
-			waveOutReset(hWaveOut);
+			waveOutReset(hwo);
 		}
-		waveOutUnprepareHeader(hWaveOut, &whdr[0], sizeof(WAVEHDR));
-		waveOutUnprepareHeader(hWaveOut, &whdr[1], sizeof(WAVEHDR));
-		waveOutClose(hWaveOut);
+		waveOutUnprepareHeader(hwo, &whdr[0], sizeof(WAVEHDR));
+		waveOutUnprepareHeader(hwo, &whdr[1], sizeof(WAVEHDR));
+		waveOutClose(hwo);
 	}
 	if(buf) {
 		free(buf);
@@ -25958,21 +26071,21 @@ void beep_update()
 		}
 	}
 	if(freq >= 20 && freq <= (BEEP_SAMPLE_RATE / 2)) {
-		if(hWaveOut == NULL) {
+		if(hwo == NULL) {
 			wfe.wFormatTag = WAVE_FORMAT_PCM;
 			wfe.nChannels = 1;
 			wfe.wBitsPerSample = 8;
 			wfe.nBlockAlign = wfe.nChannels * wfe.wBitsPerSample / 8;
 			wfe.nSamplesPerSec = BEEP_SAMPLE_RATE;
 			wfe.nAvgBytesPerSec = wfe.nSamplesPerSec * wfe.nBlockAlign;
-			if(waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfe, (DWORD_PTR)WaveOutProc, 0, CALLBACK_FUNCTION) == MMSYSERR_NOERROR && hWaveOut != NULL) {
+			if(waveOutOpen(&hwo, WAVE_MAPPER, &wfe, (DWORD_PTR)WaveOutProc, 0, CALLBACK_FUNCTION) == MMSYSERR_NOERROR && hwo != NULL) {
 				if((whdr[0].lpData = (LPSTR)malloc(wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS * 2)) != NULL) {
 					whdr[1].lpData = (LPSTR)((BYTE *)whdr[0].lpData + wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS);
 					for(int i = 0; i < 2; i++) {
 						whdr[i].dwBufferLength = wfe.nAvgBytesPerSec * BEEP_BUFLEN_SECS;
 						whdr[i].dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
 						whdr[i].dwLoops = 1;
-						waveOutPrepareHeader(hWaveOut, &whdr[i], sizeof(WAVEHDR));
+						waveOutPrepareHeader(hwo, &whdr[i], sizeof(WAVEHDR));
 					}
 				}
 			}
@@ -26006,18 +26119,18 @@ void beep_update()
 			beep_freq = freq;
 		}
 		if(!beep_playing) {
-			if(hWaveOut != NULL) {
+			if(hwo != NULL) {
 				whdr[0].dwUser = 0; // play
-				waveOutWrite(hWaveOut, &whdr[0], sizeof(WAVEHDR));
-				waveOutWrite(hWaveOut, &whdr[1], sizeof(WAVEHDR));
+				waveOutWrite(hwo, &whdr[0], sizeof(WAVEHDR));
+				waveOutWrite(hwo, &whdr[1], sizeof(WAVEHDR));
 			}
 			beep_playing = true;
 		}
 	} else {
 		if(beep_playing) {
-			if(hWaveOut != NULL) {
+			if(hwo != NULL) {
 				whdr[0].dwUser = 1; // stop
-				waveOutReset(hWaveOut);
+				waveOutReset(hwo);
 			}
 			beep_playing = false;
 		}
@@ -26658,7 +26771,7 @@ void cmd_req(char func)
 			char *CmdLine = (char *)(mem + (DataStruct->CmdLineSeg << 4) + DataStruct->CmdLineOff);
 			char *AppName = (char *)(mem + (DataStruct->AppNameSeg << 4) + DataStruct->AppNameOff);
 
-			process_t *_process = msdos_process_info_get(current_psp);
+			process_t *process = msdos_process_info_get(current_psp);
 			psp_t *psp = (psp_t *)(mem + (current_psp << 4));
 			mcb_t *mcb_psp = (mcb_t *)(mem + ((current_psp - 1) << 4));
 			mcb_t *mcb_env = (mcb_t *)(mem + ((psp->env_seg - 1) << 4));
@@ -26674,8 +26787,8 @@ void cmd_req(char func)
 					DataStruct->NumDrives++;
 				}
 			}
-			if(_process != NULL && strlen(_process->module_dir) + 1 + strlen(_process->module_path) < DataStruct->AppNameLen) {
-				sprintf(AppName, "%s\\%s", _process->module_dir, _process->module_path);
+			if(process != NULL && strlen(process->module_dir) + 1 + strlen(process->module_path) < DataStruct->AppNameLen) {
+				sprintf(AppName, "%s\\%s", process->module_dir, process->module_path);
 			} else {
 				strcpy(AppName, mcb_psp->prog_name);
 			}
@@ -26708,7 +26821,7 @@ void cmd_req(char func)
 		{
 			int ret;
 			char command[MAX_PATH];
-			_snprintf(command, MAX_PATH, "cmd.exe /c %s", (const char *)(mem + CPU_DS_BASE + CPU_SI));
+			my_snprintf(command, sizeof(command), "cmd.exe /c %s", (const char *)(mem + CPU_DS_BASE + CPU_SI));
 			while(strlen(command) > 0 && (command[strlen(command) - 1] == '\r' || command[strlen(command) - 1] == '\n')) {
 				command[strlen(command) - 1] = '\0';
 			}
@@ -26770,7 +26883,7 @@ void vdd_finish()
 		if (vdd_mem) {
 			for (DWORD page = 0; page < MAX_MEM_PAGE; page++) {
 				if ((vdd_mem + page)->mem) {
-					VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+					VirtualFree((vdd_mem + page)->mem, 0, MEM_RELEASE);
 					(vdd_mem + page)->mem = NULL;
 				}
 				(vdd_mem + page)->hvdd = NULL;
@@ -26824,9 +26937,9 @@ void vdd_req(char func)
 				CPU_AX = GetLastError();
 				return;
 			}
-			VDD_FUNC_TABLE func;
-			vdd_init_table(&func);
-			pfnSetFuncTable(&func);
+			VDD_FUNC_TABLE func_table;
+			vdd_init_table(&func_table);
+			pfnSetFuncTable(&func_table);
 		}
 		LPCSTR dll = (LPCSTR)(mem + CPU_DS_BASE + CPU_SI);
 		LPCSTR init = (LPCSTR)(mem + CPU_ES_BASE + CPU_DI);
@@ -27611,7 +27724,7 @@ BOOL VDDDeInstallMemoryHook(HANDLE hvdd, PVOID addr, DWORD size)
 	for (DWORD page = first; page <= last; page++) {
 		if ((vdd_mem + page)->hvdd == hvdd) {
 			if ((vdd_mem + page)->mem) {
-				VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+				VirtualFree((vdd_mem + page)->mem, 0, MEM_RELEASE);
 				(vdd_mem + page)->mem = NULL;
 			}
 			(vdd_mem + page)->hvdd = NULL;
@@ -27659,7 +27772,7 @@ BOOL VDDFreeMem(HANDLE hvdd, PVOID addr, DWORD size)
 	}
 	for (DWORD page = first; page <= last; page++) {
 		if ((vdd_mem + page)->mem) {
-			VirtualFree((vdd_mem + page)->mem, 0x1000, MEM_DECOMMIT);
+			VirtualFree((vdd_mem + page)->mem, 0, MEM_RELEASE);
 			(vdd_mem + page)->mem = NULL;
 		}
 	}
@@ -27833,7 +27946,7 @@ DWORD VDDRequestDMA(HANDLE hvdd, WORD ch, PVOID buf, DWORD len)
 					dma[c].tc |= bit;
 				}
 			} else {
-				UINT32 addr = dma[c].ch[ch].areg.w | (dma[c].ch[ch].pagereg << 16);
+				UINT32 dma_addr = dma[c].ch[ch].areg.w | (dma[c].ch[ch].pagereg << 16);
 				
 				if((dma[c].ch[ch].mode & 0x0c) == 0x00) {
 					// verify
@@ -27842,21 +27955,21 @@ DWORD VDDRequestDMA(HANDLE hvdd, WORD ch, PVOID buf, DWORD len)
 					if(c == 0) {
 						dma[c].tmp = *buffer++;
 						remain--;
-						write_byte(addr, dma[c].tmp);
+						write_byte(dma_addr, dma[c].tmp);
 					} else {
 						dma[c].tmp  = *buffer++;
 						dma[c].tmp |= *buffer++ < 8;
 						remain -= 2;
-						write_word(addr << 1, dma[c].tmp);
+						write_word(dma_addr << 1, dma[c].tmp);
 					}
 				} else if((dma[c].ch[ch].mode & 0x0c) == 0x08) {
 					// memory -> io
 					if(c == 0) {
-						dma[c].tmp = read_byte(addr);
+						dma[c].tmp = read_byte(dma_addr);
 						*buffer++ = dma[c].tmp;
 						remain--;
 					} else {
-						dma[c].tmp = read_word(addr << 1);
+						dma[c].tmp = read_word(dma_addr << 1);
 						*buffer++ = dma[c].tmp;
 						*buffer++ = dma[c].tmp >> 8;
 						remain -= 2;
@@ -28394,7 +28507,7 @@ DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg)
 	mcb_t *mcb_driver, *mcb_driver_config;
 	const char *tmp;
 
-	strcpy(DriveFilePath, DriverFile);
+	my_strcpy_s(DriveFilePath, sizeof(DriveFilePath), DriverFile);
 	if(my_access(DriveFilePath, 0) != 0 && my_strchr(DriverFile, ':') == NULL && my_strchr(DriverFile, '\\') == NULL) {
 		// Search path in parent environments
 		const char *env = msdos_env_get(env_seg, "PATH");
@@ -28406,11 +28519,11 @@ DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg)
 				token[len] = '\0';
 				env = tmp + 1;
 			} else {
-				strcpy(token, env);
+				my_strcpy_s(token, sizeof(token), env);
 				env += strlen(env);
 			}
 			if(token[0] != '\0') {
-				strcpy(DriveFilePath, msdos_combine_path(token, DriverFile));
+				my_strcpy_s(DriveFilePath, sizeof(DriveFilePath), msdos_combine_path(token, DriverFile));
 				if(my_access(DriveFilePath, 0) == 0) {
 					break;
 				}
@@ -28517,7 +28630,7 @@ DWORD DosLoadDriver(LPCSTR DriverFile, int env_seg)
 					"Initialization routine returned error %u.\n",
 					Driver.w.h,
 					Driver.w.l,
-					Request.Header.Status & 0x7F);
+					(WORD)(Request.Header.Status & 0x7F));
 			}
 		}
 		else
@@ -28548,7 +28661,7 @@ Cleanup:
 	if (FileMapping != NULL) CloseHandle(FileMapping);
 
 	/* Close the file handle */
-	if (FileHandle != INVALID_HANDLE_VALUE) CloseHandle(FileHandle);
+	if (FileHandle != NULL && FileHandle != INVALID_HANDLE_VALUE) CloseHandle(FileHandle);
 
 	return Result;
 }
