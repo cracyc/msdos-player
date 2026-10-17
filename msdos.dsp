@@ -761,6 +761,94 @@ LINK32=link.exe
 # Begin Group "Source Files"
 
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+# Begin Group "np21w Printer SourceFiles"
+
+# PROP Default_Filter ""
+# Begin Group "codecnv"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\eucsjis.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\eucucs2.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\sjiseuc.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\sjisucs2.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\tcswap16.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\tcswap32.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\textcnv.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\ucs2sjis.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\ucs2utf8.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\utf8ucs2.cpp
+# End Source File
+# End Group
+# Begin Group "print"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=.\np21_print\print\cmdparser.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmbase.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmescp.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmpr201.cpp
+# End Source File
+# End Group
+# Begin Source File
+
+SOURCE=.\np21_print\cmbase.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmfile.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmpara.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmpipe.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmspooler.cpp
+# End Source File
+# End Group
 # Begin Source File
 
 SOURCE=.\msdos.cpp
@@ -769,6 +857,66 @@ SOURCE=.\msdos.cpp
 # Begin Group "Header Files"
 
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
+# Begin Group "np21w Printer Header Files"
+
+# PROP Default_Filter ""
+# Begin Group "codecnv Header Files"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\codecnv.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\codecnv\textcnv.h
+# End Source File
+# End Group
+# Begin Group "print Header Files"
+
+# PROP Default_Filter ""
+# Begin Source File
+
+SOURCE=.\np21_print\print\cmdparser.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmbase.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmescp.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\print\pmpr201.h
+# End Source File
+# End Group
+# Begin Source File
+
+SOURCE=.\np21_print\cmbase.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmfile.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmpara.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmpipe.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\cmspooler.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\np21_print\commng.h
+# End Source File
+# End Group
 # Begin Source File
 
 SOURCE=.\common.h

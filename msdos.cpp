@@ -4496,9 +4496,14 @@ int main(int argc, char *argv[], char *envp[])
 			if(buffer[12] != 0) {
 				max_files = buffer[12];
 			}
-			if(buffer[13] >= VIDEO_CARD_MDA && buffer[13] <= VIDEO_CARD_VGA) {
-				video_card_type = buffer[13];
+			if((buffer[13] & 0x0f) >= VIDEO_CARD_MDA && (buffer[13] & 0x0f) <= VIDEO_CARD_VGA) {
+				video_card_type = buffer[13] & 0x0f;
 			}
+			if(((buffer[13] >> 4) & 0x07) >= PRINTER_NONE && ((buffer[13] >> 4) & 0x07) <= PRINTER_PIPE) {
+				printer_type = (buffer[13] >> 4) & 0x07;
+			}
+			enable_sjis2jis = ((buffer[13] & 0x80) != 0);
+			
 			int devices_len = buffer[14] | (buffer[15] << 8);
 			int name_len = buffer[16];
 			int file_len = buffer[17] | (buffer[18] << 8) | (buffer[19] << 16) | (buffer[20] << 24);
@@ -4567,6 +4572,33 @@ int main(int argc, char *argv[], char *envp[])
 				my_strcpy_s(new_exec_file, sizeof(new_exec_file), "new_exec_file.exe");
 			}
 			convert_cmd_file = true;
+			arg_offset++;
+#ifdef SUPPORT_NP21W_PRINTER
+		} else if(_strnicmp(argv[i], "-pd", 3) == 0) {
+			printer_type = PRINTER_LPT1;
+			arg_offset++;
+		} else if(_strnicmp(argv[i], "-pe", 3) == 0) {
+			printer_type = PRINTER_ESCP;
+			arg_offset++;
+#ifdef SUPPORT_PRINT_PR201
+		} else if(_strnicmp(argv[i], "-pp", 3) == 0) {
+			printer_type = PRINTER_PCPR201;
+			arg_offset++;
+#endif
+#ifdef SUPPORT_NAMED_PIPE
+		} else if(_strnicmp(argv[i], "-pn", 3) == 0) {
+			printer_type = PRINTER_PCPR201;
+			_tcscpy_s(pipename, array_length(pipename), &argv[i][3]);
+			TCHAR *ptr = _tcschr(pipename, _T(','));
+			if(ptr != NULL) {
+				*ptr = _T('\0');
+				_tcscpy_s(pipeserv, array_length(pipeserv), ptr + 1);
+			}
+			arg_offset++;
+#endif
+#endif
+		} else if(_strnicmp(argv[i], "-pj", 3) == 0) {
+			enable_sjis2jis = true;
 			arg_offset++;
 		} else if(_strnicmp(argv[i], "-p", 2) == 0) {
 			if(IS_NUMERIC(argv[i][2])) {
@@ -4694,8 +4726,8 @@ int main(int argc, char *argv[], char *envp[])
 		fprintf(stderr,
 			"Usage:\n\n"
 			"MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]\n"
-			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vm|vc] [-vX.XX] [-wX.XX] [-x] [-a]\n"
-			"      [-ld[(drivers)]] [-l] [-h] (command) [options]\n"
+			"      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-pe|pd] [-pj] [-vm|vc] [-vX.XX]\n"
+			"      [-wX.XX] [-x] [-a] [-ld[(drivers)]] [-l] [-h] (command) [options]\n"
 			"\n"
 			"\t-b\tstay busy during keyboard polling\n"
 #ifdef _WIN64
@@ -4713,6 +4745,9 @@ int main(int argc, char *argv[], char *envp[])
 			"\t-s\tenable serial I/O and set host's COM port numbers\n"
 			"\t-sd\tenable DTR/DSR flow control\n"
 			"\t-sc\tenable RTS/CTS flow control\n"
+			"\t-pe\tenable ESC/P printer emulation\n"
+			"\t-pd\toutput print data to host's LPT1 port directly\n"
+			"\t-pj\tenable Shift JIS to JIS conversion of printer data forcely\n"
 			"\t-vm\tenable MDA only\n"
 			"\t-vc\tenable CGA text mode only\n"
 			"\t-v\tset the DOS version\n"
@@ -4859,7 +4894,7 @@ int main(int argc, char *argv[], char *envp[])
 					fputc((code_page >> 0) & 0xff, fo);
 					fputc((code_page >> 8) & 0xff, fo);
 					fputc(max_files, fo);
-					fputc(video_card_type, fo);
+					fputc((video_card_type & 0x0f) | ((printer_type & 0x07) << 4) | (enable_sjis2jis ? 0x80 : 0), fo);
 					
 					// store devices to load
 					int devices_len = (int)strlen(devices_to_load);
@@ -7568,10 +7603,67 @@ int msdos_write(int fd, const void *buffer, unsigned int count)
 	} else if(fd < process->max_files && file_handler[fd].valid && file_handler[fd].lpt_port >= 1 && file_handler[fd].lpt_port <= 3) {
 		// write to printer port
 		UINT8 *buf = (UINT8 *)buffer;
+#ifdef SUPPORT_NP21W_PRINTER
+		static DWORD prev_time = 0;
+		static bool prev_conv_mode = true;
+		static bool prev_jis_mode = false;
+		static UINT8 prev_sjis_hi = 0;
+		static UINT32 prev_esc_len = 0;
+		static UINT8 prev_esc_buf[8] = {0};
+		DWORD cur_time = timeGetTime();
+		bool conv_mode = false;
+		bool jis_mode = false;
+		UINT8 sjis_hi = 0;
+		UINT32 esc_len = 0;
+		UINT8 esc_buf[8] = {0};
+		
+		if(file_handler[fd].lpt_port == 1) {
+			conv_mode = pio[0].conv_mode;
+			jis_mode = pio[0].jis_mode;
+			sjis_hi = pio[0].sjis_hi;
+			esc_len = pio[0].esc_len;
+			memcpy(esc_buf, pio[0].esc_buf, 8);
+			
+			if(printer_type != PRINTER_NONE && get_output_code_page() == 932) {
+				// enable sjis to jis conversion
+				if(prev_time == 0) {
+					prev_time = cur_time;
+				}
+				if(cur_time - prev_time >= 1000) {
+					prev_conv_mode = true;
+					prev_jis_mode = false;
+					prev_sjis_hi = 0;
+					prev_esc_len = 0;
+					memset(prev_esc_buf, 0, 8);
+				}
+				pio[0].conv_mode = prev_conv_mode;
+				pio[0].jis_mode = prev_jis_mode;
+				pio[0].sjis_hi = prev_sjis_hi;
+				pio[0].esc_len = prev_esc_len;
+				memcpy(pio[0].esc_buf, prev_esc_buf, 8);
+			}
+		}
+#endif
 		for(unsigned int i = 0; i < count; i++) {
 //			printer_out(file_handler[fd].lpt_port - 1, buf[i]);
 			pcbios_printer_out(file_handler[fd].lpt_port - 1, buf[i]);
 		}
+#ifdef SUPPORT_NP21W_PRINTER
+		if(file_handler[fd].lpt_port == 1) {
+			prev_conv_mode = pio[0].conv_mode;
+			prev_jis_mode = pio[0].jis_mode;
+			prev_sjis_hi = pio[0].sjis_hi;
+			prev_esc_len = pio[0].esc_len;
+			memcpy(prev_esc_buf, pio[0].esc_buf, 8);
+			prev_time = timeGetTime();
+			
+			pio[0].conv_mode = conv_mode;
+			pio[0].jis_mode = jis_mode;
+			pio[0].sjis_hi = sjis_hi;
+			pio[0].esc_len = esc_len;
+			memcpy(pio[0].esc_buf, esc_buf, 8);
+		}
+#endif
 		return(count);
 	} else if(fd == 1 && file_handler[1].valid && !file_handler[1].atty) {
 		// CR+LF -> LF
@@ -13358,7 +13450,34 @@ UINT16 pcbios_printer_sjis2jis(UINT16 sjis)
 
 void pcbios_printer_out(int c, UINT8 data)
 {
+	// NOTE: this function considers only ESC/P compatible control code
 	if(pio[c].conv_mode) {
+#ifdef SUPPORT_PRINT_PR201
+		// minimum implementation for PC-PR201 compatible control code
+		if(c == 0 && printer_type == PRINTER_PCPR201) {
+			if(pio[c].sjis_hi != 0) {
+				if(!pio[c].jis_mode) {
+					printer_out(c, 0x1b);
+					printer_out(c, 0x4b);
+					pio[c].jis_mode = true;
+				}
+				UINT16 jis = pcbios_printer_sjis2jis((pio[c].sjis_hi << 8) | data);
+				printer_out(c, jis >> 8);
+				printer_out(c, jis & 0xff);
+				pio[c].sjis_hi = 0;
+			} else if((data >= 0x80 && data <= 0x9f) || (data >= 0xe0 && data <= 0xff)) {
+				pio[c].sjis_hi = data;
+			} else {
+				if(pio[c].jis_mode) {
+					printer_out(c, 0x1b);
+					printer_out(c, 0x48);
+					pio[c].jis_mode = false;
+				}
+				printer_out(c, data);
+			}
+			return;
+		}
+#endif
 		if(pio[c].sjis_hi != 0) {
 			if(!pio[c].jis_mode) {
 				printer_out(c, 0x1c);
@@ -24825,7 +24944,7 @@ void pio_init()
 	for(int c = 0; c < 3; c++) {
 		pio[c].stat = 0xdf;
 		pio[c].ctrl = 0x0c;
-//		pio[c].conv_mode = conv_mode;
+		pio[c].conv_mode = enable_sjis2jis;
 	}
 }
 
@@ -24846,6 +24965,12 @@ void pio_release()
 			pio[c].fp = NULL;
 		}
 	}
+#ifdef SUPPORT_NP21W_PRINTER
+	if(printer != NULL) {
+		printer->release(printer);
+		printer = NULL;
+	}
+#endif
 }
 
 void pio_write(int c, UINT32 addr, UINT8 data)
@@ -24953,7 +25078,100 @@ void printer_out(int c, UINT8 data)
 		}
 		pio[c].time = time;
 	}
+#ifdef SUPPORT_NP21W_PRINTER
+	if(c == 0 && printer_type != PRINTER_NONE) {
+		if(printer == NULL) {
+			COMCFG comcfg = {
+				0, 0, 0x3e, 19200,
+				OEMTEXT(""), OEMTEXT(""), OEMTEXT(""), OEMTEXT(""), 0, 1, OEMTEXT(""), 1000,
+#if defined(SUPPORT_NAMED_PIPE)
+				OEMTEXT("NamedPipeLPT"), OEMTEXT("."),
+#endif
+				OEMTEXT(""), 1000, 1, 130, 1, 0, 0, 0, 100
+			};
+			if(printer_type == PRINTER_ESCP) {
+				comcfg.spoolEmulation = PRINT_EMU_MODE_ESCP;
+				printer = CComSpooler::CreateInstance(&comcfg);
+#ifdef SUPPORT_PRINT_PR201
+			} else if(printer_type == PRINTER_PCPR201) {
+				comcfg.spoolEmulation = PRINT_EMU_MODE_PR201;
+				printer = CComSpooler::CreateInstance(&comcfg);
+#endif
+			} else if(printer_type == PRINTER_LPT1) {
+				printer = CComPara::CreateInstance(1);
+			} else if(printer_type == PRINTER_FILE) {
+				if(GetTempPath(array_length(comcfg.dirpath), comcfg.dirpath)) {
+					printer = CComFile::CreateInstance(comcfg.dirpath, comcfg.fileTimeout);
+				}
+#if defined(SUPPORT_NAMED_PIPE)
+			} else if(printer_type == PRINTER_PIPE) {
+				if(pipename[0] != _T('\0')) {
+					_tcscpy_s(comcfg.pipename, array_length(comcfg.pipename), pipename);
+				}
+				if(pipeserv[0] != _T('\0')) {
+					_tcscpy_s(comcfg.pipeserv, array_length(comcfg.pipeserv), pipeserv);
+				}
+				printer = CComPipe::CreateInstance(comcfg.pipename, comcfg.pipeserv);
+#endif
+			}
+		}
+		if(printer != NULL) {
+			printer->write(printer, (UINT8)data);
+		}
+	}
+#endif
 }
+
+#ifdef SUPPORT_NP21W_PRINTER
+DWORD GetTickCounter()
+{
+	return GetTickCount();
+}
+
+BOOL MyGetDefaultPrinter(LPTSTR pszBuffer, LPDWORD pcchBuffer)
+{
+	BOOL bResult = FALSE;
+	if(is_win2k_or_later) {
+		HMODULE hLibrary = NULL;
+		typedef BOOL (WINAPI* GetDefaultPrinterFunction)(LPTSTR, LPDWORD);
+		GetDefaultPrinterFunction lpfnGetDefaultPrinter = NULL;
+		
+		if((hLibrary = LoadLibrary(_T("winspool.drv"))) != NULL) {
+#ifdef _UNICODE
+			if((lpfnGetDefaultPrinter = reinterpret_cast<GetDefaultPrinterFunction>(::GetProcAddress(hLibrary, "GetDefaultPrinterW"))) != NULL)
+#else
+			if((lpfnGetDefaultPrinter = reinterpret_cast<GetDefaultPrinterFunction>(::GetProcAddress(hLibrary, "GetDefaultPrinterA"))) != NULL)
+#endif
+			{
+				bResult = lpfnGetDefaultPrinter(pszBuffer, pcchBuffer);
+			}
+			FreeLibrary(hLibrary);
+		}
+	} else {
+		TCHAR szDevices[1024];
+		DWORD dwLen = GetProfileString(_T("windows"), _T("device"), _T(""), szDevices, array_length(szDevices));
+		if(dwLen == 0) {
+			SetLastError(ERROR_FILE_NOT_FOUND);
+		} else {
+			LPTSTR pComma = _tcschr(szDevices, _T(','));
+			if(pComma != NULL) {
+				*pComma = _T('\0');
+			}
+			DWORD dwRequired = (DWORD)_tcslen(szDevices) + 1;
+			if(pszBuffer == NULL || *pcchBuffer < dwRequired) {
+				*pcchBuffer = dwRequired;
+				SetLastError(ERROR_INSUFFICIENT_BUFFER);
+			} else {
+				_tcsncpy(pszBuffer, szDevices, *pcchBuffer);
+				pszBuffer[*pcchBuffer - 1] = _T('\0');
+				*pcchBuffer = dwRequired;
+				bResult = TRUE;
+			}
+		}
+	}
+	return bResult;
+}
+#endif
 
 // PIT
 

@@ -24,6 +24,15 @@
 #include "lang_cn.h"
 #include "lang_tw.h"
 
+#ifdef SUPPORT_NP21W_PRINTER
+#include "np21_print/cmfile.h"
+#include "np21_print/cmpara.h"
+#if defined(SUPPORT_NAMED_PIPE)
+#include "np21_print/cmpipe.h"
+#endif
+#include "np21_print/cmspooler.h"
+#endif
+
 #pragma pack(1)
 typedef union {
 	UINT32 dw;
@@ -417,6 +426,25 @@ int pic_ack();
 void pic_update();
 
 // PIO
+
+#define PRINTER_NONE	0
+#define PRINTER_ESCP	1
+#define PRINTER_PCPR201	2
+#define PRINTER_LPT1	3
+#define PRINTER_FILE	4
+#define PRINTER_PIPE	5
+
+UINT8 printer_type = PRINTER_NONE;
+#ifdef SUPPORT_NAMED_PIPE
+TCHAR pipename[MAX_PATH] = {0};
+TCHAR pipeserv[MAX_PATH] = {0};
+#endif
+bool enable_sjis2jis = false;
+
+#ifdef SUPPORT_NP21W_PRINTER
+class CComBase;
+CComBase *printer = NULL;
+#endif
 
 typedef struct {
 	UINT8 data, stat, ctrl;

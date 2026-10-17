@@ -3320,6 +3320,25 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="msdos.cpp" />
+    <ClCompile Include="np21_print\cmbase.cpp" />
+    <ClCompile Include="np21_print\cmfile.cpp" />
+    <ClCompile Include="np21_print\cmpara.cpp" />
+    <ClCompile Include="np21_print\cmpipe.cpp" />
+    <ClCompile Include="np21_print\cmspooler.cpp" />
+    <ClCompile Include="np21_print\codecnv\eucsjis.cpp" />
+    <ClCompile Include="np21_print\codecnv\eucucs2.cpp" />
+    <ClCompile Include="np21_print\codecnv\sjiseuc.cpp" />
+    <ClCompile Include="np21_print\codecnv\sjisucs2.cpp" />
+    <ClCompile Include="np21_print\codecnv\tcswap16.cpp" />
+    <ClCompile Include="np21_print\codecnv\tcswap32.cpp" />
+    <ClCompile Include="np21_print\codecnv\textcnv.cpp" />
+    <ClCompile Include="np21_print\codecnv\ucs2sjis.cpp" />
+    <ClCompile Include="np21_print\codecnv\ucs2utf8.cpp" />
+    <ClCompile Include="np21_print\codecnv\utf8ucs2.cpp" />
+    <ClCompile Include="np21_print\print\cmdparser.cpp" />
+    <ClCompile Include="np21_print\print\pmbase.cpp" />
+    <ClCompile Include="np21_print\print\pmescp.cpp" />
+    <ClCompile Include="np21_print\print\pmpr201.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
@@ -3339,6 +3358,18 @@
     <ClInclude Include="lang_sw.h" />
     <ClInclude Include="lang_tw.h" />
     <ClInclude Include="msdos.h" />
+    <ClInclude Include="np21_print\cmbase.h" />
+    <ClInclude Include="np21_print\cmfile.h" />
+    <ClInclude Include="np21_print\commng.h" />
+    <ClInclude Include="np21_print\cmpara.h" />
+    <ClInclude Include="np21_print\cmpipe.h" />
+    <ClInclude Include="np21_print\cmspooler.h" />
+    <ClInclude Include="np21_print\codecnv\codecnv.h" />
+    <ClInclude Include="np21_print\codecnv\textcnv.h" />
+    <ClInclude Include="np21_print\print\cmdparser.h" />
+    <ClInclude Include="np21_print\print\pmbase.h" />
+    <ClInclude Include="np21_print\print\pmescp.h" />
+    <ClInclude Include="np21_print\print\pmpr201.h" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="vista.manifest" />

@@ -44,6 +44,15 @@
     <Filter Include="Source Files\np21w i386c Source Files\ia32\instructions\ssse3">
       <UniqueIdentifier>{44e89e17-742e-4537-80fb-de3269f0ed7e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\np21w Printer SourceFiles">
+      <UniqueIdentifier>{52fc2ad9-aa61-4bd6-babe-80e9a85ce285}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w Printer SourceFiles\codecnv">
+      <UniqueIdentifier>{1cfcfb17-4e37-49e4-9af2-ef9180dd3338}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\np21w Printer SourceFiles\print">
+      <UniqueIdentifier>{3c35bb17-b1e3-4123-9c95-6d9e1303236e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{d3901fd0-707b-41b0-ba65-8907146ab530}</UniqueIdentifier>
       <Extensions>h</Extensions>
@@ -86,6 +95,15 @@
     </Filter>
     <Filter Include="Header Files\np21w i386c Header Files\ia32\ssse3">
       <UniqueIdentifier>{5e9f3ec0-61ac-4b69-a855-c0d049797a2d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w Printer Header Files">
+      <UniqueIdentifier>{3c033b0a-1ab4-4a06-b5f6-85921c2475b7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w Printer Header Files\codecnv">
+      <UniqueIdentifier>{ac03c8a0-d95e-44c8-a058-11afed48ee4a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\np21w Printer Header Files\print">
+      <UniqueIdentifier>{0d909d24-6bdf-4c42-8294-51221968bc9a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -1136,6 +1154,63 @@
     <ClCompile Include="np21_i386c\ia32\instructions\ssse3\ssse3.cpp">
       <Filter>Source Files\np21w i386c Source Files\ia32\instructions\ssse3</Filter>
     </ClCompile>
+    <ClCompile Include="np21_print\cmbase.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\cmfile.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\cmpara.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\cmpipe.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\cmspooler.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\print\cmdparser.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\print</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\eucsjis.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\eucucs2.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\sjiseuc.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\sjisucs2.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\tcswap16.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\tcswap32.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\textcnv.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\ucs2sjis.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\ucs2utf8.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\codecnv\utf8ucs2.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\codecnv</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\print\pmbase.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\print</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\print\pmescp.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\print</Filter>
+    </ClCompile>
+    <ClCompile Include="np21_print\print\pmpr201.cpp">
+      <Filter>Source Files\np21w Printer SourceFiles\print</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h">
@@ -1308,6 +1383,42 @@
     </ClInclude>
     <ClInclude Include="np21_i386c\ia32\instructions\ssse3\sses3.h">
       <Filter>Header Files\np21w i386c Header Files\ia32\ssse3</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\cmbase.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\cmfile.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\commng.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\cmpara.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\cmpipe.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\cmspooler.h">
+      <Filter>Header Files\np21w Printer Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\codecnv\codecnv.h">
+      <Filter>Header Files\np21w Printer Header Files\codecnv</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\codecnv\textcnv.h">
+      <Filter>Header Files\np21w Printer Header Files\codecnv</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\print\cmdparser.h">
+      <Filter>Header Files\np21w Printer Header Files\print</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\print\pmbase.h">
+      <Filter>Header Files\np21w Printer Header Files\print</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\print\pmescp.h">
+      <Filter>Header Files\np21w Printer Header Files\print</Filter>
+    </ClInclude>
+    <ClInclude Include="np21_print\print\pmpr201.h">
+      <Filter>Header Files\np21w Printer Header Files\print</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
