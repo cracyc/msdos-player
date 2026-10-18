@@ -1,5 +1,5 @@
 MS-DOS Player for Win32-x64 console
-								9/27/2026
+								10/17/2026
 
 ----- What's This
 
@@ -44,8 +44,8 @@ In this case, "COMMAND.COM /C vz.bat readme.doc" will be executed.
 Usage:
 
 MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
-      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-vm|vc] [-vX.XX] [-wX.XX] [-x] [-a]
-      [-ld[(drivers)]] [-l] [-h] (command) [options]
+      [-s[P1[,P2[,P3[,P4]]]]] [-sd] [-sc] [-pe|pd] [-pj] [-vm|vc] [-vX.XX]
+      [-wX.XX] [-x] [-a] [-ld[(drivers)]] [-l] [-h] (command) [options]
 
 	-b	stay busy during keyboard polling
 	-c	convert command file to 32bit or 64bit execution file
@@ -59,6 +59,9 @@ MSDOS [-b] [-c[(new exec file)] [-p[P]]] [-d] [-e] [-fN] [-i] [-m] [-n[L[,C]]]
 	-s	enable serial I/O and set host's COM port numbers
 	-sd	enable DTR/DSR flow control
 	-sc	enable RTS/CTS flow control
+	-pe	enable ESC/P printer emulation
+	-pd	output printer data to LPT1 port
+	-pj	enable Shift JIS to JIS conversion of printer data forcely
 	-vm	enable MDA only
 	-vc	enable CGA text mode only
 	-v	set the DOS version
@@ -134,6 +137,20 @@ Otherwise, virtual RTS pin is internally connected to virtual CTS pin, and
 RTS pin of the host's COM port is always active.
 
 NOTE: The maximum baud rate is limited to 9600bps.
+
+To enable a virtual ESC/P printer, please specify the option '-pe'.
+The virtual ESC/P printer will create an image of print content and the image
+will be printed by the host's default printer. For example, if the default
+printer is Microsoft Print to PDF, print content will be output to PDF file.
+
+To output print data to host's LPT1 directly, please specify the option '-pd'.
+This option assumes a legacy ESC/P compatible printer is connected to LPT1.
+
+To enable Shift JIS to JIS conversion of printer data forcely, please specify
+the option '-pj'. In Japanese enviroment, Japanese strings are encoded with
+Shift JIS, but usual printer accepts JIS encoded strings.
+This conversion will be done in printer driver in real DOS environment.
+Or in AX environment, it is enabled or disabled by INT 17h, AH=50h/84h.
 
 MS-DOS Player pretents EGA/VGA exists even though supports only text mode.
 Lotus 1-2-3 R2.4 detects EGA is existing and tries to use graphic screen.
@@ -1307,6 +1324,8 @@ are based on DOSBox-X.
 
 BOP and VDD are based on Mr. cracyc's fork and ReactOS.
 Device driver loading is based on Mr. N2583ZYOB6's fork and ReactOS.
+
+ESC/P printer emulation is based on Neko Project 21/W.
 
 Imported many fixes from Mr.cracyc's fork hosted at:
 https://github.com/cracyc/msdos-player

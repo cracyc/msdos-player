@@ -34,6 +34,7 @@
 #include <io.h>
 #include <sys/locking.h>
 #include <mbctype.h>
+#include <tchar.h>
 #include <direct.h>
 #include <errno.h>
 #include <tlhelp32.h>
@@ -45,6 +46,11 @@
 #endif
 
 #ifdef _DEBUG
+// defining new causes error C2661: 'operator new' : no overloaded function takes 3 arguments
+// so we need to include memory/string/stdexcept before defining new to avoid this error
+#include <memory>
+#include <string>
+#include <stdexcept>
 // _malloca is defined in both intrin.h and crtdbg.h
 #ifdef _malloca
 #undef _malloca
@@ -59,10 +65,11 @@
 // disable warnings for Microsoft Visual C++ 6.0 or later
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
 #pragma warning( disable : 4018 )
+#pragma warning( disable : 4065 )
 #pragma warning( disable : 4146 )
 #pragma warning( disable : 4244 )
 #pragma warning( disable : 4309 )
-#pragma warning( disable : 4065 )
+#pragma warning( disable : 4351 )
 #pragma warning( disable : 4819 )
 #pragma warning( disable : 4995 )
 #pragma warning( disable : 4996 )
@@ -503,6 +510,64 @@ typedef struct {
 
 void add_cpu_trace(UINT32 pc, UINT16 cs, UINT32 eip, BOOL op32);
 bool in_iret_table(int num);
+#endif
+
+// np21w printer emulation
+#define SUPPORT_NP21W_PRINTER
+
+#ifdef SUPPORT_NP21W_PRINTER
+#define SUPPORT_PRINT_ESCP
+//#define SUPPORT_PRINT_PR201
+//#define SUPPORT_NAMED_PIPE
+
+#ifndef _countof
+#define _countof(array) (sizeof(array) / sizeof((array)[0]))
+#endif
+#ifndef NELEMENTS
+#define NELEMENTS(a) ((int)(sizeof(a) / sizeof(a[0])))
+#endif
+
+#if defined(_MSC_VER) && (_MSC_VER < 1600) && !defined(nullptr)
+#define nullptr 0
+#endif
+#ifdef _WIN64
+typedef unsigned __int64 INTPTR;
+#else
+typedef unsigned __int32 INTPTR;
+#endif
+#define OEMCHAR TCHAR
+#define	OEMTEXT(string) _T(string)
+
+typedef struct {
+	UINT8	port;
+	UINT8	def_en;
+	UINT8	param;
+	UINT32	speed;
+	OEMCHAR	mout[MAXPNAMELEN];
+	OEMCHAR	min[MAXPNAMELEN];
+	OEMCHAR	mdl[64];
+	OEMCHAR	def[MAX_PATH];
+	UINT8	fixedspeed;
+	UINT8	DSRcheck;
+	OEMCHAR	dirpath[MAX_PATH]; // Path to the output directory for dump files
+	UINT32	fileTimeout;
+#if defined(SUPPORT_NAMED_PIPE)
+	OEMCHAR	pipename[MAX_PATH]; // The name of the named-pipe
+	OEMCHAR	pipeserv[MAX_PATH]; // The server name of the named-pipe
+#endif
+	OEMCHAR	spoolPrinterName[MAX_PATH];
+	UINT32	spoolTimeout;
+	UINT8	spoolEmulation;
+	UINT8	spoolDotSize;
+	UINT8	spoolRectDot;
+	UINT8	spoolPageAlignment;
+	UINT32	spoolOffsetXmm;
+	UINT32	spoolOffsetYmm;
+	UINT32	spoolScale;
+} COMCFG;
+
+DWORD GetTickCounter();
+BOOL MyGetDefaultPrinter(LPTSTR pszBuffer, LPDWORD pcchBuffer);
 #endif
 
 #endif

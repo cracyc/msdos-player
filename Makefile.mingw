@@ -17,10 +17,10 @@ CC = gcc
 CXX = g++ 
 CFLAGS_OO=-o $@
 CFLAGS_OX=-o $@
-CFLAGS= -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -D_MBCS -DNDEBUG -D_MT
+CFLAGS= -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-sign-compare -fno-omit-frame-pointer -fno-strict-aliasing -fpermissive -D_MBCS -DNDEBUG -D_MT -D_MB_MAP_DIRECT
 CXXFLAGS = $(CFLAGS)
 LD = $(CXX)
-LIBS = -lwinmm -lpsapi -lwsock32 -lgdi32 -lmpr -luuid -lsetupapi
+LIBS = -lwinmm -lpsapi -lwsock32 -lgdi32 -lmpr -luuid -lsetupapi -lwinspool
 LDFLAGS = -mconsole -static -static-libgcc
 LDFLAGS_NTVDM = -shared -s -static-libgcc -Wl,--enable-stdcall-fixup -Wl,--kill-at
 
@@ -80,6 +80,7 @@ SRCD_BASE = .$(D)
 SRCD_EMUCPU = $(SRCD_BASE)mame$(D)emu$(D)cpu$(D)
 SRCD_I86 = $(SRCD_EMUCPU)i86$(D)
 SRCD_I386 = $(SRCD_EMUCPU)i386$(D)
+SRCD_PRINT = $(SRCD_BASE)np21_print$(D)
 
 OUTD_BASE = .$(D)binary$(D)
 #OUTD_BASE = .$(D)
@@ -145,6 +146,27 @@ SRCS_PENTIUM = \
 	$(SRCS_I486) \
 	$(SRCD_I386)pentops.c
 
+SRCS_PRINT = \
+	$(SRCD_PRINT)codecnv$(D)eucsjis.cpp \
+	$(SRCD_PRINT)codecnv$(D)eucucs2.cpp \
+	$(SRCD_PRINT)codecnv$(D)sjiseuc.cpp \
+	$(SRCD_PRINT)codecnv$(D)sjisucs2.cpp \
+	$(SRCD_PRINT)codecnv$(D)tcswap16.cpp \
+	$(SRCD_PRINT)codecnv$(D)tcswap32.cpp \
+	$(SRCD_PRINT)codecnv$(D)textcnv.cpp \
+	$(SRCD_PRINT)codecnv$(D)ucs2sjis.cpp \
+	$(SRCD_PRINT)codecnv$(D)ucs2utf8.cpp \
+	$(SRCD_PRINT)codecnv$(D)utf8ucs2.cpp \
+	$(SRCD_PRINT)print$(D)cmdparser.cpp \
+	$(SRCD_PRINT)print$(D)pmbase.cpp \
+	$(SRCD_PRINT)print$(D)pmescp.cpp \
+	$(SRCD_PRINT)print$(D)pmpr201.cpp \
+	$(SRCD_PRINT)cmbase.cpp \
+	$(SRCD_PRINT)cmfile.cpp \
+	$(SRCD_PRINT)cmpara.cpp \
+	$(SRCD_PRINT)cmpipe.cpp \
+	$(SRCD_PRINT)cmspooler.cpp
+
 all : i86 v30 i286 i386 i486 ntvdm
 
 i86: $(TARGET_I86)
@@ -159,38 +181,38 @@ i486: $(TARGET_I486)
 
 ntvdm: $(TARGET_NTVDM)
 
-$(TARGET_I86) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+$(TARGET_I86) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM) $(SRCS_PRINT)
 	$(CXX) $(CXXFLAGS_I86) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
-		$(SRCD_BASE)msdos.cpp \
+		$(SRCD_BASE)msdos.cpp $(SRCS_PRINT) \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_V30) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM)
+$(TARGET_V30) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I86) $(SRCS_I86DASM) $(SRCS_PRINT)
 	$(CXX) $(CXXFLAGS_V30) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
-		$(SRCD_BASE)msdos.cpp \
+		$(SRCD_BASE)msdos.cpp $(SRCS_PRINT) \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I286) $(SRCS_I86DASM)
+$(TARGET_I286) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I286) $(SRCS_I86DASM) $(SRCS_PRINT)
 	$(CXX) $(CXXFLAGS_I286) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
-		$(SRCD_BASE)msdos.cpp \
+		$(SRCD_BASE)msdos.cpp $(SRCS_PRINT) \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_I386) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I386) $(SRCS_I386DASM)
+$(TARGET_I386) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I386) $(SRCS_I386DASM) $(SRCS_PRINT)
 	$(CXX) $(CXXFLAGS_I386) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
-		$(SRCD_BASE)msdos.cpp \
+		$(SRCD_BASE)msdos.cpp $(SRCS_PRINT) \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
-$(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I386DASM)
+$(TARGET_I486) : $(SRCD_BASE)msdos.cpp $(SRCD_BASE)msdos.h $(SRCS_I486) $(SRCS_I386DASM) $(SRCS_PRINT)
 	$(CXX) $(CXXFLAGS_I486) $(CFLAGS_EXTRA) \
 		$(CFLAGS_OX) \
-		$(SRCD_BASE)msdos.cpp \
+		$(SRCD_BASE)msdos.cpp $(SRCS_PRINT) \
 		$(LIBS) $(LIBS_EXTRA) \
 		$(LDFLAGS) $(LDFLAGS_EXTRA)
 
