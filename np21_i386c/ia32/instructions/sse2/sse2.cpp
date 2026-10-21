@@ -852,11 +852,11 @@ void SSE2_MOVMSKPD(void)
 	data1 = CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT32*)(&(FPU_STAT.xmm_reg[sub]));
+		*data1 = ((data2[1] >> 31) & 0x1)|
+				 ((data2[3] >> 30) & 0x2);
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	*data1 = ((data2[1] >> 31) & 0x1)|
-			 ((data2[3] >> 30) & 0x2);
 	TRACEOUT(("SSE2_MOVMSKPD"));
 }
 void SSE2_MOVSDmem2xmm(void)
@@ -1650,11 +1650,11 @@ void SSE2_PEXTRW(void)
 	data1 = (UINT32*)CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT16*)(&(FPU_STAT.xmm_reg[sub]));
+		GET_MODRM_PCBYTE((imm8));
+		*data1 = (UINT32)data2[imm8 & 0x7];
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	GET_MODRM_PCBYTE((imm8));
-	*data1 = (UINT32)data2[imm8 & 0x7];
 	TRACEOUT(("SSE2_PEXTRW"));
 }
 void SSE2_PINSRW(void)
@@ -1767,25 +1767,25 @@ void SSE2_PMOVMSKB(void)
 	data1 = (UINT32*)CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT8*)(&(FPU_STAT.reg[sub]));
+		*data1 = ((UINT32)(data2[0] >> 7) & 0x1 )|
+				 ((UINT32)(data2[1] >> 6) & 0x2 )|
+				 ((UINT32)(data2[2] >> 5) & 0x4 )|
+				 ((UINT32)(data2[3] >> 4) & 0x8 )|
+				 ((UINT32)(data2[4] >> 3) & 0x10)|
+				 ((UINT32)(data2[5] >> 2) & 0x20)|
+				 ((UINT32)(data2[6] >> 1) & 0x40)|
+				 ((UINT32)(data2[7] >> 0) & 0x80)|
+				 (((UINT32)(data2[8] >> 7) & 0x1 ) << 8)|
+				 (((UINT32)(data2[9] >> 6) & 0x2 ) << 8)|
+				 (((UINT32)(data2[10]>> 5) & 0x4 ) << 8)|
+				 (((UINT32)(data2[11]>> 4) & 0x8 ) << 8)|
+				 (((UINT32)(data2[12]>> 3) & 0x10) << 8)|
+				 (((UINT32)(data2[13]>> 2) & 0x20) << 8)|
+				 (((UINT32)(data2[14]>> 1) & 0x40) << 8)|
+				 (((UINT32)(data2[15]>> 0) & 0x80) << 8);
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	*data1 = ((UINT32)(data2[0] >> 7) & 0x1 )|
-			 ((UINT32)(data2[1] >> 6) & 0x2 )|
-			 ((UINT32)(data2[2] >> 5) & 0x4 )|
-			 ((UINT32)(data2[3] >> 4) & 0x8 )|
-			 ((UINT32)(data2[4] >> 3) & 0x10)|
-			 ((UINT32)(data2[5] >> 2) & 0x20)|
-			 ((UINT32)(data2[6] >> 1) & 0x40)|
-			 ((UINT32)(data2[7] >> 0) & 0x80)|
-			 (((UINT32)(data2[8] >> 7) & 0x1 ) << 8)|
-			 (((UINT32)(data2[9] >> 6) & 0x2 ) << 8)|
-			 (((UINT32)(data2[10]>> 5) & 0x4 ) << 8)|
-			 (((UINT32)(data2[11]>> 4) & 0x8 ) << 8)|
-			 (((UINT32)(data2[12]>> 3) & 0x10) << 8)|
-			 (((UINT32)(data2[13]>> 2) & 0x20) << 8)|
-			 (((UINT32)(data2[14]>> 1) & 0x40) << 8)|
-			 (((UINT32)(data2[15]>> 0) & 0x80) << 8);
 	TRACEOUT(("SSE2_PMOVMSKB"));
 }
 void SSE2_PMULHUW(void)

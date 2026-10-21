@@ -119,10 +119,10 @@ typedef struct {
 		charPoint = 10.8f;
 		linespacing = (float)(1 / 6.0); //0.15;
 		pagelength = 11.69f; // XXX: A4縦
-		leftMargin = 0.15f; // 左マージン（インチ）
-		rightMargin = 0.15f; // 右マージン（インチ）
-		topMargin = 0.15f; // 上マージン（インチ）
-		bottomMargin = 0.15f; // 下マージン（インチ）
+		leftMargin = 0; // 左マージン（インチ）
+		rightMargin = 0; // 右マージン（インチ）
+		topMargin = 0; // 上マージン（インチ）
+		bottomMargin = 0; // 下マージン（インチ）
 		color = 0;
 		linepos = ESCP_LINEPOS_UNDER;
 		linemode = ESCP_LINEMODE_OFF;
