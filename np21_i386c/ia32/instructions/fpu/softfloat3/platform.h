@@ -53,6 +53,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #pragma warning(disable: 4146)
 #pragma warning(disable: 4244)
 #pragma warning(disable: 4245)
+#pragma warning(disable: 6290)
+#pragma warning(disable: 6297)
+#pragma warning(disable: 6314)
 #define INLINE static __forceinline
 #elif defined(__BORLANDC__)
 #define INLINE static __inline

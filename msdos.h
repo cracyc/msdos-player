@@ -1400,9 +1400,10 @@ void set_kbc_buffer(UINT8 key_char, UINT8 key_scan, UINT8 port_data, UINT8 press
 //bool pcbios_check_key_buffer(UINT8 *key_char, UINT8 *key_scan)
 void pcbios_update_key_code(bool wait);
 
-UINT8 ctrl_break_checking = 0x00; // ???
+UINT8 ctrl_break_checking = 0x00; // initially disabled
 bool ctrl_break_detected = false;
 bool ctrl_break_pressed = false;
+bool ctrl_c_detected = false;
 bool ctrl_c_pressed = false;
 bool raise_int_1bh = false;
 

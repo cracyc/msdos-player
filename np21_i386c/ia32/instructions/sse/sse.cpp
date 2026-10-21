@@ -850,13 +850,13 @@ void SSE_MOVMSKPS(void)
 	data1 = CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT32*)(&(FPU_STAT.xmm_reg[sub]));
+		*data1 = ((data2[0] >> 31) & 0x1)|
+				 ((data2[1] >> 30) & 0x2)|
+				 ((data2[2] >> 29) & 0x4)|
+				 ((data2[3] >> 28) & 0x8);
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	*data1 = ((data2[0] >> 31) & 0x1)|
-			 ((data2[1] >> 30) & 0x2)|
-			 ((data2[2] >> 29) & 0x4)|
-			 ((data2[3] >> 28) & 0x8);
 }
 void SSE_MOVSSmem2xmm(void)
 {
@@ -1134,11 +1134,11 @@ void SSE_PEXTRW(void)
 	data1 = (UINT32*)CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT16*)(&(FPU_STAT.reg[sub]));
+		GET_MODRM_PCBYTE((imm8));
+		*data1 = (UINT32)data2[imm8 & 0x3];
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	GET_MODRM_PCBYTE((imm8));
-	*data1 = (UINT32)data2[imm8 & 0x3];
 }
 void SSE_PINSRW(void)
 {
@@ -1225,17 +1225,17 @@ void SSE_PMOVMSKB(void)
 	data1 = (UINT32*)CPU_REG32_B53(op);
 	if ((op) >= 0xc0) {
 		data2 = (UINT8*)(&(FPU_STAT.reg[sub]));
+		*data1 = ((data2[0] >> 7) & 0x1 )|
+				 ((data2[1] >> 6) & 0x2 )|
+				 ((data2[2] >> 5) & 0x4 )|
+				 ((data2[3] >> 4) & 0x8 )|
+				 ((data2[4] >> 3) & 0x10)|
+				 ((data2[5] >> 2) & 0x20)|
+				 ((data2[6] >> 1) & 0x40)|
+				 ((data2[7] >> 0) & 0x80);
 	} else {
 		EXCEPTION(UD_EXCEPTION, 0);
 	}
-	*data1 = ((data2[0] >> 7) & 0x1 )|
-			 ((data2[1] >> 6) & 0x2 )|
-			 ((data2[2] >> 5) & 0x4 )|
-			 ((data2[3] >> 4) & 0x8 )|
-			 ((data2[4] >> 3) & 0x10)|
-			 ((data2[5] >> 2) & 0x20)|
-			 ((data2[6] >> 1) & 0x40)|
-			 ((data2[7] >> 0) & 0x80);
 }
 void SSE_PMULHUW(void)
 {

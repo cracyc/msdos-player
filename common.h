@@ -52,13 +52,13 @@
 #include <string>
 #include <stdexcept>
 // _malloca is defined in both intrin.h and crtdbg.h
-#ifdef _malloca
-#undef _malloca
-#endif
+//#ifdef _malloca
+//#undef _malloca
+//#endif
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
-#define calloc(c, s) _calloc_dbg(c, s, _NORMAL_BLOCK, __FILE__, __LINE__)
-#define malloc(s) _malloc_dbg(s, _NORMAL_BLOCK, __FILE__, __LINE__)
+//#define calloc(c, s) _calloc_dbg(c, s, _NORMAL_BLOCK, __FILE__, __LINE__)
+//#define malloc(s) _malloc_dbg(s, _NORMAL_BLOCK, __FILE__, __LINE__)
 #define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
 #endif
 

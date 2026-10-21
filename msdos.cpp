@@ -1342,18 +1342,19 @@ int cpu_type = 0, cpu_step = 0;
 
 UINT8 *get_mem_ptr(UINT32 byteaddress, UINT32 size)
 {
-	UINT64 endaddress = (UINT64)byteaddress + size - 1;
-	if(endaddress < MEMORY_END) {
-		return mem + byteaddress;
-	} else if(byteaddress >= 0x100000) {
-#if defined(HAS_I386)
+#if !defined(USE_DEBUGGER)
+	if(byteaddress >= 0x100000) {
+		UINT64 endaddress = (UINT64)byteaddress + size - 1;
 		if(endaddress < MAX_MEM) {
 			return mem + byteaddress;
 		}
-#else
-		return mem + byteaddress;
-#endif
+	} else if(byteaddress >= MEMORY_TOP) {
+		UINT64 endaddress = (UINT64)byteaddress + size - 1;
+		if(endaddress < MEMORY_END) {
+			return mem + byteaddress;
+		}
 	}
+#endif
 	return NULL;
 }
 
@@ -7531,7 +7532,10 @@ retry:
 		key_code >>= 16;
 		key_recv >>= 16;
 	} else {
-		while(kbc_buffer != NULL && !msdos_exit) {
+		while(kbc_buffer != NULL) {
+			if(msdos_exit || ctrl_break_pressed || ctrl_c_pressed) {
+				break;
+			}
 			if(!pcbios_is_key_buffer_empty()) {
 				break;
 			}
@@ -7546,7 +7550,7 @@ retry:
 				}
 			}
 		}
-		if(msdos_exit) {
+		if(msdos_exit || ctrl_break_pressed || ctrl_c_pressed) {
 			// insert CR to terminate input loops
 			key_char = 0x0d;
 			key_scan = 0;
@@ -9010,6 +9014,526 @@ int msdos_psp_get_file_table(int fd, int psp_seg)
 	return fd;
 }
 
+#define OPEN_STDOUT() { \
+	if(fstdout == NULL) { \
+		if(pipe_stdout_path[0] != '\0' && !msdos_is_device_path(pipe_stdout_path)) { \
+			fstdout = my_fopen(pipe_stdout_path, "w"); \
+		} \
+	} \
+}
+#define CLOSE_STDOUT() { \
+	if(fstdout != NULL) { \
+		fclose(fstdout); \
+		fstdout = NULL; \
+	} \
+}
+#define OPEN_STDERR() { \
+	if(fstderr == NULL) { \
+		if(pipe_stderr_path[0] != '\0' && !msdos_is_device_path(pipe_stderr_path)) { \
+			fstderr = my_fopen(pipe_stderr_path, "w"); \
+		} \
+	} \
+}
+#define CLOSE_STDERR() { \
+	if(fstderr != NULL) { \
+		fclose(fstderr); \
+		fstderr = NULL; \
+	} \
+}
+
+void msdos_internal_command_chdrv(psp_t *parent_psp, char *command, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	int drv = command[0] - ((command[0] >= 'a' && command[0] <= 'z') ? 'a' : 'A');
+	
+	if(_chdrive(drv + 1) == 0) {
+		msdos_cds_update(drv);
+		msdos_sda_update(current_psp);
+		retval = 0x00;
+	} else {
+		retval = 0x0f;
+		OPEN_STDERR();
+		msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+		CLOSE_STDERR();
+	}
+}
+
+void msdos_internal_command_chdir(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	char path[MAX_PATH];
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_chdir_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_chdir_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_chdir_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_chdir_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_chdir_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_chdir_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_chdir_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_chdir_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_chdir_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_chdir_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_chdir_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_chdir_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_chdir_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_chdir_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_chdir_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_chdir_taiwanese));
+		} else {
+			msdos_printf(fstdout,
+			"Displays the name of or changes the current directory.\r\n"
+			"\r\n"
+			"CHDIR [drive:][path]\r\n"
+			"CHDIR[..]\r\n"
+			"CD [drive:][path]\r\n"
+			"CD[..]\r\n"
+			"\r\n"
+			"  ..   Specifies that you want to change to the parent directory.\r\n"
+			"\r\n"
+			"Type CD drive: to display the current directory in the specified drive.\r\n"
+			"Type CD without parameters to display the current drive and directory.\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+		retval = 0x00;
+	} else if(opt[0] == '\0') {
+		if(my_getcwd(path, MAX_PATH) != NULL) {
+			OPEN_STDOUT();
+			msdos_printf(fstdout, "%s\n", path);
+			CLOSE_STDOUT();
+			retval = 0x00;
+		} else {
+			retval = 0x0f;
+			OPEN_STDERR();
+			msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+			CLOSE_STDERR();
+		}
+	} else if(((opt[0] >= 'a' && opt[0] <= 'z') || (opt[0] >= 'A' && opt[0] <= 'Z')) && opt[1] == ':' && opt[2] == '\0') {
+		int drv = opt[0] - ((opt[0] >= 'a' && opt[0] <= 'z') ? 'a' : 'A');
+		if(my_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
+			OPEN_STDOUT();
+			msdos_printf(fstdout, "%s\n", path);
+			CLOSE_STDOUT();
+			retval = 0x00;
+		} else {
+			retval = 0x0f;
+			OPEN_STDERR();
+			msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+			CLOSE_STDERR();
+		}
+	} else {
+		if(my_chdir(opt) == 0) {
+			int drv = _getdrive() - 1;
+			if(opt[1] == ':') {
+				if(opt[0] >= 'A' && opt[0] <= 'Z') {
+					drv = opt[0] - 'A';
+				} else if(opt[0] >= 'a' && opt[0] <= 'z') {
+					drv = opt[0] - 'a';
+				}
+			}
+			msdos_cds_update(drv);
+			retval = 0x00;
+		} else {
+			retval = 0x03;
+			OPEN_STDERR();
+			msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+			CLOSE_STDERR();
+		}
+	}
+}
+
+void msdos_internal_command_path(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_path_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_path_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_path_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_path_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_path_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_path_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_path_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_path_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_path_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_path_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_path_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_path_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_path_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_path_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_path_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_path_taiwanese));
+		} else {
+			msdos_printf(fstdout,
+			"Displays or sets a search path for executable files.\r\n"
+			"\r\n"
+			"PATH [[drive:]path[;...]]\r\n"
+			"PATH ;\r\n"
+			"\r\n"
+			"Type PATH ; to clear all search-path settings and direct MS-DOS to search\r\n"
+			"only in the current directory.\r\n"
+			"Type PATH without parameters to display the current path.\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+	} else if(opt[0] == '\0') {
+		const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
+		if(env != NULL) {
+			OPEN_STDOUT();
+			msdos_printf(fstdout, "PATH=%s\n", env);
+			CLOSE_STDOUT();
+		}
+	} else if(_stricmp(opt, ";") == 0) {
+		msdos_env_set(parent_psp->env_seg, "PATH", "");
+	} else {
+		int s = 0, d = 0;
+		while(s < strlen(opt)) {
+			if(_strnicmp(&opt[s], "%PATH%", 6) == 0) {
+				const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
+				if(env != NULL) {
+					my_strcpy_s((char *)&file_buffer[d], sizeof(file_buffer) - d, env);
+					d += (int)strlen(env);
+				}
+				s += 6;
+			} else if(d > 0 && file_buffer[d - 1] == ';' && opt[s] == ';') {
+				s++; // skip
+			} else {
+				file_buffer[d++] = opt[s++];
+			}
+			file_buffer[d] = '\0';
+		}
+		const char *short_path = msdos_get_multiple_short_path((const char *)file_buffer);
+		if(short_path != NULL) {
+			msdos_env_set(parent_psp->env_seg, "PATH", short_path);
+		}
+	}
+	retval = 0x00;
+}
+
+void msdos_internal_command_set(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_set_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_set_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_set_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_set_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_set_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_set_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_set_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_set_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_set_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_set_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_set_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_set_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_set_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_set_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_set_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_set_taiwanese));
+		} else {
+			msdos_printf(fstdout,
+			"Displays, sets, or removes MS-DOS environment variables.\r\n"
+			"\r\n"
+			"SET [variable=[string]]\r\n"
+			"\r\n"
+			"  variable  Specifies the environment-variable name.\r\n"
+			"  string    Specifies a series of characters to assign to the variable.\r\n"
+			"\r\n"
+			"Type SET without parameters to display the current environment variables.\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+	} else if(opt[0] == '\0') {
+		const char *env = (const char *)(mem + (parent_psp->env_seg << 4));
+		OPEN_STDOUT();
+		while(*env != '\0') {
+			msdos_printf(fstdout, "%s\n", env);
+			env += strlen(env) + 1;
+		}
+		CLOSE_STDOUT();
+	} else if(my_strchr(opt, '=') == NULL) {
+		// NOTE: this is Windows NT specific
+		const char *env = msdos_env_get(parent_psp->env_seg, opt);
+		if(env != NULL) {
+			msdos_strupr(opt);
+			OPEN_STDOUT();
+			msdos_printf(fstdout, "%s=%s\n", opt, env);
+			CLOSE_STDOUT();
+		}
+	} else {
+		char *nam = my_strtok(opt, "=");
+		char *val = opt + strlen(nam) + 1;
+		msdos_strupr(nam);
+		msdos_env_set(parent_psp->env_seg, nam, val);
+	}
+	retval = 0x00;
+}
+
+void msdos_internal_command_truename(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	char path[MAX_PATH];
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_truename_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_truename_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_truename_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_truename_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_truename_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_truename_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_truename_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_truename_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_truename_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_truename_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_truename_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_truename_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_truename_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_truename_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_truename_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_truename_taiwanese));
+		} else {
+			msdos_printf(fstdout,
+			"Returns a fully qualified filename.\r\n"
+			"\r\n"
+			"TRUENAME [drive:][path]filename\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+		retval = 0x00;
+	} else if(opt[0] == '\0') {
+		if(my_getcwd(path, MAX_PATH) != NULL) {
+			OPEN_STDOUT();
+			msdos_printf(fstdout, "%s\n", msdos_short_full_path(path));
+			CLOSE_STDOUT();
+			retval = 0x00;
+		} else {
+			retval = 0x0f;
+			OPEN_STDERR();
+			msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+			CLOSE_STDERR();
+		}
+	} else {
+		OPEN_STDOUT();
+		msdos_printf(fstdout, "%s\n", msdos_short_full_path(opt));
+		CLOSE_STDOUT();
+		retval = 0x00;
+	}
+}
+
+void msdos_internal_command_type(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_type_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_type_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_type_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_type_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_type_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_type_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_type_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_type_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_type_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_type_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_type_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_type_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_type_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_type_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_type_chinese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_type_chinese));
+		} else {
+			msdos_printf(fstdout,
+			"Displays the contents of text files.\r\n"
+			"\r\n"
+			"TYPE [drive:][path]filename\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+		retval = 0x00;
+	} else if(opt[0] == '\0') {
+		retval = 0x01;
+		OPEN_STDERR();
+		msdos_printf(fstderr, "%s\n", msdos_param_error_message(0x02));
+		CLOSE_STDERR();
+	} else {
+		FILE *fp = my_fopen(opt, "rb");
+		int val;
+		if(fp != NULL) {
+			OPEN_STDOUT();
+			while((val = fgetc(fp)) != EOF) {
+				msdos_printf(fstdout, "%c", val);
+			}
+			CLOSE_STDOUT();
+			fclose(fp);
+			retval = 0x00;
+		} else {
+			retval = 0x02;
+			OPEN_STDERR();
+			msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
+			CLOSE_STDERR();
+		}
+	}
+}
+
+void msdos_internal_command_ver(psp_t *parent_psp, char *opt, const char *pipe_stdout_path, const char *pipe_stderr_path)
+{
+	FILE *fstdout = NULL;
+	FILE *fstderr = NULL;
+	
+	if(_stricmp(opt, "/?") == 0) {
+		USHORT lang = get_message_lang();
+		OPEN_STDOUT();
+		if(lang == LANG_FRENCH) {
+			msdos_printf(fstdout, (const char*)help_ver_french);
+		} else if(lang == LANG_GERMAN) {
+			msdos_printf(fstdout, (const char*)help_ver_german);
+		} else if(lang == LANG_ITALIAN) {
+			msdos_printf(fstdout, (const char*)help_ver_italian);
+		} else if(lang == LANG_DUTCH) {
+			msdos_printf(fstdout, (const char*)help_ver_dutch);
+		} else if(lang == LANG_DANISH) {
+			msdos_printf(fstdout, (const char*)help_ver_danish);
+		} else if(lang == LANG_SWEDISH) {
+			msdos_printf(fstdout, (const char*)help_ver_swedish);
+		} else if(lang == LANG_FINNISH) {
+			msdos_printf(fstdout, (const char*)help_ver_finnish);
+		} else if(lang == LANG_RUSSIAN) {
+			msdos_printf(fstdout, (const char*)help_ver_russian);
+		} else if(lang == LANG_SPANISH) {
+			msdos_printf(fstdout, (const char*)help_ver_spanish);
+		} else if(lang == LANG_PORTUGUESE) {
+			msdos_printf(fstdout, (const char*)help_ver_portuguese);
+		} else if(lang == LANG_BRAZILIAN) {
+			msdos_printf(fstdout, (const char*)help_ver_brazilian);
+		} else if(lang == LANG_JAPANESE) {
+			msdos_printf(fstdout, (const char*)help_ver_japanese);
+		} else if(lang == LANG_KOREAN) {
+			msdos_printf(fstdout, (const char*)help_ver_korean);
+		} else if(lang == LANG_CHINESE) {
+			msdos_printf(fstdout, (const char*)help_ver_chinese);
+		} else if(lang == LANG_TAIWANESE) {
+			msdos_printf(fstdout, (const char*)help_ver_taiwanese);
+		} else if(lang == LANG_TAIWANESE_IBM5550) {
+			msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_ver_taiwanese));
+		} else {
+			msdos_printf(fstdout,
+			"Displays the MS-DOS Version.\r\n"
+			"\r\n"
+			"VER\r\n"
+			);
+		}
+		CLOSE_STDOUT();
+	} else {
+		OPEN_STDOUT();
+		msdos_printf(fstdout, "MS-DOS Version %d.%2d\n", parent_psp->dos_major_version, parent_psp->dos_minor_version);
+		CLOSE_STDOUT();
+	}
+	retval = 0x00;
+}
+
+#undef OPEN_STDOUT
+#undef CLOSE_STDOUT
+#undef OPEN_STDERR
+#undef CLOSE_STDERR
+
 int win32_exec(char *command)
 {
 	HANDLE hstdout_r;
@@ -9262,32 +9786,6 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				}
 			} else if(msdos_is_internal_command(command) && !first_process) {
 				// this is DOS internal command
-				#define OPEN_STDOUT() { \
-					if(fstdout == NULL) { \
-						if(pipe_stdout_path[0] != '\0' && !msdos_is_device_path(pipe_stdout_path)) { \
-							fstdout = my_fopen(pipe_stdout_path, "w"); \
-						} \
-					} \
-				}
-				#define CLOSE_STDOUT() { \
-					if(fstdout != NULL) { \
-						fclose(fstdout); \
-						fstdout = NULL; \
-					} \
-				}
-				#define OPEN_STDERR() { \
-					if(fstderr == NULL) { \
-						if(pipe_stderr_path[0] != '\0' && !msdos_is_device_path(pipe_stderr_path)) { \
-							fstderr = my_fopen(pipe_stderr_path, "w"); \
-						} \
-					} \
-				}
-				#define CLOSE_STDERR() { \
-					if(fstderr != NULL) { \
-						fclose(fstderr); \
-						fstderr = NULL; \
-					} \
-				}
 				FILE *fstdout = NULL;
 				FILE *fstderr = NULL;
 				
@@ -9299,477 +9797,42 @@ int msdos_process_exec(const char *cmd, param_block_t *param, UINT8 al, bool fir
 				
 				// changing drive and current directory in child process seems not to affect to DOS environment
 				if(((command[0] >= 'a' && command[0] <= 'z') || (command[0] >= 'A' && command[0] <= 'Z')) && command[1] == ':' && command[2] == '\0') {
-					int drv = command[0] - ((command[0] >= 'a' && command[0] <= 'z') ? 'a' : 'A');
-					if(_chdrive(drv + 1) == 0) {
-						msdos_cds_update(drv);
-						msdos_sda_update(current_psp);
-						retval = 0x00;
-					} else {
-						retval = 0x0f;
-						OPEN_STDERR();
-						msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-						CLOSE_STDERR();
-					}
+					msdos_internal_command_chdrv(parent_psp, command, pipe_stdout_path, pipe_stderr_path);
 					return(0);
 				}
 				if(_stricmp(command, "CHDIR") == 0 || _stricmp(command, "CD") == 0) {
-					if(_stricmp(opt, "/?") == 0) {
-						USHORT lang = get_message_lang();
-						OPEN_STDOUT();
-						if(lang == LANG_FRENCH) {
-							msdos_printf(fstdout, (const char*)help_chdir_french);
-						} else if(lang == LANG_GERMAN) {
-							msdos_printf(fstdout, (const char*)help_chdir_german);
-						} else if(lang == LANG_ITALIAN) {
-							msdos_printf(fstdout, (const char*)help_chdir_italian);
-						} else if(lang == LANG_DUTCH) {
-							msdos_printf(fstdout, (const char*)help_chdir_dutch);
-						} else if(lang == LANG_DANISH) {
-							msdos_printf(fstdout, (const char*)help_chdir_danish);
-						} else if(lang == LANG_SWEDISH) {
-							msdos_printf(fstdout, (const char*)help_chdir_swedish);
-						} else if(lang == LANG_FINNISH) {
-							msdos_printf(fstdout, (const char*)help_chdir_finnish);
-						} else if(lang == LANG_RUSSIAN) {
-							msdos_printf(fstdout, (const char*)help_chdir_russian);
-						} else if(lang == LANG_SPANISH) {
-							msdos_printf(fstdout, (const char*)help_chdir_spanish);
-						} else if(lang == LANG_PORTUGUESE) {
-							msdos_printf(fstdout, (const char*)help_chdir_portuguese);
-						} else if(lang == LANG_BRAZILIAN) {
-							msdos_printf(fstdout, (const char*)help_chdir_brazilian);
-						} else if(lang == LANG_JAPANESE) {
-							msdos_printf(fstdout, (const char*)help_chdir_japanese);
-						} else if(lang == LANG_KOREAN) {
-							msdos_printf(fstdout, (const char*)help_chdir_korean);
-						} else if(lang == LANG_CHINESE) {
-							msdos_printf(fstdout, (const char*)help_chdir_chinese);
-						} else if(lang == LANG_TAIWANESE) {
-							msdos_printf(fstdout, (const char*)help_chdir_taiwanese);
-						} else if(lang == LANG_TAIWANESE_IBM5550) {
-							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_chdir_taiwanese));
-						} else {
-							msdos_printf(fstdout,
-							"Displays the name of or changes the current directory.\r\n"
-							"\r\n"
-							"CHDIR [drive:][path]\r\n"
-							"CHDIR[..]\r\n"
-							"CD [drive:][path]\r\n"
-							"CD[..]\r\n"
-							"\r\n"
-							"  ..   Specifies that you want to change to the parent directory.\r\n"
-							"\r\n"
-							"Type CD drive: to display the current directory in the specified drive.\r\n"
-							"Type CD without parameters to display the current drive and directory.\r\n"
-							);
-						}
-						CLOSE_STDOUT();
-						retval = 0x00;
-					} else if(opt[0] == '\0') {
-						if(my_getcwd(path, MAX_PATH) != NULL) {
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "%s\n", path);
-							CLOSE_STDOUT();
-							retval = 0x00;
-						} else {
-							retval = 0x0f;
-							OPEN_STDERR();
-							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-							CLOSE_STDERR();
-						}
-					} else if(((opt[0] >= 'a' && opt[0] <= 'z') || (opt[0] >= 'A' && opt[0] <= 'Z')) && opt[1] == ':' && opt[2] == '\0') {
-						int drv = opt[0] - ((opt[0] >= 'a' && opt[0] <= 'z') ? 'a' : 'A');
-						if(my_getdcwd(drv + 1, path, MAX_PATH) != NULL) {
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "%s\n", path);
-							CLOSE_STDOUT();
-							retval = 0x00;
-						} else {
-							retval = 0x0f;
-							OPEN_STDERR();
-							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-							CLOSE_STDERR();
-						}
-					} else {
-						if(my_chdir(opt) == 0) {
-							int drv = _getdrive() - 1;
-							if(opt[1] == ':') {
-								if(opt[0] >= 'A' && opt[0] <= 'Z') {
-									drv = opt[0] - 'A';
-								} else if(opt[0] >= 'a' && opt[0] <= 'z') {
-									drv = opt[0] - 'a';
-								}
-							}
-							msdos_cds_update(drv);
-							retval = 0x00;
-						} else {
-							retval = 0x03;
-							OPEN_STDERR();
-							msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-							CLOSE_STDERR();
-						}
-					}
+					msdos_internal_command_chdir(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 					return(0);
 				}
 				// want to refer the environments in parent process
 				if(_stricmp(command, "PATH") == 0) {
-					if(_stricmp(opt, "/?") == 0) {
-						USHORT lang = get_message_lang();
-						OPEN_STDOUT();
-						if(lang == LANG_FRENCH) {
-							msdos_printf(fstdout, (const char*)help_path_french);
-						} else if(lang == LANG_GERMAN) {
-							msdos_printf(fstdout, (const char*)help_path_german);
-						} else if(lang == LANG_ITALIAN) {
-							msdos_printf(fstdout, (const char*)help_path_italian);
-						} else if(lang == LANG_DUTCH) {
-							msdos_printf(fstdout, (const char*)help_path_dutch);
-						} else if(lang == LANG_DANISH) {
-							msdos_printf(fstdout, (const char*)help_path_danish);
-						} else if(lang == LANG_SWEDISH) {
-							msdos_printf(fstdout, (const char*)help_path_swedish);
-						} else if(lang == LANG_FINNISH) {
-							msdos_printf(fstdout, (const char*)help_path_finnish);
-						} else if(lang == LANG_RUSSIAN) {
-							msdos_printf(fstdout, (const char*)help_path_russian);
-						} else if(lang == LANG_SPANISH) {
-							msdos_printf(fstdout, (const char*)help_path_spanish);
-						} else if(lang == LANG_PORTUGUESE) {
-							msdos_printf(fstdout, (const char*)help_path_portuguese);
-						} else if(lang == LANG_BRAZILIAN) {
-							msdos_printf(fstdout, (const char*)help_path_brazilian);
-						} else if(lang == LANG_JAPANESE) {
-							msdos_printf(fstdout, (const char*)help_path_japanese);
-						} else if(lang == LANG_KOREAN) {
-							msdos_printf(fstdout, (const char*)help_path_korean);
-						} else if(lang == LANG_CHINESE) {
-							msdos_printf(fstdout, (const char*)help_path_chinese);
-						} else if(lang == LANG_TAIWANESE) {
-							msdos_printf(fstdout, (const char*)help_path_taiwanese);
-						} else if(lang == LANG_TAIWANESE_IBM5550) {
-							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_path_taiwanese));
-						} else {
-							msdos_printf(fstdout,
-							"Displays or sets a search path for executable files.\r\n"
-							"\r\n"
-							"PATH [[drive:]path[;...]]\r\n"
-							"PATH ;\r\n"
-							"\r\n"
-							"Type PATH ; to clear all search-path settings and direct MS-DOS to search\r\n"
-							"only in the current directory.\r\n"
-							"Type PATH without parameters to display the current path.\r\n"
-							);
-						}
-						CLOSE_STDOUT();
-					} else if(opt[0] == '\0') {
-						const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
-						if(env != NULL) {
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "PATH=%s\n", env);
-							CLOSE_STDOUT();
-						}
-					} else if(_stricmp(opt, ";") == 0) {
-						msdos_env_set(parent_psp->env_seg, "PATH", "");
-					} else {
-						char val[ENV_SIZE];
-						int s = 0, d = 0;
-						while(s < strlen(opt)) {
-							if(_strnicmp(&opt[s], "%PATH%", 6) == 0) {
-								const char *env = msdos_env_get(parent_psp->env_seg, "PATH");
-								if(env != NULL) {
-									my_strcpy_s(&val[d], sizeof(val) - d, env);
-									d += (int)strlen(env);
-								}
-								s += 6;
-							} else if(d > 0 && val[d - 1] == ';' && opt[s] == ';') {
-								s++; // skip
-							} else {
-								val[d++] = opt[s++];
-							}
-							val[d] = '\0';
-						}
-						const char *short_path = msdos_get_multiple_short_path(val);
-						if(short_path != NULL) {
-							msdos_env_set(parent_psp->env_seg, "PATH", short_path);
-						}
-					}
-					retval = 0x00;
+					msdos_internal_command_path(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 					return(0);
 				}
 				if(_stricmp(command, "SET") == 0) {
-					if(_stricmp(opt, "/?") == 0) {
-						USHORT lang = get_message_lang();
-						OPEN_STDOUT();
-						if(lang == LANG_FRENCH) {
-							msdos_printf(fstdout, (const char*)help_set_french);
-						} else if(lang == LANG_GERMAN) {
-							msdos_printf(fstdout, (const char*)help_set_german);
-						} else if(lang == LANG_ITALIAN) {
-							msdos_printf(fstdout, (const char*)help_set_italian);
-						} else if(lang == LANG_DUTCH) {
-							msdos_printf(fstdout, (const char*)help_set_dutch);
-						} else if(lang == LANG_DANISH) {
-							msdos_printf(fstdout, (const char*)help_set_danish);
-						} else if(lang == LANG_SWEDISH) {
-							msdos_printf(fstdout, (const char*)help_set_swedish);
-						} else if(lang == LANG_FINNISH) {
-							msdos_printf(fstdout, (const char*)help_set_finnish);
-						} else if(lang == LANG_RUSSIAN) {
-							msdos_printf(fstdout, (const char*)help_set_russian);
-						} else if(lang == LANG_SPANISH) {
-							msdos_printf(fstdout, (const char*)help_set_spanish);
-						} else if(lang == LANG_PORTUGUESE) {
-							msdos_printf(fstdout, (const char*)help_set_portuguese);
-						} else if(lang == LANG_BRAZILIAN) {
-							msdos_printf(fstdout, (const char*)help_set_brazilian);
-						} else if(lang == LANG_JAPANESE) {
-							msdos_printf(fstdout, (const char*)help_set_japanese);
-						} else if(lang == LANG_KOREAN) {
-							msdos_printf(fstdout, (const char*)help_set_korean);
-						} else if(lang == LANG_CHINESE) {
-							msdos_printf(fstdout, (const char*)help_set_chinese);
-						} else if(lang == LANG_TAIWANESE) {
-							msdos_printf(fstdout, (const char*)help_set_taiwanese);
-						} else if(lang == LANG_TAIWANESE_IBM5550) {
-							msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_set_taiwanese));
-						} else {
-							msdos_printf(fstdout,
-							"Displays, sets, or removes MS-DOS environment variables.\r\n"
-							"\r\n"
-							"SET [variable=[string]]\r\n"
-							"\r\n"
-							"  variable  Specifies the environment-variable name.\r\n"
-							"  string    Specifies a series of characters to assign to the variable.\r\n"
-							"\r\n"
-							"Type SET without parameters to display the current environment variables.\r\n"
-							);
-						}
-						CLOSE_STDOUT();
-					} else if(opt[0] == '\0') {
-						const char *env = (const char *)(mem + (parent_psp->env_seg << 4));
-						OPEN_STDOUT();
-						while(*env != '\0') {
-							msdos_printf(fstdout, "%s\n", env);
-							env += strlen(env) + 1;
-						}
-						CLOSE_STDOUT();
-					} else if(my_strchr(opt, '=') == NULL) {
-						// NOTE: this is Windows NT specific
-						const char *env = msdos_env_get(parent_psp->env_seg, opt);
-						if(env != NULL) {
-							msdos_strupr(opt);
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "%s=%s\n", opt, env);
-							CLOSE_STDOUT();
-						}
-					} else {
-						char *nam = my_strtok(opt, "=");
-						char *val = opt + strlen(nam) + 1;
-						msdos_strupr(nam);
-						msdos_env_set(parent_psp->env_seg, nam, val);
-					}
-					retval = 0x00;
+					msdos_internal_command_set(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 					return(0);
 				}
 				if(my_access(path_tmp, 0) != 0) {
 					// want to display the short full path name
 					if(_stricmp(command, "TRUENAME") == 0) {
-						if(_stricmp(opt, "/?") == 0) {
-							USHORT lang = get_message_lang();
-							OPEN_STDOUT();
-							if(lang == LANG_FRENCH) {
-								msdos_printf(fstdout, (const char*)help_truename_french);
-							} else if(lang == LANG_GERMAN) {
-								msdos_printf(fstdout, (const char*)help_truename_german);
-							} else if(lang == LANG_ITALIAN) {
-								msdos_printf(fstdout, (const char*)help_truename_italian);
-							} else if(lang == LANG_DUTCH) {
-								msdos_printf(fstdout, (const char*)help_truename_dutch);
-							} else if(lang == LANG_DANISH) {
-								msdos_printf(fstdout, (const char*)help_truename_danish);
-							} else if(lang == LANG_SWEDISH) {
-								msdos_printf(fstdout, (const char*)help_truename_swedish);
-							} else if(lang == LANG_FINNISH) {
-								msdos_printf(fstdout, (const char*)help_truename_finnish);
-							} else if(lang == LANG_RUSSIAN) {
-								msdos_printf(fstdout, (const char*)help_truename_russian);
-							} else if(lang == LANG_SPANISH) {
-								msdos_printf(fstdout, (const char*)help_truename_spanish);
-							} else if(lang == LANG_PORTUGUESE) {
-								msdos_printf(fstdout, (const char*)help_truename_portuguese);
-							} else if(lang == LANG_BRAZILIAN) {
-								msdos_printf(fstdout, (const char*)help_truename_brazilian);
-							} else if(lang == LANG_JAPANESE) {
-								msdos_printf(fstdout, (const char*)help_truename_japanese);
-							} else if(lang == LANG_KOREAN) {
-								msdos_printf(fstdout, (const char*)help_truename_korean);
-							} else if(lang == LANG_CHINESE) {
-								msdos_printf(fstdout, (const char*)help_truename_chinese);
-							} else if(lang == LANG_TAIWANESE) {
-								msdos_printf(fstdout, (const char*)help_truename_taiwanese);
-							} else if(lang == LANG_TAIWANESE_IBM5550) {
-								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_truename_taiwanese));
-							} else {
-								msdos_printf(fstdout,
-								"Returns a fully qualified filename.\r\n"
-								"\r\n"
-								"TRUENAME [drive:][path]filename\r\n"
-								);
-							}
-							CLOSE_STDOUT();
-							retval = 0x00;
-						} else if(opt[0] == '\0') {
-							if(my_getcwd(path, MAX_PATH) != NULL) {
-								OPEN_STDOUT();
-								msdos_printf(fstdout, "%s\n", msdos_short_full_path(path));
-								CLOSE_STDOUT();
-								retval = 0x00;
-							} else {
-								retval = 0x0f;
-								OPEN_STDERR();
-								msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-								CLOSE_STDERR();
-							}
-						} else {
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "%s\n", msdos_short_full_path(opt));
-							CLOSE_STDOUT();
-							retval = 0x00;
-						}
+						msdos_internal_command_truename(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 						return(0);
 					}
 					// want to display a text file via INT 29h
 					if(_stricmp(command, "TYPE") == 0) {
-						if(_stricmp(opt, "/?") == 0) {
-							USHORT lang = get_message_lang();
-							OPEN_STDOUT();
-							if(lang == LANG_FRENCH) {
-								msdos_printf(fstdout, (const char*)help_type_french);
-							} else if(lang == LANG_GERMAN) {
-								msdos_printf(fstdout, (const char*)help_type_german);
-							} else if(lang == LANG_ITALIAN) {
-								msdos_printf(fstdout, (const char*)help_type_italian);
-							} else if(lang == LANG_DUTCH) {
-								msdos_printf(fstdout, (const char*)help_type_dutch);
-							} else if(lang == LANG_DANISH) {
-								msdos_printf(fstdout, (const char*)help_type_danish);
-							} else if(lang == LANG_SWEDISH) {
-								msdos_printf(fstdout, (const char*)help_type_swedish);
-							} else if(lang == LANG_FINNISH) {
-								msdos_printf(fstdout, (const char*)help_type_finnish);
-							} else if(lang == LANG_RUSSIAN) {
-								msdos_printf(fstdout, (const char*)help_type_russian);
-							} else if(lang == LANG_SPANISH) {
-								msdos_printf(fstdout, (const char*)help_type_spanish);
-							} else if(lang == LANG_PORTUGUESE) {
-								msdos_printf(fstdout, (const char*)help_type_portuguese);
-							} else if(lang == LANG_BRAZILIAN) {
-								msdos_printf(fstdout, (const char*)help_type_brazilian);
-							} else if(lang == LANG_JAPANESE) {
-								msdos_printf(fstdout, (const char*)help_type_japanese);
-							} else if(lang == LANG_KOREAN) {
-								msdos_printf(fstdout, (const char*)help_type_korean);
-							} else if(lang == LANG_CHINESE) {
-								msdos_printf(fstdout, (const char*)help_type_chinese);
-							} else if(lang == LANG_TAIWANESE) {
-								msdos_printf(fstdout, (const char*)help_type_chinese);
-							} else if(lang == LANG_TAIWANESE_IBM5550) {
-								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_type_chinese));
-							} else {
-								msdos_printf(fstdout,
-								"Displays the contents of text files.\r\n"
-								"\r\n"
-								"TYPE [drive:][path]filename\r\n"
-								);
-							}
-							CLOSE_STDOUT();
-							retval = 0x00;
-						} else if(opt[0] == '\0') {
-							retval = 0x01;
-							OPEN_STDERR();
-							msdos_printf(fstderr, "%s\n", msdos_param_error_message(0x02));
-							CLOSE_STDERR();
-						} else {
-							FILE *fp = my_fopen(opt, "rb");
-							int val;
-							if(fp != NULL) {
-								OPEN_STDOUT();
-								while((val = fgetc(fp)) != EOF) {
-									msdos_printf(fstdout, "%c", val);
-								}
-								CLOSE_STDOUT();
-								fclose(fp);
-								retval = 0x00;
-							} else {
-								retval = 0x02;
-								OPEN_STDERR();
-								msdos_printf(fstderr, "%s\n", msdos_standard_error_message(retval));
-								CLOSE_STDERR();
-							}
-						}
+						msdos_internal_command_type(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 						return(0);
 					}
 					// want to display the DOS version
 					if(_stricmp(command, "VER") == 0) {
-						if(_stricmp(opt, "/?") == 0) {
-							USHORT lang = get_message_lang();
-							OPEN_STDOUT();
-							if(lang == LANG_FRENCH) {
-								msdos_printf(fstdout, (const char*)help_ver_french);
-							} else if(lang == LANG_GERMAN) {
-								msdos_printf(fstdout, (const char*)help_ver_german);
-							} else if(lang == LANG_ITALIAN) {
-								msdos_printf(fstdout, (const char*)help_ver_italian);
-							} else if(lang == LANG_DUTCH) {
-								msdos_printf(fstdout, (const char*)help_ver_dutch);
-							} else if(lang == LANG_DANISH) {
-								msdos_printf(fstdout, (const char*)help_ver_danish);
-							} else if(lang == LANG_SWEDISH) {
-								msdos_printf(fstdout, (const char*)help_ver_swedish);
-							} else if(lang == LANG_FINNISH) {
-								msdos_printf(fstdout, (const char*)help_ver_finnish);
-							} else if(lang == LANG_RUSSIAN) {
-								msdos_printf(fstdout, (const char*)help_ver_russian);
-							} else if(lang == LANG_SPANISH) {
-								msdos_printf(fstdout, (const char*)help_ver_spanish);
-							} else if(lang == LANG_PORTUGUESE) {
-								msdos_printf(fstdout, (const char*)help_ver_portuguese);
-							} else if(lang == LANG_BRAZILIAN) {
-								msdos_printf(fstdout, (const char*)help_ver_brazilian);
-							} else if(lang == LANG_JAPANESE) {
-								msdos_printf(fstdout, (const char*)help_ver_japanese);
-							} else if(lang == LANG_KOREAN) {
-								msdos_printf(fstdout, (const char*)help_ver_korean);
-							} else if(lang == LANG_CHINESE) {
-								msdos_printf(fstdout, (const char*)help_ver_chinese);
-							} else if(lang == LANG_TAIWANESE) {
-								msdos_printf(fstdout, (const char*)help_ver_taiwanese);
-							} else if(lang == LANG_TAIWANESE_IBM5550) {
-								msdos_printf(fstdout, taiwanese_from_big5_to_ibm5550((const char*)help_ver_taiwanese));
-							} else {
-								msdos_printf(fstdout,
-								"Displays the MS-DOS Version.\r\n"
-								"\r\n"
-								"VER\r\n"
-								);
-							}
-							CLOSE_STDOUT();
-						} else {
-							OPEN_STDOUT();
-							msdos_printf(fstdout, "MS-DOS Version %d.%2d\n", parent_psp->dos_major_version, parent_psp->dos_minor_version);
-							CLOSE_STDOUT();
-						}
-						retval = 0x00;
+						msdos_internal_command_ver(parent_psp, opt, pipe_stdout_path, pipe_stderr_path);
 						return(0);
 					}
 					// execute as 32bit command
 					retval = system(command_line);
 					return(0);
 				}
-				#undef OPEN_STDOUT
-				#undef CLOSE_STDOUT
-				#undef OPEN_STDERR
-				#undef CLOSE_STDERR
 			}
 		}
 		// restore to run COMMAND.COM normally
@@ -10245,6 +10308,11 @@ void msdos_process_terminate(int psp_seg, int ret, int mem_free)
 	if(current_process == NULL) {
 		throw(0x1f); // general failure
 	}
+#ifdef ENABLE_DEBUG_OPEN_FILE
+	if(fp_debug_log != NULL) {
+		fprintf(fp_debug_log, "process_terminate\tretval=%d\t%s\n", ret, current_process->module_path);
+	}
+#endif
 	int_10h_feh_called = current_process->parent_int_10h_feh_called;
 	int_10h_ffh_called = current_process->parent_int_10h_ffh_called;
 	if(current_process->called_by_int2eh) {
@@ -13838,8 +13906,12 @@ DWORD WINAPI msdos_int_21h_01h_thread(LPVOID)
 	CPU_AX_in_service &= 0xff00;
 	CPU_AX_in_service |= msdos_getche(0x21, 0x01);
 	
-	ctrl_break_detected = ctrl_break_pressed;
-	
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 	service_exit = true;
 	return(0);
 }
@@ -13865,7 +13937,13 @@ inline void msdos_int_21h_02h()
 	UINT8 data = CPU_DL;
 	msdos_putch(data, 0x21, 0x02);
 	CPU_AL = data;
-	ctrl_break_detected = ctrl_break_pressed;
+	
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 }
 
 inline void msdos_int_21h_03h()
@@ -13927,8 +14005,12 @@ DWORD WINAPI msdos_int_21h_08h_thread(LPVOID)
 	CPU_AX_in_service &= 0xff00;
 	CPU_AX_in_service |= msdos_getch(0x21, 0x08);
 	
-	ctrl_break_detected = ctrl_break_pressed;
-	
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 	service_exit = true;
 	return(0);
 }
@@ -13967,7 +14049,13 @@ inline void msdos_int_21h_09h()
 		}
 	}
 	CPU_AL = '$';
-	ctrl_break_detected = ctrl_break_pressed;
+	
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 }
 
 DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
@@ -13975,17 +14063,26 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 	int ofs = CPU_DS_BASE_in_service + CPU_DX_in_service;
 	int max = mem[ofs] - 1;
 	UINT8 *buf = mem + ofs + 2;
-	int chr, p = 0;
+	int p = 0;
 	
-	while((chr = msdos_getch(0x21, 0x0a)) != 0x0d) {
-		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
+	while(1) {
+		int chr = msdos_getch(0x21, 0x0a);
+		
+		if(ctrl_break_pressed || ctrl_c_pressed) {
 			p = 0;
-			msdos_putch(0x03, 0x21, 0x0a);
+			process_t *process = msdos_process_info_get(current_psp);
+			int fd = msdos_psp_get_file_table(1, current_psp);
+			if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
+				// output 03h (ETX) when stdout is redirected to file
+				msdos_putch(0x03, 0x21, 0x0a);
+			} else {
+				// output ^C
+				msdos_putch(0x5e, 0x21, 0x0a);
+				msdos_putch(0x43, 0x21, 0x0a);
+			}
 			msdos_putch(0x0d, 0x21, 0x0a);
 			msdos_putch(0x0a, 0x21, 0x0a);
 			break;
-		} else if(ctrl_break_pressed) {
-			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
 			while((chr = msdos_getch(0x21, 0x0a)) == 0x00) {
@@ -14015,6 +14112,9 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 					msdos_putch(0x08, 0x21, 0x0a);
 				}
 			}
+		} else if(chr == 0x0d) {
+			// carriage return
+			break;
 		} else if(chr == 0x1b) {
 			// escape
 			while(p > 0) {
@@ -14040,8 +14140,13 @@ DWORD WINAPI msdos_int_21h_0ah_thread(LPVOID)
 	buf[p] = 0x0d;
 	msdos_putch(0x0d, 0x21, 0x0a);
 	mem[ofs + 1] = p;
-	ctrl_break_detected = ctrl_break_pressed;
 	
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 	service_exit = true;
 	return(0);
 }
@@ -14072,7 +14177,12 @@ inline void msdos_int_21h_0bh()
 		CPU_AL = 0x00;
 		maybe_idle();
 	}
-	ctrl_break_detected = ctrl_break_pressed;
+	if(ctrl_break_pressed) {
+		ctrl_break_detected = true;
+	}
+	if(ctrl_c_pressed) {
+		ctrl_c_detected = true;
+	}
 }
 
 inline void msdos_int_21h_0ch()
@@ -15444,30 +15554,29 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 	while(max > p) {
 		int chr = msdos_getch(0x21, 0x3f);
 		
-		if((ctrl_break_checking && ctrl_break_pressed) || ctrl_c_pressed) {
+		if(ctrl_break_pressed || ctrl_c_pressed) {
 			p = 0;
 			buf[p++] = 0x0d;
 			if(max > p) {
 				buf[p++] = 0x0a;
 			}
-			msdos_putch(0x03, 0x21, 0x3f);
+			process_t *process = msdos_process_info_get(current_psp);
+			int fd = msdos_psp_get_file_table(1, current_psp);
+			if(fd < process->max_files && file_handler[fd].valid && !file_handler[fd].atty) {
+				// output 03h (ETX) when stdout is redirected to file
+				msdos_putch(0x03, 0x21, 0x3f);
+			} else {
+				// output ^C
+				msdos_putch(0x5e, 0x21, 0x3f);
+				msdos_putch(0x43, 0x21, 0x3f);
+			}
 			msdos_putch(0x0d, 0x21, 0x3f);
 			msdos_putch(0x0a, 0x21, 0x3f);
 			break;
-		} else if(ctrl_break_pressed) {
-			// skip this byte
 		} else if(chr == 0x00) {
 			// skip 2nd byte
 			while((chr = msdos_getch(0x21, 0x3f)) == 0x00) {
 			}
-		} else if(chr == 0x0d) {
-			// carriage return
-			buf[p++] = 0x0d;
-			if(max > p) {
-				buf[p++] = 0x0a;
-			}
-			msdos_putch('\n', 0x21, 0x3f);
-			break;
 		} else if(chr == 0x08) {
 			// back space
 			if(p > 0) {
@@ -15493,6 +15602,14 @@ DWORD WINAPI msdos_int_21h_3fh_thread(LPVOID)
 					msdos_putch(0x08, 0x21, 0x3f);
 				}
 			}
+		} else if(chr == 0x0d) {
+			// carriage return
+			buf[p++] = 0x0d;
+			if(max > p) {
+				buf[p++] = 0x0a;
+			}
+			msdos_putch('\n', 0x21, 0x3f);
+			break;
 		} else if(chr == 0x1b) {
 			// escape
 			while(p > 0) {
@@ -22076,7 +22193,7 @@ void msdos_syscall(unsigned num)
 	}
 	// this is called from dummy loop to wait until a serive that waits input is done
 	if(!(use_service_thread && in_service)) {
-		ctrl_break_detected = ctrl_break_pressed = ctrl_c_pressed = false;
+		ctrl_break_detected = ctrl_c_detected = false;
 	}
 	
 	switch(num) {
@@ -22654,9 +22771,10 @@ void msdos_syscall(unsigned num)
 			sda->suggested_action = 1; // retry
 			sda->locus_of_last_error = 1; // unknown
 		}
-		if(ctrl_break_checking && ctrl_break_detected) {
+		if(ctrl_break_checking ? (ctrl_break_pressed || ctrl_c_pressed) : (ctrl_break_detected || ctrl_c_pressed)) {
 			// raise int 23h
 			CPU_SOFT_INTERRUPT(0x23);
+			ctrl_break_detected = ctrl_break_pressed = ctrl_c_detected = ctrl_c_pressed = false;
 		}
 		msdos_dec_indos();
 		break;
@@ -23370,16 +23488,22 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	// environment
 	int env_seg = seg + 1;
 	int ofs = 0;
-	char env_append[ENV_SIZE], append_added = 0;
+	char *env_append = (char *)(file_buffer + ofs), append_added = 0;
+	ofs += ENV_SIZE;
 	char comspec_added = 0;
 	char lastdrive_added = 0;
-	char env_msdos_path[ENV_SIZE];
-	char env_path[ENV_SIZE], path_added = 0;
+	char *env_msdos_path = (char *)(file_buffer + ofs);
+	ofs += ENV_SIZE;
+	char *env_path = (char *)(file_buffer + ofs), path_added = 0;
+	ofs += ENV_SIZE;
 	char prompt_added = 0;
 	char env_temp[MAX_PATH], temp_added = 0, tmp_added = 0;
 	char tz_added = 0;
 	const char *path, *short_path;
-	wchar_t wc_path[ENV_SIZE];
+	wchar_t *wc_path = (wchar_t *)(file_buffer + ofs);
+	ofs += sizeof(wchar_t) * ENV_SIZE;
+	assert(ofs <= sizeof(file_buffer));
+	ofs = 0;
 	
 	env_size = standard_env ? 2048 : 8192;
 	
@@ -23395,29 +23519,29 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 	
 	if(GetEnvironmentVariableW(L"MSDOS_APPEND", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-			my_strcpy_s(env_append, sizeof(env_append), short_path);
+			my_strcpy_s(env_append, ENV_SIZE, short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"APPEND", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_append[0] != '\0') {
-				my_strcat_s(env_append, sizeof(env_append), ";");
+				my_strcat_s(env_append, ENV_SIZE, ";");
 			}
-			my_strcat_s(env_append, sizeof(env_append), short_path);
+			my_strcat_s(env_append, ENV_SIZE, short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"MSDOS_PATH", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
-			my_strcpy_s(env_msdos_path, sizeof(env_msdos_path), short_path);
-			my_strcpy_s(env_path, sizeof(env_path), short_path);
+			my_strcpy_s(env_msdos_path, ENV_SIZE, short_path);
+			my_strcpy_s(env_path, ENV_SIZE, short_path);
 		}
 	}
 	if(GetEnvironmentVariableW(L"PATH", wc_path, ENV_SIZE) != 0)  {
 		if((short_path = msdos_get_multiple_short_path(wc_path)) != NULL && short_path[0] != '\0') {
 			if(env_path[0] != '\0') {
-				my_strcat_s(env_path, sizeof(env_path), ";");
+				my_strcat_s(env_path, ENV_SIZE, ";");
 			}
-			my_strcat_s(env_path, sizeof(env_path), short_path);
+			my_strcat_s(env_path, ENV_SIZE, short_path);
 		}
 	}
 	
@@ -23634,6 +23758,7 @@ int msdos_init(int argc, char *argv[], char *envp[], int standard_env)
 			my_strcat_s(tz_value, sizeof(tz_value), tz_dlt);
 		}
 		SET_ENV("TZ", tz_value);
+		#undef SET_ENV
 	}
 	msdos_mcb_create(seg++, 'M', PSP_SYSTEM, env_size >> 4);
 	seg += (env_size >> 4);
@@ -25125,7 +25250,7 @@ void printer_out(int c, UINT8 data)
 #ifdef SUPPORT_NP21W_PRINTER
 DWORD GetTickCounter()
 {
-	return GetTickCount();
+	return timeGetTime();
 }
 
 BOOL MyGetDefaultPrinter(LPTSTR pszBuffer, LPDWORD pcchBuffer)
